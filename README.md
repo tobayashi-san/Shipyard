@@ -2,6 +2,11 @@
 
 Web dashboard for managing Linux servers – SSH, system monitoring, updates, and Ansible playbooks in a single interface.
 
+> **⚠️ Do not expose Shipyard to the public internet.**
+> It stores SSH private keys and has direct shell access to all managed servers.
+> Run it inside a private network, VPN (Tailscale, WireGuard), or behind an
+> identity-aware proxy (Cloudflare Access, Authelia) that enforces MFA.
+
 ## Deploy in 30 seconds
 
 ### Option A – Docker (recommended)
