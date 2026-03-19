@@ -95,14 +95,32 @@ class SSHManager {
         tryKeyboard: true,
       });
 
-      // Ensure .ssh directory exists and add key
-      await ssh.execCommand('mkdir -p ~/.ssh && chmod 700 ~/.ssh');
-      // Use base64 to safely transfer the key without any shell injection risk
-      const b64Key = Buffer.from(publicKey).toString('base64');
-      await ssh.execCommand(`echo '${b64Key}' | base64 -d >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys`);
+      // Ensure .ssh directory exists with correct permissions
+      await ssh.execCommand('mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys');
 
-      // Remove duplicates
-      await ssh.execCommand('sort -u ~/.ssh/authorized_keys -o ~/.ssh/authorized_keys');
+      // Read existing authorized_keys via SFTP, append key, write back — no shell interpolation
+      const sftp = await ssh.requestSFTP();
+      const remoteFile = `${(await ssh.execCommand('echo -n $HOME')).stdout}/.ssh/authorized_keys`;
+      let existing = '';
+      try {
+        existing = await new Promise((resolve, reject) => {
+          let data = '';
+          const stream = sftp.createReadStream(remoteFile);
+          stream.on('data', chunk => { data += chunk; });
+          stream.on('end', () => resolve(data));
+          stream.on('error', () => resolve(''));
+        });
+      } catch { existing = ''; }
+
+      if (!existing.split('\n').some(line => line.trim() === publicKey.trim())) {
+        const updated = (existing.endsWith('\n') || existing === '' ? existing : existing + '\n') + publicKey + '\n';
+        await new Promise((resolve, reject) => {
+          const stream = sftp.createWriteStream(remoteFile);
+          stream.on('close', resolve);
+          stream.on('error', reject);
+          stream.end(updated);
+        });
+      }
 
       ssh.dispose();
       return { success: true, message: 'SSH key deployed successfully' };

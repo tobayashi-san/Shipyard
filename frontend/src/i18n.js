@@ -48,6 +48,9 @@ const translations = {
     'common.saved': 'Gespeichert',
     'common.deleted': 'Gelöscht',
     'common.copied': 'Kopiert',
+    'common.actions': 'Aktionen',
+    'common.details': 'Details',
+    'common.image': 'Image',
 
     // ── Login ─────────────────────────────────────────────────
     'login.setup': 'Ersteinrichtung',
@@ -187,6 +190,7 @@ const translations = {
     'det.docker': 'Docker Container',
     'det.newStack': 'Neuer Stack',
     'det.noContainers': 'Keine Container',
+    'det.noContainersHint': 'Docker ist nicht installiert oder hat keine Container.',
     'det.allUpToDate': 'Alle Pakete sind aktuell',
     'det.updatesAvail': '{count} Update(s) verfügbar',
     'det.history': 'Aktionsverlauf',
@@ -533,6 +537,9 @@ const translations = {
     'common.saved': 'Saved',
     'common.deleted': 'Deleted',
     'common.copied': 'Copied',
+    'common.actions': 'Actions',
+    'common.details': 'Details',
+    'common.image': 'Image',
 
     // ── Login ─────────────────────────────────────────────────
     'login.setup': 'Initial Setup',
@@ -672,6 +679,7 @@ const translations = {
     'det.docker': 'Docker Containers',
     'det.newStack': 'New Stack',
     'det.noContainers': 'No containers',
+    'det.noContainersHint': 'Docker is not installed or has no containers.',
     'det.allUpToDate': 'All packages are up to date',
     'det.updatesAvail': '{count} update(s) available',
     'det.history': 'Action History',

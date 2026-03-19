@@ -314,7 +314,7 @@ function renderDockerData(serverId, containers) {
   const content = document.getElementById('docker-content');
   if (!content) return;
   if (!containers || containers.length === 0) {
-    content.innerHTML = `<div class="empty-state"><div class="empty-state-icon"><i class="fab fa-docker"></i></div><h3>${t('det.noContainers')}</h3><p>Docker ist nicht installiert oder hat keine Container.</p></div>`;
+    content.innerHTML = `<div class="empty-state"><div class="empty-state-icon"><i class="fab fa-docker"></i></div><h3>${t('det.noContainers')}</h3><p>${t('det.noContainersHint')}</p></div>`;
     setupComposeBtn(serverId);
     return;
   }
@@ -333,7 +333,7 @@ function renderDockerData(serverId, containers) {
   });
 
   let html = `<table class="data-table"><thead><tr>
-    <th style="width:8px;"></th><th>${t('common.name')}</th><th>Image</th><th>${t('common.status')}</th><th>Details</th><th>Aktionen</th>
+    <th style="width:8px;"></th><th>${t('common.name')}</th><th>${t('common.image')}</th><th>${t('common.status')}</th><th>${t('common.details')}</th><th>${t('common.actions')}</th>
   </tr></thead><tbody>`;
 
   for (const [proj, data] of Object.entries(stacks)) {

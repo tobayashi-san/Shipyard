@@ -10,7 +10,7 @@ services:
       # - /etc/ssl/private/shipyard.key:/certs/shipyard.key:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "node", "-e", "process.env.NODE_TLS_REJECT_UNAUTHORIZED='0'; require('https').get('https://localhost/api/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('https').get({hostname:'localhost',path:'/api/health',rejectUnauthorized:false}, r => process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3

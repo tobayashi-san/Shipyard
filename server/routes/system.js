@@ -8,7 +8,7 @@ const db = require('../db');
 const deployLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 15,
-  message: { error: 'Zu viele Deploy-Versuche. Bitte warte 15 Minuten.' },
+  message: { error: 'Too many deploy attempts. Please wait 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
 });

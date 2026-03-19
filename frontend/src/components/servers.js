@@ -128,7 +128,7 @@ export async function renderServers() {
                 <th style="width:120px;">${t('srv.colRam')}</th>
                 <th style="width:120px;">${t('srv.colDisk')}</th>
                 <th>${t('srv.colLastSeen')}</th>
-                <th>Aktionen</th>
+                <th>${t('common.actions')}</th>
               </tr>
             </thead>
             <tbody>
