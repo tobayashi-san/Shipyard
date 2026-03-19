@@ -93,7 +93,7 @@ class SystemInfoService {
   async getAvailableUpdates(server) {
     try {
       const result = await sshManager.execCommand(server,
-        '(apt list --upgradable 2>/dev/null | grep -v "^Listing" || yum list updates -q 2>/dev/null); echo "---PHASED---"; apt-get -s dist-upgrade 2>/dev/null | awk \'/deferred due to phasing:/{p=1;next} p&&/^[0-9]/{exit} p&&NF{print $1}\' 2>/dev/null || true'
+        '(apt list --upgradable 2>/dev/null | grep "/" || yum list updates -q 2>/dev/null); echo "---PHASED---"; apt-get -s dist-upgrade 2>/dev/null | awk \'/deferred due to phasing:/{p=1;next} p&&/^[0-9]/{exit} p&&NF{print $1}\' 2>/dev/null || true'
       );
 
       const [upgradableRaw = '', phasedRaw = ''] = result.stdout.split('---PHASED---');
@@ -103,7 +103,7 @@ class SystemInfoService {
       );
 
       const updates = upgradableRaw.trim().split('\n')
-        .filter(line => line.trim() && !line.startsWith('Listing'))
+        .filter(line => line.trim() && line.includes('/'))
         .map(line => {
           const parts = line.split(/\s+/);
           const pkg = parts[0]?.split('/')[0] || parts[0];
