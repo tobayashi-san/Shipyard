@@ -153,19 +153,29 @@ Run Shipyard on a dedicated machine or VM that has **no other internet-facing se
 
 Firewall rules on the Shipyard host should allow inbound **SSH (key-only)** and the **VPN port** only. The Shipyard web interface must never be directly reachable from the internet.
 
-### 2 — Encrypt SSH keys at rest
+### 2 — Set secrets via environment variables
 
-By default, the private SSH key is stored as a plaintext file in the data directory. Set `SHIPYARD_KEY_SECRET` to enable AES-256-GCM encryption at rest. The secret must live **outside** the data directory — an environment variable is ideal because it never touches the disk.
+Shipyard has two secrets that should live **outside** the data directory. By default both are auto-generated and stored in SQLite — which means an attacker with read access to `/data/` can extract them. Moving them to environment variables breaks that link.
 
-**Docker** — put secrets in `docker-compose.override.yml` (gitignored, never committed):
+| Variable | Risk if left in DB |
+|---|---|
+| `JWT_SECRET` | Attacker can forge valid login tokens without knowing the password |
+| `SHIPYARD_KEY_SECRET` | Attacker can decrypt SSH private keys stored in `/data/ssh/` |
+
+Generate a value for each:
+```bash
+openssl rand -hex 32   # run twice, use separate values
+```
+
+**Docker** — put both in `docker-compose.override.yml` (gitignored, never committed):
 
 ```yaml
 # docker-compose.override.yml
 services:
   shipyard:
     environment:
-      - SHIPYARD_KEY_SECRET=your-secret-here
-      - JWT_SECRET=your-secret-here
+      - JWT_SECRET=your-first-secret-here
+      - SHIPYARD_KEY_SECRET=your-second-secret-here
 ```
 
 Docker Compose merges this file automatically alongside `docker-compose.yml`.
@@ -174,15 +184,11 @@ Docker Compose merges this file automatically alongside `docker-compose.yml`.
 
 ```ini
 [Service]
-Environment="SHIPYARD_KEY_SECRET=your-secret-here"
+Environment="JWT_SECRET=your-first-secret-here"
+Environment="SHIPYARD_KEY_SECRET=your-second-secret-here"
 ```
 
-Generate a suitable value with:
-```bash
-openssl rand -hex 32
-```
-
-When this variable is set, the private key is encrypted on disk and only decrypted in memory when an SSH connection is needed. An attacker who gains read access to the data directory alone cannot use the key. **Existing keys are automatically encrypted the next time they are read.**
+`SHIPYARD_KEY_SECRET` enables AES-256-GCM encryption of the SSH private key at rest. The key is only decrypted in memory when an SSH connection is needed. **Existing keys are automatically encrypted the next time they are read.**
 
 ### 3 — Run as a non-root user (Docker)
 
@@ -201,8 +207,8 @@ Always use HTTPS (enabled by default in Docker). Set a long, randomly generated 
 | `PORT` | `3001` / `443` | Backend port (443 when HTTPS is enabled) |
 | `SSL_KEY` | – | Path to TLS private key – enables HTTPS when set together with `SSL_CERT` |
 | `SSL_CERT` | – | Path to TLS certificate file |
-| `JWT_SECRET` | (auto, DB) | JWT signing secret – set explicitly in production |
-| `SHIPYARD_KEY_SECRET` | – | Master secret for AES-256-GCM encryption of SSH private keys at rest |
+| `JWT_SECRET` | (auto, stored in DB) | JWT signing secret — **set explicitly in production** so it lives outside the data directory |
+| `SHIPYARD_KEY_SECRET` | – | Enables AES-256-GCM encryption of SSH private keys at rest — **recommended for production** |
 | `NODE_ENV` | – | `production` enables static file serving |
 | `ALLOWED_ORIGINS` | `localhost:3000,localhost:5173` | CORS whitelist (comma-separated) |
 
