@@ -155,17 +155,26 @@ Firewall rules on the Shipyard host should allow inbound **SSH (key-only)** and 
 
 ### 2 — Encrypt SSH keys at rest
 
-By default, the private SSH key is stored as a plaintext file in the data directory. Set `SHIPYARD_KEY_SECRET` to enable AES-256-GCM encryption at rest:
+By default, the private SSH key is stored as a plaintext file in the data directory. Set `SHIPYARD_KEY_SECRET` to enable AES-256-GCM encryption at rest. The secret must live **outside** the data directory — an environment variable is ideal because it never touches the disk.
+
+**Docker** — put secrets in `docker-compose.override.yml` (gitignored, never committed):
 
 ```yaml
-# docker-compose.yml
-environment:
-  - SHIPYARD_KEY_SECRET=replace-with-a-long-random-string
+# docker-compose.override.yml
+services:
+  shipyard:
+    environment:
+      - SHIPYARD_KEY_SECRET=your-secret-here
+      - JWT_SECRET=your-secret-here
 ```
 
-```bash
-# Bare metal — add to the systemd unit or shell profile
-export SHIPYARD_KEY_SECRET="replace-with-a-long-random-string"
+Docker Compose merges this file automatically alongside `docker-compose.yml`.
+
+**Bare metal** — add to the systemd unit (`/etc/systemd/system/shipyard.service`):
+
+```ini
+[Service]
+Environment="SHIPYARD_KEY_SECRET=your-secret-here"
 ```
 
 Generate a suitable value with:
@@ -173,7 +182,7 @@ Generate a suitable value with:
 openssl rand -hex 32
 ```
 
-When this variable is set, the private key is encrypted on disk and only decrypted in memory when an SSH connection is needed. An attacker who gains access to the data directory alone cannot use the key. **Existing keys are automatically encrypted the next time they are read.**
+When this variable is set, the private key is encrypted on disk and only decrypted in memory when an SSH connection is needed. An attacker who gains read access to the data directory alone cannot use the key. **Existing keys are automatically encrypted the next time they are read.**
 
 ### 3 — Run as a non-root user (Docker)
 
