@@ -6,13 +6,8 @@ server/node_modules/
 # Build output
 frontend/dist/
 
-# Sensitive runtime data — never commit
-server/data/ssh/
-server/data/*.db
-server/data/*.db-shm
-server/data/*.db-wal
-server/data/known_hosts
-server/data/inventory.ini
+# Runtime data — never commit
+server/data/
 
 # Environment
 .env

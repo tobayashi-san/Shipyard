@@ -4,14 +4,14 @@ const API_BASE = '/api';
 
 class ApiClient {
   constructor() {
-    this._token = localStorage.getItem('lab_token');
+    this._token = localStorage.getItem('shipyard_token');
     this._onUnauthorized = null;
   }
 
   setToken(token) {
     this._token = token;
-    if (token) localStorage.setItem('lab_token', token);
-    else localStorage.removeItem('lab_token');
+    if (token) localStorage.setItem('shipyard_token', token);
+    else localStorage.removeItem('shipyard_token');
   }
 
   getToken() { return this._token; }
