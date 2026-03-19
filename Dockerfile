@@ -1,0 +1,23 @@
+# ── Stage 1: Build frontend ───────────────────────────────────
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY frontend/package*.json ./frontend/
+RUN cd frontend && npm ci
+COPY frontend/ ./frontend/
+RUN cd frontend && npm run build
+
+# ── Stage 2: Runtime ─────────────────────────────────────────
+FROM node:20-alpine
+RUN apk add --no-cache ansible openssh-client
+
+WORKDIR /app
+COPY server/package*.json ./server/
+RUN cd server && npm ci --omit=dev
+COPY server/ ./server/
+COPY --from=builder /app/frontend/dist ./frontend/dist
+
+VOLUME ["/app/server/data"]
+EXPOSE 3001
+ENV NODE_ENV=production
+
+CMD ["node", "server/index.js"]

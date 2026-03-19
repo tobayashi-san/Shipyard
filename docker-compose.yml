@@ -1,0 +1,16 @@
+services:
+  shipyard:
+    build: .
+    ports:
+      - "3001:3001"
+    volumes:
+      - shipyard-data:/app/server/data
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      # - PORT=3001
+      # - JWT_SECRET=change-me-in-production
+      # - ALLOWED_ORIGINS=https://yourdomain.com
+
+volumes:
+  shipyard-data:
