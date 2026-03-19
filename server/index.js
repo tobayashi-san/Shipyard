@@ -409,7 +409,6 @@ app.post('/api/servers/:id/docker/compose/action', async (req, res) => {
 // SSH Terminal WebSocket  (/ws/ssh)
 // ============================================================
 const { Client: SshClient } = require('ssh2');
-const fs = require('fs');
 const sshManager = require('./services/ssh-manager');
 
 wssSsh.on('connection', (ws, req) => {
