@@ -10,7 +10,7 @@ const authMiddleware = require('../middleware/auth');
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
-  message: { error: 'Zu viele Anmeldeversuche. Bitte warte 15 Minuten.' },
+  message: { error: 'Too many login attempts. Please wait 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -18,7 +18,7 @@ const loginLimiter = rateLimit({
 const changeLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
-  message: { error: 'Zu viele Passwort-Änderungsversuche. Bitte warte 15 Minuten.' },
+  message: { error: 'Too many password change attempts. Please wait 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -76,7 +76,7 @@ router.post('/login', loginLimiter, async (req, res) => {
     db.auditLog.write('auth.login', 'Failed login attempt', req.ip, false);
     // Small artificial delay to slow brute-force
     await new Promise(r => setTimeout(r, 500));
-    return res.status(401).json({ error: 'Falsches Passwort' });
+    return res.status(401).json({ error: 'Incorrect password' });
   }
   db.auditLog.write('auth.login', 'Successful login', req.ip);
   res.json({ token: makeToken() });
@@ -89,15 +89,15 @@ router.post('/change', changeLimiter, authMiddleware, async (req, res) => {
     return res.status(400).json({ error: 'currentPassword and newPassword required' });
   }
   if (typeof newPassword !== 'string' || newPassword.length < 8) {
-    return res.status(400).json({ error: 'Neues Passwort muss mindestens 8 Zeichen lang sein' });
+    return res.status(400).json({ error: 'New password must be at least 8 characters' });
   }
   const hash = db.settings.get('auth_password_hash');
   if (!hash) {
-    return res.status(400).json({ error: 'Kein Passwort konfiguriert. Nutze /api/auth/setup.' });
+    return res.status(400).json({ error: 'No password configured. Use /api/auth/setup.' });
   }
   const valid = await bcrypt.compare(currentPassword, hash);
   if (!valid) {
-    return res.status(401).json({ error: 'Aktuelles Passwort ist falsch' });
+    return res.status(401).json({ error: 'Current password is incorrect' });
   }
   const newHash = await bcrypt.hash(newPassword, 12);
   db.settings.set('auth_password_hash', newHash);

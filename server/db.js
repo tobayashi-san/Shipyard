@@ -104,6 +104,16 @@ db.exec(`
   );
 `);
 
+// Indexes for foreign keys and common queries
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_server_info_server_id      ON server_info(server_id);
+  CREATE INDEX IF NOT EXISTS idx_update_history_server_id   ON update_history(server_id);
+  CREATE INDEX IF NOT EXISTS idx_update_history_started_at  ON update_history(started_at);
+  CREATE INDEX IF NOT EXISTS idx_docker_containers_server   ON docker_containers(server_id);
+  CREATE INDEX IF NOT EXISTS idx_compose_projects_server    ON compose_projects(server_id);
+  CREATE INDEX IF NOT EXISTS idx_audit_log_created_at       ON audit_log(created_at);
+`);
+
 // Updates cache table
 db.exec(`
   CREATE TABLE IF NOT EXISTS server_updates_cache (

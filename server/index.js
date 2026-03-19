@@ -30,10 +30,41 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Security headers
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com",
+      "font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com",
+      "connect-src 'self' ws: wss:",
+      "img-src 'self' data:",
+      "frame-ancestors 'none'",
+    ].join('; ')
+  );
+  next();
+});
+
 // Serve static frontend in production
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '..', 'frontend', 'dist')));
 }
+
+// Health check (no auth required)
+app.get('/api/health', (req, res) => {
+  try {
+    db.db.prepare('SELECT 1').get();
+    res.json({ status: 'ok', uptime: Math.floor(process.uptime()) });
+  } catch (e) {
+    res.status(500).json({ status: 'error', error: e.message });
+  }
+});
 
 // Auth – mount BEFORE the auth middleware so login/setup routes are always reachable
 const { router: authRouter, getJwtSecret } = require('./routes/auth');
@@ -375,7 +406,7 @@ wssSsh.on('connection', (ws, req) => {
   let privateKey;
   try { privateKey = fs.readFileSync(sshManager.getPrivateKeyPath()); }
   catch {
-    ws.send(JSON.stringify({ type: 'error', message: 'SSH-Key nicht gefunden' }));
+    ws.send(JSON.stringify({ type: 'error', message: 'SSH key not found' }));
     ws.close();
     return;
   }
@@ -481,9 +512,9 @@ server.listen(PORT, () => {
   console.log(`\n  ⚓  Shipyard API running on http://localhost:${PORT}`);
   console.log(`  📡 WebSocket on ws://localhost:${PORT}/ws`);
   if (process.env.NODE_ENV === 'production' && !process.env.TRUST_PROXY) {
-    console.warn('\n  ⚠️  SICHERHEIT: Stelle sicher, dass HTTPS über einen Reverse-Proxy');
-    console.warn('     (nginx, Caddy) vorgeschaltet ist. SSH-Passwörter und Tokens');
-    console.warn('     werden sonst im Klartext übertragen.\n');
+    console.warn('\n  ⚠️  SECURITY: Make sure HTTPS is enabled via a reverse proxy');
+    console.warn('     (nginx, Caddy). SSH passwords and tokens are otherwise');
+    console.warn('     transmitted in plaintext.\n');
   } else {
     console.log('');
   }

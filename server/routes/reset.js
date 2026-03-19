@@ -9,7 +9,7 @@ const db = require('../db');
 const resetLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 10,
-  message: { error: 'Zu viele Reset-Anfragen. Bitte warte eine Stunde.' },
+  message: { error: 'Too many reset requests. Please wait one hour.' },
   standardHeaders: true,
   legacyHeaders: false,
 });

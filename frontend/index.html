@@ -22,7 +22,7 @@
     <main id="main-content" class="main-content">
       <div class="loading-screen">
         <div class="loader"></div>
-        <p>Shipyard wird geladen...</p>
+        <p>Loading Shipyard…</p>
       </div>
     </main>
   </div>
@@ -34,13 +34,13 @@
   <div id="compose-modal-overlay" class="modal-overlay hidden">
     <div id="compose-modal" class="modal" style="max-width:720px;display:flex;flex-direction:column;max-height:90vh;">
       <h2 id="compose-modal-title" style="justify-content:space-between;flex-shrink:0;">
-        <span><i class="fas fa-edit"></i> Compose Stack bearbeiten</span>
-        <button id="close-compose-modal" style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--text-muted);line-height:1;padding:0 2px;" title="Schließen">&times;</button>
+        <span><i class="fas fa-edit"></i> Edit Compose Stack</span>
+        <button id="close-compose-modal" style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--text-muted);line-height:1;padding:0 2px;" title="Close">&times;</button>
       </h2>
       <form id="compose-form" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;">
         <div class="form-body" style="flex-shrink:0;">
           <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label">Pfad auf dem Server</label>
+            <label class="form-label">Path on server</label>
             <input class="form-input" type="text" id="compose-path" required style="font-family:var(--font-mono);font-size:13px;">
           </div>
         </div>
@@ -49,7 +49,7 @@
           <label class="form-label" style="flex-shrink:0;">docker-compose.yml</label>
           <div id="compose-loading" style="display:none;padding:32px;text-align:center;color:var(--text-muted);">
             <div class="loader" style="margin:0 auto 10px;"></div>
-            Lade Konfiguration vom Server…
+            Loading configuration from server…
           </div>
           <textarea id="compose-editor" required spellcheck="false"
             style="flex:1;min-height:360px;resize:none;font-family:var(--font-mono);font-size:12.5px;line-height:1.6;
@@ -59,9 +59,9 @@
         </div>
 
         <div class="form-actions" style="flex-shrink:0;">
-          <button type="button" class="btn btn-secondary" id="cancel-compose-btn">Abbrechen</button>
+          <button type="button" class="btn btn-secondary" id="cancel-compose-btn">Cancel</button>
           <button type="submit" class="btn btn-primary" id="save-compose-btn">
-            <i class="fas fa-save"></i> Speichern & Anwenden
+            <i class="fas fa-save"></i> Save & Apply
           </button>
         </div>
       </form>
@@ -78,10 +78,10 @@
       <div style="display:flex;gap:6px;">
         <button id="global-terminal-toggle"
           style="background:transparent;border:none;color:#8b949e;cursor:pointer;font-size:13px;padding:2px 6px;"
-          title="Minimieren/Maximieren">▼</button>
+          title="Minimize/Maximize">▼</button>
         <button id="global-terminal-close"
           style="background:transparent;border:none;color:#8b949e;cursor:pointer;font-size:16px;padding:2px 6px;line-height:1;"
-          title="Schließen">×</button>
+          title="Close">×</button>
       </div>
     </div>
     <div id="global-terminal-body"

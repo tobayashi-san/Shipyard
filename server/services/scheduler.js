@@ -5,6 +5,8 @@ const systemInfo = require('./system-info');
 
 // In-memory map: scheduleId -> cron task
 const jobs = new Map();
+// Track currently running jobs to prevent overlapping runs
+const running = new Set();
 
 // Polling intervals
 let infoPoller = null;
@@ -54,6 +56,11 @@ function register(schedule) {
   }
 
   const task = cron.schedule(schedule.cron_expression, async () => {
+    if (running.has(schedule.id)) {
+      console.log(`[Scheduler] Skipping "${schedule.name}" – previous run still in progress`);
+      return;
+    }
+    running.add(schedule.id);
     console.log(`[Scheduler] Running "${schedule.name}" (${schedule.playbook}) on ${schedule.targets}`);
     broadcast({ type: 'schedule_start', scheduleId: schedule.id, name: schedule.name });
 
@@ -75,6 +82,8 @@ function register(schedule) {
       db.schedules.updateLastRun(schedule.id, 'failed');
       broadcast({ type: 'schedule_error', scheduleId: schedule.id, error: error.message });
       console.error(`[Scheduler] "${schedule.name}" error:`, error.message);
+    } finally {
+      running.delete(schedule.id);
     }
   });
 
