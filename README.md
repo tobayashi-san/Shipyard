@@ -140,6 +140,51 @@ npm run dev
 
 Starts backend (port 3001) and Vite dev server (port 5173) simultaneously.
 
+## Security Hardening
+
+Shipyard holds SSH keys and has direct shell access to every managed server. Treat it accordingly.
+
+### 1 — Keep it off the public internet
+
+Run Shipyard on a dedicated machine or VM that has **no other internet-facing services**. Expose it only via:
+
+- **VPN** (WireGuard, Tailscale) — strongly recommended
+- **Identity-aware proxy** (Cloudflare Access, Authelia) — enforces MFA before the request even reaches Shipyard
+
+Firewall rules on the Shipyard host should allow inbound **SSH (key-only)** and the **VPN port** only. The Shipyard web interface must never be directly reachable from the internet.
+
+### 2 — Encrypt SSH keys at rest
+
+By default, the private SSH key is stored as a plaintext file in the data directory. Set `SHIPYARD_KEY_SECRET` to enable AES-256-GCM encryption at rest:
+
+```yaml
+# docker-compose.yml
+environment:
+  - SHIPYARD_KEY_SECRET=replace-with-a-long-random-string
+```
+
+```bash
+# Bare metal — add to the systemd unit or shell profile
+export SHIPYARD_KEY_SECRET="replace-with-a-long-random-string"
+```
+
+Generate a suitable value with:
+```bash
+openssl rand -hex 32
+```
+
+When this variable is set, the private key is encrypted on disk and only decrypted in memory when an SSH connection is needed. An attacker who gains access to the data directory alone cannot use the key. **Existing keys are automatically encrypted the next time they are read.**
+
+### 3 — Run as a non-root user (Docker)
+
+The Docker image runs the Node.js process as the `shipyard` user (UID 1001), not root. The entrypoint starts as root only to fix data-volume ownership and generate the self-signed certificate, then immediately drops privileges before starting the server.
+
+### 4 — Use HTTPS and a strong password
+
+Always use HTTPS (enabled by default in Docker). Set a long, randomly generated password and enable 2FA under **Settings → Security**.
+
+---
+
 ## Environment Variables
 
 | Variable | Default | Description |
@@ -148,6 +193,7 @@ Starts backend (port 3001) and Vite dev server (port 5173) simultaneously.
 | `SSL_KEY` | – | Path to TLS private key – enables HTTPS when set together with `SSL_CERT` |
 | `SSL_CERT` | – | Path to TLS certificate file |
 | `JWT_SECRET` | (auto, DB) | JWT signing secret – set explicitly in production |
+| `SHIPYARD_KEY_SECRET` | – | Master secret for AES-256-GCM encryption of SSH private keys at rest |
 | `NODE_ENV` | – | `production` enables static file serving |
 | `ALLOWED_ORIGINS` | `localhost:3000,localhost:5173` | CORS whitelist (comma-separated) |
 

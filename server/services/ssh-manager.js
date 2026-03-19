@@ -1,10 +1,64 @@
 const { execFileSync, exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { NodeSSH } = require('node-ssh');
 const db = require('../db');
 
 const SSH_DIR = path.join(__dirname, '..', 'data', 'ssh');
+const ALGORITHM = 'aes-256-gcm';
+
+function getMasterKey() {
+  const secret = process.env.SHIPYARD_KEY_SECRET;
+  if (!secret) return null;
+  return crypto.createHash('sha256').update(secret).digest();
+}
+
+function encryptKey(plaintext) {
+  const masterKey = getMasterKey();
+  if (!masterKey) return null;
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv(ALGORITHM, masterKey, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, encrypted]).toString('base64');
+}
+
+function decryptKey(b64) {
+  const masterKey = getMasterKey();
+  if (!masterKey) throw new Error('SHIPYARD_KEY_SECRET is not set — cannot decrypt SSH key');
+  const buf = Buffer.from(b64, 'base64');
+  const iv = buf.subarray(0, 16);
+  const tag = buf.subarray(16, 32);
+  const ciphertext = buf.subarray(32);
+  const decipher = crypto.createDecipheriv(ALGORITHM, masterKey, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+}
+
+/**
+ * Read the private key content for a given base path.
+ * If a .enc file exists (encrypted at rest), decrypt it in memory.
+ * If SHIPYARD_KEY_SECRET is set and only the plaintext exists, encrypt it now.
+ * Returns the plaintext key content as a string.
+ */
+function readPrivateKey(keyPath) {
+  const encPath = keyPath + '.enc';
+  if (fs.existsSync(encPath)) {
+    return decryptKey(fs.readFileSync(encPath, 'utf8'));
+  }
+  if (!fs.existsSync(keyPath)) {
+    throw new Error(`SSH private key not found: ${keyPath}`);
+  }
+  const plaintext = fs.readFileSync(keyPath, 'utf8');
+  // Auto-encrypt if master key is now configured
+  const encrypted = encryptKey(plaintext);
+  if (encrypted) {
+    fs.writeFileSync(encPath, encrypted, { mode: 0o600 });
+    fs.unlinkSync(keyPath);
+  }
+  return plaintext;
+}
 
 class SSHManager {
   constructor() {
@@ -38,6 +92,14 @@ class SSHManager {
     fs.chmodSync(keyPath, 0o600);
     fs.chmodSync(pubKeyPath, 0o644);
 
+    // Encrypt at rest if SHIPYARD_KEY_SECRET is configured
+    const plaintext = fs.readFileSync(keyPath, 'utf8');
+    const encrypted = encryptKey(plaintext);
+    if (encrypted) {
+      fs.writeFileSync(keyPath + '.enc', encrypted, { mode: 0o600 });
+      fs.unlinkSync(keyPath);
+    }
+
     const publicKey = fs.readFileSync(pubKeyPath, 'utf8').trim();
     db.sshKeys.create(name, publicKey, keyPath);
 
@@ -50,12 +112,14 @@ class SSHManager {
   getKeyInfo() {
     const key = db.sshKeys.getFirst();
     if (!key) return null;
+    const p = key.private_key_path;
     return {
       id: key.id,
       name: key.name,
       publicKey: key.public_key,
-      privateKeyPath: key.private_key_path,
-      exists: fs.existsSync(key.private_key_path),
+      privateKeyPath: p,
+      exists: fs.existsSync(p) || fs.existsSync(p + '.enc'),
+      encrypted: fs.existsSync(p + '.enc'),
     };
   }
 
@@ -147,14 +211,14 @@ class SSHManager {
       return this.connecting.get(key);
     }
 
-    const privateKeyPath = this.getPrivateKeyPath();
+    const privateKey = readPrivateKey(this.getPrivateKeyPath());
     const ssh = new NodeSSH();
 
     const connectPromise = ssh.connect({
       host: server.ip_address,
       port: server.ssh_port || 22,
       username: server.ssh_user || 'root',
-      privateKeyPath,
+      privateKey,
       readyTimeout: 10000,
     }).then(() => {
       this.connections.set(key, ssh);

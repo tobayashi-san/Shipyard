@@ -11,8 +11,11 @@ RUN cd frontend && npm run build
 # that needs glibc (fcntl64). Alpine's musl libc is incompatible.
 FROM node:20-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ansible openssh-client openssl \
+      ansible openssh-client openssl gosu \
     && rm -rf /var/lib/apt/lists/*
+
+# Create a dedicated non-root user for runtime
+RUN groupadd -r -g 1001 shipyard && useradd -r -u 1001 -g shipyard -d /app shipyard
 
 WORKDIR /app
 COPY server/package*.json ./server/
@@ -26,4 +29,5 @@ VOLUME ["/app/server/data"]
 EXPOSE 443
 ENV NODE_ENV=production
 
+# Entrypoint runs as root to fix data-volume ownership, then drops to shipyard
 ENTRYPOINT ["./docker-entrypoint.sh"]

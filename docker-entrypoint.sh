@@ -1,6 +1,8 @@
 #!/bin/sh
-# Auto-generate a self-signed certificate if none is provided.
-# Certs are stored in the data volume so they survive restarts.
+# Runs as root:
+#   1. Generate self-signed certificate if none is provided
+#   2. Fix data-volume ownership
+#   3. Drop privileges to the non-root "shipyard" user
 
 CERT_DIR="/app/server/data/certs"
 DEFAULT_KEY="$CERT_DIR/shipyard.key"
@@ -22,4 +24,9 @@ if [ -z "$SSL_KEY" ] || [ -z "$SSL_CERT" ]; then
   export SSL_CERT="$DEFAULT_CERT"
 fi
 
-exec node server/index.js
+# Ensure the data volume is owned by the shipyard user
+# (Docker volumes are created as root on first use)
+chown -R shipyard:shipyard /app/server/data
+
+# Drop from root to shipyard and start the server
+exec gosu shipyard node server/index.js
