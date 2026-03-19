@@ -7,8 +7,12 @@ COPY frontend/ ./frontend/
 RUN cd frontend && npm run build
 
 # ── Stage 2: Runtime ─────────────────────────────────────────
-FROM node:20-alpine
-RUN apk add --no-cache ansible openssh-client openssl
+# node:20-slim (Debian) is required — better-sqlite3 is a native addon
+# that needs glibc (fcntl64). Alpine's musl libc is incompatible.
+FROM node:20-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ansible openssh-client openssl \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY server/package*.json ./server/
