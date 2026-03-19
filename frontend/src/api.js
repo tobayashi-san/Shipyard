@@ -71,6 +71,17 @@ class ApiClient {
   authChangePassword(currentPassword, newPassword) {
     return this.request('/auth/change', { method: 'POST', body: { currentPassword, newPassword } });
   }
+  totpStatus()              { return this.request('/auth/totp/status'); }
+  totpSetup()               { return this.request('/auth/totp/setup',   { method: 'POST' }); }
+  totpConfirm(code)         { return this.request('/auth/totp/confirm', { method: 'POST', body: { code } }); }
+  totpDisable()             { return this.request('/auth/totp',         { method: 'DELETE' }); }
+  totpLogin(tempToken, code) {
+    return fetch('/api/auth/totp/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tempToken, code }),
+    }).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
+  }
 
   // Servers
   getDashboard() { return this.request('/dashboard'); }

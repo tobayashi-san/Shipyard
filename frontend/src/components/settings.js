@@ -255,6 +255,36 @@ export async function renderSettings() {
           </div>
         </div>
 
+        <div class="settings-group-title">${t('set.totp')}</div>
+        <div class="settings-block" id="totp-block">
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span id="totp-status-label">${t('set.totpDisabled')}</span>
+              <small>${t('set.totpHint')}</small>
+            </div>
+            <div class="settings-row-control" id="totp-controls">
+              <button class="btn btn-primary btn-sm" id="btn-totp-enable">
+                <i class="fas fa-shield-alt"></i> ${t('set.totpEnable')}
+              </button>
+            </div>
+          </div>
+          <!-- QR setup panel (hidden until setup clicked) -->
+          <div id="totp-setup-panel" style="display:none;padding:16px 0 8px;flex-direction:column;gap:12px;">
+            <p style="margin:0;color:var(--text-muted);font-size:13px;">${t('set.totpScanQR')}</p>
+            <img id="totp-qr" style="width:200px;height:200px;border-radius:8px;background:#fff;padding:8px;" alt="QR Code">
+            <p style="margin:0;color:var(--text-muted);font-size:12px;">${t('set.totpSecret')} <code id="totp-secret-text" style="font-family:var(--font-mono);word-break:break-all;"></code></p>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <label style="font-size:13px;color:var(--text-muted);white-space:nowrap;">${t('set.totpEnterCode')}</label>
+              <input class="form-input" type="text" id="totp-confirm-code" inputmode="numeric"
+                pattern="[0-9 ]*" maxlength="7" placeholder="______"
+                style="font-size:1.2rem;letter-spacing:6px;text-align:center;max-width:140px;">
+              <button class="btn btn-primary btn-sm" id="btn-totp-verify">
+                <i class="fas fa-check"></i> ${t('set.totpVerify')}
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div class="settings-group-title">${t('set.session')}</div>
         <div class="settings-block">
           <div class="settings-row">
@@ -511,6 +541,53 @@ async function setupSecurityEvents() {
   document.getElementById('btn-logout')?.addEventListener('click', () => {
     api.setToken(null);
     renderLogin(() => location.reload());
+  });
+
+  // ── TOTP ───────────────────────────────────────────────────
+  async function loadTotpStatus() {
+    try {
+      const { enabled } = await api.totpStatus();
+      const label    = document.getElementById('totp-status-label');
+      const controls = document.getElementById('totp-controls');
+      if (!label || !controls) return;
+      if (enabled) {
+        label.textContent = t('set.totpEnabled');
+        label.style.color = 'var(--online)';
+        controls.innerHTML = `<button class="btn btn-danger btn-sm" id="btn-totp-disable">
+          <i class="fas fa-shield-alt"></i> ${t('set.totpDisable')}</button>`;
+        document.getElementById('btn-totp-disable')?.addEventListener('click', async () => {
+          await api.totpDisable();
+          showToast(t('set.totpDeactivated'), 'success');
+          loadTotpStatus();
+        });
+      } else {
+        label.textContent = t('set.totpDisabled');
+        label.style.color = '';
+        controls.innerHTML = `<button class="btn btn-primary btn-sm" id="btn-totp-enable">
+          <i class="fas fa-shield-alt"></i> ${t('set.totpEnable')}</button>`;
+        document.getElementById('btn-totp-enable')?.addEventListener('click', async () => {
+          const panel = document.getElementById('totp-setup-panel');
+          panel.style.display = 'flex';
+          const data = await api.totpSetup();
+          document.getElementById('totp-qr').src = data.qrDataUrl;
+          document.getElementById('totp-secret-text').textContent = data.secret;
+        });
+      }
+    } catch {}
+  }
+  loadTotpStatus();
+
+  document.getElementById('btn-totp-verify')?.addEventListener('click', async () => {
+    const code = document.getElementById('totp-confirm-code')?.value.replace(/\s/g, '');
+    if (!code) return;
+    try {
+      await api.totpConfirm(code);
+      showToast(t('set.totpConfirmed'), 'success');
+      document.getElementById('totp-setup-panel').style.display = 'none';
+      loadTotpStatus();
+    } catch (err) {
+      showToast(err.message || t('set.totpInvalid'), 'error');
+    }
   });
 }
 

@@ -14,8 +14,13 @@ let updatesPoller = null;
 let infoPolling = false;
 let updatesPolling = false;
 
-const INFO_INTERVAL_MS    = 5 * 60 * 1000;  // 5 minutes
-const UPDATES_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+const INFO_INTERVAL_ACTIVE  =  5 * 60 * 1000; // 5 min  – clients connected
+const INFO_INTERVAL_IDLE    = 15 * 60 * 1000; // 15 min – no one watching
+const UPDATES_INTERVAL_MS   = 60 * 60 * 1000; // 1 hour
+const STALE_THRESHOLD_MS    =  4 * 60 * 1000; // trigger immediate poll on connect if data > 4 min old
+
+let lastInfoPollTime = 0;
+let getClientCount = () => 0; // injected from index.js
 
 // Broadcast function (set during init)
 let broadcast = () => {};
@@ -117,6 +122,7 @@ function reload(scheduleId) {
 async function pollSystemInfo() {
   if (infoPolling) return;
   infoPolling = true;
+  lastInfoPollTime = Date.now();
   try {
     const servers = db.servers.getAll();
     await Promise.allSettled(servers.map(async server => {
@@ -166,10 +172,32 @@ function startPolling() {
   pollSystemInfo().catch(err => console.error('[Poller] System info error:', err.message));
   pollUpdates().catch(err => console.error('[Poller] Updates error:', err.message));
 
-  infoPoller    = setInterval(() => pollSystemInfo().catch(err => console.error('[Poller] System info error:', err.message)), INFO_INTERVAL_MS);
-  updatesPoller = setInterval(() => pollUpdates().catch(err => console.error('[Poller] Updates error:', err.message)),         UPDATES_INTERVAL_MS);
+  // Info polling: runs every INFO_INTERVAL_ACTIVE, but skips when no clients
+  // are connected and data is still fresh. A slower idle floor (INFO_INTERVAL_IDLE)
+  // is guaranteed via the stale check in onClientConnect.
+  infoPoller = setInterval(() => {
+    const interval = getClientCount() > 0 ? INFO_INTERVAL_ACTIVE : INFO_INTERVAL_IDLE;
+    if (Date.now() - lastInfoPollTime >= interval) {
+      pollSystemInfo().catch(err => console.error('[Poller] System info error:', err.message));
+    }
+  }, 60 * 1000); // tick every minute, decide whether to actually poll
 
-  console.log(`[Poller] Started – info every ${INFO_INTERVAL_MS / 60000}min, updates every ${UPDATES_INTERVAL_MS / 60000}min`);
+  updatesPoller = setInterval(
+    () => pollUpdates().catch(err => console.error('[Poller] Updates error:', err.message)),
+    UPDATES_INTERVAL_MS
+  );
+
+  console.log(`[Poller] Started – active ${INFO_INTERVAL_ACTIVE / 60000}min / idle ${INFO_INTERVAL_IDLE / 60000}min, updates every ${UPDATES_INTERVAL_MS / 60000}min`);
+}
+
+/**
+ * Called when a WebSocket client connects. If system info is stale, trigger
+ * an immediate refresh so the dashboard shows fresh data right away.
+ */
+function onClientConnect() {
+  if (Date.now() - lastInfoPollTime > STALE_THRESHOLD_MS) {
+    pollSystemInfo().catch(err => console.error('[Poller] On-connect refresh error:', err.message));
+  }
 }
 
 /**
@@ -180,4 +208,4 @@ function stopPolling() {
   if (updatesPoller) { clearInterval(updatesPoller); updatesPoller = null; }
 }
 
-module.exports = { init, register, unregister, reload, startPolling, stopPolling };
+module.exports = { init, register, unregister, reload, startPolling, stopPolling, onClientConnect, setClientCountFn: fn => { getClientCount = fn; } };

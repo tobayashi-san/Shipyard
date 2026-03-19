@@ -520,6 +520,10 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => clients.delete(ws));
   ws.on('error', () => clients.delete(ws));
 
+  // Trigger immediate info refresh if data is stale
+  const scheduler = require('./services/scheduler');
+  scheduler.onClientConnect();
+
   // Send initial status
   ws.send(JSON.stringify({ type: 'connected', timestamp: new Date().toISOString() }));
 });
@@ -555,6 +559,7 @@ server.listen(PORT, () => {
 
   // Start scheduler and background polling after server is listening
   const scheduler = require('./services/scheduler');
+  scheduler.setClientCountFn(() => clients.size);
   scheduler.init(broadcast);
   scheduler.startPolling();
 });

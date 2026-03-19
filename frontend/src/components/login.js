@@ -90,6 +90,10 @@ export async function renderLogin(onSuccess) {
 
     try {
       const result = isSetup ? await api.authSetup(pw) : await api.authLogin(pw);
+      if (result.requires2FA) {
+        renderTotp(result.tempToken, onSuccess);
+        return;
+      }
       api.setToken(result.token);
       location.reload();
     } catch (err) {
@@ -100,6 +104,63 @@ export async function renderLogin(onSuccess) {
         ? `<i class="fas fa-lock"></i> ${t('login.setPassword')}`
         : `<i class="fas fa-sign-in-alt"></i> ${t('login.loginBtn')}`;
       document.getElementById('login-password').focus();
+    }
+  });
+}
+
+function renderTotp(tempToken, onSuccess) {
+  document.body.innerHTML = `
+    <div class="login-screen">
+      <div class="login-card">
+        <div class="login-logo">
+          <div class="sidebar-logo-icon"><i class="fas fa-shield-alt"></i></div>
+          <div>
+            <div class="login-title">Shipyard</div>
+            <div class="login-sub">${t('login.totpTitle')}</div>
+          </div>
+        </div>
+        <p class="login-hint">${t('login.totpHint')}</p>
+        <form id="totp-form" autocomplete="off">
+          <div class="form-group">
+            <input class="form-input" type="text" id="totp-code"
+              inputmode="numeric" pattern="[0-9 ]*" maxlength="7"
+              placeholder="${t('login.totpPlaceholder')}" autofocus
+              style="font-size:1.4rem;letter-spacing:6px;text-align:center;">
+          </div>
+          <p class="login-error hidden" id="totp-error"></p>
+          <button class="btn btn-primary" type="submit" id="totp-btn" style="width:100%;margin-top:4px;">
+            <i class="fas fa-check"></i> ${t('login.totpBtn')}
+          </button>
+          <button type="button" id="totp-back" class="btn btn-secondary" style="width:100%;margin-top:8px;">
+            ${t('login.totpBack')}
+          </button>
+        </form>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('totp-back').addEventListener('click', () => renderLogin(onSuccess));
+
+  document.getElementById('totp-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const code = document.getElementById('totp-code').value.replace(/\s/g, '');
+    const btn  = document.getElementById('totp-btn');
+    const errEl = document.getElementById('totp-error');
+    errEl.classList.add('hidden');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-sm"></span> …';
+
+    try {
+      const result = await api.totpLogin(tempToken, code);
+      api.setToken(result.token);
+      location.reload();
+    } catch (err) {
+      errEl.textContent = err.message || t('login.totpInvalid');
+      errEl.classList.remove('hidden');
+      btn.disabled = false;
+      btn.innerHTML = `<i class="fas fa-check"></i> ${t('login.totpBtn')}`;
+      document.getElementById('totp-code').value = '';
+      document.getElementById('totp-code').focus();
     }
   });
 }
