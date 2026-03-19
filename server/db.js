@@ -111,7 +111,6 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_update_history_started_at  ON update_history(started_at);
   CREATE INDEX IF NOT EXISTS idx_docker_containers_server   ON docker_containers(server_id);
   CREATE INDEX IF NOT EXISTS idx_compose_projects_server    ON compose_projects(server_id);
-  CREATE INDEX IF NOT EXISTS idx_audit_log_created_at       ON audit_log(created_at);
 `);
 
 // Updates cache table
@@ -142,6 +141,7 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   )
 `);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);`);
 
 // Migrations
 try {
