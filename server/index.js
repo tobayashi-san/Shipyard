@@ -437,7 +437,7 @@ wssSsh.on('connection', (ws, req) => {
   if (!server) { ws.close(4004, 'Server not found'); return; }
 
   let privateKey;
-  try { privateKey = fs.readFileSync(sshManager.getPrivateKeyPath()); }
+  try { privateKey = sshManager.getPrivateKey(); }
   catch {
     ws.send(JSON.stringify({ type: 'error', message: 'SSH key not found' }));
     ws.close();

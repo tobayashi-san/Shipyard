@@ -124,16 +124,23 @@ class SSHManager {
   }
 
   /**
-   * Get the private key path
+   * Get the private key base path (without .enc suffix)
    */
   getPrivateKeyPath() {
     const key = db.sshKeys.getFirst();
     if (!key) {
-      // Auto-generate if none exists
       const result = this.generateKey();
       return result.privateKeyPath;
     }
     return key.private_key_path;
+  }
+
+  /**
+   * Get the decrypted private key content as a string.
+   * Use this instead of getPrivateKeyPath() + readFileSync everywhere.
+   */
+  getPrivateKey() {
+    return readPrivateKey(this.getPrivateKeyPath());
   }
 
   /**
