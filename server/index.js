@@ -204,10 +204,13 @@ app.post('/api/ansible/run', async (req, res) => {
       }
     );
 
-    db.updateHistory.updateStatus(historyId, result.success ? 'success' : 'failed', result.stdout + result.stderr);
+    const status = result.success ? 'success' : 'failed';
+    db.updateHistory.updateStatus(historyId, status, result.stdout + result.stderr);
+    db.auditLog.write('ansible.run', `playbook=${playbook} targets=${targets || 'all'} status=${status}`, req.ip, result.success);
     broadcast({ type: 'ansible_complete', historyId, success: result.success });
   } catch (error) {
     db.updateHistory.updateStatus(historyId, 'failed', error.message);
+    db.auditLog.write('ansible.run', `playbook=${playbook} targets=${targets || 'all'} error=${error.message}`, req.ip, false);
     broadcast({ type: 'ansible_error', historyId, error: error.message });
   }
 });
@@ -232,10 +235,13 @@ app.post('/api/servers/:id/update', async (req, res) => {
       }
     );
 
-    db.updateHistory.updateStatus(historyId, result.success ? 'success' : 'failed', result.stdout + result.stderr);
+    const status = result.success ? 'success' : 'failed';
+    db.updateHistory.updateStatus(historyId, status, result.stdout + result.stderr);
+    db.auditLog.write('server.update', `server=${server.name} status=${status}`, req.ip, result.success);
     broadcast({ type: 'update_complete', serverId, historyId, success: result.success });
   } catch (error) {
     db.updateHistory.updateStatus(historyId, 'failed', error.message);
+    db.auditLog.write('server.update', `server=${server.name} error=${error.message}`, req.ip, false);
     broadcast({ type: 'update_error', serverId, historyId, error: error.message });
   }
 });
@@ -255,10 +261,13 @@ app.post('/api/servers/update-all', async (req, res) => {
       }
     );
 
-    db.updateHistory.updateStatus(historyId, result.success ? 'success' : 'failed', result.stdout + result.stderr);
+    const status = result.success ? 'success' : 'failed';
+    db.updateHistory.updateStatus(historyId, status, result.stdout + result.stderr);
+    db.auditLog.write('server.update_all', `status=${status}`, req.ip, result.success);
     broadcast({ type: 'bulk_update_complete', historyId, success: result.success });
   } catch (error) {
     db.updateHistory.updateStatus(historyId, 'failed', error.message);
+    db.auditLog.write('server.update_all', `error=${error.message}`, req.ip, false);
     broadcast({ type: 'bulk_update_error', historyId, error: error.message });
   }
 });

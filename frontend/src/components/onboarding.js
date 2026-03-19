@@ -95,7 +95,7 @@ export async function renderOnboarding() {
           </div>
         </div>
         <div class="form-group" style="margin-top:12px;">
-          <label class="form-label">Theme</label>
+          <label class="form-label">${t('set.theme')}</label>
           <div class="theme-toggle" id="ob-theme-toggle" style="display:inline-flex;">
             <button class="theme-btn" data-value="light"><i class="fas fa-sun"></i> ${t('set.light')}</button>
             <button class="theme-btn active" data-value="auto"><i class="fas fa-circle-half-stroke"></i> ${t('set.auto')}</button>

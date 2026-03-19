@@ -33,6 +33,7 @@ router.get('/export', (req, res) => {
     }));
 
     const format = (req.query.format || 'json').toLowerCase();
+    if (!['json', 'csv'].includes(format)) return res.status(400).json({ error: 'Invalid format. Use json or csv.' });
 
     if (format === 'csv') {
       const escape = v => {
