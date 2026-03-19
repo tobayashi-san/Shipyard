@@ -269,7 +269,7 @@ export async function renderSettings() {
             </div>
           </div>
           <!-- QR setup panel (hidden until setup clicked) -->
-          <div id="totp-setup-panel" style="display:none;padding:16px 0 8px;flex-direction:column;gap:12px;">
+          <div id="totp-setup-panel" style="display:none;padding:16px 20px 16px;flex-direction:column;gap:12px;border-top:1px solid var(--border);">
             <p style="margin:0;color:var(--text-muted);font-size:13px;">${t('set.totpScanQR')}</p>
             <img id="totp-qr" style="width:200px;height:200px;border-radius:8px;background:#fff;padding:8px;" alt="QR Code">
             <p style="margin:0;color:var(--text-muted);font-size:12px;">${t('set.totpSecret')} <code id="totp-secret-text" style="font-family:var(--font-mono);word-break:break-all;"></code></p>
@@ -568,9 +568,14 @@ async function setupSecurityEvents() {
         document.getElementById('btn-totp-enable')?.addEventListener('click', async () => {
           const panel = document.getElementById('totp-setup-panel');
           panel.style.display = 'flex';
-          const data = await api.totpSetup();
-          document.getElementById('totp-qr').src = data.qrDataUrl;
-          document.getElementById('totp-secret-text').textContent = data.secret;
+          try {
+            const data = await api.totpSetup();
+            document.getElementById('totp-qr').src = data.qrDataUrl;
+            document.getElementById('totp-secret-text').textContent = data.secret;
+          } catch (err) {
+            panel.style.display = 'none';
+            showToast(err.message || t('set.totpSetupError'), 'error');
+          }
         });
       }
     } catch {}

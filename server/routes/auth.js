@@ -152,15 +152,19 @@ router.get('/totp/status', authMiddleware, (req, res) => {
 
 // POST /api/auth/totp/setup – generate a new TOTP secret and return QR code
 router.post('/totp/setup', authMiddleware, async (req, res) => {
-  const secret = authenticator.generateSecret();
-  // Store temporarily – only persisted after /totp/confirm
-  db.settings.set('totp_secret_pending', secret);
+  try {
+    const secret = authenticator.generateSecret();
+    // Store temporarily – only persisted after /totp/confirm
+    db.settings.set('totp_secret_pending', secret);
 
-  const appName = db.settings.get('wl_app_name') || 'Shipyard';
-  const otpauthUrl = authenticator.keyuri('admin', appName, secret);
-  const qrDataUrl = await QRCode.toDataURL(otpauthUrl);
+    const appName = db.settings.get('wl_app_name') || 'Shipyard';
+    const otpauthUrl = authenticator.keyuri('admin', appName, secret);
+    const qrDataUrl = await QRCode.toDataURL(otpauthUrl);
 
-  res.json({ secret, otpauthUrl, qrDataUrl });
+    res.json({ secret, otpauthUrl, qrDataUrl });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // POST /api/auth/totp/confirm – verify code, then enable 2FA
