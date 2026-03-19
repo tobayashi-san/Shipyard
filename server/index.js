@@ -1,11 +1,36 @@
 const express = require('express');
-const http = require('http');
+const http    = require('http');
+const https   = require('https');
+const fs      = require('fs');
 const { WebSocketServer } = require('ws');
 const cors = require('cors');
 const path = require('path');
 
 const app = express();
-const server = http.createServer(app);
+
+// ── HTTPS / HTTP ──────────────────────────────────────────────
+const SSL_KEY  = process.env.SSL_KEY;
+const SSL_CERT = process.env.SSL_CERT;
+let server;
+let isHttps = false;
+
+if (SSL_KEY && SSL_CERT) {
+  let key, cert;
+  try {
+    key  = fs.readFileSync(SSL_KEY);
+    cert = fs.readFileSync(SSL_CERT);
+  } catch (e) {
+    console.error(`[HTTPS] Failed to read certificate files: ${e.message}`);
+    console.error(`        SSL_KEY=${SSL_KEY}`);
+    console.error(`        SSL_CERT=${SSL_CERT}`);
+    process.exit(1);
+  }
+  server  = https.createServer({ key, cert }, app);
+  isHttps = true;
+} else {
+  server = http.createServer(app);
+}
+
 const wss    = new WebSocketServer({ noServer: true });
 const wssSsh = new WebSocketServer({ noServer: true });
 
@@ -20,7 +45,7 @@ server.on('upgrade', (req, socket, head) => {
   }
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || (isHttps ? 443 : 3001);
 
 // Middleware
 app.use(cors({
@@ -508,13 +533,14 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // Start server
+const proto   = isHttps ? 'https' : 'http';
+const wsProto = isHttps ? 'wss'   : 'ws';
 server.listen(PORT, () => {
-  console.log(`\n  ⚓  Shipyard API running on http://localhost:${PORT}`);
-  console.log(`  📡 WebSocket on ws://localhost:${PORT}/ws`);
-  if (process.env.NODE_ENV === 'production' && !process.env.TRUST_PROXY) {
-    console.warn('\n  ⚠️  SECURITY: Make sure HTTPS is enabled via a reverse proxy');
-    console.warn('     (nginx, Caddy). SSH passwords and tokens are otherwise');
-    console.warn('     transmitted in plaintext.\n');
+  console.log(`\n  ⚓  Shipyard running on ${proto}://localhost:${PORT}`);
+  console.log(`  📡 WebSocket on ${wsProto}://localhost:${PORT}/ws`);
+  if (!isHttps && process.env.NODE_ENV === 'production') {
+    console.warn('\n  ⚠️  SECURITY: Running without HTTPS. Set SSL_KEY and SSL_CERT env vars');
+    console.warn('     or use a reverse proxy (nginx, Caddy) to terminate TLS.\n');
   } else {
     console.log('');
   }
