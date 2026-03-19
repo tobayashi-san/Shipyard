@@ -141,10 +141,31 @@ cd server && npm install --omit=dev && cd ..
 echo "→ Building frontend..."
 cd frontend && npm install && npm run build && cd ..
 
+# ── Security secrets ──────────────────────────────────────────
+echo ""
+echo "→ Generating security secrets..."
+if command -v openssl &>/dev/null; then
+  JWT_SECRET_VAL="$(openssl rand -hex 32)"
+  KEY_SECRET_VAL="$(openssl rand -hex 32)"
+  echo "  ✓ JWT_SECRET and SHIPYARD_KEY_SECRET generated"
+else
+  echo "  WARNING: openssl not found – secrets not generated."
+  echo "  Set JWT_SECRET and SHIPYARD_KEY_SECRET manually in the systemd unit."
+  JWT_SECRET_VAL=""
+  KEY_SECRET_VAL=""
+fi
+
 # ── systemd service (Linux only) ─────────────────────────────
 if has_systemd && [ "$OS_ID" != "macos" ]; then
   SERVICE_FILE="/etc/systemd/system/shipyard.service"
   echo "→ Creating systemd service..."
+
+  # Use the real user even when called via sudo
+  SERVICE_USER="${SUDO_USER:-$USER}"
+  if [ "$SERVICE_USER" = "root" ]; then
+    echo "  WARNING: Running as root. The service will run as root."
+    echo "  For better security, create a dedicated user and re-run install.sh as that user."
+  fi
 
   HTTPS_ENV_LINES=""
   START_URL="http://localhost:3001"
@@ -154,6 +175,12 @@ Environment=SSL_CERT=${SSL_CERT_ENV}"
     START_URL="https://localhost:443"
   fi
 
+  SECRET_ENV_LINES=""
+  if [ -n "$JWT_SECRET_VAL" ]; then
+    SECRET_ENV_LINES="Environment=JWT_SECRET=${JWT_SECRET_VAL}
+Environment=SHIPYARD_KEY_SECRET=${KEY_SECRET_VAL}"
+  fi
+
   sudo tee "$SERVICE_FILE" > /dev/null << SERVICE
 [Unit]
 Description=Shipyard
@@ -161,12 +188,13 @@ After=network.target
 
 [Service]
 Type=simple
-User=$USER
-WorkingDirectory=$INSTALL_DIR
-ExecStart=$(which node) $INSTALL_DIR/server/index.js
+User=${SERVICE_USER}
+WorkingDirectory=${INSTALL_DIR}
+ExecStart=$(which node) ${INSTALL_DIR}/server/index.js
 Restart=on-failure
 Environment=NODE_ENV=production
 ${HTTPS_ENV_LINES}
+${SECRET_ENV_LINES}
 
 [Install]
 WantedBy=multi-user.target
@@ -182,9 +210,9 @@ SERVICE
 else
   echo ""
   echo "✓ Build complete. Start manually with:"
-  if [ -n "$SSL_KEY_ENV" ]; then
-    echo "  NODE_ENV=production SSL_KEY=$SSL_KEY_ENV SSL_CERT=$SSL_CERT_ENV node $INSTALL_DIR/server/index.js"
-  else
-    echo "  NODE_ENV=production node $INSTALL_DIR/server/index.js"
-  fi
+  CMD="NODE_ENV=production"
+  [ -n "$SSL_KEY_ENV" ] && CMD="$CMD SSL_KEY=$SSL_KEY_ENV SSL_CERT=$SSL_CERT_ENV"
+  [ -n "$JWT_SECRET_VAL" ] && CMD="$CMD JWT_SECRET=$JWT_SECRET_VAL SHIPYARD_KEY_SECRET=$KEY_SECRET_VAL"
+  CMD="$CMD node $INSTALL_DIR/server/index.js"
+  echo "  $CMD"
 fi

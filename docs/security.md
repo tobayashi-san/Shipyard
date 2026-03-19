@@ -29,10 +29,10 @@ Generate a value for each:
 openssl rand -hex 32   # run twice, use separate values
 ```
 
-**Docker** — store in `docker-compose.override.yml` (gitignored, never committed):
+**Docker** — create a new file named `docker-compose.override.yml` next to your `docker-compose.yml` (it is gitignored and never committed):
 
 ```yaml
-# docker-compose.override.yml
+# docker-compose.override.yml  ← create this file manually
 services:
   shipyard:
     environment:
@@ -40,15 +40,17 @@ services:
       - SHIPYARD_KEY_SECRET=your-second-value
 ```
 
-Docker Compose merges this file automatically alongside `docker-compose.yml`.
+Docker Compose merges this file automatically alongside `docker-compose.yml` — no extra flags needed.
 
-**Bare metal** — add to the systemd unit (`/etc/systemd/system/shipyard.service`):
+**Bare metal** — `install.sh` generates both secrets automatically and writes them into the systemd unit. If you need to rotate them later, edit `/etc/systemd/system/shipyard.service`:
 
 ```ini
 [Service]
 Environment="JWT_SECRET=your-first-value"
 Environment="SHIPYARD_KEY_SECRET=your-second-value"
 ```
+
+Then reload: `sudo systemctl daemon-reload && sudo systemctl restart shipyard`
 
 ### How SSH key encryption works
 
