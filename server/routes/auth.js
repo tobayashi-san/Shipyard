@@ -176,7 +176,7 @@ router.post('/totp/confirm', authMiddleware, (req, res) => {
   if (!secret) return res.status(400).json({ error: 'No pending TOTP setup. Call /totp/setup first.' });
 
   if (!otplib.verifySync({ token: String(code).replace(/\s/g, ''), secret, type: 'totp' }).valid) {
-    return res.status(401).json({ error: 'Invalid code – try again' });
+    return res.status(400).json({ error: 'Invalid code – try again' });
   }
 
   db.settings.set('totp_secret', secret);
