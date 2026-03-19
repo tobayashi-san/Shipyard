@@ -1,0 +1,21 @@
+---
+- name: Gather Docker Containers
+  hosts: all
+  become: yes
+  gather_facts: no
+  tasks:
+    - name: Check if docker is installed
+      shell: "command -v docker"
+      register: docker_installed
+      changed_when: false
+      failed_when: false
+
+    - name: Get all docker containers
+      shell: "docker ps -a --format '{% raw %}{{.Names}}|{{.Image}}|{{.State}}|{{.Status}}|{{.CreatedAt}}|{{.Label \"com.docker.compose.project\"}}|{{.Label \"com.docker.compose.project.working_dir\"}}{% endraw %}'"
+      register: docker_ps
+      when: docker_installed.rc == 0
+      changed_when: false
+      
+    - name: Display container info
+      debug:
+        msg: "{{ docker_ps.stdout_lines if docker_ps.stdout_lines is defined else [] }}"

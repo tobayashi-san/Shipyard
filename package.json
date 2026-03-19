@@ -1,0 +1,15 @@
+{
+  "name": "shipyard",
+  "version": "1.0.0",
+  "description": "Modern Linux Server Management Dashboard",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:frontend\"",
+    "dev:server": "cd server && node index.js",
+    "dev:frontend": "cd frontend && npx vite --host",
+    "start": "cd server && NODE_ENV=production node index.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

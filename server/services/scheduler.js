@@ -1,0 +1,174 @@
+const cron = require('node-cron');
+const db = require('../db');
+const ansibleRunner = require('./ansible-runner');
+const systemInfo = require('./system-info');
+
+// In-memory map: scheduleId -> cron task
+const jobs = new Map();
+
+// Polling intervals
+let infoPoller = null;
+let updatesPoller = null;
+let infoPolling = false;
+let updatesPolling = false;
+
+const INFO_INTERVAL_MS    = 5 * 60 * 1000;  // 5 minutes
+const UPDATES_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
+// Broadcast function (set during init)
+let broadcast = () => {};
+
+/**
+ * Initialize scheduler: load all enabled schedules and register cron jobs.
+ */
+function init(broadcastFn) {
+  broadcast = broadcastFn || broadcast;
+
+  let schedules = [];
+  try {
+    schedules = db.schedules.getAll();
+  } catch (e) {
+    console.error('[Scheduler] Failed to load schedules from DB:', e.message);
+    return;
+  }
+  for (const s of schedules) {
+    if (s.enabled) {
+      try { register(s); }
+      catch (e) { console.error(`[Scheduler] Failed to register "${s.name}":`, e.message); }
+    }
+  }
+  console.log(`[Scheduler] Loaded ${schedules.filter(s => s.enabled).length} active schedule(s)`);
+}
+
+/**
+ * Register a cron job for a schedule row.
+ */
+function register(schedule) {
+  if (jobs.has(schedule.id)) {
+    jobs.get(schedule.id).stop();
+  }
+
+  if (!cron.validate(schedule.cron_expression)) {
+    console.error(`[Scheduler] Invalid cron: "${schedule.cron_expression}" for schedule "${schedule.name}"`);
+    return;
+  }
+
+  const task = cron.schedule(schedule.cron_expression, async () => {
+    console.log(`[Scheduler] Running "${schedule.name}" (${schedule.playbook}) on ${schedule.targets}`);
+    broadcast({ type: 'schedule_start', scheduleId: schedule.id, name: schedule.name });
+
+    try {
+      const result = await ansibleRunner.runPlaybook(
+        schedule.playbook,
+        schedule.targets || 'all',
+        {},
+        (type, data) => {
+          broadcast({ type: 'update_output', scheduleId: schedule.id, stream: type, data });
+        }
+      );
+
+      const status = result.success ? 'success' : 'failed';
+      db.schedules.updateLastRun(schedule.id, status);
+      broadcast({ type: 'schedule_complete', scheduleId: schedule.id, success: result.success });
+      console.log(`[Scheduler] "${schedule.name}" completed: ${status}`);
+    } catch (error) {
+      db.schedules.updateLastRun(schedule.id, 'failed');
+      broadcast({ type: 'schedule_error', scheduleId: schedule.id, error: error.message });
+      console.error(`[Scheduler] "${schedule.name}" error:`, error.message);
+    }
+  });
+
+  jobs.set(schedule.id, task);
+}
+
+/**
+ * Unregister (stop + remove) a cron job.
+ */
+function unregister(scheduleId) {
+  if (jobs.has(scheduleId)) {
+    jobs.get(scheduleId).stop();
+    jobs.delete(scheduleId);
+  }
+}
+
+/**
+ * Reload a single schedule (after create/update/toggle).
+ */
+function reload(scheduleId) {
+  unregister(scheduleId);
+  const schedule = db.schedules.getById(scheduleId);
+  if (schedule && schedule.enabled) {
+    register(schedule);
+  }
+}
+
+/**
+ * Poll system info for all servers in parallel and update the DB cache.
+ */
+async function pollSystemInfo() {
+  if (infoPolling) return;
+  infoPolling = true;
+  try {
+    const servers = db.servers.getAll();
+    await Promise.allSettled(servers.map(async server => {
+      try {
+        const info = await systemInfo.getSystemInfo(server);
+        db.serverInfo.upsert(server.id, info);
+        db.servers.updateStatus(server.id, 'online');
+      } catch {
+        db.servers.updateStatus(server.id, 'offline');
+      }
+    }));
+    broadcast({ type: 'cache_updated', scope: 'info' });
+    console.log(`[Poller] System info refreshed for ${servers.length} server(s)`);
+  } finally {
+    infoPolling = false;
+  }
+}
+
+/**
+ * Poll available updates for all servers in parallel and update the DB cache.
+ */
+async function pollUpdates() {
+  if (updatesPolling) return;
+  updatesPolling = true;
+  try {
+    const servers = db.servers.getAll();
+    await Promise.allSettled(servers.map(async server => {
+      try {
+        const updates = await systemInfo.getAvailableUpdates(server);
+        db.updatesCache.set(server.id, updates);
+      } catch {
+        // ignore – keep stale cache
+      }
+    }));
+    broadcast({ type: 'cache_updated', scope: 'updates' });
+    console.log(`[Poller] Updates cache refreshed for ${servers.length} server(s)`);
+  } finally {
+    updatesPolling = false;
+  }
+}
+
+/**
+ * Start background polling for system info and updates.
+ */
+function startPolling() {
+  // Run immediately on startup, then on interval
+  pollSystemInfo().catch(err => console.error('[Poller] System info error:', err.message));
+  pollUpdates().catch(err => console.error('[Poller] Updates error:', err.message));
+
+  infoPoller    = setInterval(() => pollSystemInfo().catch(err => console.error('[Poller] System info error:', err.message)), INFO_INTERVAL_MS);
+  updatesPoller = setInterval(() => pollUpdates().catch(err => console.error('[Poller] Updates error:', err.message)),         UPDATES_INTERVAL_MS);
+
+  console.log(`[Poller] Started – info every ${INFO_INTERVAL_MS / 60000}min, updates every ${UPDATES_INTERVAL_MS / 60000}min`);
+}
+
+/**
+ * Stop background polling.
+ */
+function stopPolling() {
+  if (infoPoller)    { clearInterval(infoPoller);    infoPoller = null; }
+  if (updatesPoller) { clearInterval(updatesPoller); updatesPoller = null; }
+}
+
+module.exports = { init, register, unregister, reload, startPolling, stopPolling };

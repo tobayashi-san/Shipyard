@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="auto">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Shipyard – Modernes Dashboard für Linux Server Management">
+  <title>Shipyard</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="/src/style.css">
+</head>
+
+<body>
+  <div id="app">
+    <aside id="sidebar" class="sidebar"></aside>
+    <main id="main-content" class="main-content">
+      <div class="loading-screen">
+        <div class="loader"></div>
+        <p>Shipyard wird geladen...</p>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modals container -->
+  <div id="modal-overlay" class="modal-overlay hidden"></div>
+
+  <!-- Compose Modal -->
+  <div id="compose-modal-overlay" class="modal-overlay hidden">
+    <div id="compose-modal" class="modal" style="max-width:720px;display:flex;flex-direction:column;max-height:90vh;">
+      <h2 id="compose-modal-title" style="justify-content:space-between;flex-shrink:0;">
+        <span><i class="fas fa-edit"></i> Compose Stack bearbeiten</span>
+        <button id="close-compose-modal" style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--text-muted);line-height:1;padding:0 2px;" title="Schließen">&times;</button>
+      </h2>
+      <form id="compose-form" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;">
+        <div class="form-body" style="flex-shrink:0;">
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Pfad auf dem Server</label>
+            <input class="form-input" type="text" id="compose-path" required style="font-family:var(--font-mono);font-size:13px;">
+          </div>
+        </div>
+
+        <div style="padding:0 20px;flex:1;min-height:0;display:flex;flex-direction:column;gap:6px;">
+          <label class="form-label" style="flex-shrink:0;">docker-compose.yml</label>
+          <div id="compose-loading" style="display:none;padding:32px;text-align:center;color:var(--text-muted);">
+            <div class="loader" style="margin:0 auto 10px;"></div>
+            Lade Konfiguration vom Server…
+          </div>
+          <textarea id="compose-editor" required spellcheck="false"
+            style="flex:1;min-height:360px;resize:none;font-family:var(--font-mono);font-size:12.5px;line-height:1.6;
+                   background:#0d1117;color:#c9d1d9;border:1px solid var(--border-section);
+                   border-radius:var(--radius);padding:14px;outline:none;
+                   transition:border-color 120ms;"></textarea>
+        </div>
+
+        <div class="form-actions" style="flex-shrink:0;">
+          <button type="button" class="btn btn-secondary" id="cancel-compose-btn">Abbrechen</button>
+          <button type="submit" class="btn btn-primary" id="save-compose-btn">
+            <i class="fas fa-save"></i> Speichern & Anwenden
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Global Floating Terminal Drawer -->
+  <div id="global-terminal"
+    style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:500;box-shadow:0 -4px 24px rgba(0,0,0,0.25);">
+    <div
+      style="background:#161b22;border-top:1px solid #30363d;display:flex;align-items:center;padding:8px 14px;gap:10px;">
+      <span id="global-terminal-title"
+        style="flex:1;text-align:center;font-family:var(--font-mono);font-size:11px;color:#8b949e;"></span>
+      <div style="display:flex;gap:6px;">
+        <button id="global-terminal-toggle"
+          style="background:transparent;border:none;color:#8b949e;cursor:pointer;font-size:13px;padding:2px 6px;"
+          title="Minimieren/Maximieren">▼</button>
+        <button id="global-terminal-close"
+          style="background:transparent;border:none;color:#8b949e;cursor:pointer;font-size:16px;padding:2px 6px;line-height:1;"
+          title="Schließen">×</button>
+      </div>
+    </div>
+    <div id="global-terminal-body"
+      style="background:#0d1117;font-family:var(--font-mono);font-size:12px;line-height:1.7;color:#c9d1d9;height:220px;overflow-y:auto;padding:12px 16px;white-space:pre-wrap;word-break:break-all;display:flex;flex-direction:column;gap:1px;">
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>
