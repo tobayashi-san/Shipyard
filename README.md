@@ -41,6 +41,19 @@ Installs dependencies, builds the frontend, and registers a systemd service that
 - **Authentication** – Password protection with JWT, rate limiting, audit log
 - **Bilingual UI** – German and English, auto-detected from browser language
 
+## Requirements
+
+### Docker (Option A)
+- [Docker](https://docs.docker.com/get-docker/) with Compose plugin (`docker compose version`)
+
+### Bare metal (Option B)
+- **Linux** with systemd (Debian, Ubuntu, Arch, Fedora, …)
+- **Node.js** 18+
+- **Ansible** (`sudo apt install ansible` / `sudo pacman -S ansible` / `sudo dnf install ansible`)
+- SSH access to the managed servers
+
+> **No systemd?** `install.sh` detects this and prints the manual start command instead. You can then set up your own init (OpenRC, runit, …) or just run it in a `screen`/`tmux` session.
+
 ## Security Note
 
 > **HTTPS is required for production use.**
