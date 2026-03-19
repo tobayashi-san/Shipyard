@@ -9,9 +9,10 @@ frontend/dist/
 # Runtime data — never commit
 server/data/
 
-# Environment
+# Environment & local secrets
 .env
 .env.local
+docker-compose.override.yml
 
 # Claude Code
 .claude/

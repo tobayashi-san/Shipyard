@@ -21,8 +21,8 @@ services:
       # - JWT_SECRET=change-me-in-production
       # - ALLOWED_ORIGINS=https://yourdomain.com
       #
-      # Encrypt SSH private keys at rest (recommended for production):
-      # - SHIPYARD_KEY_SECRET=change-me-to-a-long-random-string
+      # Encrypt SSH private keys at rest — set in docker-compose.override.yml
+      # - SHIPYARD_KEY_SECRET=
       #
       # To use your own certificate instead of the auto-generated one:
       # - SSL_CERT=/certs/shipyard.crt
