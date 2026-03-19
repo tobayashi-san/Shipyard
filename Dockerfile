@@ -8,16 +8,18 @@ RUN cd frontend && npm run build
 
 # ── Stage 2: Runtime ─────────────────────────────────────────
 FROM node:20-alpine
-RUN apk add --no-cache ansible openssh-client
+RUN apk add --no-cache ansible openssh-client openssl
 
 WORKDIR /app
 COPY server/package*.json ./server/
 RUN cd server && npm ci --omit=dev
 COPY server/ ./server/
 COPY --from=builder /app/frontend/dist ./frontend/dist
+COPY docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
 
 VOLUME ["/app/server/data"]
-EXPOSE 3001
+EXPOSE 443
 ENV NODE_ENV=production
 
-CMD ["node", "server/index.js"]
+ENTRYPOINT ["./docker-entrypoint.sh"]

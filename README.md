@@ -12,7 +12,9 @@ cd Shipyard
 docker compose up -d
 ```
 
-Open **http://localhost:3001** — done.
+Open **https://localhost** — done.
+
+HTTPS is enabled by default. A self-signed certificate is generated automatically on first start and stored in the data volume. Accept the browser warning once, or replace it with your own certificate (see [HTTPS](#https) below).
 
 Data is stored in a Docker volume and survives restarts/updates.
 
@@ -59,11 +61,9 @@ Detects your OS (Debian/Ubuntu, Arch, Fedora), installs dependencies, builds the
 Shipyard supports native HTTPS via the `SSL_KEY` and `SSL_CERT` environment variables.
 When both are set, the server automatically switches to HTTPS (port 443 by default).
 
-**Docker** – uncomment the relevant lines in `docker-compose.yml`:
+**Docker** – HTTPS is on by default. A self-signed certificate is generated on first start and stored in the data volume (`shipyard-data`). To use your own certificate, mount it and set the env vars in `docker-compose.yml`:
 
 ```yaml
-ports:
-  - "443:443"
 environment:
   - SSL_CERT=/certs/shipyard.crt
   - SSL_KEY=/certs/shipyard.key

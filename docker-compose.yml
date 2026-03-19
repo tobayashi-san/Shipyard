@@ -2,29 +2,26 @@ services:
   shipyard:
     build: .
     ports:
-      - "3001:3001"
-      # HTTPS: replace the port mapping above with:
-      # - "443:443"
+      - "443:443"
     volumes:
       - shipyard-data:/app/server/data
-      # HTTPS: mount your certificate files (paths on the host):
+      # To use your own certificate instead of the auto-generated one:
       # - /etc/ssl/certs/shipyard.crt:/certs/shipyard.crt:ro
       # - /etc/ssl/private/shipyard.key:/certs/shipyard.key:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/api/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      test: ["CMD", "node", "-e", "process.env.NODE_TLS_REJECT_UNAUTHORIZED='0'; require('https').get('https://localhost/api/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 15s
     environment:
       - NODE_ENV=production
-      # - PORT=3001
+      # - PORT=443
       # - JWT_SECRET=change-me-in-production
       # - ALLOWED_ORIGINS=https://yourdomain.com
       #
-      # ── Native HTTPS ────────────────────────────────────────────
-      # Set both to enable HTTPS (port defaults to 443 automatically):
+      # To use your own certificate instead of the auto-generated one:
       # - SSL_CERT=/certs/shipyard.crt
       # - SSL_KEY=/certs/shipyard.key
 
