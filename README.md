@@ -28,6 +28,20 @@ bash install.sh
 
 Detects your OS, installs dependencies, builds the frontend, and registers a systemd service.
 
+## Screenshots
+
+![Dashboard](docs/images/Dashboard.png)
+
+<details>
+<summary>More screenshots</summary>
+
+![Server Detail](docs/images/Server-Detail.png)
+![Docker](docs/images/Docker.png)
+![Terminal](docs/images/Terminal.png)
+![Playbooks](docs/images/Playbooks.png)
+
+</details>
+
 ## Features
 
 - **Server Management** – Add, edit, delete servers; groups & tags
