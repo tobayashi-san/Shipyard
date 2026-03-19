@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
-const { authenticator } = require('otplib');
+const otplib = require('otplib');
 const QRCode = require('qrcode');
 const db = require('../db');
 const authMiddleware = require('../middleware/auth');
@@ -136,7 +136,7 @@ router.post('/totp/login', loginLimiter, (req, res) => {
   const secret = db.settings.get('totp_secret');
   if (!secret) return res.status(400).json({ error: '2FA not configured' });
 
-  if (!authenticator.verify({ token: String(code).replace(/\s/g, ''), secret })) {
+  if (!otplib.verifySync({ token: String(code).replace(/\s/g, ''), secret, type: 'totp' }).valid) {
     db.auditLog.write('auth.totp', 'Invalid TOTP code', req.ip, false);
     return res.status(401).json({ error: 'Invalid authenticator code' });
   }
@@ -153,12 +153,12 @@ router.get('/totp/status', authMiddleware, (req, res) => {
 // POST /api/auth/totp/setup – generate a new TOTP secret and return QR code
 router.post('/totp/setup', authMiddleware, async (req, res) => {
   try {
-    const secret = authenticator.generateSecret();
+    const secret = otplib.generateSecret();
     // Store temporarily – only persisted after /totp/confirm
     db.settings.set('totp_secret_pending', secret);
 
     const appName = db.settings.get('wl_app_name') || 'Shipyard';
-    const otpauthUrl = authenticator.keyuri('admin', appName, secret);
+    const otpauthUrl = otplib.generateURI({ label: 'admin', issuer: appName, secret, type: 'totp' });
     const qrDataUrl = await QRCode.toDataURL(otpauthUrl);
 
     res.json({ secret, otpauthUrl, qrDataUrl });
@@ -175,7 +175,7 @@ router.post('/totp/confirm', authMiddleware, (req, res) => {
   const secret = db.settings.get('totp_secret_pending');
   if (!secret) return res.status(400).json({ error: 'No pending TOTP setup. Call /totp/setup first.' });
 
-  if (!authenticator.verify({ token: String(code).replace(/\s/g, ''), secret })) {
+  if (!otplib.verifySync({ token: String(code).replace(/\s/g, ''), secret, type: 'totp' }).valid) {
     return res.status(401).json({ error: 'Invalid code – try again' });
   }
 
