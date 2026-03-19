@@ -178,4 +178,18 @@ async function boot() {
   render();
 }
 
-document.addEventListener('DOMContentLoaded', boot);
+// Warn if accessed over plain HTTP from a non-local host
+if (location.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(location.hostname)) {
+  const banner = document.createElement('div');
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#b91c1c;color:#fff;font-size:13px;padding:8px 16px;display:flex;align-items:center;gap:10px;';
+  banner.innerHTML = '<i class="fas fa-lock-open"></i> <strong>Insecure connection:</strong> Use HTTPS to protect passwords and tokens. &nbsp;<button onclick="this.parentElement.remove()" style="margin-left:auto;background:none;border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:4px;padding:2px 8px;cursor:pointer;">Dismiss</button>';
+  document.body.prepend(banner);
+}
+
+// Wait for all external stylesheets (Font Awesome, Google Fonts) to load
+// before booting to prevent flash of unstyled content.
+if (document.readyState === 'complete') {
+  boot();
+} else {
+  window.addEventListener('load', boot);
+}
