@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:frontend\"",
-    "dev:server": "cd server && node index.js",
+    "dev:server": "cd server && node --watch index.js",
     "dev:frontend": "cd frontend && npx vite --host",
     "start": "cd server && NODE_ENV=production node index.js"
   },

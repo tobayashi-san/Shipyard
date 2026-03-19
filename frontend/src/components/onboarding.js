@@ -86,9 +86,8 @@ export async function renderOnboarding() {
         <div class="form-group" style="margin-top:12px;">
           <label class="form-label">${t('set.accentColor')}</label>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;align-items:center;">
-            ${[['#3b82f6','Blau'],['#6366f1','Indigo'],['#8b5cf6','Violett'],
-               ['#ec4899','Pink'],['#14b8a6','Türkis'],['#22c55e','Grün']].map(([c, label]) => `
-              <button class="ob-color-swatch" data-color="${c}" title="${c === '#3b82f6' ? c + ' (Standard)' : c}"
+            ${['#3b82f6','#6366f1','#8b5cf6','#ec4899','#14b8a6','#22c55e'].map(c => `
+              <button class="ob-color-swatch" data-color="${c}" title="${c === '#3b82f6' ? c + ' (default)' : c}"
                 style="width:26px;height:26px;border-radius:50%;background:${c};border:2px solid ${c === '#3b82f6' ? '#fff' : 'transparent'};cursor:pointer;transition:border .15s;outline:none;">
               </button>`).join('')}
             <input type="color" id="ob-color-picker" value="#3b82f6" title="${t('common.customColor')}"

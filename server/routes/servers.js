@@ -63,7 +63,7 @@ router.post('/import', (req, res) => {
   try {
     const { servers } = req.body;
     if (!Array.isArray(servers) || servers.length === 0) {
-      return res.status(400).json({ error: 'Keine Server-Daten gefunden' });
+      return res.status(400).json({ error: 'No server data found' });
     }
 
     const existingAll = db.servers.getAll();
@@ -73,7 +73,7 @@ router.post('/import', (req, res) => {
 
     for (const s of servers) {
       if (!s.name || !s.ip_address) {
-        results.errors.push(`Übersprungen: fehlende Pflichtfelder (name/ip_address)`);
+        results.errors.push(`Skipped: missing required fields (name/ip_address)`);
         results.skipped++;
         continue;
       }

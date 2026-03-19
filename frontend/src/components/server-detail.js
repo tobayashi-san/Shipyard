@@ -56,7 +56,7 @@ export async function renderServerDetail(serverId) {
       <button class="tab-btn" data-tab="history">${t('det.tabHistory')}</button>
       <button class="tab-btn" data-tab="notes">
         <i class="fas fa-sticky-note" style="margin-right:5px;"></i>${t('det.tabNotes')}
-        ${server.notes?.trim() ? '<span class="nav-item-badge" style="margin-left:6px;" aria-label="hat Notizen">●</span>' : ''}
+        ${server.notes?.trim() ? '<span class="nav-item-badge" style="margin-left:6px;" aria-label="has notes">●</span>' : ''}
       </button>
     </div>
 

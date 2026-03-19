@@ -93,7 +93,7 @@ class ApiClient {
     const res = await fetch(`${API_BASE}/servers/export?format=${format}`, {
       headers: this._token ? { Authorization: `Bearer ${this._token}` } : {},
     });
-    if (!res.ok) throw new Error(`Export fehlgeschlagen: ${res.status}`);
+    if (!res.ok) throw new Error(`Export failed: ${res.status}`);
     const blob = await res.blob();
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
