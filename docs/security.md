@@ -54,6 +54,14 @@ Environment="SHIPYARD_KEY_SECRET=your-second-value"
 
 When `SHIPYARD_KEY_SECRET` is set, the private key is encrypted on disk using AES-256-GCM. It is only decrypted in memory when an SSH connection is needed. Existing plaintext keys are automatically encrypted the next time they are read — no manual migration needed.
 
+### Setting secrets after initial setup
+
+Both secrets can be added at any time — the container does not need to be rebuilt, only restarted.
+
+**`JWT_SECRET` added later:** All existing login sessions become invalid immediately (tokens were signed with the old auto-generated secret). Every logged-in user will be logged out on their next request and must log in again. This happens once and is expected.
+
+**`SHIPYARD_KEY_SECRET` added later:** On the first SSH action after restart, the existing plaintext key is automatically encrypted and the plaintext file is deleted. Fully transparent — no action required.
+
 ---
 
 ## 3 — Run as a non-root user (Docker)

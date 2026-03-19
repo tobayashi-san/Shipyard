@@ -16,7 +16,7 @@ cd Shipyard
 docker compose up -d
 ```
 
-Open **https://localhost** — done. HTTPS is on by default with a self-signed certificate.
+Open **`https://<server-ip>`** in your browser. HTTPS is on by default with a self-signed certificate — accept the browser warning once, or replace it with your own certificate (see [Configuration](docs/configuration.md)).
 
 ### Bare metal
 
