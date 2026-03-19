@@ -108,6 +108,44 @@ Starts backend (port 3001) and Vite dev server (port 5173) simultaneously.
 | `NODE_ENV` | – | `production` enables static file serving |
 | `ALLOWED_ORIGINS` | `localhost:3000,localhost:5173` | CORS whitelist (comma-separated) |
 
+## How it works
+
+```
+Browser
+  │
+  │  HTTP / WebSocket
+  ▼
+┌─────────────────────────────────────────┐
+│  Node.js + Express (Backend)            │
+│                                         │
+│  REST API  ──►  SQLite (servers, jobs)  │
+│  WebSocket ──►  live terminal output    │
+│                                         │
+│  Ansible Runner  ──►  ansible-playbook  │
+│  SSH Manager     ──►  ssh2 (Node)       │
+│  System Poller   ──►  SSH → shell cmds  │
+│  Scheduler       ──►  node-cron         │
+└─────────────────────────────────────────┘
+       │               │
+       │ SSH           │ SSH
+       ▼               ▼
+  Server A         Server B  …
+```
+
+**Frontend** — Vanilla JS (no framework), bundled with Vite. Single-page app with a client-side router. All UI state lives in one `state` object in `main.js`.
+
+**Backend** — Express serves the REST API and static files in production. A WebSocket connection streams live output from Ansible runs and SSH sessions to the browser.
+
+**Ansible** — Updates and custom playbooks are executed via `ansible-playbook` as a child process. Output is piped line by line over WebSocket to the terminal in the browser.
+
+**SSH Terminal** — The browser connects over WebSocket (`/ws/ssh`). The backend opens a real SSH session via the `ssh2` library and proxies stdin/stdout between the browser and the remote shell. Terminal resize events (SIGWINCH) are forwarded too.
+
+**System Monitoring** — A background poller SSHs into each server and runs shell commands (`free`, `df`, `uptime`, `uname`, …) to collect metrics. Results are cached in SQLite and served immediately; a fresh fetch runs in the background to keep data current without blocking the UI.
+
+**SSH Key** — On first start, an ED25519 key pair is generated and stored in `server/data/ssh/`. The public key can be deployed to a server directly from the UI (password-based, one-time).
+
+**Auth** — Single-password setup stored as a bcrypt hash in SQLite. Login returns a JWT. All API routes and WebSocket upgrades verify the token. Failed login attempts are rate-limited.
+
 ## Project Structure
 
 ```
