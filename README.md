@@ -16,7 +16,7 @@ Open **http://localhost:3001** — done.
 
 Data is stored in a Docker volume and survives restarts/updates.
 
-### Option B – Bare metal (Debian/Ubuntu)
+### Option B – Bare metal (Linux / macOS)
 
 ```bash
 git clone https://github.com/tobayashi-san/Shipyard.git
@@ -24,7 +24,7 @@ cd Shipyard
 bash install.sh
 ```
 
-Installs dependencies, builds the frontend, and registers a systemd service that starts automatically on boot.
+Detects your OS (Debian/Ubuntu, Arch, Fedora), installs dependencies, builds the frontend, and registers a systemd service that starts automatically on boot. The installer also offers to enable HTTPS.
 
 ---
 
@@ -54,14 +54,34 @@ Installs dependencies, builds the frontend, and registers a systemd service that
 
 > **No systemd?** `install.sh` detects this and prints the manual start command instead. You can then set up your own init (OpenRC, runit, …) or just run it in a `screen`/`tmux` session.
 
-## Security Note
+## HTTPS
 
-> **HTTPS is required for production use.**
->
-> The tool transmits an SSH password during key deployment as well as JWT tokens.
-> Without HTTPS, these can be intercepted on the network.
->
-> Recommendation: use nginx or Caddy as a reverse proxy with TLS termination.
+Shipyard supports native HTTPS via the `SSL_KEY` and `SSL_CERT` environment variables.
+When both are set, the server automatically switches to HTTPS (port 443 by default).
+
+**Docker** – uncomment the relevant lines in `docker-compose.yml`:
+
+```yaml
+ports:
+  - "443:443"
+environment:
+  - SSL_CERT=/certs/shipyard.crt
+  - SSL_KEY=/certs/shipyard.key
+volumes:
+  - /etc/ssl/certs/shipyard.crt:/certs/shipyard.crt:ro
+  - /etc/ssl/private/shipyard.key:/certs/shipyard.key:ro
+```
+
+**Bare metal** – `install.sh` offers to enable HTTPS during setup. It can generate a self-signed certificate automatically (via `openssl`) or accept existing certificate paths. The env vars are written into the systemd unit.
+
+**Manual** – set env vars directly:
+
+```bash
+SSL_KEY=/path/to/key.pem SSL_CERT=/path/to/cert.pem NODE_ENV=production node server/index.js
+```
+
+> Without HTTPS, JWT tokens and SSH passwords are transmitted in plaintext.
+> For production, use native HTTPS or terminate TLS via a reverse proxy (nginx, Caddy).
 
 ## First Start
 
@@ -103,7 +123,9 @@ Starts backend (port 3001) and Vite dev server (port 5173) simultaneously.
 
 | Variable | Default | Description |
 |---|---|---|
-| `PORT` | `3001` | Backend port |
+| `PORT` | `3001` / `443` | Backend port (443 when HTTPS is enabled) |
+| `SSL_KEY` | – | Path to TLS private key – enables HTTPS when set together with `SSL_CERT` |
+| `SSL_CERT` | – | Path to TLS certificate file |
 | `JWT_SECRET` | (auto, DB) | JWT signing secret – set explicitly in production |
 | `NODE_ENV` | – | `production` enables static file serving |
 | `ALLOWED_ORIGINS` | `localhost:3000,localhost:5173` | CORS whitelist (comma-separated) |
@@ -113,7 +135,7 @@ Starts backend (port 3001) and Vite dev server (port 5173) simultaneously.
 ```
 Browser
   │
-  │  HTTP / WebSocket
+  │  HTTP(S) / WebSocket (ws/wss)
   ▼
 ┌─────────────────────────────────────────┐
 │  Node.js + Express (Backend)            │
