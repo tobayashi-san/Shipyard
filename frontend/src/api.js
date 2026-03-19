@@ -1,4 +1,5 @@
 import { t } from './i18n.js';
+import { showToast } from './components/toast.js';
 
 const API_BASE = '/api';
 
@@ -32,10 +33,7 @@ class ApiClient {
 
     if (response.status === 401) {
       this.setToken(null);
-      // Lazy import to avoid circular deps – toast.js has no imports
-      import('./components/toast.js').then(({ showToast }) => {
-        showToast(t('api.sessionExpired'), 'warning');
-      });
+      showToast(t('api.sessionExpired'), 'warning');
       if (this._onUnauthorized) this._onUnauthorized();
       throw new Error(t('api.notSignedIn'));
     }

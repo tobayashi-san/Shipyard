@@ -1,8 +1,8 @@
-import { Terminal } from 'xterm';
+import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { api } from '../api.js';
 import { t } from '../i18n.js';
-import 'xterm/css/xterm.css';
+import '@xterm/xterm/css/xterm.css';
 
 export function openSshTerminal(server) {
   // Build overlay independently – no .modal-overlay conflict

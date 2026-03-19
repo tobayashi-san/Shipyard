@@ -12,4 +12,14 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          terminal: ['@xterm/xterm', '@xterm/addon-fit'],
+          editor:   ['codemirror', '@codemirror/lang-yaml', '@lezer/highlight'],
+        },
+      },
+    },
+  },
 });
