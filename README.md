@@ -91,6 +91,22 @@ SSL_KEY=/path/to/key.pem SSL_CERT=/path/to/cert.pem NODE_ENV=production node ser
 4. Add servers (optional: deploy SSH key directly via password)
 5. System info, updates, and containers are fetched automatically
 
+## Uninstall
+
+### Bare metal
+
+```bash
+bash uninstall.sh
+```
+
+Stops and removes the systemd service. Optionally deletes the data directory (database, SSH keys, certificates). The application files are not deleted — remove them manually afterwards if needed.
+
+### Docker
+
+```bash
+docker compose down -v   # -v also removes the data volume
+```
+
 ## Updating
 
 ### Docker
