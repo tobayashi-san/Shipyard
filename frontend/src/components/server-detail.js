@@ -9,6 +9,15 @@ function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// Docker returns CreatedAt as "2025-01-15 10:23:45 +0000 UTC" which new Date() can't parse
+function parseContainerDate(d) {
+  if (!d) return null;
+  // Normalize: "2025-01-15 10:23:45 +0000 UTC" → "2025-01-15T10:23:45+0000"
+  const cleaned = d.replace(' UTC', '').replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, '$1T$2');
+  const date = new Date(cleaned);
+  return isNaN(date.getTime()) ? null : date;
+}
+
 // Persists image update check results per server across container list refreshes
 const imageUpdateMaps = {};
 
@@ -478,7 +487,7 @@ function renderContainerRow(c, imageUpdateMap = {}) {
       <td><span class="mono">${esc(c.container_name)}</span></td>
       <td class="mono" style="color:var(--text-muted);font-size:11px;">${esc(c.image)}${updateBadge ? ' ' + updateBadge : ''}</td>
       <td><span style="font-size:12px;color:${isUp ? 'var(--online)' : 'var(--offline)'};">${esc(c.status || c.state)}</span></td>
-      <td style="font-size:11px;color:var(--text-muted);">${c.created_at_container ? new Date(c.created_at_container).toLocaleDateString() : ''}</td>
+      <td style="font-size:11px;color:var(--text-muted);">${parseContainerDate(c.created_at_container)?.toLocaleDateString() ?? ''}</td>
       <td style="white-space:nowrap;">
         <button class="btn btn-secondary btn-sm logs-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.showLogs')}"><i class="fas fa-file-alt"></i></button>
         <button class="btn btn-secondary btn-sm restart-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.containerRestarted')}"><i class="fas fa-sync-alt"></i></button>
