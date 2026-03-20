@@ -80,21 +80,27 @@
           local URL="https://${REGISTRY}/v2/${REPO}/manifests/${TAG}"
           local REMOTE="" TOKEN=""
 
+          extract_digest() {
+            grep -i -E '(docker-content-digest|oci-content-digest):' | awk '{print $2}' | tr -d '\r\n'
+          }
+
           if [ "$REGISTRY" = "registry-1.docker.io" ]; then
             TOKEN=$(curl -sf --connect-timeout 5 --max-time 10 \
               "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${REPO}:pull" \
               | grep -oP '"token"\s*:\s*"\K[^"]+' || echo "")
             [ -z "$TOKEN" ] && echo "${IMAGE}|unknown" && return
-            REMOTE=$(curl -sfI --connect-timeout 5 --max-time 10 \
+            REMOTE=$(curl -sf --connect-timeout 5 --max-time 10 \
               -H "Authorization: Bearer $TOKEN" \
-              -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
-              "$URL" | grep -i 'docker-content-digest:' | awk '{print $2}' | tr -d '\r\n')
+              -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json" \
+              -D - -o /dev/null \
+              "$URL" | extract_digest)
           else
             local RESP
-            RESP=$(curl -sfI --connect-timeout 5 --max-time 10 \
-              -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
+            RESP=$(curl -sf --connect-timeout 5 --max-time 10 \
+              -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json" \
+              -D - -o /dev/null \
               "$URL" 2>/dev/null)
-            REMOTE=$(echo "$RESP" | grep -i 'docker-content-digest:' | awk '{print $2}' | tr -d '\r\n')
+            REMOTE=$(echo "$RESP" | extract_digest)
             if [ -z "$REMOTE" ]; then
               local WWW REALM SERVICE SCOPE
               WWW=$(echo "$RESP" | grep -i 'www-authenticate:')
@@ -109,10 +115,11 @@
                 "${REALM}?service=${SERVICE}&scope=${SCOPE}" \
                 | grep -oP '"access_token"\s*:\s*"\K[^"]+' || echo "")
               [ -z "$TOKEN" ] && echo "${IMAGE}|unknown" && return
-              REMOTE=$(curl -sfI --connect-timeout 5 --max-time 10 \
+              REMOTE=$(curl -sf --connect-timeout 5 --max-time 10 \
                 -H "Authorization: Bearer $TOKEN" \
-                -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
-                "$URL" | grep -i 'docker-content-digest:' | awk '{print $2}' | tr -d '\r\n')
+                -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json" \
+                -D - -o /dev/null \
+                "$URL" | extract_digest)
             fi
           fi
 

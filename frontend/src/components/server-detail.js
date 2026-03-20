@@ -360,7 +360,7 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
     const allDown = data.containers.every(c => !c.status?.startsWith('Up'));
     html += `
       <tr class="group-header no-hover">
-        <td colspan="4">
+        <td colspan="5">
           <span style="display:inline-flex;align-items:center;gap:8px;">
             <i class="fas fa-layer-group" style="color:var(--accent);"></i>
             <strong>${esc(proj)}</strong>
