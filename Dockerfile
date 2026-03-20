@@ -25,6 +25,8 @@ COPY --from=builder /app/frontend/dist ./frontend/dist
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 
+RUN mkdir -p /app/.ansible/tmp && chown -R shipyard:shipyard /app/.ansible
+
 VOLUME ["/app/server/data"]
 EXPOSE 443
 ENV NODE_ENV=production
