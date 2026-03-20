@@ -360,7 +360,7 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
     const allDown = data.containers.every(c => !c.status?.startsWith('Up'));
     html += `
       <tr class="group-header no-hover">
-        <td colspan="4">
+        <td colspan="3">
           <span style="display:inline-flex;align-items:center;gap:8px;">
             <i class="fas fa-layer-group" style="color:var(--accent);"></i>
             <strong>${esc(proj)}</strong>
@@ -368,7 +368,6 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
             ${allDown ? `<span class="badge badge-offline" style="font-size:10px;">${t('common.offline')}</span>` : ''}
           </span>
         </td>
-        <td></td>
         <td style="white-space:nowrap;">
           <button class="btn btn-secondary btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="edit" title="${t('common.edit')}"><i class="fas fa-edit"></i></button>
           <button class="btn btn-secondary btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="pull" title="pull"><i class="fas fa-cloud-download-alt"></i></button>
@@ -382,7 +381,7 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
   }
 
   if (standalone.length > 0) {
-    html += `<tr class="group-header no-hover"><td colspan="6"><span style="display:inline-flex;align-items:center;gap:8px;"><i class="fas fa-cube" style="color:var(--text-muted);"></i><strong>Standalone</strong></span></td></tr>`;
+    html += `<tr class="group-header no-hover"><td colspan="5"><span style="display:inline-flex;align-items:center;gap:8px;"><i class="fas fa-cube" style="color:var(--text-muted);"></i><strong>Standalone</strong></span></td></tr>`;
     standalone.forEach(c => { html += renderContainerRow(c, imageUpdateMap); });
   }
 
