@@ -353,14 +353,14 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
   });
 
   let html = `<table class="data-table"><thead><tr>
-    <th style="width:8px;"></th><th>${t('common.name')}</th><th>${t('common.image')}</th><th>${t('common.status')}</th><th>${t('common.actions')}</th>
+    <th style="width:8px;"></th><th>${t('common.name')}</th><th>${t('common.image')}</th><th>${t('common.status')}</th><th>${t('det.checkUpdates')}</th><th>${t('common.actions')}</th>
   </tr></thead><tbody>`;
 
   for (const [proj, data] of Object.entries(stacks)) {
     const allDown = data.containers.every(c => !c.status?.startsWith('Up'));
     html += `
       <tr class="group-header no-hover">
-        <td colspan="3">
+        <td colspan="4">
           <span style="display:inline-flex;align-items:center;gap:8px;">
             <i class="fas fa-layer-group" style="color:var(--accent);"></i>
             <strong>${esc(proj)}</strong>
@@ -381,7 +381,7 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
   }
 
   if (standalone.length > 0) {
-    html += `<tr class="group-header no-hover"><td colspan="5"><span style="display:inline-flex;align-items:center;gap:8px;"><i class="fas fa-cube" style="color:var(--text-muted);"></i><strong>Standalone</strong></span></td></tr>`;
+    html += `<tr class="group-header no-hover"><td colspan="6"><span style="display:inline-flex;align-items:center;gap:8px;"><i class="fas fa-cube" style="color:var(--text-muted);"></i><strong>Standalone</strong></span></td></tr>`;
     standalone.forEach(c => { html += renderContainerRow(c, imageUpdateMap); });
   }
 
@@ -489,17 +489,20 @@ function renderContainerRow(c, imageUpdateMap = {}) {
   const isUp = c.status?.startsWith('Up');
   const dotCls = isUp ? 'online' : 'offline';
   const updateStatus = imageUpdateMap[c.image] || imageUpdateMap[c.image + ':latest'];
-  const updateBadge = updateStatus === 'update_available'
-    ? `<span class="badge badge-warning" style="font-size:10px;" title="${t('det.imageUpdateAvail')}"><i class="fas fa-arrow-up"></i> ${t('det.imageUpdateAvail')}</span>`
+  const updateCell = updateStatus === 'update_available'
+    ? `<span class="badge badge-warning" style="font-size:10px;"><i class="fas fa-arrow-up"></i> ${t('det.imageUpdateAvail')}</span>`
     : updateStatus === 'updated'
-    ? `<span class="badge badge-online" style="font-size:10px;" title="${t('det.imageUpdated')}"><i class="fas fa-check"></i> ${t('det.imageUpdated')}</span>`
-    : '';
+    ? `<span class="badge badge-online" style="font-size:10px;"><i class="fas fa-check"></i> ${t('det.imageUpdated')}</span>`
+    : updateStatus === 'up_to_date'
+    ? `<span style="font-size:11px;color:var(--text-muted);"><i class="fas fa-check"></i> ${t('det.imageUpToDate')}</span>`
+    : `<span style="font-size:11px;color:var(--text-muted);">—</span>`;
   return `
     <tr class="no-hover" style="padding-left:20px;">
       <td style="padding-left:24px;"><span class="status-dot ${dotCls}"></span></td>
       <td><span class="mono">${esc(c.container_name)}</span></td>
-      <td class="mono" style="color:var(--text-muted);font-size:11px;">${esc(c.image)}${updateBadge ? ' ' + updateBadge : ''}</td>
+      <td class="mono" style="color:var(--text-muted);font-size:11px;">${esc(c.image)}</td>
       <td><span style="font-size:12px;color:${isUp ? 'var(--online)' : 'var(--offline)'};">${esc(c.status || c.state)}</span></td>
+      <td>${updateCell}</td>
       <td style="white-space:nowrap;">
         <button class="btn btn-secondary btn-sm logs-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.showLogs')}"><i class="fas fa-file-alt"></i></button>
         <button class="btn btn-secondary btn-sm restart-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.containerRestarted')}"><i class="fas fa-sync-alt"></i></button>
