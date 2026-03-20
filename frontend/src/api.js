@@ -123,6 +123,7 @@ class ApiClient {
   getServerDocker(id, force = false) { return this.request(`/servers/${id}/docker${force ? '?force=1' : ''}`); }
   restartServerDocker(id, container) { return this.request(`/servers/${id}/docker/${container}/restart`, { method: 'POST' }); }
   getContainerLogs(id, container, tail = 200) { return this.request(`/servers/${id}/docker/${encodeURIComponent(container)}/logs?tail=${tail}`); }
+  checkImageUpdates(id) { return this.request(`/servers/${id}/docker/image-updates`); }
 
   // Compose
   getDockerCompose(id, path) { return this.request(`/servers/${id}/docker/compose?path=${encodeURIComponent(path)}`); }

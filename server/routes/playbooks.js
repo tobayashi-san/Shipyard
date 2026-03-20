@@ -58,7 +58,7 @@ router.post('/', (req, res) => {
 router.delete('/:filename', (req, res) => {
   try {
     const filename = path.basename(req.params.filename);
-    const INTERNAL = ['update.yml', 'gather-info.yml', 'gather-docker.yml', 'reboot.yml', 'setup-ssh.yml'];
+    const INTERNAL = ['update.yml', 'gather-info.yml', 'gather-docker.yml', 'check-image-updates.yml', 'reboot.yml', 'setup-ssh.yml'];
     if (INTERNAL.includes(filename)) return res.status(403).json({ error: 'Cannot delete internal playbook' });
     const filepath = path.join(PLAYBOOKS_DIR, filename);
     if (!filepath.startsWith(PLAYBOOKS_DIR + path.sep)) {

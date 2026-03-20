@@ -446,6 +446,29 @@ router.get('/:id/docker/:container/logs', async (req, res) => {
   }
 });
 
+// GET /api/servers/:id/docker/image-updates - Check for image updates
+router.get('/:id/docker/image-updates', async (req, res) => {
+  const server = db.servers.getById(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Server not found' });
+  try {
+    const result = await ansibleRunner.runPlaybook('check-image-updates.yml', server.name);
+    const jsonStart = result.stdout.indexOf('"msg": [');
+    if (jsonStart === -1) return res.json([]);
+    const jsonEnd = result.stdout.indexOf(']', jsonStart);
+    if (jsonEnd === -1) return res.json([]);
+    const jsonStr = result.stdout.substring(jsonStart + 7, jsonEnd + 1);
+    const updates = JSON.parse(jsonStr)
+      .filter(line => line && line.includes('|'))
+      .map(line => {
+        const [image, status] = line.split('|');
+        return { image: image.trim(), status: (status || 'unknown').trim() };
+      });
+    res.json(updates);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /api/servers/:id/docker/compose - Read docker-compose.yml
 router.get('/:id/docker/compose', async (req, res) => {
   try {

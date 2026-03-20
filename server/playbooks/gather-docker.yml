@@ -10,12 +10,32 @@
       changed_when: false
       failed_when: false
 
-    - name: Get all containers
+    - name: Get rootful containers
       shell: "{{ runtime_bin.stdout }} ps -a --format '{% raw %}{{.Names}}|{{.Image}}|{{.State}}|{{.Status}}|{{.CreatedAt}}|{{.Label \"com.docker.compose.project\"}}|{{.Label \"com.docker.compose.project.working_dir\"}}{% endraw %}'"
-      register: container_ps
+      register: rootful_ps
       when: runtime_bin.rc == 0 and runtime_bin.stdout != ''
       changed_when: false
+      failed_when: false
+
+    # Rootless Podman: each user has their own container namespace.
+    # Find users by their active Podman sockets under /run/user/<uid>/podman/.
+    - name: Find rootless podman user IDs
+      shell: "find /run/user -maxdepth 2 -name 'podman.sock' 2>/dev/null | sed 's|/run/user/||;s|/podman.*||'"
+      register: rootless_uids
+      changed_when: false
+      failed_when: false
+      when: "'podman' in (runtime_bin.stdout | default(''))"
+
+    - name: Get rootless containers per user
+      shell: >
+        XDG_RUNTIME_DIR=/run/user/{{ item }}
+        runuser -u $(getent passwd {{ item }} | cut -d: -f1) --
+        podman ps -a --format '{% raw %}{{.Names}}|{{.Image}}|{{.State}}|{{.Status}}|{{.CreatedAt}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.project.working_dir"}}{% endraw %}'
+      loop: "{{ rootless_uids.stdout_lines | default([]) }}"
+      register: rootless_ps
+      changed_when: false
+      failed_when: false
 
     - name: Display container info
       debug:
-        msg: "{{ container_ps.stdout_lines if container_ps.stdout_lines is defined else [] }}"
+        msg: "{{ (rootful_ps.stdout_lines | default([])) + (rootless_ps.results | default([]) | selectattr('stdout_lines', 'defined') | map(attribute='stdout_lines') | flatten) }}"

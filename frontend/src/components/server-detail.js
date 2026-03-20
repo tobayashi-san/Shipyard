@@ -9,6 +9,9 @@ function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// Persists image update check results per server across container list refreshes
+const imageUpdateMaps = {};
+
 // ============================================================
 // Server Detail – Tab-based flat admin panel layout
 // ============================================================
@@ -113,9 +116,14 @@ export async function renderServerDetail(serverId) {
         <div class="panel">
           <div class="section-header">
             <h3><i class="fas fa-cubes"></i> ${t('det.docker')}</h3>
-            <button class="btn btn-primary btn-sm" id="btn-add-compose-stack">
-              <i class="fas fa-plus"></i> ${t('det.newStack')}
-            </button>
+            <div class="flex-gap">
+              <button class="btn btn-secondary btn-sm" id="btn-check-image-updates">
+                <i class="fas fa-cloud-download-alt"></i> ${t('det.checkUpdates')}
+              </button>
+              <button class="btn btn-primary btn-sm" id="btn-add-compose-stack">
+                <i class="fas fa-plus"></i> ${t('det.newStack')}
+              </button>
+            </div>
           </div>
           <div id="docker-content">
             <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
@@ -310,11 +318,11 @@ async function loadServerInfo(serverId) {
 // ============================================================
 // Docker Tab
 // ============================================================
-function renderDockerData(serverId, containers) {
+function renderDockerData(serverId, containers, imageUpdateMap = {}) {
   const content = document.getElementById('docker-content');
   if (!content) return;
   if (!containers || containers.length === 0) {
-    content.innerHTML = `<div class="empty-state"><div class="empty-state-icon"><i class="fab fa-docker"></i></div><h3>${t('det.noContainers')}</h3><p>${t('det.noContainersHint')}</p></div>`;
+    content.innerHTML = `<div class="empty-state"><div class="empty-state-icon"><i class="fas fa-cubes"></i></div><h3>${t('det.noContainers')}</h3><p>${t('det.noContainersHint')}</p></div>`;
     setupComposeBtn(serverId);
     return;
   }
@@ -357,13 +365,13 @@ function renderDockerData(serverId, containers) {
         </td>
       </tr>`;
     data.containers.forEach(c => {
-      if (c.container_name !== '[Stack Offline]') html += renderContainerRow(c);
+      if (c.container_name !== '[Stack Offline]') html += renderContainerRow(c, imageUpdateMap);
     });
   }
 
   if (standalone.length > 0) {
     html += `<tr class="group-header no-hover"><td colspan="6"><span style="display:inline-flex;align-items:center;gap:8px;"><i class="fas fa-cube" style="color:var(--text-muted);"></i><strong>Standalone</strong></span></td></tr>`;
-    standalone.forEach(c => { html += renderContainerRow(c); });
+    standalone.forEach(c => { html += renderContainerRow(c, imageUpdateMap); });
   }
 
   html += `</tbody></table>
@@ -428,6 +436,15 @@ function renderDockerData(serverId, containers) {
   });
 
   setupComposeBtn(serverId);
+  setupCheckUpdatesBtn(
+    serverId,
+    () => imageUpdateMaps[serverId] || {},
+    (map) => { imageUpdateMaps[serverId] = map; },
+    () => {
+      const containers = Array.from(document.querySelectorAll('#docker-content tr[class]')); // trigger re-render
+      loadDockerContainers(serverId);
+    }
+  );
 }
 
 async function loadDockerContainers(serverId) {
@@ -435,10 +452,10 @@ async function loadDockerContainers(serverId) {
   if (!content) return;
   try {
     const containers = await api.getServerDocker(serverId);
-    renderDockerData(serverId, containers);
+    renderDockerData(serverId, containers, imageUpdateMaps[serverId] || {});
     if (containers?.length > 0 && containers[0]?._cached) {
       api.getServerDocker(serverId, true)
-        .then(fresh => { if (document.getElementById('docker-content')) renderDockerData(serverId, fresh); })
+        .then(fresh => { if (document.getElementById('docker-content')) renderDockerData(serverId, fresh, imageUpdateMaps[serverId] || {}); })
         .catch(() => {});
     }
   } catch (error) {
@@ -446,14 +463,20 @@ async function loadDockerContainers(serverId) {
   }
 }
 
-function renderContainerRow(c) {
+function renderContainerRow(c, imageUpdateMap = {}) {
   const isUp = c.status?.startsWith('Up');
   const dotCls = isUp ? 'online' : 'offline';
+  const updateStatus = imageUpdateMap[c.image] || imageUpdateMap[c.image + ':latest'];
+  const updateBadge = updateStatus === 'update_available'
+    ? `<span class="badge badge-warning" style="font-size:10px;" title="${t('det.imageUpdateAvail')}"><i class="fas fa-arrow-up"></i> ${t('det.imageUpdateAvail')}</span>`
+    : updateStatus === 'updated'
+    ? `<span class="badge badge-online" style="font-size:10px;" title="${t('det.imageUpdated')}"><i class="fas fa-check"></i> ${t('det.imageUpdated')}</span>`
+    : '';
   return `
     <tr class="no-hover" style="padding-left:20px;">
       <td style="padding-left:24px;"><span class="status-dot ${dotCls}"></span></td>
       <td><span class="mono">${esc(c.container_name)}</span></td>
-      <td class="mono" style="color:var(--text-muted);font-size:11px;">${esc(c.image)}</td>
+      <td class="mono" style="color:var(--text-muted);font-size:11px;">${esc(c.image)}${updateBadge ? ' ' + updateBadge : ''}</td>
       <td><span style="font-size:12px;color:${isUp ? 'var(--online)' : 'var(--offline)'};">${esc(c.status || c.state)}</span></td>
       <td style="font-size:11px;color:var(--text-muted);">${c.created_at_container ? new Date(c.created_at_container).toLocaleDateString() : ''}</td>
       <td style="white-space:nowrap;">
@@ -544,6 +567,28 @@ function setupComposeBtn(serverId) {
     document.dispatchEvent(new CustomEvent('open-compose-modal', {
       detail: { serverId, project: 'neuer-stack', dir: '/opt/stacks/neuer-stack', isNew: true }
     }));
+  });
+}
+
+function setupCheckUpdatesBtn(serverId, getImageUpdateMap, setImageUpdateMap, rerenderFn) {
+  const btn = document.getElementById('btn-check-image-updates');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-sm"></span> ${t('det.checkingUpdates')}`;
+    try {
+      const results = await api.checkImageUpdates(serverId);
+      const map = {};
+      results.forEach(r => { map[r.image] = r.status; });
+      setImageUpdateMap(map);
+      rerenderFn();
+    } catch (err) {
+      showToast(t('common.errorPrefix', { msg: err.message }), 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = orig;
+    }
   });
 }
 

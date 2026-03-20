@@ -1,0 +1,69 @@
+---
+- name: Check Image Updates
+  hosts: all
+  become: yes
+  gather_facts: no
+  tasks:
+    - name: Detect container runtime (docker or podman)
+      shell: "command -v docker 2>/dev/null || command -v podman 2>/dev/null"
+      register: runtime_bin
+      changed_when: false
+      failed_when: false
+
+    - name: Get rootful container images
+      shell: "{{ runtime_bin.stdout }} ps -a --format '{% raw %}{{.Image}}{% endraw %}' 2>/dev/null | sort -u"
+      register: rootful_images
+      when: runtime_bin.rc == 0 and runtime_bin.stdout != ''
+      changed_when: false
+      failed_when: false
+
+    - name: Find rootless podman user IDs
+      shell: "find /run/user -maxdepth 2 -name 'podman.sock' 2>/dev/null | sed 's|/run/user/||;s|/podman.*||'"
+      register: rootless_uids
+      changed_when: false
+      failed_when: false
+      when: "'podman' in (runtime_bin.stdout | default(''))"
+
+    - name: Get rootless container images per user
+      shell: >
+        XDG_RUNTIME_DIR=/run/user/{{ item }}
+        runuser -u $(getent passwd {{ item }} | cut -d: -f1) --
+        podman ps -a --format '{% raw %}{{.Image}}{% endraw %}' 2>/dev/null
+      loop: "{{ rootless_uids.stdout_lines | default([]) }}"
+      register: rootless_images
+      changed_when: false
+      failed_when: false
+
+    - name: Check each image for updates
+      shell: |
+        RUNTIME="{{ runtime_bin.stdout }}"
+        IMAGE="{{ item }}"
+        [[ "$IMAGE" != *:* ]] && IMAGE="${IMAGE}:latest"
+
+        if command -v skopeo >/dev/null 2>&1; then
+          # Non-destructive: compare local digest with registry (no pull needed)
+          LOCAL=$($RUNTIME image inspect "$IMAGE" --format '{% raw %}{{range .RepoDigests}}{{println .}}{{end}}{% endraw %}' 2>/dev/null | grep -oP '(?<=@)sha256:[a-f0-9]+' | head -1 || echo "")
+          REMOTE=$(skopeo inspect "docker://$IMAGE" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('Digest',''))" 2>/dev/null || echo "")
+          if [ -z "$REMOTE" ]; then STATUS="unknown"
+          elif [ -z "$LOCAL" ]; then STATUS="unknown"
+          elif [ "$LOCAL" = "$REMOTE" ]; then STATUS="up_to_date"
+          else STATUS="update_available"; fi
+        else
+          # Fallback: pull and compare image IDs
+          BEFORE=$($RUNTIME image inspect "$IMAGE" --format '{% raw %}{{.Id}}{% endraw %}' 2>/dev/null || echo "")
+          $RUNTIME pull -q "$IMAGE" >/dev/null 2>&1 || true
+          AFTER=$($RUNTIME image inspect "$IMAGE" --format '{% raw %}{{.Id}}{% endraw %}' 2>/dev/null || echo "")
+          if [ -z "$BEFORE" ]; then STATUS="unknown"
+          elif [ "$BEFORE" = "$AFTER" ]; then STATUS="up_to_date"
+          else STATUS="updated"; fi
+        fi
+        echo "$IMAGE|$STATUS"
+      loop: "{{ ((rootful_images.stdout_lines | default([])) + (rootless_images.results | default([]) | selectattr('stdout_lines', 'defined') | map(attribute='stdout_lines') | flatten)) | unique | list }}"
+      register: update_results
+      changed_when: false
+      failed_when: false
+      when: runtime_bin.rc == 0
+
+    - name: Display update results
+      debug:
+        msg: "{{ update_results.results | default([]) | selectattr('stdout', 'defined') | selectattr('stdout', 'ne', '') | map(attribute='stdout') | list }}"
