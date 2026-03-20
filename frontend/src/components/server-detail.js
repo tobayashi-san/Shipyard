@@ -639,6 +639,10 @@ function renderUpdatesData(updates, customTasks = [], serverId = null) {
   const clean = (updates || []).map(({ _cached, ...u }) => u);
   if (clean.length === 0) {
     el.innerHTML = `<div style="padding:16px;display:flex;align-items:center;gap:8px;color:var(--online);font-size:13px;"><i class="fas fa-check-circle"></i> ${t('det.allUpToDate')}${cached ? ` <span style="color:var(--text-muted);font-size:11px;">(${t('det.cached')})</span>` : ''}</div>`;
+    if (serverId) {
+      el.insertAdjacentHTML('beforeend', renderCustomTasksHtml(customTasks));
+      setupCustomTaskListeners(serverId);
+    }
     return;
   }
   const real   = clean.filter(u => !u.phased);
