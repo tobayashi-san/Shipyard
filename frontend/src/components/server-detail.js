@@ -710,7 +710,7 @@ function renderCustomTasksHtml(customTasks) {
   const emptyRow = `<tr class="no-hover"><td colspan="6" style="color:var(--text-muted);font-size:13px;padding:12px 16px;">${t('det.noCustomTasks')}</td></tr>`;
 
   return `
-    <div class="section-header" style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px;">
+    <div class="section-header" style="margin-top:32px;border-top:1px solid var(--border);padding-top:20px;">
       <h3><i class="fas fa-cog"></i> ${t('det.customUpdates')}</h3>
       <button class="btn btn-primary btn-sm" id="btn-add-custom-task"><i class="fas fa-plus"></i> ${t('det.addTask')}</button>
     </div>
@@ -806,18 +806,24 @@ function showCustomTaskModal(serverId, task) {
             <option value="script" ${(!task || task.type === 'script') ? 'selected' : ''}>${t('det.taskTypeScript')}</option>
             <option value="github" ${task?.type === 'github' ? 'selected' : ''}>${t('det.taskTypeGithub')}</option>
           </select>
+          <div id="ctm-type-desc" style="margin-top:6px;font-size:12px;color:var(--text-muted);line-height:1.4;">
+            ${task?.type === 'github' ? t('det.taskTypeGithubDesc') : t('det.taskTypeScriptDesc')}
+          </div>
         </div>
         <div class="form-group" id="ctm-github-row" style="${task?.type === 'github' ? '' : 'display:none;'}">
           <label class="form-label">${t('det.taskGithubRepo')}</label>
-          <input class="form-input" id="ctm-github-repo" value="${esc(task?.github_repo || '')}" placeholder="immich-app/immich">
+          <input class="form-input mono" id="ctm-github-repo" value="${esc(task?.github_repo || '')}" placeholder="immich-app/immich">
+          <div style="margin-top:4px;font-size:11px;color:var(--text-muted);">${t('det.taskGithubRepoHint')}</div>
         </div>
         <div class="form-group">
-          <label class="form-label">${t('det.taskCheckCommand')} <span style="color:var(--text-muted);font-size:11px;">${t('det.taskCheckCommandHint')}</span></label>
-          <input class="form-input mono" id="ctm-check-cmd" value="${esc(task?.check_command || '')}" placeholder="immich version --json | jq -r .version">
+          <label class="form-label">${t('det.taskCheckCommand')}</label>
+          <input class="form-input mono" id="ctm-check-cmd" value="${esc(task?.check_command || '')}" placeholder="immich --version">
+          <div style="margin-top:4px;font-size:11px;color:var(--text-muted);">${t('det.taskCheckCommandHint')}</div>
         </div>
         <div class="form-group">
-          <label class="form-label">${t('det.taskUpdateCommand')} <span style="color:var(--text-muted);font-size:11px;">${t('det.taskUpdateCommandHint')}</span></label>
+          <label class="form-label">${t('det.taskUpdateCommand')} <span style="color:var(--danger);font-size:11px;">*</span></label>
           <input class="form-input mono" id="ctm-update-cmd" value="${esc(task?.update_command || '')}" placeholder="https://get.glennr.nl/unifi/update/unifi-update.sh">
+          <div style="margin-top:4px;font-size:11px;color:var(--text-muted);">${t('det.taskUpdateCommandHint')}</div>
         </div>
       </div>
       <div class="modal-footer">
@@ -829,7 +835,9 @@ function showCustomTaskModal(serverId, task) {
   document.body.appendChild(overlay);
 
   document.getElementById('ctm-type').addEventListener('change', e => {
-    document.getElementById('ctm-github-row').style.display = e.target.value === 'github' ? '' : 'none';
+    const isGithub = e.target.value === 'github';
+    document.getElementById('ctm-github-row').style.display = isGithub ? '' : 'none';
+    document.getElementById('ctm-type-desc').textContent = isGithub ? t('det.taskTypeGithubDesc') : t('det.taskTypeScriptDesc');
   });
 
   const close = () => overlay.remove();
