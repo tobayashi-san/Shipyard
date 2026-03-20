@@ -4,6 +4,7 @@ const db = require('../db');
 const sshManager = require('../services/ssh-manager');
 const systemInfo = require('../services/system-info');
 const ansibleRunner = require('../services/ansible-runner');
+const { parseImageUpdateOutput } = require('../utils/parse-image-updates');
 
 // GET /api/servers - List all servers
 router.get('/', (req, res) => {
@@ -445,22 +446,6 @@ router.get('/:id/docker/:container/logs', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
-function parseImageUpdateOutput(stdout) {
-  const jsonStart = stdout.indexOf('"msg": [');
-  if (jsonStart === -1) return [];
-  const jsonEnd = stdout.indexOf(']', jsonStart);
-  if (jsonEnd === -1) return [];
-  const jsonStr = stdout.substring(jsonStart + 7, jsonEnd + 1);
-  try {
-    return JSON.parse(jsonStr)
-      .filter(line => line && line.includes('|'))
-      .map(line => {
-        const [image, status] = line.split('|');
-        return { image: image.trim(), status: (status || 'unknown').trim() };
-      });
-  } catch { return []; }
-}
 
 // GET /api/servers/:id/docker/image-updates - Check for image updates
 router.get('/:id/docker/image-updates', async (req, res) => {

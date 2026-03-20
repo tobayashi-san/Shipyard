@@ -434,6 +434,11 @@ module.exports = {
       if (!row) return null;
       try { return JSON.parse(row.results_json); } catch { return []; }
     },
+    getWithMeta: (serverId) => {
+      const row = db.prepare('SELECT * FROM docker_image_updates_cache WHERE server_id = ?').get(serverId);
+      if (!row) return null;
+      try { return { results: JSON.parse(row.results_json), updated_at: row.updated_at }; } catch { return null; }
+    },
     set: (serverId, results) => {
       db.prepare(`
         INSERT INTO docker_image_updates_cache (server_id, results_json, updated_at)

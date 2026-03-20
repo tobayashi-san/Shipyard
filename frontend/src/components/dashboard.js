@@ -194,7 +194,7 @@ function serverHealthRow(s) {
       <td style="font-size:12px;color:var(--text-muted);">${uptime}</td>
       <td style="font-size:12px;">${s.containers_running > 0 ? `<span style="color:var(--online);">${s.containers_running}</span><span style="color:var(--text-muted);">/${s.containers_total}</span>` : '<span style="color:var(--text-muted);">—</span>'}</td>
       <td>${s.updates_count > 0 ? `<span class="badge badge-warning" style="font-size:10px;">${s.updates_count}</span>` : '<span style="color:var(--text-muted);font-size:12px;">—</span>'}</td>
-      <td>${s.image_updates_count > 0 ? `<span class="badge badge-warning" style="font-size:10px;"><i class="fas fa-cube"></i> ${s.image_updates_count}</span>` : '<span style="color:var(--text-muted);font-size:12px;">—</span>'}</td>
+      <td>${imageUpdatesCell(s)}</td>
     </tr>
   `;
 }
@@ -210,6 +210,19 @@ function miniBar(pct) {
       <span style="font-family:var(--font-mono);font-size:11px;width:30px;">${pct}%</span>
     </div>
   `;
+}
+
+function imageUpdatesCell(s) {
+  if (s.image_updates_count === null) {
+    return `<span style="color:var(--text-muted);font-size:11px;" title="${t('dash.imageUpdatesNeverChecked')}">–</span>`;
+  }
+  const checkedAt = s.image_updates_checked_at
+    ? t('dash.imageUpdatesCheckedAt', { time: new Date(s.image_updates_checked_at).toLocaleString(undefined, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) })
+    : '';
+  if (s.image_updates_count > 0) {
+    return `<span class="badge badge-warning" style="font-size:10px;" title="${checkedAt}"><i class="fas fa-cube"></i> ${s.image_updates_count}</span>`;
+  }
+  return `<span style="color:var(--text-muted);font-size:11px;" title="${checkedAt}"><i class="fas fa-check" style="color:var(--online);"></i></span>`;
 }
 
 function formatUptime(seconds) {
