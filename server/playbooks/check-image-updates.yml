@@ -10,130 +10,136 @@
       changed_when: false
       failed_when: false
 
-    - name: Get rootful container images
+    - name: Collect all unique container images and check for updates in parallel
       shell: |
         RUNTIME="{{ runtime_bin.stdout }}"
-        $RUNTIME ps -a --format '{% raw %}{{.Names}}{% endraw %}' 2>/dev/null | while read -r name; do
+
+        # Collect images from rootful containers
+        resolve_image() {
+          local name="$1" img tagged
           img=$($RUNTIME inspect "$name" --format '{% raw %}{{.Config.Image}}{% endraw %}' 2>/dev/null || echo "")
           if echo "$img" | grep -qP '^[a-f0-9]{12}$|^sha256:[a-f0-9]+$'; then
             tagged=$($RUNTIME image inspect "$img" --format '{% raw %}{{range .RepoTags}}{{println .}}{{end}}{% endraw %}' 2>/dev/null | head -1)
             [ -n "$tagged" ] && img="$tagged"
           fi
-          [ -n "$img" ] && echo "$img"
-        done | sort -u
-      register: rootful_images
-      when: runtime_bin.rc == 0 and runtime_bin.stdout != ''
-      changed_when: false
-      failed_when: false
-
-    - name: Find rootless podman user IDs
-      shell: "find /run/user -maxdepth 2 -name 'podman.sock' 2>/dev/null | sed 's|/run/user/||;s|/podman.*||'"
-      register: rootless_uids
-      changed_when: false
-      failed_when: false
-      when: "'podman' in (runtime_bin.stdout | default(''))"
-
-    - name: Get rootless container images per user
-      shell: |
-        UID_VAL="{{ item }}"
-        USERNAME=$(getent passwd "$UID_VAL" | cut -d: -f1)
-        XDG_RUNTIME_DIR=/run/user/$UID_VAL runuser -u "$USERNAME" -- \
-          bash -c 'podman ps -a --format "{{.Names}}" | while read -r name; do
-            podman inspect "$name" --format "{{.Config.Image}}" 2>/dev/null
-          done | sort -u'
-      loop: "{{ rootless_uids.stdout_lines | default([]) }}"
-      register: rootless_images
-      changed_when: false
-      failed_when: false
-
-    - name: Check each image for updates
-      shell: |
-        set -e
-        RUNTIME="{{ runtime_bin.stdout }}"
-        IMAGE="{{ item }}"
-        [[ "$IMAGE" != *:* ]] && IMAGE="${IMAGE}:latest"
-
-        TAG="${IMAGE##*:}"
-        IMAGE_NOTAG="${IMAGE%:*}"
-
-        # Determine registry and repository path
-        FIRST=$(echo "$IMAGE_NOTAG" | cut -d/ -f1)
-        if echo "$FIRST" | grep -qP '\.|:'; then
-          REGISTRY="$FIRST"
-          REPO=$(echo "$IMAGE_NOTAG" | cut -d/ -f2-)
-        elif echo "$IMAGE_NOTAG" | grep -q '/'; then
-          REGISTRY="registry-1.docker.io"
-          REPO="$IMAGE_NOTAG"
-        else
-          REGISTRY="registry-1.docker.io"
-          REPO="library/$IMAGE_NOTAG"
-        fi
-
-        ACCEPT='-H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json"'
-
-        get_digest_with_token() {
-          local URL="$1" TOKEN="$2"
-          curl -sfI -H "Authorization: Bearer $TOKEN" \
-            -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
-            "$URL" | grep -i 'docker-content-digest:' | awk '{print $2}' | tr -d '\r\n'
+          echo "${img:-unknown}"
         }
 
-        get_remote_digest() {
+        mapfile -t IMAGES < <(
+          $RUNTIME ps -a --format '{% raw %}{{.Names}}{% endraw %}' 2>/dev/null | while read -r name; do
+            resolve_image "$name"
+          done | sort -u
+        )
+
+        # Also collect from rootless podman users
+        for sock in /run/user/*/podman/podman.sock; do
+          [ -e "$sock" ] || continue
+          UID_VAL=$(echo "$sock" | grep -oP '/run/user/\K[0-9]+')
+          USERNAME=$(getent passwd "$UID_VAL" | cut -d: -f1 2>/dev/null)
+          [ -z "$USERNAME" ] && continue
+          while read -r name; do
+            img=$(XDG_RUNTIME_DIR=/run/user/$UID_VAL runuser -u "$USERNAME" -- \
+              podman inspect "$name" --format '{% raw %}{{.Config.Image}}{% endraw %}' 2>/dev/null || echo "")
+            if echo "$img" | grep -qP '^[a-f0-9]{12}$|^sha256:[a-f0-9]+$'; then
+              tagged=$(XDG_RUNTIME_DIR=/run/user/$UID_VAL runuser -u "$USERNAME" -- \
+                podman image inspect "$img" --format '{% raw %}{{range .RepoTags}}{{println .}}{{end}}{% endraw %}' 2>/dev/null | head -1)
+              [ -n "$tagged" ] && img="$tagged"
+            fi
+            [ -n "$img" ] && echo "$img"
+          done < <(XDG_RUNTIME_DIR=/run/user/$UID_VAL runuser -u "$USERNAME" -- \
+            podman ps -a --format '{% raw %}{{.Names}}{% endraw %}' 2>/dev/null)
+        done | sort -u >> /tmp/_shipyard_extra_images_$$ 2>/dev/null || true
+
+        if [ -f /tmp/_shipyard_extra_images_$$ ]; then
+          mapfile -t EXTRA < /tmp/_shipyard_extra_images_$$
+          rm -f /tmp/_shipyard_extra_images_$$
+          IMAGES=("${IMAGES[@]}" "${EXTRA[@]}")
+        fi
+
+        # Registry API check function (no pull, no skopeo needed)
+        check_image() {
+          local IMAGE="$1"
+          [[ "$IMAGE" != *:* ]] && IMAGE="${IMAGE}:latest"
+          local TAG="${IMAGE##*:}"
+          local IMAGE_NOTAG="${IMAGE%:*}"
+          local REGISTRY REPO
+
+          local FIRST=$(echo "$IMAGE_NOTAG" | cut -d/ -f1)
+          if echo "$FIRST" | grep -qP '\.|:'; then
+            REGISTRY="$FIRST"
+            REPO=$(echo "$IMAGE_NOTAG" | cut -d/ -f2-)
+          elif echo "$IMAGE_NOTAG" | grep -q '/'; then
+            REGISTRY="registry-1.docker.io"
+            REPO="$IMAGE_NOTAG"
+          else
+            REGISTRY="registry-1.docker.io"
+            REPO="library/$IMAGE_NOTAG"
+          fi
+
+          local ACCEPT='-H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json"'
           local URL="https://${REGISTRY}/v2/${REPO}/manifests/${TAG}"
+          local REMOTE="" TOKEN=""
 
           if [ "$REGISTRY" = "registry-1.docker.io" ]; then
-            # Docker Hub requires a bearer token
-            TOKEN=$(curl -sf "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${REPO}:pull" \
+            TOKEN=$(curl -sf --connect-timeout 5 --max-time 10 \
+              "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${REPO}:pull" \
               | grep -oP '"token"\s*:\s*"\K[^"]+' || echo "")
-            [ -z "$TOKEN" ] && echo "" && return
-            get_digest_with_token "$URL" "$TOKEN"
+            [ -z "$TOKEN" ] && echo "${IMAGE}|unknown" && return
+            REMOTE=$(curl -sfI --connect-timeout 5 --max-time 10 \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
+              "$URL" | grep -i 'docker-content-digest:' | awk '{print $2}' | tr -d '\r\n')
           else
-            # Try anonymous first
-            RESP=$(curl -sfI \
+            local RESP
+            RESP=$(curl -sfI --connect-timeout 5 --max-time 10 \
               -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
               "$URL" 2>/dev/null)
-            DIGEST=$(echo "$RESP" | grep -i 'docker-content-digest:' | awk '{print $2}' | tr -d '\r\n')
-            if [ -n "$DIGEST" ]; then echo "$DIGEST"; return; fi
+            REMOTE=$(echo "$RESP" | grep -i 'docker-content-digest:' | awk '{print $2}' | tr -d '\r\n')
+            if [ -z "$REMOTE" ]; then
+              local WWW REALM SERVICE SCOPE
+              WWW=$(echo "$RESP" | grep -i 'www-authenticate:')
+              REALM=$(echo "$WWW" | grep -oP 'realm="\K[^"]+')
+              [ -z "$REALM" ] && echo "${IMAGE}|unknown" && return
+              SERVICE=$(echo "$WWW" | grep -oP 'service="\K[^"]+')
+              SCOPE=$(echo "$WWW" | grep -oP 'scope="\K[^"]+')
+              TOKEN=$(curl -sf --connect-timeout 5 --max-time 10 \
+                "${REALM}?service=${SERVICE}&scope=${SCOPE}" \
+                | grep -oP '"token"\s*:\s*"\K[^"]+' || \
+                  curl -sf --connect-timeout 5 --max-time 10 \
+                "${REALM}?service=${SERVICE}&scope=${SCOPE}" \
+                | grep -oP '"access_token"\s*:\s*"\K[^"]+' || echo "")
+              [ -z "$TOKEN" ] && echo "${IMAGE}|unknown" && return
+              REMOTE=$(curl -sfI --connect-timeout 5 --max-time 10 \
+                -H "Authorization: Bearer $TOKEN" \
+                -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
+                "$URL" | grep -i 'docker-content-digest:' | awk '{print $2}' | tr -d '\r\n')
+            fi
+          fi
 
-            # Handle WWW-Authenticate challenge (e.g. ghcr.io, lscr.io)
-            WWW=$(echo "$RESP" | grep -i 'www-authenticate:')
-            REALM=$(echo "$WWW" | grep -oP 'realm="\K[^"]+')
-            [ -z "$REALM" ] && echo "" && return
-            SERVICE=$(echo "$WWW" | grep -oP 'service="\K[^"]+')
-            SCOPE=$(echo "$WWW" | grep -oP 'scope="\K[^"]+')
-            TOKEN=$(curl -sf "${REALM}?service=${SERVICE}&scope=${SCOPE}" \
-              | grep -oP '"token"\s*:\s*"\K[^"]+' || \
-                curl -sf "${REALM}?service=${SERVICE}&scope=${SCOPE}" \
-              | grep -oP '"access_token"\s*:\s*"\K[^"]+' || echo "")
-            [ -z "$TOKEN" ] && echo "" && return
-            get_digest_with_token "$URL" "$TOKEN"
+          local LOCAL
+          LOCAL=$($RUNTIME image inspect "$IMAGE" \
+            --format '{% raw %}{{range .RepoDigests}}{{println .}}{{end}}{% endraw %}' 2>/dev/null \
+            | grep -oP '(?<=@)sha256:[a-f0-9]+' | head -1 || echo "")
+
+          [ -z "$LOCAL" ] && LOCAL="none"
+          [ -z "$REMOTE" ] && REMOTE="unknown"
+
+          if   [ "$LOCAL" = "none" ];     then echo "${IMAGE}|unknown"
+          elif [ "$REMOTE" = "unknown" ]; then echo "${IMAGE}|unknown"
+          elif [ "$LOCAL" = "$REMOTE" ];  then echo "${IMAGE}|up_to_date"
+          else                                 echo "${IMAGE}|update_available"
           fi
         }
 
-        # Prefer skopeo if available, otherwise use curl registry API
-        if command -v skopeo >/dev/null 2>&1; then
-          REMOTE=$(skopeo inspect "docker://$IMAGE" 2>/dev/null \
-            | grep -oP '"Digest"\s*:\s*"\K[^"]+' | head -1 || echo "")
-        elif command -v curl >/dev/null 2>&1; then
-          REMOTE=$(get_remote_digest)
-        fi
-
-        # Get local digest from image store
-        LOCAL=$($RUNTIME image inspect "$IMAGE" \
-          --format '{% raw %}{{range .RepoDigests}}{{println .}}{{end}}{% endraw %}' 2>/dev/null \
-          | grep -oP '(?<=@)sha256:[a-f0-9]+' | head -1 || echo "")
-
-        [ -z "$LOCAL" ] && LOCAL="none"
-        [ -z "$REMOTE" ] && REMOTE="unknown"
-
-        if   [ "$LOCAL" = "none" ];    then STATUS="unknown"
-        elif [ "$REMOTE" = "unknown" ]; then STATUS="unknown"
-        elif [ "$LOCAL" = "$REMOTE" ]; then STATUS="up_to_date"
-        else STATUS="update_available"
-        fi
-
-        echo "$IMAGE|$STATUS"
-      loop: "{{ ((rootful_images.stdout_lines | default([])) + (rootless_images.results | default([]) | selectattr('stdout_lines', 'defined') | map(attribute='stdout_lines') | flatten)) | unique | list }}"
+        # Run all checks in parallel
+        TMPDIR_RESULTS=$(mktemp -d)
+        for IMAGE in "${IMAGES[@]}"; do
+          [ -z "$IMAGE" ] && continue
+          (check_image "$IMAGE" > "$TMPDIR_RESULTS/$(echo "$IMAGE" | tr '/:' '__')") &
+        done
+        wait
+        cat "$TMPDIR_RESULTS"/* 2>/dev/null | sort
+        rm -rf "$TMPDIR_RESULTS"
       register: update_results
       changed_when: false
       failed_when: false
@@ -141,4 +147,4 @@
 
     - name: Display update results
       debug:
-        msg: "{{ update_results.results | default([]) | selectattr('stdout', 'defined') | selectattr('stdout', 'ne', '') | map(attribute='stdout') | list }}"
+        msg: "{{ update_results.stdout_lines | default([]) }}"
