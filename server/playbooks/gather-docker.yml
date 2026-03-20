@@ -11,7 +11,12 @@
       failed_when: false
 
     - name: Get rootful containers
-      shell: "{{ runtime_bin.stdout }} ps -a --format '{% raw %}{{.Names}}|{{.Image}}|{{.State}}|{{.Status}}|{{.CreatedAt}}|{{.Label \"com.docker.compose.project\"}}|{{.Label \"com.docker.compose.project.working_dir\"}}{% endraw %}'"
+      shell: |
+        RUNTIME="{{ runtime_bin.stdout }}"
+        $RUNTIME ps -a --format '{% raw %}{{.Names}}|{{.State}}|{{.Status}}|{{.CreatedAt}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.project.working_dir"}}{% endraw %}' | while IFS='|' read -r name state status created proj dir; do
+          img=$($RUNTIME inspect "$name" --format '{{.Config.Image}}' 2>/dev/null || echo "unknown")
+          printf '%s|%s|%s|%s|%s|%s|%s\n' "$name" "$img" "$state" "$status" "$created" "$proj" "$dir"
+        done
       register: rootful_ps
       when: runtime_bin.rc == 0 and runtime_bin.stdout != ''
       changed_when: false
@@ -27,10 +32,14 @@
       when: "'podman' in (runtime_bin.stdout | default(''))"
 
     - name: Get rootless containers per user
-      shell: >
-        XDG_RUNTIME_DIR=/run/user/{{ item }}
-        runuser -u $(getent passwd {{ item }} | cut -d: -f1) --
-        podman ps -a --format '{% raw %}{{.Names}}|{{.Image}}|{{.State}}|{{.Status}}|{{.CreatedAt}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.project.working_dir"}}{% endraw %}'
+      shell: |
+        UID_VAL="{{ item }}"
+        USERNAME=$(getent passwd "$UID_VAL" | cut -d: -f1)
+        XDG_RUNTIME_DIR=/run/user/$UID_VAL runuser -u "$USERNAME" -- \
+          bash -c 'podman ps -a --format "{{.Names}}|{{.State}}|{{.Status}}|{{.CreatedAt}}|{{.Label \"com.docker.compose.project\"}}|{{.Label \"com.docker.compose.project.working_dir\"}}" | while IFS="|" read -r name state status created proj dir; do
+            img=$(podman inspect "$name" --format "{{.Config.Image}}" 2>/dev/null || echo "unknown")
+            printf "%s|%s|%s|%s|%s|%s|%s\n" "$name" "$img" "$state" "$status" "$created" "$proj" "$dir"
+          done'
       loop: "{{ rootless_uids.stdout_lines | default([]) }}"
       register: rootless_ps
       changed_when: false

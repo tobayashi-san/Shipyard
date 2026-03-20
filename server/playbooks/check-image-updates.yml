@@ -11,7 +11,11 @@
       failed_when: false
 
     - name: Get rootful container images
-      shell: "{{ runtime_bin.stdout }} ps -a --format '{% raw %}{{.Image}}{% endraw %}' 2>/dev/null | sort -u"
+      shell: |
+        RUNTIME="{{ runtime_bin.stdout }}"
+        $RUNTIME ps -a --format '{% raw %}{{.Names}}{% endraw %}' 2>/dev/null | while read -r name; do
+          $RUNTIME inspect "$name" --format '{{.Config.Image}}' 2>/dev/null
+        done | sort -u
       register: rootful_images
       when: runtime_bin.rc == 0 and runtime_bin.stdout != ''
       changed_when: false
@@ -25,10 +29,13 @@
       when: "'podman' in (runtime_bin.stdout | default(''))"
 
     - name: Get rootless container images per user
-      shell: >
-        XDG_RUNTIME_DIR=/run/user/{{ item }}
-        runuser -u $(getent passwd {{ item }} | cut -d: -f1) --
-        podman ps -a --format '{% raw %}{{.Image}}{% endraw %}' 2>/dev/null
+      shell: |
+        UID_VAL="{{ item }}"
+        USERNAME=$(getent passwd "$UID_VAL" | cut -d: -f1)
+        XDG_RUNTIME_DIR=/run/user/$UID_VAL runuser -u "$USERNAME" -- \
+          bash -c 'podman ps -a --format "{{.Names}}" | while read -r name; do
+            podman inspect "$name" --format "{{.Config.Image}}" 2>/dev/null
+          done | sort -u'
       loop: "{{ rootless_uids.stdout_lines | default([]) }}"
       register: rootless_images
       changed_when: false
