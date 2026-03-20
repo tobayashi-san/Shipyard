@@ -66,8 +66,21 @@
 
           local FIRST=$(echo "$IMAGE_NOTAG" | cut -d/ -f1)
           if echo "$FIRST" | grep -qP '\.|:'; then
-            REGISTRY="$FIRST"
-            REPO=$(echo "$IMAGE_NOTAG" | cut -d/ -f2-)
+            # Normalize docker.io → registry-1.docker.io
+            if [ "$FIRST" = "docker.io" ]; then
+              REGISTRY="registry-1.docker.io"
+              local REST
+              REST=$(echo "$IMAGE_NOTAG" | cut -d/ -f2-)
+              # docker.io/ubuntu → library/ubuntu, docker.io/fosrl/pangolin → fosrl/pangolin
+              if echo "$REST" | grep -q '/'; then
+                REPO="$REST"
+              else
+                REPO="library/$REST"
+              fi
+            else
+              REGISTRY="$FIRST"
+              REPO=$(echo "$IMAGE_NOTAG" | cut -d/ -f2-)
+            fi
           elif echo "$IMAGE_NOTAG" | grep -q '/'; then
             REGISTRY="registry-1.docker.io"
             REPO="$IMAGE_NOTAG"
