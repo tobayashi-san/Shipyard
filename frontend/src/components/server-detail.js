@@ -350,7 +350,7 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
   });
 
   let html = `<table class="data-table"><thead><tr>
-    <th style="width:8px;"></th><th>${t('common.name')}</th><th>${t('common.image')}</th><th>${t('common.status')}</th><th>${t('common.details')}</th><th>${t('common.actions')}</th>
+    <th style="width:8px;"></th><th>${t('common.name')}</th><th>${t('common.image')}</th><th>${t('common.status')}</th><th>${t('common.actions')}</th>
   </tr></thead><tbody>`;
 
   for (const [proj, data] of Object.entries(stacks)) {
@@ -487,7 +487,6 @@ function renderContainerRow(c, imageUpdateMap = {}) {
       <td><span class="mono">${esc(c.container_name)}</span></td>
       <td class="mono" style="color:var(--text-muted);font-size:11px;">${esc(c.image)}${updateBadge ? ' ' + updateBadge : ''}</td>
       <td><span style="font-size:12px;color:${isUp ? 'var(--online)' : 'var(--offline)'};">${esc(c.status || c.state)}</span></td>
-      <td style="font-size:11px;color:var(--text-muted);">${parseContainerDate(c.created_at_container)?.toLocaleDateString() ?? ''}</td>
       <td style="white-space:nowrap;">
         <button class="btn btn-secondary btn-sm logs-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.showLogs')}"><i class="fas fa-file-alt"></i></button>
         <button class="btn btn-secondary btn-sm restart-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.containerRestarted')}"><i class="fas fa-sync-alt"></i></button>
