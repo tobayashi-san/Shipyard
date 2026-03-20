@@ -36,27 +36,90 @@
 
     - name: Check each image for updates
       shell: |
+        set -e
         RUNTIME="{{ runtime_bin.stdout }}"
         IMAGE="{{ item }}"
         [[ "$IMAGE" != *:* ]] && IMAGE="${IMAGE}:latest"
 
-        if command -v skopeo >/dev/null 2>&1; then
-          # Non-destructive: compare local digest with registry (no pull needed)
-          LOCAL=$($RUNTIME image inspect "$IMAGE" --format '{% raw %}{{range .RepoDigests}}{{println .}}{{end}}{% endraw %}' 2>/dev/null | grep -oP '(?<=@)sha256:[a-f0-9]+' | head -1 || echo "")
-          REMOTE=$(skopeo inspect "docker://$IMAGE" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('Digest',''))" 2>/dev/null || echo "")
-          if [ -z "$REMOTE" ]; then STATUS="unknown"
-          elif [ -z "$LOCAL" ]; then STATUS="unknown"
-          elif [ "$LOCAL" = "$REMOTE" ]; then STATUS="up_to_date"
-          else STATUS="update_available"; fi
+        TAG="${IMAGE##*:}"
+        IMAGE_NOTAG="${IMAGE%:*}"
+
+        # Determine registry and repository path
+        FIRST=$(echo "$IMAGE_NOTAG" | cut -d/ -f1)
+        if echo "$FIRST" | grep -qP '\.|:'; then
+          REGISTRY="$FIRST"
+          REPO=$(echo "$IMAGE_NOTAG" | cut -d/ -f2-)
+        elif echo "$IMAGE_NOTAG" | grep -q '/'; then
+          REGISTRY="registry-1.docker.io"
+          REPO="$IMAGE_NOTAG"
         else
-          # Fallback: pull and compare image IDs
-          BEFORE=$($RUNTIME image inspect "$IMAGE" --format '{% raw %}{{.Id}}{% endraw %}' 2>/dev/null || echo "")
-          $RUNTIME pull -q "$IMAGE" >/dev/null 2>&1 || true
-          AFTER=$($RUNTIME image inspect "$IMAGE" --format '{% raw %}{{.Id}}{% endraw %}' 2>/dev/null || echo "")
-          if [ -z "$BEFORE" ]; then STATUS="unknown"
-          elif [ "$BEFORE" = "$AFTER" ]; then STATUS="up_to_date"
-          else STATUS="updated"; fi
+          REGISTRY="registry-1.docker.io"
+          REPO="library/$IMAGE_NOTAG"
         fi
+
+        ACCEPT='-H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json"'
+
+        get_digest_with_token() {
+          local URL="$1" TOKEN="$2"
+          curl -sfI -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
+            "$URL" | grep -i 'docker-content-digest:' | awk '{print $2}' | tr -d '\r\n'
+        }
+
+        get_remote_digest() {
+          local URL="https://${REGISTRY}/v2/${REPO}/manifests/${TAG}"
+
+          if [ "$REGISTRY" = "registry-1.docker.io" ]; then
+            # Docker Hub requires a bearer token
+            TOKEN=$(curl -sf "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${REPO}:pull" \
+              | grep -oP '"token"\s*:\s*"\K[^"]+' || echo "")
+            [ -z "$TOKEN" ] && echo "" && return
+            get_digest_with_token "$URL" "$TOKEN"
+          else
+            # Try anonymous first
+            RESP=$(curl -sfI \
+              -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
+              "$URL" 2>/dev/null)
+            DIGEST=$(echo "$RESP" | grep -i 'docker-content-digest:' | awk '{print $2}' | tr -d '\r\n')
+            if [ -n "$DIGEST" ]; then echo "$DIGEST"; return; fi
+
+            # Handle WWW-Authenticate challenge (e.g. ghcr.io, lscr.io)
+            WWW=$(echo "$RESP" | grep -i 'www-authenticate:')
+            REALM=$(echo "$WWW" | grep -oP 'realm="\K[^"]+')
+            [ -z "$REALM" ] && echo "" && return
+            SERVICE=$(echo "$WWW" | grep -oP 'service="\K[^"]+')
+            SCOPE=$(echo "$WWW" | grep -oP 'scope="\K[^"]+')
+            TOKEN=$(curl -sf "${REALM}?service=${SERVICE}&scope=${SCOPE}" \
+              | grep -oP '"token"\s*:\s*"\K[^"]+' || \
+                curl -sf "${REALM}?service=${SERVICE}&scope=${SCOPE}" \
+              | grep -oP '"access_token"\s*:\s*"\K[^"]+' || echo "")
+            [ -z "$TOKEN" ] && echo "" && return
+            get_digest_with_token "$URL" "$TOKEN"
+          fi
+        }
+
+        # Prefer skopeo if available, otherwise use curl registry API
+        if command -v skopeo >/dev/null 2>&1; then
+          REMOTE=$(skopeo inspect "docker://$IMAGE" 2>/dev/null \
+            | grep -oP '"Digest"\s*:\s*"\K[^"]+' | head -1 || echo "")
+        elif command -v curl >/dev/null 2>&1; then
+          REMOTE=$(get_remote_digest)
+        fi
+
+        # Get local digest from image store
+        LOCAL=$($RUNTIME image inspect "$IMAGE" \
+          --format '{% raw %}{{range .RepoDigests}}{{println .}}{{end}}{% endraw %}' 2>/dev/null \
+          | grep -oP '(?<=@)sha256:[a-f0-9]+' | head -1 || echo "")
+
+        [ -z "$LOCAL" ] && LOCAL="none"
+        [ -z "$REMOTE" ] && REMOTE="unknown"
+
+        if   [ "$LOCAL" = "none" ];    then STATUS="unknown"
+        elif [ "$REMOTE" = "unknown" ]; then STATUS="unknown"
+        elif [ "$LOCAL" = "$REMOTE" ]; then STATUS="up_to_date"
+        else STATUS="update_available"
+        fi
+
         echo "$IMAGE|$STATUS"
       loop: "{{ ((rootful_images.stdout_lines | default([])) + (rootless_images.results | default([]) | selectattr('stdout_lines', 'defined') | map(attribute='stdout_lines') | flatten)) | unique | list }}"
       register: update_results
