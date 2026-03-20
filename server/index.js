@@ -365,9 +365,12 @@ app.post('/api/servers/:id/docker/compose/write', async (req, res) => {
     );
 
     if (result.success) {
-      // Save it to our DB so we can track it even if it's down!
-      const projectName = path.split('/').pop() || 'stack';
-      db.composeProjects.upsert(server.id, projectName, path);
+      // Only create a new compose project entry if this path isn't already tracked
+      // (avoids phantom "root"/"dirname" entries shadowing the real project name)
+      if (!db.composeProjects.getByServerAndPath(server.id, path)) {
+        const projectName = path.split('/').pop() || 'stack';
+        db.composeProjects.upsert(server.id, projectName, path);
+      }
       res.json({ success: true, message: 'docker-compose.yml saved successfully' });
     } else {
       res.status(500).json({ error: 'Failed to write docker-compose.yml', details: result.stderr || result.stdout });

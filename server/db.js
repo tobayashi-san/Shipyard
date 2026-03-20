@@ -247,6 +247,7 @@ const dockerContainerQueries = {
 
 const composeProjectQueries = {
   getByServer: db.prepare('SELECT * FROM compose_projects WHERE server_id = ? ORDER BY project_name'),
+  getByServerAndPath: db.prepare('SELECT * FROM compose_projects WHERE server_id = ? AND working_dir = ? LIMIT 1'),
   upsert: db.prepare(`
     INSERT INTO compose_projects (id, server_id, project_name, working_dir)
     VALUES (?, ?, ?, ?)
@@ -323,6 +324,7 @@ module.exports = {
   },
   composeProjects: {
     getByServer: (serverId) => composeProjectQueries.getByServer.all(serverId),
+    getByServerAndPath: (serverId, workingDir) => composeProjectQueries.getByServerAndPath.get(serverId, workingDir),
     upsert: (serverId, projectName, workingDir) => {
       composeProjectQueries.upsert.run(uuidv4(), serverId, projectName, workingDir);
     },
