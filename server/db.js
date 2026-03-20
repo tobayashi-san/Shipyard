@@ -122,6 +122,15 @@ db.exec(`
   );
 `);
 
+// Docker image updates cache
+db.exec(`
+  CREATE TABLE IF NOT EXISTS docker_image_updates_cache (
+    server_id TEXT PRIMARY KEY,
+    results_json TEXT DEFAULT '[]',
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
 // App settings table
 db.exec(`
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -416,6 +425,21 @@ module.exports = {
         VALUES (?, ?, datetime('now'))
         ON CONFLICT(server_id) DO UPDATE SET updates_json = excluded.updates_json, updated_at = datetime('now')
       `).run(serverId, JSON.stringify(updates));
+    },
+  },
+
+  dockerImageUpdatesCache: {
+    get: (serverId) => {
+      const row = db.prepare('SELECT * FROM docker_image_updates_cache WHERE server_id = ?').get(serverId);
+      if (!row) return null;
+      try { return JSON.parse(row.results_json); } catch { return []; }
+    },
+    set: (serverId, results) => {
+      db.prepare(`
+        INSERT INTO docker_image_updates_cache (server_id, results_json, updated_at)
+        VALUES (?, ?, datetime('now'))
+        ON CONFLICT(server_id) DO UPDATE SET results_json = excluded.results_json, updated_at = datetime('now')
+      `).run(serverId, JSON.stringify(results));
     },
   },
 };

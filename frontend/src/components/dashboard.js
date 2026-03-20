@@ -49,7 +49,8 @@ function renderDashboardData(data) {
     if (s.reboot_required)     alerts.push({ level: 'warning', icon: 'fa-redo', text: `<strong>${esc(s.name)}</strong> ${t('dash.alertReboot', { name: '' }).replace(esc(s.name) + ' ', '')}`, serverId: s.id, name: s.name });
     if (s.disk_pct >= 85)      alerts.push({ level: 'warning', icon: 'fa-hdd', text: `<strong>${esc(s.name)}</strong> ${t('dash.alertDisk', { name: '', pct: s.disk_pct }).replace(esc(s.name) + ' ', '')}`, serverId: s.id, name: s.name });
     if (s.ram_pct >= 90)       alerts.push({ level: 'warning', icon: 'fa-memory', text: `<strong>${esc(s.name)}</strong> ${t('dash.alertRam', { name: '', pct: s.ram_pct }).replace(esc(s.name) + ' ', '')}`, serverId: s.id, name: s.name });
-    if (s.updates_count > 0)   alerts.push({ level: 'info', icon: 'fa-arrow-up', text: `<strong>${esc(s.name)}</strong> – ${t('dash.alertUpdates', { name: '', count: s.updates_count }).replace(' – ', '')}`, serverId: s.id, name: s.name });
+    if (s.updates_count > 0)        alerts.push({ level: 'info', icon: 'fa-arrow-up', text: `<strong>${esc(s.name)}</strong> – ${t('dash.alertUpdates', { name: '', count: s.updates_count }).replace(' – ', '')}`, serverId: s.id, name: s.name });
+    if (s.image_updates_count > 0) alerts.push({ level: 'info', icon: 'fa-cube', text: `<strong>${esc(s.name)}</strong> – ${t('dash.alertImageUpdates', { name: '', count: s.image_updates_count }).replace(' – ', '')}`, serverId: s.id, name: s.name });
   });
 
   const content = document.getElementById('dash-content');
@@ -90,6 +91,7 @@ function renderDashboardData(data) {
                 <th>${t('dash.colUptime')}</th>
                 <th>${t('dash.colContainers')}</th>
                 <th>${t('dash.colUpdates')}</th>
+                <th>${t('dash.colImageUpdates')}</th>
               </tr></thead>
               <tbody>
                 ${servers.map(s => serverHealthRow(s)).join('')}
@@ -192,6 +194,7 @@ function serverHealthRow(s) {
       <td style="font-size:12px;color:var(--text-muted);">${uptime}</td>
       <td style="font-size:12px;">${s.containers_running > 0 ? `<span style="color:var(--online);">${s.containers_running}</span><span style="color:var(--text-muted);">/${s.containers_total}</span>` : '<span style="color:var(--text-muted);">—</span>'}</td>
       <td>${s.updates_count > 0 ? `<span class="badge badge-warning" style="font-size:10px;">${s.updates_count}</span>` : '<span style="color:var(--text-muted);font-size:12px;">—</span>'}</td>
+      <td>${s.image_updates_count > 0 ? `<span class="badge badge-warning" style="font-size:10px;"><i class="fas fa-cube"></i> ${s.image_updates_count}</span>` : '<span style="color:var(--text-muted);font-size:12px;">—</span>'}</td>
     </tr>
   `;
 }

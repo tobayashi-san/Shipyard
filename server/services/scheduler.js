@@ -11,13 +11,16 @@ const running = new Set();
 // Polling intervals
 let infoPoller = null;
 let updatesPoller = null;
+let imageUpdatesPoller = null;
 let infoPolling = false;
 let updatesPolling = false;
+let imageUpdatesPolling = false;
 
-const INFO_INTERVAL_ACTIVE  =  5 * 60 * 1000; // 5 min  – clients connected
-const INFO_INTERVAL_IDLE    = 15 * 60 * 1000; // 15 min – no one watching
-const UPDATES_INTERVAL_MS   = 60 * 60 * 1000; // 1 hour
-const STALE_THRESHOLD_MS    =  4 * 60 * 1000; // trigger immediate poll on connect if data > 4 min old
+const INFO_INTERVAL_ACTIVE       =  5 * 60 * 1000; // 5 min  – clients connected
+const INFO_INTERVAL_IDLE         = 15 * 60 * 1000; // 15 min – no one watching
+const UPDATES_INTERVAL_MS        = 60 * 60 * 1000; // 1 hour
+const IMAGE_UPDATES_INTERVAL_MS  =  6 * 60 * 60 * 1000; // 6 hours
+const STALE_THRESHOLD_MS         =  4 * 60 * 1000; // trigger immediate poll on connect if data > 4 min old
 
 let lastInfoPollTime = 0;
 let getClientCount = () => 0; // injected from index.js
@@ -165,12 +168,52 @@ async function pollUpdates() {
 }
 
 /**
+ * Poll docker image update status for all servers in parallel and cache results.
+ */
+function parseImageUpdateOutput(stdout) {
+  const jsonStart = stdout.indexOf('"msg": [');
+  if (jsonStart === -1) return [];
+  const jsonEnd = stdout.indexOf(']', jsonStart);
+  if (jsonEnd === -1) return [];
+  try {
+    return JSON.parse(stdout.substring(jsonStart + 7, jsonEnd + 1))
+      .filter(line => line && line.includes('|'))
+      .map(line => {
+        const [image, status] = line.split('|');
+        return { image: image.trim(), status: (status || 'unknown').trim() };
+      });
+  } catch { return []; }
+}
+
+async function pollImageUpdates() {
+  if (imageUpdatesPolling) return;
+  imageUpdatesPolling = true;
+  try {
+    const servers = db.servers.getAll().filter(s => s.status === 'online');
+    await Promise.allSettled(servers.map(async server => {
+      try {
+        const result = await ansibleRunner.runPlaybook('check-image-updates.yml', server.name);
+        const results = parseImageUpdateOutput(result.stdout);
+        db.dockerImageUpdatesCache.set(server.id, results);
+      } catch {
+        // keep stale cache
+      }
+    }));
+    broadcast({ type: 'cache_updated', scope: 'image_updates' });
+    console.log(`[Poller] Docker image updates checked for ${servers.length} server(s)`);
+  } finally {
+    imageUpdatesPolling = false;
+  }
+}
+
+/**
  * Start background polling for system info and updates.
  */
 function startPolling() {
   // Run immediately on startup, then on interval
   pollSystemInfo().catch(err => console.error('[Poller] System info error:', err.message));
   pollUpdates().catch(err => console.error('[Poller] Updates error:', err.message));
+  pollImageUpdates().catch(err => console.error('[Poller] Image updates error:', err.message));
 
   // Info polling: runs every INFO_INTERVAL_ACTIVE, but skips when no clients
   // are connected and data is still fresh. A slower idle floor (INFO_INTERVAL_IDLE)
@@ -187,7 +230,12 @@ function startPolling() {
     UPDATES_INTERVAL_MS
   );
 
-  console.log(`[Poller] Started – active ${INFO_INTERVAL_ACTIVE / 60000}min / idle ${INFO_INTERVAL_IDLE / 60000}min, updates every ${UPDATES_INTERVAL_MS / 60000}min`);
+  imageUpdatesPoller = setInterval(
+    () => pollImageUpdates().catch(err => console.error('[Poller] Image updates error:', err.message)),
+    IMAGE_UPDATES_INTERVAL_MS
+  );
+
+  console.log(`[Poller] Started – active ${INFO_INTERVAL_ACTIVE / 60000}min / idle ${INFO_INTERVAL_IDLE / 60000}min, updates every ${UPDATES_INTERVAL_MS / 60000}min, image updates every ${IMAGE_UPDATES_INTERVAL_MS / 3600000}h`);
 }
 
 /**
@@ -204,8 +252,9 @@ function onClientConnect() {
  * Stop background polling.
  */
 function stopPolling() {
-  if (infoPoller)    { clearInterval(infoPoller);    infoPoller = null; }
-  if (updatesPoller) { clearInterval(updatesPoller); updatesPoller = null; }
+  if (infoPoller)          { clearInterval(infoPoller);          infoPoller = null; }
+  if (updatesPoller)       { clearInterval(updatesPoller);       updatesPoller = null; }
+  if (imageUpdatesPoller)  { clearInterval(imageUpdatesPoller);  imageUpdatesPoller = null; }
 }
 
 module.exports = { init, register, unregister, reload, startPolling, stopPolling, onClientConnect, setClientCountFn: fn => { getClientCount = fn; } };

@@ -127,6 +127,7 @@ app.get('/api/dashboard', (req, res) => {
       const info = db.serverInfo.get(s.id);
       const updates = db.updatesCache.get(s.id) || [];
       const containers = db.dockerContainers.getByServer(s.id);
+      const imageUpdates = db.dockerImageUpdatesCache.get(s.id) || [];
 
       if (info?.reboot_required) rebootRequired++;
       totalUpdates += updates.filter(u => !u.phased).length;
@@ -152,6 +153,7 @@ app.get('/api/dashboard', (req, res) => {
         updates_count: updates.filter(u => !u.phased).length,
         containers_running: containers.filter(c => c.state === 'running').length,
         containers_total: containers.length,
+        image_updates_count: imageUpdates.filter(r => r.status === 'update_available').length,
         info_cached_at: info?.updated_at || null,
       };
     });
