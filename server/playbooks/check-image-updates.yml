@@ -140,6 +140,8 @@
         wait
         cat "$TMPDIR_RESULTS"/* 2>/dev/null | sort
         rm -rf "$TMPDIR_RESULTS"
+      args:
+        executable: /bin/bash
       register: update_results
       changed_when: false
       failed_when: false

@@ -29,6 +29,8 @@
           img=$(resolve_image "$name")
           printf '%s|%s|%s|%s|%s|%s|%s\n' "$name" "$img" "$state" "$status" "$created" "$proj" "$dir"
         done
+      args:
+        executable: /bin/bash
       register: rootful_ps
       when: runtime_bin.rc == 0 and runtime_bin.stdout != ''
       changed_when: false
@@ -61,6 +63,8 @@
             img=$(resolve_image "$name")
             printf "%s|%s|%s|%s|%s|%s|%s\n" "$name" "$img" "$state" "$status" "$created" "$proj" "$dir"
           done'
+      args:
+        executable: /bin/bash
       loop: "{{ rootless_uids.stdout_lines | default([]) }}"
       register: rootless_ps
       changed_when: false
