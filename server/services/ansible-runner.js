@@ -1,5 +1,6 @@
 const { spawn, execFileSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const db = require('../db');
 const sshManager = require('./ssh-manager');
@@ -14,19 +15,41 @@ class AnsibleRunner {
   }
 
   /**
+   * If the SSH key is encrypted at rest, decrypt it to a temp file and return
+   * { keyPath, cleanup }. Otherwise return { keyPath, cleanup: () => {} }.
+   */
+  _resolveSshKey() {
+    const keyInfo = sshManager.getKeyInfo();
+    const baseKeyPath = keyInfo?.privateKeyPath || sshManager.getPrivateKeyPath();
+    const encPath = baseKeyPath + '.enc';
+
+    if (fs.existsSync(encPath)) {
+      // Key is encrypted — write decrypted content to a temp file
+      const plaintext = sshManager.getPrivateKey();
+      const tmpPath = path.join(os.tmpdir(), `shipyard-key-${process.pid}-${Date.now()}`);
+      fs.writeFileSync(tmpPath, plaintext, { mode: 0o600 });
+      return { keyPath: tmpPath, cleanup: () => { try { fs.unlinkSync(tmpPath); } catch {} } };
+    }
+
+    return { keyPath: baseKeyPath, cleanup: () => {} };
+  }
+
+  /**
    * Generate Ansible inventory from database
    */
-  generateInventory() {
+  generateInventory(keyPath) {
     const servers = db.servers.getAll();
-    const keyInfo = sshManager.getKeyInfo();
-    const privateKeyPath = keyInfo?.privateKeyPath || sshManager.getPrivateKeyPath();
+    if (!keyPath) {
+      const keyInfo = sshManager.getKeyInfo();
+      keyPath = keyInfo?.privateKeyPath || sshManager.getPrivateKeyPath();
+    }
 
     // Strip any characters that could break Ansible INI format or inject extra lines
     const safe = (v) => String(v ?? '').replace(/[\r\n\s=\[\]]/g, '_');
 
     let inventory = '[all]\n';
     servers.forEach(server => {
-      inventory += `${safe(server.name)} ansible_host=${safe(server.ip_address)} ansible_port=${parseInt(server.ssh_port) || 22} ansible_user=${safe(server.ssh_user)} ansible_ssh_private_key_file=${privateKeyPath}\n`;
+      inventory += `${safe(server.name)} ansible_host=${safe(server.ip_address)} ansible_port=${parseInt(server.ssh_port) || 22} ansible_user=${safe(server.ssh_user)} ansible_ssh_private_key_file=${keyPath}\n`;
     });
 
     // Group servers by tags
@@ -78,7 +101,8 @@ class AnsibleRunner {
    */
   runPlaybook(playbookName, targets = 'all', extraVars = {}, onOutput = null) {
     return new Promise((resolve, reject) => {
-      const inventoryPath = this.generateInventory();
+      const { keyPath, cleanup } = this._resolveSshKey();
+      const inventoryPath = this.generateInventory(keyPath);
       const playbookPath = path.resolve(PLAYBOOKS_DIR, playbookName);
 
       if (!playbookPath.startsWith(path.resolve(PLAYBOOKS_DIR) + path.sep)) {
@@ -133,6 +157,7 @@ class AnsibleRunner {
       });
 
       child.on('close', (code) => {
+        cleanup();
         resolve({
           code,
           stdout,
@@ -142,6 +167,7 @@ class AnsibleRunner {
       });
 
       child.on('error', (err) => {
+        cleanup();
         reject(new Error(`Failed to run ansible-playbook: ${err.message}. Is Ansible installed?`));
       });
     });
@@ -152,7 +178,8 @@ class AnsibleRunner {
    */
   runAdHoc(targets, module, args = '', onOutput = null) {
     return new Promise((resolve, reject) => {
-      const inventoryPath = this.generateInventory();
+      const { keyPath, cleanup } = this._resolveSshKey();
+      const inventoryPath = this.generateInventory(keyPath);
 
       const cmdArgs = [
         '-i', inventoryPath,
@@ -191,10 +218,12 @@ class AnsibleRunner {
       });
 
       child.on('close', (code) => {
+        cleanup();
         resolve({ code, stdout, stderr, success: code === 0 });
       });
 
       child.on('error', (err) => {
+        cleanup();
         reject(new Error(`Failed to run ansible: ${err.message}. Is Ansible installed?`));
       });
     });
