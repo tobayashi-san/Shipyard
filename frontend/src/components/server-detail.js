@@ -333,6 +333,7 @@ async function loadServerInfo(serverId) {
 function renderDockerData(serverId, containers, imageUpdateMap = {}) {
   const content = document.getElementById('docker-content');
   if (!content) return;
+  content.dataset.serverId = serverId;
   if (!containers || containers.length === 0) {
     content.innerHTML = `<div class="empty-state"><div class="empty-state-icon"><i class="fas fa-cubes"></i></div><h3>${t('det.noContainers')}</h3><p>${t('det.noContainersHint')}</p></div>`;
     setupComposeBtn(serverId);
@@ -453,7 +454,10 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
       refreshBtn.disabled = true;
       refreshBtn.querySelector('i').classList.add('fa-spin');
       await api.getServerDocker(serverId, true)
-        .then(fresh => { if (document.getElementById('docker-content')) renderDockerData(serverId, fresh, imageUpdateMaps[serverId] || {}); })
+        .then(fresh => {
+          const el = document.getElementById('docker-content');
+          if (el && el.dataset.serverId === serverId) renderDockerData(serverId, fresh, imageUpdateMaps[serverId] || {});
+        })
         .catch(() => {})
         .finally(() => { refreshBtn.disabled = false; refreshBtn.querySelector('i').classList.remove('fa-spin'); });
     });
@@ -472,16 +476,25 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
 async function loadDockerContainers(serverId) {
   const content = document.getElementById('docker-content');
   if (!content) return;
+  content.dataset.serverId = serverId;
   try {
     const containers = await api.getServerDocker(serverId);
+    const el = document.getElementById('docker-content');
+    if (!el || el.dataset.serverId !== serverId) return;
     renderDockerData(serverId, containers, imageUpdateMaps[serverId] || {});
     if (containers?.length > 0 && containers[0]?._cached) {
       api.getServerDocker(serverId, true)
-        .then(fresh => { if (document.getElementById('docker-content')) renderDockerData(serverId, fresh, imageUpdateMaps[serverId] || {}); })
+        .then(fresh => {
+          const el = document.getElementById('docker-content');
+          if (el && el.dataset.serverId === serverId) renderDockerData(serverId, fresh, imageUpdateMaps[serverId] || {});
+        })
         .catch(() => {});
     }
   } catch (error) {
-    content.innerHTML = `<div class="empty-state"><p style="color:var(--offline);">${t('common.errorPrefix', { msg: esc(error.message) })}</p></div>`;
+    const el = document.getElementById('docker-content');
+    if (el && el.dataset.serverId === serverId) {
+      el.innerHTML = `<div class="empty-state"><p style="color:var(--offline);">${t('common.errorPrefix', { msg: esc(error.message) })}</p></div>`;
+    }
   }
 }
 
