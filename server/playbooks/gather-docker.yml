@@ -13,8 +13,20 @@
     - name: Get rootful containers
       shell: |
         RUNTIME="{{ runtime_bin.stdout }}"
+        resolve_image() {
+          local name="$1"
+          local img
+          img=$($RUNTIME inspect "$name" --format '{% raw %}{{.Config.Image}}{% endraw %}' 2>/dev/null || echo "")
+          # If Config.Image is a bare hash (12 hex chars or sha256:...), resolve via image tags
+          if echo "$img" | grep -qP '^[a-f0-9]{12}$|^sha256:[a-f0-9]+$'; then
+            local tagged
+            tagged=$($RUNTIME image inspect "$img" --format '{% raw %}{{range .RepoTags}}{{println .}}{{end}}{% endraw %}' 2>/dev/null | head -1)
+            [ -n "$tagged" ] && img="$tagged"
+          fi
+          echo "${img:-unknown}"
+        }
         $RUNTIME ps -a --format '{% raw %}{{.Names}}|{{.State}}|{{.Status}}|{{.CreatedAt}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.project.working_dir"}}{% endraw %}' | while IFS='|' read -r name state status created proj dir; do
-          img=$($RUNTIME inspect "$name" --format '{{.Config.Image}}' 2>/dev/null || echo "unknown")
+          img=$(resolve_image "$name")
           printf '%s|%s|%s|%s|%s|%s|%s\n' "$name" "$img" "$state" "$status" "$created" "$proj" "$dir"
         done
       register: rootful_ps
@@ -36,8 +48,17 @@
         UID_VAL="{{ item }}"
         USERNAME=$(getent passwd "$UID_VAL" | cut -d: -f1)
         XDG_RUNTIME_DIR=/run/user/$UID_VAL runuser -u "$USERNAME" -- \
-          bash -c 'podman ps -a --format "{{.Names}}|{{.State}}|{{.Status}}|{{.CreatedAt}}|{{.Label \"com.docker.compose.project\"}}|{{.Label \"com.docker.compose.project.working_dir\"}}" | while IFS="|" read -r name state status created proj dir; do
-            img=$(podman inspect "$name" --format "{{.Config.Image}}" 2>/dev/null || echo "unknown")
+          bash -c 'resolve_image() {
+            local name="$1" img tagged
+            img=$(podman inspect "$name" --format "{{.Config.Image}}" 2>/dev/null || echo "")
+            if echo "$img" | grep -qP "^[a-f0-9]{12}$|^sha256:[a-f0-9]+$"; then
+              tagged=$(podman image inspect "$img" --format "{{range .RepoTags}}{{println .}}{{end}}" 2>/dev/null | head -1)
+              [ -n "$tagged" ] && img="$tagged"
+            fi
+            echo "${img:-unknown}"
+          }
+          podman ps -a --format "{{.Names}}|{{.State}}|{{.Status}}|{{.CreatedAt}}|{{.Label \"com.docker.compose.project\"}}|{{.Label \"com.docker.compose.project.working_dir\"}}" | while IFS="|" read -r name state status created proj dir; do
+            img=$(resolve_image "$name")
             printf "%s|%s|%s|%s|%s|%s|%s\n" "$name" "$img" "$state" "$status" "$created" "$proj" "$dir"
           done'
       loop: "{{ rootless_uids.stdout_lines | default([]) }}"

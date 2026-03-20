@@ -14,7 +14,12 @@
       shell: |
         RUNTIME="{{ runtime_bin.stdout }}"
         $RUNTIME ps -a --format '{% raw %}{{.Names}}{% endraw %}' 2>/dev/null | while read -r name; do
-          $RUNTIME inspect "$name" --format '{{.Config.Image}}' 2>/dev/null
+          img=$($RUNTIME inspect "$name" --format '{% raw %}{{.Config.Image}}{% endraw %}' 2>/dev/null || echo "")
+          if echo "$img" | grep -qP '^[a-f0-9]{12}$|^sha256:[a-f0-9]+$'; then
+            tagged=$($RUNTIME image inspect "$img" --format '{% raw %}{{range .RepoTags}}{{println .}}{{end}}{% endraw %}' 2>/dev/null | head -1)
+            [ -n "$tagged" ] && img="$tagged"
+          fi
+          [ -n "$img" ] && echo "$img"
         done | sort -u
       register: rootful_images
       when: runtime_bin.rc == 0 and runtime_bin.stdout != ''
