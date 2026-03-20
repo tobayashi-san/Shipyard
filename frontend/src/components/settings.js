@@ -214,6 +214,12 @@ export async function renderSettings() {
         <div class="settings-block" id="ansible-status-content">
           <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
         </div>
+
+        <div class="settings-group-title">${t('set.polling')}</div>
+        <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px 0;padding:0 4px;">${t('set.pollingHint')}</p>
+        <div class="settings-block" id="polling-config-content">
+          <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
+        </div>
       </div>
 
       <!-- Tab: Security -->
@@ -381,6 +387,7 @@ export async function renderSettings() {
   setupTabSwitching();
   loadSSHKey();
   loadAnsibleStatus();
+  loadPollingConfig();
   setupSettingsEvents(wl);
   setupSecurityEvents().catch(() => {});
   setupDangerZone();
@@ -673,6 +680,84 @@ async function loadSSHKey() {
         showToast(t('common.errorPrefix', { msg: err.message }), 'error');
       }
     });
+  }
+}
+
+// ============================================================
+// Polling Config
+// ============================================================
+async function loadPollingConfig() {
+  const el = document.getElementById('polling-config-content');
+  if (!el) return;
+  try {
+    const cfg = await api.getPollingConfig();
+
+    const pollers = [
+      { key: 'info',         label: t('set.pollSysInfo'),      hint: t('set.pollSysInfoHint'),      cfg: cfg.info },
+      { key: 'updates',      label: t('set.pollOsUpdates'),    hint: t('set.pollOsUpdatesHint'),    cfg: cfg.updates },
+      { key: 'imageUpdates', label: t('set.pollImageUpdates'), hint: t('set.pollImageUpdatesHint'), cfg: cfg.imageUpdates },
+      { key: 'customUpdates',label: t('set.pollCustomUpdates'),hint: t('set.pollCustomUpdatesHint'),cfg: cfg.customUpdates },
+    ];
+
+    el.innerHTML = pollers.map((p, i) => `
+      <div class="settings-row" ${i === pollers.length - 1 ? 'style="border-bottom:none;"' : ''}>
+        <div class="settings-row-label">
+          <span>${p.label}</span>
+          <small>${p.hint}</small>
+        </div>
+        <div class="settings-row-control" style="display:flex;align-items:center;gap:12px;">
+          <label class="toggle-switch">
+            <input type="checkbox" class="poll-toggle" data-key="${p.key}" ${p.cfg.enabled ? 'checked' : ''}>
+            <span class="toggle-slider"></span>
+          </label>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input class="form-input poll-interval" data-key="${p.key}" type="number" min="1" max="9999"
+              value="${p.cfg.intervalMin}" style="width:70px;text-align:center;"
+              ${!p.cfg.enabled ? 'disabled' : ''}>
+            <span style="font-size:12px;color:var(--text-muted);">min</span>
+          </div>
+        </div>
+      </div>`).join('') + `
+      <div class="settings-row" style="border-bottom:none;padding-top:12px;">
+        <div class="settings-row-label"></div>
+        <div class="settings-row-control">
+          <button class="btn btn-primary btn-sm" id="btn-save-polling">
+            <i class="fas fa-save"></i> ${t('common.save')}
+          </button>
+        </div>
+      </div>`;
+
+    // Toggle disables interval input
+    el.querySelectorAll('.poll-toggle').forEach(tog => {
+      tog.addEventListener('change', () => {
+        const input = el.querySelector(`.poll-interval[data-key="${tog.dataset.key}"]`);
+        if (input) input.disabled = !tog.checked;
+      });
+    });
+
+    document.getElementById('btn-save-polling')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-save-polling');
+      btn.disabled = true;
+      btn.innerHTML = `<span class="spinner-sm"></span>`;
+      try {
+        const body = {};
+        pollers.forEach(p => {
+          const tog = el.querySelector(`.poll-toggle[data-key="${p.key}"]`);
+          const inp = el.querySelector(`.poll-interval[data-key="${p.key}"]`);
+          body[p.key] = { enabled: tog?.checked ?? true, intervalMin: parseInt(inp?.value) || p.cfg.intervalMin };
+        });
+        await api.savePollingConfig(body);
+        showToast(t('set.pollSaved'), 'success');
+      } catch (err) {
+        showToast(t('common.errorPrefix', { msg: err.message }), 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<i class="fas fa-save"></i> ${t('common.save')}`;
+      }
+    });
+
+  } catch (err) {
+    el.innerHTML = `<div style="padding:16px;color:var(--offline);font-size:13px;">${err.message}</div>`;
   }
 }
 

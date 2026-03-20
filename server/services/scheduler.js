@@ -20,12 +20,29 @@ let updatesPolling = false;
 let imageUpdatesPolling = false;
 let customUpdatesPolling = false;
 
-const INFO_INTERVAL_ACTIVE       =  5 * 60 * 1000; // 5 min  – clients connected
-const INFO_INTERVAL_IDLE         = 15 * 60 * 1000; // 15 min – no one watching
-const UPDATES_INTERVAL_MS        = 60 * 60 * 1000; // 1 hour
-const IMAGE_UPDATES_INTERVAL_MS  =  6 * 60 * 60 * 1000; // 6 hours
-const CUSTOM_UPDATES_INTERVAL_MS =  6 * 60 * 60 * 1000; // 6 hours
-const STALE_THRESHOLD_MS         =  4 * 60 * 1000; // trigger immediate poll on connect if data > 4 min old
+const STALE_THRESHOLD_MS = 4 * 60 * 1000;
+
+// Defaults (used when DB has no value)
+const DEFAULTS = {
+  poll_info_enabled:              '1',
+  poll_info_interval_min:         '5',
+  poll_updates_enabled:           '1',
+  poll_updates_interval_min:      '60',
+  poll_image_updates_enabled:     '1',
+  poll_image_updates_interval_min:'360',
+  poll_custom_updates_enabled:    '1',
+  poll_custom_updates_interval_min:'360',
+};
+
+function getPollingConfig() {
+  const g = (key) => db.settings.get(key) ?? DEFAULTS[key];
+  return {
+    info:          { enabled: g('poll_info_enabled') !== '0',          intervalMs: Math.max(1, parseInt(g('poll_info_interval_min'))) * 60 * 1000 },
+    updates:       { enabled: g('poll_updates_enabled') !== '0',       intervalMs: Math.max(1, parseInt(g('poll_updates_interval_min'))) * 60 * 1000 },
+    imageUpdates:  { enabled: g('poll_image_updates_enabled') !== '0', intervalMs: Math.max(1, parseInt(g('poll_image_updates_interval_min'))) * 60 * 1000 },
+    customUpdates: { enabled: g('poll_custom_updates_enabled') !== '0',intervalMs: Math.max(1, parseInt(g('poll_custom_updates_interval_min'))) * 60 * 1000 },
+  };
+}
 
 let lastInfoPollTime = 0;
 let getClientCount = () => 0; // injected from index.js
@@ -247,41 +264,62 @@ async function pollCustomUpdates() {
 }
 
 /**
- * Start background polling for system info and updates.
+ * Set up polling intervals based on current DB config (does not run immediately).
+ */
+function setupPollingIntervals() {
+  const cfg = getPollingConfig();
+
+  if (cfg.info.enabled) {
+    infoPoller = setInterval(() => {
+      if (Date.now() - lastInfoPollTime >= cfg.info.intervalMs) {
+        pollSystemInfo().catch(err => console.error('[Poller] System info error:', err.message));
+      }
+    }, 60 * 1000); // tick every minute, decide whether to actually poll
+  }
+
+  if (cfg.updates.enabled) {
+    updatesPoller = setInterval(
+      () => pollUpdates().catch(err => console.error('[Poller] Updates error:', err.message)),
+      cfg.updates.intervalMs
+    );
+  }
+
+  if (cfg.imageUpdates.enabled) {
+    imageUpdatesPoller = setInterval(
+      () => pollImageUpdates().catch(err => console.error('[Poller] Image updates error:', err.message)),
+      cfg.imageUpdates.intervalMs
+    );
+  }
+
+  if (cfg.customUpdates.enabled) {
+    customUpdatesPoller = setInterval(
+      () => pollCustomUpdates().catch(err => console.error('[Poller] Custom updates error:', err.message)),
+      cfg.customUpdates.intervalMs
+    );
+  }
+
+  console.log(`[Poller] Config – info:${cfg.info.enabled ? cfg.info.intervalMs/60000+'min' : 'off'} updates:${cfg.updates.enabled ? cfg.updates.intervalMs/60000+'min' : 'off'} images:${cfg.imageUpdates.enabled ? cfg.imageUpdates.intervalMs/60000+'min' : 'off'} custom:${cfg.customUpdates.enabled ? cfg.customUpdates.intervalMs/60000+'min' : 'off'}`);
+}
+
+/**
+ * Start background polling for system info and updates (runs immediately on startup).
  */
 function startPolling() {
-  // Run immediately on startup, then on interval
-  pollSystemInfo().catch(err => console.error('[Poller] System info error:', err.message));
-  pollUpdates().catch(err => console.error('[Poller] Updates error:', err.message));
-  pollImageUpdates().catch(err => console.error('[Poller] Image updates error:', err.message));
-  pollCustomUpdates().catch(err => console.error('[Poller] Custom updates error:', err.message));
+  const cfg = getPollingConfig();
+  if (cfg.info.enabled)          pollSystemInfo().catch(err => console.error('[Poller] System info error:', err.message));
+  if (cfg.updates.enabled)       pollUpdates().catch(err => console.error('[Poller] Updates error:', err.message));
+  if (cfg.imageUpdates.enabled)  pollImageUpdates().catch(err => console.error('[Poller] Image updates error:', err.message));
+  if (cfg.customUpdates.enabled) pollCustomUpdates().catch(err => console.error('[Poller] Custom updates error:', err.message));
+  setupPollingIntervals();
+}
 
-  // Info polling: runs every INFO_INTERVAL_ACTIVE, but skips when no clients
-  // are connected and data is still fresh. A slower idle floor (INFO_INTERVAL_IDLE)
-  // is guaranteed via the stale check in onClientConnect.
-  infoPoller = setInterval(() => {
-    const interval = getClientCount() > 0 ? INFO_INTERVAL_ACTIVE : INFO_INTERVAL_IDLE;
-    if (Date.now() - lastInfoPollTime >= interval) {
-      pollSystemInfo().catch(err => console.error('[Poller] System info error:', err.message));
-    }
-  }, 60 * 1000); // tick every minute, decide whether to actually poll
-
-  updatesPoller = setInterval(
-    () => pollUpdates().catch(err => console.error('[Poller] Updates error:', err.message)),
-    UPDATES_INTERVAL_MS
-  );
-
-  imageUpdatesPoller = setInterval(
-    () => pollImageUpdates().catch(err => console.error('[Poller] Image updates error:', err.message)),
-    IMAGE_UPDATES_INTERVAL_MS
-  );
-
-  customUpdatesPoller = setInterval(
-    () => pollCustomUpdates().catch(err => console.error('[Poller] Custom updates error:', err.message)),
-    CUSTOM_UPDATES_INTERVAL_MS
-  );
-
-  console.log(`[Poller] Started – active ${INFO_INTERVAL_ACTIVE / 60000}min / idle ${INFO_INTERVAL_IDLE / 60000}min, updates every ${UPDATES_INTERVAL_MS / 60000}min, image/custom updates every ${IMAGE_UPDATES_INTERVAL_MS / 3600000}h`);
+/**
+ * Restart pollers with current DB config (called after settings change).
+ */
+function restartPolling() {
+  stopPolling();
+  setupPollingIntervals();
+  console.log('[Poller] Restarted with new config');
 }
 
 /**
@@ -304,4 +342,4 @@ function stopPolling() {
   if (customUpdatesPoller)  { clearInterval(customUpdatesPoller);  customUpdatesPoller = null; }
 }
 
-module.exports = { init, register, unregister, reload, startPolling, stopPolling, onClientConnect, checkCustomTask, setClientCountFn: fn => { getClientCount = fn; } };
+module.exports = { init, register, unregister, reload, startPolling, stopPolling, restartPolling, onClientConnect, checkCustomTask, getPollingConfig, DEFAULTS, setClientCountFn: fn => { getClientCount = fn; } };

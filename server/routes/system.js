@@ -4,6 +4,7 @@ const rateLimit = require('express-rate-limit');
 const sshManager = require('../services/ssh-manager');
 const ansibleRunner = require('../services/ansible-runner');
 const db = require('../db');
+const scheduler = require('../services/scheduler');
 
 const deployLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -85,6 +86,29 @@ router.put('/settings', (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// GET /api/system/polling-config
+router.get('/polling-config', (req, res) => {
+  const g = (key) => db.settings.get(key) ?? scheduler.DEFAULTS[key];
+  res.json({
+    info:          { enabled: g('poll_info_enabled') !== '0',          intervalMin: parseInt(g('poll_info_interval_min')) },
+    updates:       { enabled: g('poll_updates_enabled') !== '0',       intervalMin: parseInt(g('poll_updates_interval_min')) },
+    imageUpdates:  { enabled: g('poll_image_updates_enabled') !== '0', intervalMin: parseInt(g('poll_image_updates_interval_min')) },
+    customUpdates: { enabled: g('poll_custom_updates_enabled') !== '0',intervalMin: parseInt(g('poll_custom_updates_interval_min')) },
+  });
+});
+
+// PUT /api/system/polling-config
+router.put('/polling-config', (req, res) => {
+  const { info, updates, imageUpdates, customUpdates } = req.body;
+  const save = (key, val) => { if (val !== undefined) db.settings.set(key, String(val)); };
+  if (info)          { save('poll_info_enabled', info.enabled ? '1' : '0');                   save('poll_info_interval_min', Math.max(1, parseInt(info.intervalMin) || 5)); }
+  if (updates)       { save('poll_updates_enabled', updates.enabled ? '1' : '0');             save('poll_updates_interval_min', Math.max(1, parseInt(updates.intervalMin) || 60)); }
+  if (imageUpdates)  { save('poll_image_updates_enabled', imageUpdates.enabled ? '1' : '0'); save('poll_image_updates_interval_min', Math.max(1, parseInt(imageUpdates.intervalMin) || 360)); }
+  if (customUpdates) { save('poll_custom_updates_enabled', customUpdates.enabled ? '1' : '0');save('poll_custom_updates_interval_min', Math.max(1, parseInt(customUpdates.intervalMin) || 360)); }
+  scheduler.restartPolling();
+  res.json({ success: true });
 });
 
 // POST /api/system/onboarding-complete – mark first-run wizard as done

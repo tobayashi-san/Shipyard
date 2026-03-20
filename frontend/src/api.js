@@ -149,6 +149,8 @@ class ApiClient {
 
   // Ansible / Playbooks
   getAnsibleStatus() { return this.request('/system/status'); }
+  getPollingConfig() { return this.request('/system/polling-config'); }
+  savePollingConfig(data) { return this.request('/system/polling-config', { method: 'PUT', body: data }); }
   getPlaybooks() { return this.request('/playbooks'); }
   getPlaybook(filename) { return this.request(`/playbooks/${encodeURIComponent(filename)}`); }
   savePlaybook(filename, content) { return this.request('/playbooks', { method: 'POST', body: { filename, content } }); }
