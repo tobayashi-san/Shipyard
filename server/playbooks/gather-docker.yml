@@ -1,21 +1,21 @@
 ---
-- name: Gather Docker Containers
+- name: Gather Containers
   hosts: all
   become: yes
   gather_facts: no
   tasks:
-    - name: Check if docker is installed
-      shell: "command -v docker"
-      register: docker_installed
+    - name: Detect container runtime (docker or podman)
+      shell: "command -v docker 2>/dev/null || command -v podman 2>/dev/null"
+      register: runtime_bin
       changed_when: false
       failed_when: false
 
-    - name: Get all docker containers
-      shell: "docker ps -a --format '{% raw %}{{.Names}}|{{.Image}}|{{.State}}|{{.Status}}|{{.CreatedAt}}|{{.Label \"com.docker.compose.project\"}}|{{.Label \"com.docker.compose.project.working_dir\"}}{% endraw %}'"
-      register: docker_ps
-      when: docker_installed.rc == 0
+    - name: Get all containers
+      shell: "{{ runtime_bin.stdout }} ps -a --format '{% raw %}{{.Names}}|{{.Image}}|{{.State}}|{{.Status}}|{{.CreatedAt}}|{{.Label \"com.docker.compose.project\"}}|{{.Label \"com.docker.compose.project.working_dir\"}}{% endraw %}'"
+      register: container_ps
+      when: runtime_bin.rc == 0 and runtime_bin.stdout != ''
       changed_when: false
-      
+
     - name: Display container info
       debug:
-        msg: "{{ docker_ps.stdout_lines if docker_ps.stdout_lines is defined else [] }}"
+        msg: "{{ container_ps.stdout_lines if container_ps.stdout_lines is defined else [] }}"

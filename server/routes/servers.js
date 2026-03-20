@@ -381,7 +381,7 @@ async function refreshDockerCache(server) {
   if (jsonEnd === -1) return;
   const jsonStr = result.stdout.substring(jsonStart + 7, jsonEnd + 1);
   try {
-    const containers = JSON.parse(jsonStr).map(line => {
+    const containers = JSON.parse(jsonStr).filter(line => line.trim()).map(line => {
       const parts = line.split('|');
       return {
         name: parts[0] || 'Unknown',
@@ -438,7 +438,7 @@ router.get('/:id/docker/:container/logs', async (req, res) => {
   try {
     const result = await sshManager.execCommand(
       server,
-      `docker logs --tail ${tail} --timestamps ${container} 2>&1`
+      `$(command -v docker 2>/dev/null || command -v podman 2>/dev/null) logs --tail ${tail} --timestamps ${container} 2>&1`
     );
     res.json({ logs: result.stdout || '' });
   } catch (error) {

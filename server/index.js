@@ -322,12 +322,12 @@ app.post('/api/servers/:id/docker/:container/restart', async (req, res) => {
   res.json({ historyId, status: 'started' });
 
   try {
-    broadcast({ type: 'update_output', serverId, historyId, stream: 'stdout', data: `Restarting docker container ${container} on ${server.name}...\n` });
-    
+    broadcast({ type: 'update_output', serverId, historyId, stream: 'stdout', data: `Restarting container ${container} on ${server.name}...\n` });
+
     const result = await ansibleRunner.runAdHoc(
       server.name,
-      'command',
-      `docker restart ${container}`,
+      'shell',
+      `$(command -v docker 2>/dev/null || command -v podman 2>/dev/null) restart ${container}`,
       (type, data) => {
         broadcast({ type: 'update_output', serverId, historyId, stream: type, data });
       }
@@ -390,12 +390,13 @@ app.post('/api/servers/:id/docker/compose/action', async (req, res) => {
   res.json({ historyId, status: 'started' });
 
   try {
+    const rt = '$(command -v docker 2>/dev/null || command -v podman 2>/dev/null)';
     let cmd = '';
-    if (action === 'up') cmd = 'docker compose up -d';
-    if (action === 'down') cmd = 'docker compose down';
-    if (action === 'pull') cmd = 'docker compose pull';
+    if (action === 'up') cmd = `${rt} compose up -d`;
+    if (action === 'down') cmd = `${rt} compose down`;
+    if (action === 'pull') cmd = `${rt} compose pull`;
 
-    broadcast({ type: 'update_output', serverId, historyId, stream: 'stdout', data: `Running '${cmd}' in ${path} on ${server.name}...\n` });
+    broadcast({ type: 'update_output', serverId, historyId, stream: 'stdout', data: `Running compose ${action.toUpperCase()} in ${path} on ${server.name}...\n` });
 
     const result = await ansibleRunner.runAdHoc(
       server.name,

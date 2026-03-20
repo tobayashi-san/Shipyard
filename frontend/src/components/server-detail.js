@@ -112,7 +112,7 @@ export async function renderServerDetail(serverId) {
       <div class="tab-panel" id="tab-docker">
         <div class="panel">
           <div class="section-header">
-            <h3><i class="fab fa-docker"></i> ${t('det.docker')}</h3>
+            <h3><i class="fas fa-cubes"></i> ${t('det.docker')}</h3>
             <button class="btn btn-primary btn-sm" id="btn-add-compose-stack">
               <i class="fas fa-plus"></i> ${t('det.newStack')}
             </button>
