@@ -126,6 +126,9 @@ export async function renderServerDetail(serverId) {
           <div class="section-header">
             <h3><i class="fas fa-cubes"></i> ${t('det.docker')}</h3>
             <div class="flex-gap">
+              <button class="btn btn-secondary btn-sm" id="btn-refresh-docker" title="${t('common.refresh')}">
+                <i class="fas fa-sync-alt"></i>
+              </button>
               <button class="btn btn-secondary btn-sm" id="btn-check-image-updates">
                 <i class="fas fa-cloud-download-alt"></i> ${t('det.checkUpdates')}
               </button>
@@ -445,6 +448,17 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
   });
 
   setupComposeBtn(serverId);
+  const refreshBtn = document.getElementById('btn-refresh-docker');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', async () => {
+      refreshBtn.disabled = true;
+      refreshBtn.querySelector('i').classList.add('fa-spin');
+      await api.getServerDocker(serverId, true)
+        .then(fresh => { if (document.getElementById('docker-content')) renderDockerData(serverId, fresh, imageUpdateMaps[serverId] || {}); })
+        .catch(() => {})
+        .finally(() => { refreshBtn.disabled = false; refreshBtn.querySelector('i').classList.remove('fa-spin'); });
+    });
+  }
   setupCheckUpdatesBtn(
     serverId,
     () => imageUpdateMaps[serverId] || {},
