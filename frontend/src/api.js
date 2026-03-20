@@ -125,6 +125,14 @@ class ApiClient {
   getContainerLogs(id, container, tail = 200) { return this.request(`/servers/${id}/docker/${encodeURIComponent(container)}/logs?tail=${tail}`); }
   checkImageUpdates(id) { return this.request(`/servers/${id}/docker/image-updates`); }
 
+  // Custom Update Tasks
+  getCustomUpdateTasks(serverId) { return this.request(`/servers/${serverId}/custom-updates`); }
+  createCustomUpdateTask(serverId, data) { return this.request(`/servers/${serverId}/custom-updates`, { method: 'POST', body: data }); }
+  updateCustomUpdateTask(serverId, taskId, data) { return this.request(`/servers/${serverId}/custom-updates/${taskId}`, { method: 'PUT', body: data }); }
+  deleteCustomUpdateTask(serverId, taskId) { return this.request(`/servers/${serverId}/custom-updates/${taskId}`, { method: 'DELETE' }); }
+  runCustomUpdateTask(serverId, taskId) { return this.request(`/servers/${serverId}/custom-updates/${taskId}/run`, { method: 'POST' }); }
+  checkCustomUpdateTask(serverId, taskId) { return this.request(`/servers/${serverId}/custom-updates/${taskId}/check`, { method: 'POST' }); }
+
   // Compose
   getDockerCompose(id, path) { return this.request(`/servers/${id}/docker/compose?path=${encodeURIComponent(path)}`); }
   writeDockerCompose(id, path, content) { return this.request(`/servers/${id}/docker/compose/write`, { method: 'POST', body: { path, content } }); }

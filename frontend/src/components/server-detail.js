@@ -632,7 +632,7 @@ function setupCheckUpdatesBtn(serverId, getImageUpdateMap, setImageUpdateMap, re
 // ============================================================
 // Updates Tab
 // ============================================================
-function renderUpdatesData(updates) {
+function renderUpdatesData(updates, customTasks = [], serverId = null) {
   const el = document.getElementById('updates-content');
   if (!el) return;
   const cached = updates?.length > 0 && updates[0]?._cached;
@@ -670,17 +670,205 @@ function renderUpdatesData(updates) {
       `).join('')}
     </div>` : ''}
   `;
+
+  if (serverId) {
+    el.insertAdjacentHTML('beforeend', renderCustomTasksHtml(customTasks));
+    setupCustomTaskListeners(serverId);
+  }
+}
+
+function renderCustomTasksHtml(customTasks) {
+  const rows = (customTasks || []).map(task => {
+    const statusCell = task.has_update
+      ? `<span class="badge badge-warning" style="font-size:10px;"><i class="fas fa-arrow-up"></i> ${t('det.imageUpdateAvail')}</span>`
+      : task.last_checked_at
+      ? `<span style="font-size:11px;color:var(--online);"><i class="fas fa-check"></i> ${t('det.imageUpToDate')}</span>`
+      : `<span style="font-size:11px;color:var(--text-muted);">—</span>`;
+    const typeLabel = task.type === 'github'
+      ? `<span style="font-size:11px;color:var(--text-muted);"><i class="fab fa-github"></i> GitHub</span>`
+      : `<span style="font-size:11px;color:var(--text-muted);">Script</span>`;
+    return `
+      <tr class="no-hover">
+        <td><strong>${esc(task.name)}</strong></td>
+        <td>${typeLabel}</td>
+        <td class="mono" style="font-size:11px;">${esc(task.current_version || '—')}</td>
+        <td class="mono" style="font-size:11px;">${esc(task.last_version || '—')}</td>
+        <td>${statusCell}</td>
+        <td style="white-space:nowrap;">
+          <button class="btn btn-secondary btn-sm custom-task-check" data-id="${esc(task.id)}" title="${t('det.checkNow')}"><i class="fas fa-sync-alt"></i></button>
+          <button class="btn btn-primary btn-sm custom-task-run" data-id="${esc(task.id)}" data-name="${esc(task.name)}" title="${t('det.runUpdate')}"><i class="fas fa-play"></i></button>
+          <button class="btn btn-secondary btn-sm custom-task-edit" data-id="${esc(task.id)}" title="${t('common.edit')}"><i class="fas fa-edit"></i></button>
+          <button class="btn btn-danger btn-sm custom-task-delete" data-id="${esc(task.id)}" data-name="${esc(task.name)}" title="${t('common.delete')}"><i class="fas fa-trash"></i></button>
+        </td>
+      </tr>`;
+  }).join('');
+
+  const emptyRow = `<tr class="no-hover"><td colspan="6" style="color:var(--text-muted);font-size:13px;padding:12px 16px;">${t('det.noCustomTasks')}</td></tr>`;
+
+  return `
+    <div class="section-header" style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px;">
+      <h3><i class="fas fa-cog"></i> ${t('det.customUpdates')}</h3>
+      <button class="btn btn-primary btn-sm" id="btn-add-custom-task"><i class="fas fa-plus"></i> ${t('det.addTask')}</button>
+    </div>
+    <table class="data-table">
+      <thead><tr>
+        <th>${t('common.name')}</th><th>${t('det.taskType')}</th>
+        <th>${t('det.currentVersion')}</th><th>${t('det.latestVersion')}</th>
+        <th>${t('common.status')}</th><th>${t('common.actions')}</th>
+      </tr></thead>
+      <tbody>${rows || emptyRow}</tbody>
+    </table>`;
+}
+
+function setupCustomTaskListeners(serverId) {
+  document.getElementById('btn-add-custom-task')?.addEventListener('click', () => {
+    showCustomTaskModal(serverId, null);
+  });
+
+  document.querySelectorAll('.custom-task-check').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const orig = btn.innerHTML;
+      btn.disabled = true; btn.innerHTML = '<span class="spinner-sm"></span>';
+      try {
+        await api.checkCustomUpdateTask(serverId, btn.dataset.id);
+        await loadUpdates(serverId);
+      } catch (err) {
+        showToast(t('common.errorPrefix', { msg: err.message }), 'error');
+      } finally { btn.disabled = false; btn.innerHTML = orig; }
+    });
+  });
+
+  document.querySelectorAll('.custom-task-run').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const name = btn.dataset.name;
+      openGlobalTerminal(t('det.runUpdateStarted', { name }));
+      try {
+        await api.runCustomUpdateTask(serverId, btn.dataset.id);
+        showToast(t('det.runUpdateStarted', { name }), 'success');
+      } catch (err) {
+        showToast(t('common.errorPrefix', { msg: err.message }), 'error');
+      }
+    });
+  });
+
+  document.querySelectorAll('.custom-task-edit').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      try {
+        const tasks = await api.getCustomUpdateTasks(serverId);
+        const task = tasks.find(t => t.id === btn.dataset.id);
+        if (task) showCustomTaskModal(serverId, task);
+      } catch (err) {
+        showToast(t('common.errorPrefix', { msg: err.message }), 'error');
+      }
+    });
+  });
+
+  document.querySelectorAll('.custom-task-delete').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!await showConfirm(t('det.confirmDeleteTask', { name: btn.dataset.name }), { danger: true })) return;
+      try {
+        await api.deleteCustomUpdateTask(serverId, btn.dataset.id);
+        showToast(t('det.taskDeleted'), 'success');
+        loadUpdates(serverId);
+      } catch (err) {
+        showToast(t('common.errorPrefix', { msg: err.message }), 'error');
+      }
+    });
+  });
+}
+
+function showCustomTaskModal(serverId, task) {
+  const existing = document.getElementById('custom-task-modal');
+  if (existing) existing.remove();
+
+  const isEdit = !!task;
+  const overlay = document.createElement('div');
+  overlay.id = 'custom-task-modal';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:500px;width:100%;">
+      <div class="modal-header">
+        <h3>${isEdit ? t('det.editTask') : t('det.addTask')}</h3>
+        <button class="btn btn-secondary btn-sm" id="ctm-close"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:14px;">
+        <div class="form-group">
+          <label class="form-label">${t('det.taskName')}</label>
+          <input class="form-input" id="ctm-name" value="${esc(task?.name || '')}" placeholder="UniFi OS, Immich, …">
+        </div>
+        <div class="form-group">
+          <label class="form-label">${t('det.taskType')}</label>
+          <select class="form-input" id="ctm-type">
+            <option value="script" ${(!task || task.type === 'script') ? 'selected' : ''}>${t('det.taskTypeScript')}</option>
+            <option value="github" ${task?.type === 'github' ? 'selected' : ''}>${t('det.taskTypeGithub')}</option>
+          </select>
+        </div>
+        <div class="form-group" id="ctm-github-row" style="${task?.type === 'github' ? '' : 'display:none;'}">
+          <label class="form-label">${t('det.taskGithubRepo')}</label>
+          <input class="form-input" id="ctm-github-repo" value="${esc(task?.github_repo || '')}" placeholder="immich-app/immich">
+        </div>
+        <div class="form-group">
+          <label class="form-label">${t('det.taskCheckCommand')} <span style="color:var(--text-muted);font-size:11px;">${t('det.taskCheckCommandHint')}</span></label>
+          <input class="form-input mono" id="ctm-check-cmd" value="${esc(task?.check_command || '')}" placeholder="immich version --json | jq -r .version">
+        </div>
+        <div class="form-group">
+          <label class="form-label">${t('det.taskUpdateCommand')} <span style="color:var(--text-muted);font-size:11px;">${t('det.taskUpdateCommandHint')}</span></label>
+          <input class="form-input mono" id="ctm-update-cmd" value="${esc(task?.update_command || '')}" placeholder="https://get.glennr.nl/unifi/update/unifi-update.sh">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="ctm-cancel">${t('common.cancel')}</button>
+        <button class="btn btn-primary" id="ctm-save"><i class="fas fa-save"></i> ${t('common.save')}</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+
+  document.getElementById('ctm-type').addEventListener('change', e => {
+    document.getElementById('ctm-github-row').style.display = e.target.value === 'github' ? '' : 'none';
+  });
+
+  const close = () => overlay.remove();
+  document.getElementById('ctm-close').addEventListener('click', close);
+  document.getElementById('ctm-cancel').addEventListener('click', close);
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+  document.getElementById('ctm-save').addEventListener('click', async () => {
+    const data = {
+      name: document.getElementById('ctm-name').value.trim(),
+      type: document.getElementById('ctm-type').value,
+      github_repo: document.getElementById('ctm-github-repo').value.trim() || null,
+      check_command: document.getElementById('ctm-check-cmd').value.trim() || null,
+      update_command: document.getElementById('ctm-update-cmd').value.trim(),
+    };
+    if (!data.name || !data.update_command) {
+      showToast(t('common.errorPrefix', { msg: 'Name und Update-Befehl sind erforderlich' }), 'error');
+      return;
+    }
+    try {
+      if (isEdit) await api.updateCustomUpdateTask(serverId, task.id, data);
+      else await api.createCustomUpdateTask(serverId, data);
+      showToast(t('det.taskSaved'), 'success');
+      close();
+      loadUpdates(serverId);
+    } catch (err) {
+      showToast(t('common.errorPrefix', { msg: err.message }), 'error');
+    }
+  });
 }
 
 async function loadUpdates(serverId) {
   const el = document.getElementById('updates-content');
   if (!el) return;
   try {
-    const updates = await api.getServerUpdates(serverId);
-    renderUpdatesData(updates);
+    const [updates, customTasks] = await Promise.all([
+      api.getServerUpdates(serverId),
+      api.getCustomUpdateTasks(serverId),
+    ]);
+    renderUpdatesData(updates, customTasks, serverId);
     if (updates?.length > 0 && updates[0]?._cached) {
       api.getServerUpdates(serverId, true)
-        .then(fresh => { if (document.getElementById('updates-content')) renderUpdatesData(fresh); })
+        .then(fresh => { if (document.getElementById('updates-content')) renderUpdatesData(fresh, customTasks, serverId); })
         .catch(() => {});
     }
   } catch (e) {

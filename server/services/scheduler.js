@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const db = require('../db');
 const ansibleRunner = require('./ansible-runner');
 const systemInfo = require('./system-info');
+const sshManager = require('./ssh-manager');
 const { parseImageUpdateOutput } = require('../utils/parse-image-updates');
 
 // In-memory map: scheduleId -> cron task
@@ -13,14 +14,17 @@ const running = new Set();
 let infoPoller = null;
 let updatesPoller = null;
 let imageUpdatesPoller = null;
+let customUpdatesPoller = null;
 let infoPolling = false;
 let updatesPolling = false;
 let imageUpdatesPolling = false;
+let customUpdatesPolling = false;
 
 const INFO_INTERVAL_ACTIVE       =  5 * 60 * 1000; // 5 min  – clients connected
 const INFO_INTERVAL_IDLE         = 15 * 60 * 1000; // 15 min – no one watching
 const UPDATES_INTERVAL_MS        = 60 * 60 * 1000; // 1 hour
 const IMAGE_UPDATES_INTERVAL_MS  =  6 * 60 * 60 * 1000; // 6 hours
+const CUSTOM_UPDATES_INTERVAL_MS =  6 * 60 * 60 * 1000; // 6 hours
 const STALE_THRESHOLD_MS         =  4 * 60 * 1000; // trigger immediate poll on connect if data > 4 min old
 
 let lastInfoPollTime = 0;
@@ -193,6 +197,56 @@ async function pollImageUpdates() {
 }
 
 /**
+ * Check a single custom update task: fetch GitHub latest release and/or
+ * run the check_command via SSH to determine current version.
+ */
+async function checkCustomTask(server, task) {
+  let lastVersion = task.last_version;
+  let currentVersion = task.current_version;
+
+  if (task.type === 'github' && task.github_repo) {
+    try {
+      const headers = { 'Accept': 'application/vnd.github+json', 'User-Agent': 'Shipyard/1.0' };
+      if (process.env.GITHUB_TOKEN) headers['Authorization'] = `Bearer ${process.env.GITHUB_TOKEN}`;
+      const res = await fetch(`https://api.github.com/repos/${task.github_repo}/releases/latest`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        lastVersion = data.tag_name || lastVersion;
+      }
+    } catch { /* keep stale */ }
+  }
+
+  if (task.check_command) {
+    try {
+      const result = await sshManager.execCommand(server, task.check_command);
+      if (result.code === 0) currentVersion = result.stdout.trim() || currentVersion;
+    } catch { /* keep stale */ }
+  }
+
+  const hasUpdate = !!(lastVersion && currentVersion && lastVersion !== currentVersion);
+  db.customUpdateTasks.setVersionInfo(task.id, currentVersion, lastVersion, hasUpdate);
+}
+
+/**
+ * Poll all custom update tasks for all servers.
+ */
+async function pollCustomUpdates() {
+  if (customUpdatesPolling) return;
+  customUpdatesPolling = true;
+  try {
+    const servers = db.servers.getAll();
+    await Promise.allSettled(servers.map(async server => {
+      const tasks = db.customUpdateTasks.getByServer(server.id);
+      await Promise.allSettled(tasks.map(task => checkCustomTask(server, task).catch(() => {})));
+    }));
+    broadcast({ type: 'cache_updated', scope: 'custom_updates' });
+    console.log('[Poller] Custom update tasks checked');
+  } finally {
+    customUpdatesPolling = false;
+  }
+}
+
+/**
  * Start background polling for system info and updates.
  */
 function startPolling() {
@@ -200,6 +254,7 @@ function startPolling() {
   pollSystemInfo().catch(err => console.error('[Poller] System info error:', err.message));
   pollUpdates().catch(err => console.error('[Poller] Updates error:', err.message));
   pollImageUpdates().catch(err => console.error('[Poller] Image updates error:', err.message));
+  pollCustomUpdates().catch(err => console.error('[Poller] Custom updates error:', err.message));
 
   // Info polling: runs every INFO_INTERVAL_ACTIVE, but skips when no clients
   // are connected and data is still fresh. A slower idle floor (INFO_INTERVAL_IDLE)
@@ -221,7 +276,12 @@ function startPolling() {
     IMAGE_UPDATES_INTERVAL_MS
   );
 
-  console.log(`[Poller] Started – active ${INFO_INTERVAL_ACTIVE / 60000}min / idle ${INFO_INTERVAL_IDLE / 60000}min, updates every ${UPDATES_INTERVAL_MS / 60000}min, image updates every ${IMAGE_UPDATES_INTERVAL_MS / 3600000}h`);
+  customUpdatesPoller = setInterval(
+    () => pollCustomUpdates().catch(err => console.error('[Poller] Custom updates error:', err.message)),
+    CUSTOM_UPDATES_INTERVAL_MS
+  );
+
+  console.log(`[Poller] Started – active ${INFO_INTERVAL_ACTIVE / 60000}min / idle ${INFO_INTERVAL_IDLE / 60000}min, updates every ${UPDATES_INTERVAL_MS / 60000}min, image/custom updates every ${IMAGE_UPDATES_INTERVAL_MS / 3600000}h`);
 }
 
 /**
@@ -238,9 +298,10 @@ function onClientConnect() {
  * Stop background polling.
  */
 function stopPolling() {
-  if (infoPoller)          { clearInterval(infoPoller);          infoPoller = null; }
-  if (updatesPoller)       { clearInterval(updatesPoller);       updatesPoller = null; }
-  if (imageUpdatesPoller)  { clearInterval(imageUpdatesPoller);  imageUpdatesPoller = null; }
+  if (infoPoller)           { clearInterval(infoPoller);           infoPoller = null; }
+  if (updatesPoller)        { clearInterval(updatesPoller);        updatesPoller = null; }
+  if (imageUpdatesPoller)   { clearInterval(imageUpdatesPoller);   imageUpdatesPoller = null; }
+  if (customUpdatesPoller)  { clearInterval(customUpdatesPoller);  customUpdatesPoller = null; }
 }
 
-module.exports = { init, register, unregister, reload, startPolling, stopPolling, onClientConnect, setClientCountFn: fn => { getClientCount = fn; } };
+module.exports = { init, register, unregister, reload, startPolling, stopPolling, onClientConnect, checkCustomTask, setClientCountFn: fn => { getClientCount = fn; } };

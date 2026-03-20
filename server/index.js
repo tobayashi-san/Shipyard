@@ -105,8 +105,10 @@ const serversRouter = require('./routes/servers');
 const systemRouter = require('./routes/system');
 const playbooksRouter = require('./routes/playbooks');
 const schedulesRouter = require('./routes/schedules');
+const customUpdatesRouter = require('./routes/custom-updates');
 app.use('/api/reset', resetRouter);
 app.use('/api/servers', serversRouter);
+app.use('/api/servers/:id/custom-updates', customUpdatesRouter);
 app.use('/api/system', systemRouter);
 app.use('/api/playbooks', playbooksRouter);
 app.use('/api/schedules', schedulesRouter);
@@ -156,6 +158,7 @@ app.get('/api/dashboard', (req, res) => {
         containers_total: containers.length,
         image_updates_count: imageUpdates === null ? null : imageUpdates.filter(r => r.status === 'update_available').length,
         image_updates_checked_at: imageUpdatesMeta?.updated_at || null,
+        custom_updates_count: db.customUpdateTasks.countHasUpdate(s.id),
         info_cached_at: info?.updated_at || null,
       };
     });
@@ -346,6 +349,35 @@ app.post('/api/servers/:id/docker/:container/restart', async (req, res) => {
   }
 });
 
+
+// POST /api/servers/:id/custom-updates/:taskId/run
+app.post('/api/servers/:id/custom-updates/:taskId/run', async (req, res) => {
+  const server = db.servers.getById(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Server not found' });
+  const task = db.customUpdateTasks.getById(req.params.taskId);
+  if (!task || task.server_id !== server.id) return res.status(404).json({ error: 'Task not found' });
+
+  const historyId = db.updateHistory.create(server.id, `custom_update:${task.name}`);
+  res.json({ historyId, status: 'started' });
+
+  broadcast({ type: 'update_output', serverId: server.id, historyId, stream: 'stdout', data: `Running: ${task.name}\n` });
+  try {
+    let cmd = task.update_command;
+    if (/^https?:\/\//.test(cmd)) cmd = `bash <(curl -fsSL "${cmd}")`;
+    const result = await sshManager.execCommand(server, cmd);
+    const output = (result.stdout || '') + (result.stderr || '');
+    output.split('\n').forEach(line => {
+      broadcast({ type: 'update_output', serverId: server.id, historyId, stream: 'stdout', data: line + '\n' });
+    });
+    const success = result.code === 0;
+    db.updateHistory.updateStatus(historyId, success ? 'success' : 'failed', output);
+    db.auditLog.write('custom_update.run', `server=${server.name} task=${task.name}`, req.ip, success);
+    broadcast({ type: 'update_complete', serverId: server.id, historyId, success });
+  } catch (error) {
+    db.updateHistory.updateStatus(historyId, 'failed', error.message);
+    broadcast({ type: 'update_error', serverId: server.id, historyId, error: error.message });
+  }
+});
 
 // POST /api/servers/:id/docker/compose/write
 app.post('/api/servers/:id/docker/compose/write', async (req, res) => {

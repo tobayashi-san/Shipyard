@@ -131,6 +131,26 @@ db.exec(`
   );
 `);
 
+// Custom update tasks
+db.exec(`
+  CREATE TABLE IF NOT EXISTS custom_update_tasks (
+    id TEXT PRIMARY KEY,
+    server_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'script',
+    check_command TEXT,
+    github_repo TEXT,
+    update_command TEXT NOT NULL,
+    last_version TEXT,
+    current_version TEXT,
+    has_update INTEGER DEFAULT 0,
+    last_checked_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_custom_update_tasks_server ON custom_update_tasks(server_id);
+`);
+
 // App settings table
 db.exec(`
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -398,6 +418,28 @@ module.exports = {
       const rows = db.prepare('SELECT key, value FROM app_settings').all();
       return Object.fromEntries(rows.map(r => [r.key, r.value]));
     },
+  },
+
+  customUpdateTasks: {
+    getByServer: (serverId) => db.prepare('SELECT * FROM custom_update_tasks WHERE server_id = ? ORDER BY created_at').all(serverId),
+    getById: (id) => db.prepare('SELECT * FROM custom_update_tasks WHERE id = ?').get(id),
+    create: (serverId, fields) => {
+      const id = uuidv4();
+      db.prepare(`INSERT INTO custom_update_tasks (id, server_id, name, type, check_command, github_repo, update_command) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(id, serverId, fields.name, fields.type, fields.check_command || null, fields.github_repo || null, fields.update_command);
+      return db.prepare('SELECT * FROM custom_update_tasks WHERE id = ?').get(id);
+    },
+    update: (id, fields) => {
+      db.prepare(`UPDATE custom_update_tasks SET name = ?, type = ?, check_command = ?, github_repo = ?, update_command = ? WHERE id = ?`)
+        .run(fields.name, fields.type, fields.check_command || null, fields.github_repo || null, fields.update_command, id);
+      return db.prepare('SELECT * FROM custom_update_tasks WHERE id = ?').get(id);
+    },
+    delete: (id) => db.prepare('DELETE FROM custom_update_tasks WHERE id = ?').run(id),
+    setVersionInfo: (id, currentVersion, lastVersion, hasUpdate) =>
+      db.prepare(`UPDATE custom_update_tasks SET current_version = ?, last_version = ?, has_update = ?, last_checked_at = datetime('now') WHERE id = ?`)
+        .run(currentVersion || null, lastVersion || null, hasUpdate ? 1 : 0, id),
+    countHasUpdate: (serverId) =>
+      db.prepare('SELECT COUNT(*) as c FROM custom_update_tasks WHERE server_id = ? AND has_update = 1').get(serverId).c,
   },
 
   serverGroups: {
