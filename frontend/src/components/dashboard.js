@@ -227,7 +227,7 @@ function imageUpdatesCell(s) {
     return `<span style="color:var(--text-muted);font-size:11px;" title="${t('dash.imageUpdatesNeverChecked')}">–</span>`;
   }
   const checkedAt = s.image_updates_checked_at
-    ? t('dash.imageUpdatesCheckedAt', { time: new Date(s.image_updates_checked_at).toLocaleString(undefined, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) })
+    ? t('dash.imageUpdatesCheckedAt', { time: toUtcDate(s.image_updates_checked_at).toLocaleString(undefined, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) })
     : '';
   if (s.image_updates_count > 0) {
     return `<span class="badge badge-warning" style="font-size:10px;" title="${checkedAt}"><i class="fas fa-cube"></i> ${s.image_updates_count}</span>`;
@@ -245,9 +245,14 @@ function formatUptime(seconds) {
   return `${m}m`;
 }
 
+function toUtcDate(dateStr) {
+  if (!dateStr) return new Date(NaN);
+  return new Date(!dateStr.endsWith('Z') ? dateStr.replace(' ', 'T') + 'Z' : dateStr);
+}
+
 function formatRelativeTime(dateStr) {
   try {
-    const diff = Date.now() - new Date(dateStr).getTime();
+    const diff = Date.now() - toUtcDate(dateStr).getTime();
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return t('dash.justNow');
     if (mins < 60) return t('dash.minutesAgo', { n: mins });

@@ -876,7 +876,9 @@ function updateBar(id, pct) {
 }
 
 function formatRelativeTime(dateStr) {
-  const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000);
+  // SQLite datetime('now') is UTC but has no 'Z' suffix — add it explicitly
+  const utc = dateStr && !dateStr.endsWith('Z') ? dateStr.replace(' ', 'T') + 'Z' : dateStr;
+  const diff = Math.floor((Date.now() - new Date(utc)) / 1000);
   if (diff < 60)    return t('dash.justNow');
   if (diff < 3600)  return Math.floor(diff / 60) + 'm';
   if (diff < 86400) return Math.floor(diff / 3600) + 'h';
