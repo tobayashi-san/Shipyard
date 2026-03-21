@@ -28,13 +28,23 @@ fi
 # (Docker volumes are created as root on first use)
 chown -R shipyard:shipyard /app/server/data /app/server/playbooks /app/plugins
 
-# Seed bundled plugins into the volume on first install (skip if already present)
+# Seed bundled plugins into the volume; update if the bundled version changed
 if [ -d /app/bundled-plugins ]; then
   for plugin_dir in /app/bundled-plugins/*/; do
     plugin_id=$(basename "$plugin_dir")
+    bundled_ver=$(grep '"version"' "$plugin_dir/manifest.json" 2>/dev/null | head -1 \
+                  | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+    installed_ver=$(cat "/app/plugins/$plugin_id/.bundle-version" 2>/dev/null || echo "")
+
     if [ ! -d "/app/plugins/$plugin_id" ]; then
-      echo "[plugins] Installing bundled plugin: $plugin_id"
+      echo "[plugins] Installing bundled plugin: $plugin_id ($bundled_ver)"
       cp -r "$plugin_dir" "/app/plugins/$plugin_id"
+      echo "$bundled_ver" > "/app/plugins/$plugin_id/.bundle-version"
+      chown -R shipyard:shipyard "/app/plugins/$plugin_id"
+    elif [ -n "$bundled_ver" ] && [ "$bundled_ver" != "$installed_ver" ]; then
+      echo "[plugins] Updating bundled plugin: $plugin_id ($installed_ver -> $bundled_ver)"
+      cp -r "$plugin_dir/." "/app/plugins/$plugin_id/"
+      echo "$bundled_ver" > "/app/plugins/$plugin_id/.bundle-version"
       chown -R shipyard:shipyard "/app/plugins/$plugin_id"
     fi
   done
