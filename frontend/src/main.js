@@ -68,21 +68,32 @@ export function openGlobalTerminal(title) {
   if (body) body.innerHTML = '';
   el.style.display = '';
   // Restore body height in case it was minimized
-  if (body) body.style.height = '220px';
+  if (body) body.style.height = body._savedHeight || '240px';
   const toggleBtn = document.getElementById('global-terminal-toggle');
   if (toggleBtn) toggleBtn.textContent = '▼';
+}
+
+function stripAnsi(str) {
+  return str
+    .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
+    .replace(/\x1b[()][AB012]/g, '')
+    .replace(/\x1b[78]/g, '')
+    .replace(/\r/g, '')
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
 }
 
 export function appendGlobalTerminal(text, type = 'stdout') {
   const body = document.getElementById('global-terminal-body');
   if (!body) return;
+  const clean = stripAnsi(text);
+  if (!clean.trim()) return;
   const line = document.createElement('div');
   line.style.cssText = type === 'stderr'
-    ? 'color:#f87171;' // red
+    ? 'color:#f87171;padding:1px 0;'
     : type === 'success'
-    ? 'color:#4ade80;' // green
-    : 'color:#c9d1d9;'; // default
-  line.textContent = text;
+    ? 'color:#4ade80;padding:1px 0;'
+    : 'color:#c9d1d9;padding:1px 0;';
+  line.textContent = clean;
   body.appendChild(line);
   body.scrollTop = body.scrollHeight;
 }
@@ -98,14 +109,39 @@ function setupGlobalTerminal() {
     const btn = document.getElementById('global-terminal-toggle');
     if (!body) return;
     if (body.style.height === '0px') {
-      body.style.height = '220px';
+      body.style.height = (body._savedHeight || '240px');
       body.style.padding = '12px 16px';
       if (btn) btn.textContent = '▼';
     } else {
+      body._savedHeight = body.style.height || '240px';
       body.style.height = '0px';
       body.style.padding = '0';
       if (btn) btn.textContent = '▲';
     }
+  });
+
+  // Drag-to-resize
+  const handle = document.getElementById('global-terminal-resize');
+  const body = document.getElementById('global-terminal-body');
+  if (!handle || !body) return;
+  let dragging = false, startY = 0, startH = 0;
+  handle.addEventListener('mousedown', e => {
+    dragging = true;
+    startY = e.clientY;
+    startH = parseInt(body.style.height) || 240;
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const delta = startY - e.clientY;
+    const newH = Math.max(80, Math.min(window.innerHeight * 0.85, startH + delta));
+    body.style.height = newH + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.userSelect = '';
   });
 }
 
