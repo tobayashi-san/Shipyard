@@ -28,5 +28,17 @@ fi
 # (Docker volumes are created as root on first use)
 chown -R shipyard:shipyard /app/server/data /app/server/playbooks /app/plugins
 
+# Seed bundled plugins into the volume on first install (skip if already present)
+if [ -d /app/bundled-plugins ]; then
+  for plugin_dir in /app/bundled-plugins/*/; do
+    plugin_id=$(basename "$plugin_dir")
+    if [ ! -d "/app/plugins/$plugin_id" ]; then
+      echo "[plugins] Installing bundled plugin: $plugin_id"
+      cp -r "$plugin_dir" "/app/plugins/$plugin_id"
+      chown -R shipyard:shipyard "/app/plugins/$plugin_id"
+    fi
+  done
+fi
+
 # Drop from root to shipyard and start the server
 exec gosu shipyard node server/index.js

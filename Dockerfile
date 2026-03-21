@@ -29,6 +29,10 @@ RUN mkdir -p /app/.ansible/tmp && chown -R shipyard:shipyard /app/.ansible
 RUN mkdir -p /app/server/playbooks && chown -R shipyard:shipyard /app/server/playbooks
 RUN mkdir -p /app/plugins && chown -R shipyard:shipyard /app/plugins
 
+# Bundle default plugins — seeded into the volume on first run by the entrypoint
+COPY plugins/ /app/bundled-plugins/
+RUN chown -R shipyard:shipyard /app/bundled-plugins
+
 VOLUME ["/app/server/data"]
 EXPOSE 443
 ENV NODE_ENV=production
