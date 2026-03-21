@@ -50,5 +50,17 @@ if [ -d /app/bundled-plugins ]; then
   done
 fi
 
+# Fix ownership of OpenTofu workspace directories registered by the plugin
+TOFU_PATHS="/app/server/data/tofu-workspace-paths.txt"
+if [ -f "$TOFU_PATHS" ]; then
+  while IFS= read -r wspath; do
+    [ -z "$wspath" ] && continue
+    if [ -d "$wspath" ]; then
+      chown -R shipyard:shipyard "$wspath"
+      echo "[tofu] Fixed ownership: $wspath"
+    fi
+  done < "$TOFU_PATHS"
+fi
+
 # Drop from root to shipyard and start the server
 exec gosu shipyard node server/index.js

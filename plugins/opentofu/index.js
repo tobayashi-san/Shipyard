@@ -20,6 +20,9 @@ function register({ router, db, broadcast }) {
     )
   `).run();
 
+  // Write paths file immediately so the next container restart can chown them
+  syncPathsFile();
+
   // ── Binary detection ──────────────────────────────────────────────────────
   function findBinary() {
     for (const bin of ['tofu', 'opentofu', 'terraform']) {
@@ -41,6 +44,14 @@ function register({ router, db, broadcast }) {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
+  const PATHS_FILE = '/app/server/data/tofu-workspace-paths.txt';
+  function syncPathsFile() {
+    try {
+      const rows = db.db.prepare('SELECT path FROM tofu_workspaces').all();
+      fs.writeFileSync(PATHS_FILE, rows.map(r => r.path).join('\n'), 'utf8');
+    } catch {}
+  }
+
   function getWorkspace(id) {
     const row = db.db.prepare('SELECT * FROM tofu_workspaces WHERE id = ?').get(id);
     if (!row) return null;
@@ -104,6 +115,7 @@ function register({ router, db, broadcast }) {
     db.db.prepare(
       'INSERT INTO tofu_workspaces (id, name, path, description, env_vars) VALUES (?, ?, ?, ?, ?)'
     ).run(id, name.trim(), wPath.trim(), (description || '').trim(), JSON.stringify(env_vars || {}));
+    syncPathsFile();
     res.json({ success: true, id });
   });
 
@@ -115,12 +127,14 @@ function register({ router, db, broadcast }) {
       'UPDATE tofu_workspaces SET name=?, path=?, description=?, env_vars=? WHERE id=?'
     ).run(name.trim(), wPath.trim(), (description || '').trim(), JSON.stringify(env_vars || {}), req.params.id);
     if (result.changes === 0) return res.status(404).json({ error: 'Workspace not found' });
+    syncPathsFile();
     res.json({ success: true });
   });
 
   // DELETE /api/plugin/opentofu/workspaces/:id
   router.delete('/workspaces/:id', (req, res) => {
     db.db.prepare('DELETE FROM tofu_workspaces WHERE id = ?').run(req.params.id);
+    syncPathsFile();
     res.json({ success: true });
   });
 

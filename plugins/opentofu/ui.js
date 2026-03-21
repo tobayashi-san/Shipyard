@@ -250,14 +250,15 @@ async function renderDetail() {
     <div style="background:#7f1d1d22;border:1px solid #ef444466;border-radius:6px;
                 padding:10px 14px;margin:12px 24px 0;font-size:12.5px;line-height:1.7;flex-shrink:0;">
       <i class="fas fa-exclamation-triangle" style="color:#ef4444;margin-right:6px;"></i>
-      <strong style="color:#ef4444;">Path not found inside container:</strong>
+      <strong style="color:#ef4444;">Path not found or not writable:</strong>
       <code style="font-family:var(--font-mono);margin:0 4px;">${esc(ws.path)}</code><br>
-      Add to <code>docker-compose.override.yml</code>:
+      Make sure the parent directory is mounted in <code>docker-compose.override.yml</code>:
       <code style="font-family:var(--font-mono);display:block;margin-top:4px;padding:4px 8px;
                    background:var(--bg-secondary);border-radius:4px;">
         - /your/host/path:${esc(ws.path)}:rw
       </code>
-      Then restart: <code>docker compose up -d</code>
+      Then restart — Shipyard will fix file ownership automatically:
+      <code style="font-family:var(--font-mono);">docker compose restart</code>
     </div>`;
 
   const tabStyle = (t) => `cursor:pointer;padding:8px 16px;font-size:13px;border:none;background:none;
