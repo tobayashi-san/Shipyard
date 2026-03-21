@@ -263,6 +263,55 @@ export async function renderSettings() {
           </div>
         </div>
 
+        <div class="settings-group-title">${t('set.smtp')}</div>
+        <div class="settings-block">
+          <div class="settings-row">
+            <div class="settings-row-label"><span>${t('set.smtpHost')}</span></div>
+            <div class="settings-row-control" style="display:grid;grid-template-columns:1fr 90px;gap:8px;max-width:420px;width:100%;">
+              <input class="form-input" type="text" id="smtp-host" value="${esc(wl.smtpHost || '')}" placeholder="smtp.example.com">
+              <input class="form-input" type="number" id="smtp-port" value="${esc(wl.smtpPort || '587')}" placeholder="587">
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label"><span>${t('set.smtpUser')}</span></div>
+            <div class="settings-row-control">
+              <input class="form-input" type="text" id="smtp-user" value="${esc(wl.smtpUser || '')}" placeholder="user@example.com" autocomplete="off" style="max-width:420px;width:100%;">
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label"><span>${t('set.smtpPass')}</span></div>
+            <div class="settings-row-control">
+              <input class="form-input" type="password" id="smtp-pass" value="" placeholder="••••••••" autocomplete="new-password" style="max-width:420px;width:100%;">
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label"><span>${t('set.smtpFrom')}</span></div>
+            <div class="settings-row-control">
+              <input class="form-input" type="email" id="smtp-from" value="${esc(wl.smtpFrom || '')}" placeholder="shipyard@example.com" style="max-width:420px;width:100%;">
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span>${t('set.smtpTo')}</span>
+              <small>${t('set.smtpToHint')}</small>
+            </div>
+            <div class="settings-row-control">
+              <input class="form-input" type="text" id="smtp-to" value="${esc(wl.smtpTo || '')}" placeholder="admin@example.com" style="max-width:420px;width:100%;">
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label"></div>
+            <div class="settings-row-control" style="display:flex;gap:8px;">
+              <button class="btn btn-primary btn-sm" id="btn-save-smtp">
+                <i class="fas fa-save"></i> ${t('common.save')}
+              </button>
+              <button class="btn btn-secondary btn-sm" id="btn-test-smtp">
+                <i class="fas fa-paper-plane"></i> ${t('set.webhookTest')}
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div class="settings-group-title">${t('set.polling')}</div>
         <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px 0;padding:0 4px;">${t('set.pollingHint')}</p>
         <div class="settings-block" id="polling-config-content">
@@ -504,6 +553,41 @@ function setupSettingsEvents(wl) {
       showToast(t('set.webhookTestOk'), 'success');
     } catch (e) {
       showToast(t('set.webhookTestFail') + (e.message ? ': ' + e.message : ''), 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<i class="fas fa-paper-plane"></i> ${t('set.webhookTest')}`;
+    }
+  });
+
+  // SMTP save
+  document.getElementById('btn-save-smtp')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-save-smtp');
+    btn.disabled = true;
+    try {
+      const pass = document.getElementById('smtp-pass').value;
+      await api.saveSettings({
+        smtpHost: document.getElementById('smtp-host').value.trim(),
+        smtpPort: document.getElementById('smtp-port').value.trim(),
+        smtpUser: document.getElementById('smtp-user').value.trim(),
+        smtpFrom: document.getElementById('smtp-from').value.trim(),
+        smtpTo:   document.getElementById('smtp-to').value.trim(),
+        ...(pass ? { smtpPass: pass } : {}),
+      });
+      showToast(t('set.smtpSaved'), 'success');
+    } catch { showToast(t('set.toastErrorSave'), 'error'); }
+    finally { btn.disabled = false; }
+  });
+
+  // SMTP test
+  document.getElementById('btn-test-smtp')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-test-smtp');
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-sm"></span>`;
+    try {
+      await api.testSmtp();
+      showToast(t('set.smtpTestOk'), 'success');
+    } catch (e) {
+      showToast(t('set.smtpTestFail') + (e.message ? ': ' + e.message : ''), 'error');
     } finally {
       btn.disabled = false;
       btn.innerHTML = `<i class="fas fa-paper-plane"></i> ${t('set.webhookTest')}`;

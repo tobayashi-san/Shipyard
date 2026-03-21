@@ -187,7 +187,7 @@ app.get('/api/dashboard', (req, res) => {
 // Ansible execution via REST + WebSocket
 const ansibleRunner = require('./services/ansible-runner');
 const db = require('./db');
-const { sendWebhook } = require('./services/webhook');
+const { notify } = require('./services/notifier');
 
 // POST /api/ansible/run - Run a playbook with WebSocket output
 app.post('/api/ansible/run', async (req, res) => {
@@ -227,7 +227,7 @@ app.post('/api/ansible/run', async (req, res) => {
     db.updateHistory.updateStatus(historyId, 'failed', error.message);
     db.auditLog.write('ansible.run', `playbook=${playbook} targets=${targets || 'all'} error=${error.message}`, req.ip, false);
     broadcast({ type: 'ansible_error', historyId, error: error.message });
-    sendWebhook(`Playbook failed: ${playbook}`, error.message, false).catch(() => {});
+    notify(`Playbook failed: ${playbook}`, error.message, false).catch(() => {});
   }
 });
 
@@ -259,7 +259,7 @@ app.post('/api/servers/:id/update', async (req, res) => {
     db.updateHistory.updateStatus(historyId, 'failed', error.message);
     db.auditLog.write('server.update', `server=${server.name} error=${error.message}`, req.ip, false);
     broadcast({ type: 'update_error', serverId, historyId, error: error.message });
-    sendWebhook(`Update failed: ${server.name}`, error.message, false).catch(() => {});
+    notify(`Update failed: ${server.name}`, error.message, false).catch(() => {});
   }
 });
 
@@ -286,7 +286,7 @@ app.post('/api/servers/update-all', async (req, res) => {
     db.updateHistory.updateStatus(historyId, 'failed', error.message);
     db.auditLog.write('server.update_all', `error=${error.message}`, req.ip, false);
     broadcast({ type: 'bulk_update_error', historyId, error: error.message });
-    sendWebhook('Bulk update failed', error.message, false).catch(() => {});
+    notify('Bulk update failed', error.message, false).catch(() => {});
   }
 });
 

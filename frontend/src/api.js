@@ -158,6 +158,7 @@ class ApiClient {
   getPlaybookHistory(filename) { return this.request(`/playbooks/${encodeURIComponent(filename)}/history`); }
   restorePlaybook(filename, version) { return this.request(`/playbooks/${encodeURIComponent(filename)}/restore/${version}`, { method: 'POST' }); }
   testWebhook() { return this.request('/system/webhook-test', { method: 'POST' }); }
+  testSmtp()    { return this.request('/system/smtp-test',    { method: 'POST' }); }
   runUpdate(serverId) { return this.request(`/servers/${serverId}/update`, { method: 'POST' }); }
   runUpdateAll() { return this.request(`/servers/update-all`, { method: 'POST' }); }
   runReboot(serverId) { return this.request(`/servers/${serverId}/reboot`, { method: 'POST' }); }

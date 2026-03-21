@@ -24,9 +24,9 @@ if [ -z "$SSL_KEY" ] || [ -z "$SSL_CERT" ]; then
   export SSL_CERT="$DEFAULT_CERT"
 fi
 
-# Ensure the data volume is owned by the shipyard user
+# Ensure writable directories are owned by the shipyard user
 # (Docker volumes are created as root on first use)
-chown -R shipyard:shipyard /app/server/data
+chown -R shipyard:shipyard /app/server/data /app/server/playbooks
 
 # Drop from root to shipyard and start the server
 exec gosu shipyard node server/index.js

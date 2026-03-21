@@ -71,6 +71,11 @@ router.get('/settings', (req, res) => {
       timeFormat:    raw.ui_time_format  || '24h',
       webhookUrl:    raw.webhook_url     || '',
       webhookSecret: raw.webhook_secret  || '',
+      smtpHost:      raw.smtp_host       || '',
+      smtpPort:      raw.smtp_port       || '587',
+      smtpUser:      raw.smtp_user       || '',
+      smtpFrom:      raw.smtp_from       || '',
+      smtpTo:        raw.smtp_to         || '',
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -80,7 +85,9 @@ router.get('/settings', (req, res) => {
 // PUT /api/system/settings - Save app settings
 router.put('/settings', (req, res) => {
   try {
-    const { appName, appTagline, accentColor, theme, timeFormat, webhookUrl, webhookSecret } = req.body;
+    const { appName, appTagline, accentColor, theme, timeFormat,
+            webhookUrl, webhookSecret,
+            smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom, smtpTo } = req.body;
     if (appName       !== undefined) db.settings.set('wl_app_name',     appName);
     if (appTagline    !== undefined) db.settings.set('wl_app_tagline',  appTagline);
     if (accentColor   !== undefined) db.settings.set('wl_accent_color', accentColor);
@@ -88,6 +95,12 @@ router.put('/settings', (req, res) => {
     if (timeFormat    !== undefined) db.settings.set('ui_time_format',  timeFormat);
     if (webhookUrl    !== undefined) db.settings.set('webhook_url',     webhookUrl);
     if (webhookSecret !== undefined) db.settings.set('webhook_secret',  webhookSecret);
+    if (smtpHost      !== undefined) db.settings.set('smtp_host',       smtpHost);
+    if (smtpPort      !== undefined) db.settings.set('smtp_port',       String(smtpPort));
+    if (smtpUser      !== undefined) db.settings.set('smtp_user',       smtpUser);
+    if (smtpPass      !== undefined) db.settings.set('smtp_pass',       smtpPass);
+    if (smtpFrom      !== undefined) db.settings.set('smtp_from',       smtpFrom);
+    if (smtpTo        !== undefined) db.settings.set('smtp_to',         smtpTo);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -97,11 +110,22 @@ router.put('/settings', (req, res) => {
 // POST /api/system/webhook-test - Send a test webhook notification
 router.post('/webhook-test', async (req, res) => {
   try {
-    const { sendWebhook } = require('../services/webhook');
+    const { sendWebhook } = require('../services/notifier');
     const result = await sendWebhook('Shipyard Test', 'This is a test notification from Shipyard.', true);
     if (result && result.ok === false) {
       return res.status(502).json({ error: 'Webhook request failed', status: result.status });
     }
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/system/smtp-test - Send a test email
+router.post('/smtp-test', async (req, res) => {
+  try {
+    const { sendEmail } = require('../services/notifier');
+    await sendEmail('Shipyard Test', 'This is a test email from Shipyard.', true);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
