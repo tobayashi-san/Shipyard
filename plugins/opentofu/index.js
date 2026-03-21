@@ -1,6 +1,7 @@
 const { spawn, execSync } = require('child_process');
-const fs = require('fs');
-const { randomUUID }      = require('crypto');
+const fs   = require('fs');
+const path = require('path');
+const { randomUUID } = require('crypto');
 
 // Map of currently running processes: runId -> ChildProcess
 const _running = new Map();
@@ -44,6 +45,37 @@ function register({ router, db, broadcast }) {
     const row = db.db.prepare('SELECT * FROM tofu_workspaces WHERE id = ?').get(id);
     if (!row) return null;
     return { ...row, env_vars: JSON.parse(row.env_vars || '{}') };
+  }
+
+  // Resolve a relative path safely within a workspace (prevent traversal)
+  function safePath(wsPath, relPath) {
+    const resolved = path.resolve(wsPath, relPath);
+    if (!resolved.startsWith(path.resolve(wsPath) + path.sep) &&
+        resolved !== path.resolve(wsPath)) return null;
+    return resolved;
+  }
+
+  // Recursively list files/dirs, skipping .terraform provider cache
+  function walkDir(dir, rel, depth) {
+    if (depth > 5) return [];
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
+    catch { return []; }
+    const result = [];
+    for (const e of entries) {
+      if (e.name === '.terraform' && depth > 0) continue; // skip provider cache subdirs
+      const childRel = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) {
+        result.push({ type: 'dir', name: e.name, path: childRel,
+          children: walkDir(path.join(dir, e.name), childRel, depth + 1) });
+      } else {
+        result.push({ type: 'file', name: e.name, path: childRel });
+      }
+    }
+    return result.sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
   }
 
   // ── Routes ────────────────────────────────────────────────────────────────
@@ -158,6 +190,38 @@ function register({ router, db, broadcast }) {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
     res.json({ pathExists: fs.existsSync(workspace.path) });
+  });
+
+  // GET /api/plugin/opentofu/workspaces/:id/files  — directory tree
+  router.get('/workspaces/:id/files', (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    if (!fs.existsSync(workspace.path)) return res.status(400).json({ error: 'Path not found in container' });
+    res.json({ tree: walkDir(workspace.path, '', 0) });
+  });
+
+  // GET /api/plugin/opentofu/workspaces/:id/file?path=rel/path  — read file
+  router.get('/workspaces/:id/file', (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    const fp = safePath(workspace.path, req.query.path || '');
+    if (!fp) return res.status(400).json({ error: 'Invalid path' });
+    try {
+      const content = fs.readFileSync(fp, 'utf8');
+      res.json({ content });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // PUT /api/plugin/opentofu/workspaces/:id/file?path=rel/path  — save file
+  router.put('/workspaces/:id/file', (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    const fp = safePath(workspace.path, req.query.path || '');
+    if (!fp) return res.status(400).json({ error: 'Invalid path' });
+    try {
+      fs.writeFileSync(fp, req.body.content ?? '', 'utf8');
+      res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   // GET /api/plugin/opentofu/workspaces/:id/state
