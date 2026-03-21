@@ -464,9 +464,18 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
     refreshUpdatesBtn.addEventListener('click', async () => {
       refreshUpdatesBtn.disabled = true;
       refreshUpdatesBtn.querySelector('i').classList.add('fa-spin');
-      await loadUpdates(serverId)
-        .catch(() => {})
-        .finally(() => { refreshUpdatesBtn.disabled = false; refreshUpdatesBtn.querySelector('i').classList.remove('fa-spin'); });
+      try {
+        const [updates, customTasks] = await Promise.all([
+          api.getServerUpdates(serverId, true),
+          api.getCustomUpdateTasks(serverId),
+        ]);
+        renderUpdatesData(updates, customTasks, serverId);
+      } catch (e) {
+        showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+      } finally {
+        refreshUpdatesBtn.disabled = false;
+        refreshUpdatesBtn.querySelector('i').classList.remove('fa-spin');
+      }
     });
   }
 
