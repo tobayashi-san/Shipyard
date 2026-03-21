@@ -9,6 +9,7 @@
 | `SSL_CERT` | – | Path to TLS certificate |
 | `JWT_SECRET` | (auto, stored in DB) | JWT signing secret — **set explicitly in production** |
 | `SHIPYARD_KEY_SECRET` | – | Enables AES-256-GCM encryption of SSH private keys at rest — **recommended** |
+| `GITHUB_TOKEN` | – | Optional personal access token for GitHub API — avoids rate limits when Custom Update Tasks fetch the latest release from GitHub |
 | `NODE_ENV` | – | Set to `production` to enable static file serving |
 | `ALLOWED_ORIGINS` | `localhost:3000,localhost:5173` | CORS whitelist (comma-separated) |
 

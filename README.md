@@ -30,6 +30,8 @@ Detects your OS, installs dependencies, builds the frontend, and registers a sys
 
 ## Screenshots
 
+> Screenshots may be outdated and not reflect the latest UI.
+
 ![Dashboard](docs/images/Dashboard.png)
 
 <details>
@@ -44,13 +46,16 @@ Detects your OS, installs dependencies, builds the frontend, and registers a sys
 
 ## Features
 
-- **Server Management** – Add, edit, delete servers; groups & tags
+- **Server Management** – Add, edit, delete servers; groups & tags; "Last Online" timestamp
 - **System Monitoring** – CPU, RAM, disk, uptime, load average
-- **Update Management** – `apt` updates via Ansible with live terminal output
-- **Docker** – Container overview, logs, restart, edit Compose stacks
+- **OS Updates** – `apt` updates via Ansible with live terminal output
+- **Custom Update Tasks** – Track tools outside apt (scripts, GitHub releases); shows current vs. latest version with update badge; streams live output
+- **Docker / Podman** – Container overview, logs, restart, edit Compose stacks; image update checks
 - **Ansible Playbooks** – Create and run custom playbooks
 - **Scheduler** – Run playbooks on a cron schedule
-- **SSH Terminal** – Browser-based terminal in the dashboard
+- **Background Polling** – Configurable pollers (system info, OS updates, image updates, custom updates) — each with its own interval; never installs automatically
+- **Dashboard** – Server health table with combined updates column; alerts for offline servers, high resource usage, and pending updates
+- **SSH Terminal** – Browser-based terminal; resizable drawer, live streaming output, ANSI codes stripped
 - **SSH Key Management** – Auto-generate keys and deploy them to servers
 - **2FA / TOTP** – Optional two-factor authentication
 - **Bilingual UI** – German and English, auto-detected from browser
