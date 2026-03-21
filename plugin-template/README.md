@@ -1,66 +1,103 @@
 # Shipyard Plugin Template
 
-Use this template as a starting point for building Shipyard plugins.
+Starting point for building Shipyard plugins. Copy this directory, rename it to your plugin's ID, implement `index.js` and/or `ui.js`, and drop it into `/app/plugins/`.
 
 ## Directory Structure
 
 ```
 my-plugin/
-├── manifest.json   ← Required: plugin metadata
-├── index.js        ← Optional: backend (Node.js/Express)
-└── ui.js           ← Optional: frontend (ES Module)
+├── manifest.json   ← required: plugin metadata
+├── index.js        ← optional: backend (Node.js / Express routes)
+└── ui.js           ← optional: frontend (ES Module)
 ```
 
 ## Getting Started
 
-1. Copy this directory and rename it to your plugin's id (e.g. `my-plugin`).
-2. Edit `manifest.json` — set `id` to match the directory name.
-3. Implement `index.js` (backend routes) and/or `ui.js` (frontend UI).
+1. Copy this directory and rename it to your plugin's ID (e.g. `my-plugin`).
+2. Edit `manifest.json` — set `id` to match the directory name exactly.
+3. Implement `index.js` and/or `ui.js` (see sections below).
 4. Place the directory in `/app/plugins/my-plugin/`.
-5. Go to **Settings → Plugins** and click **Reload**, then enable your plugin.
+5. Go to **Settings → Plugins**, click **Reload**, then enable your plugin.
+
+**Docker:** mount your plugin directory into the container via `docker-compose.override.yml`:
+
+```yaml
+# docker-compose.override.yml
+services:
+  shipyard:
+    volumes:
+      - ./my-plugin:/app/plugins/my-plugin
+```
 
 ## manifest.json
 
 ```json
 {
-  "id": "my-plugin",          ← Must match the directory name (lowercase, a-z, 0-9, - or _)
-  "name": "My Plugin",        ← Display name shown in the UI
-  "version": "1.0.0",         ← Semver version string
-  "description": "…",        ← Short description
+  "id": "my-plugin",
+  "name": "My Plugin",
+  "version": "1.0.0",
+  "description": "Short description shown in Settings → Plugins.",
   "author": "Your Name",
-  "sidebar": {                ← Optional: show a link in the sidebar
-    "icon": "fas fa-star",    ← Any Font Awesome 6 icon class
-    "label": "My Plugin"      ← Sidebar link text
+  "sidebar": {
+    "icon": "fas fa-star",
+    "label": "My Plugin"
   }
 }
 ```
+
+| Field | Required | Notes |
+|---|---|---|
+| `id` | yes | Must match the directory name. Lowercase, `a-z 0-9 - _` only. |
+| `name` | yes | Display name shown in the UI. |
+| `version` | yes | Semver string. |
+| `description` | yes | Shown in Settings → Plugins. |
+| `author` | no | |
+| `sidebar` | no | Adds a link to the sidebar. `icon` is any Font Awesome 6 class. |
 
 ## index.js — Backend
 
 ```js
 function register({ router, db, broadcast, sshManager, ansibleRunner, scheduler, pluginId, pluginDir }) {
   // Routes are mounted at /api/plugin/<id>/
-  // Auth middleware is already applied — only authenticated users can call these.
+  // JWT auth middleware is already applied — only authenticated requests reach here.
+
   router.get('/status', (req, res) => {
-    res.json({ ok: true });
+    res.json({ ok: true, pluginId });
+  });
+
+  router.post('/run', async (req, res) => {
+    const servers = db.servers.getAll();
+    res.json({ started: true });
+
+    // Stream output to all connected browser clients
+    broadcast({ type: 'my_plugin_output', data: `Running on ${servers.length} server(s)` });
   });
 }
 
 module.exports = { register };
 ```
 
-### Available helpers
+### Injected helpers
 
-| Helper         | Description |
-|----------------|-------------|
-| `router`       | Express Router mounted at `/api/plugin/<id>/`, auth-protected |
-| `db`           | Shipyard DB instance (servers, settings, auditLog, …) |
-| `broadcast`    | `(data)` → sends a WebSocket message to all connected clients |
-| `sshManager`   | SSH helper — `execStream(server, cmd, onChunk)`, `getPrivateKey()` |
-| `ansibleRunner`| Ansible helper — `runPlaybook(name, targets, vars, onOutput)` |
-| `scheduler`    | Background polling scheduler |
-| `pluginId`     | This plugin's id string |
-| `pluginDir`    | Absolute path to this plugin directory |
+| Helper | Type | Description |
+|---|---|---|
+| `router` | Express Router | Mounted at `/api/plugin/<id>/`, JWT-protected. |
+| `db` | Object | Shipyard DB — `db.servers.getAll()`, `db.settings.get(key)`, `db.auditLog.write(...)`, etc. |
+| `broadcast` | `(data) => void` | Send a WebSocket message to all connected browser clients. |
+| `sshManager` | Object | SSH helpers — see table below. |
+| `ansibleRunner` | Object | `runPlaybook(name, targets, vars, onOutput)`, `runAdHoc(targets, module, args, onOutput)` |
+| `scheduler` | Object | Background polling scheduler. |
+| `pluginId` | string | This plugin's ID as declared in `manifest.json`. |
+| `pluginDir` | string | Absolute path to this plugin's directory inside the container. |
+
+#### sshManager helpers
+
+| Method | Description |
+|---|---|
+| `execCommand(server, cmd)` | Run a command via SSH, returns `{ stdout, stderr, code }`. |
+| `execStream(server, cmd, onChunk)` | Run a command and stream stdout chunks; returns exit code. |
+| `getPrivateKey()` | Returns the decrypted private key string (for use with ssh2 directly). |
+| `testConnection(server)` | Returns `true` if the server is reachable via SSH. |
 
 ## ui.js — Frontend
 
@@ -68,39 +105,66 @@ module.exports = { register };
 let _wsUnsub = null;
 
 export async function mount(container, { api, pluginApi, state, navigate, showToast, showConfirm, onWsMessage }) {
-  container.innerHTML = '<h2>Hello!</h2>';
+  container.innerHTML = '<p>Loading…</p>';
 
-  // Call your plugin's own backend
-  const data = await pluginApi.request('/status');
+  // Call your plugin's own backend routes
+  const status = await pluginApi.request('/status');
 
-  // Call any Shipyard API
+  // Call any Shipyard core API
   const servers = await api.getServers();
 
-  // Subscribe to WebSocket events
+  container.innerHTML = `<h2>Hello from my-plugin!</h2><p>${servers.length} server(s)</p>`;
+
+  // Subscribe to WebSocket messages (auto-unsubscribed on unmount)
   _wsUnsub = onWsMessage(msg => {
-    if (msg.type === 'plugin_event') console.log(msg);
+    if (msg.type === 'my_plugin_output') showToast(msg.data, 'info');
   });
 }
 
 export function unmount() {
+  // Always clean up subscriptions
   if (_wsUnsub) { _wsUnsub(); _wsUnsub = null; }
 }
 ```
 
-### Available helpers
+### Injected helpers
 
-| Helper        | Description |
-|---------------|-------------|
-| `api`         | Global Shipyard API client |
-| `pluginApi`   | Namespaced API client for `/api/plugin/<id>/...` |
-| `state`       | Global app state (`servers`, `plugins`, `whiteLabel`, …) |
-| `navigate`    | `(view, params)` — navigate to another view |
-| `showToast`   | `(message, type)` — show a toast notification |
-| `showConfirm` | `(message, opts)` → `Promise<boolean>` — show a confirm dialog |
-| `onWsMessage` | `(callback)` → unsubscribe function — listen for WebSocket messages |
+| Helper | Description |
+|---|---|
+| `api` | Full Shipyard API client (`api.getServers()`, `api.getServer(id)`, etc.) |
+| `pluginApi` | Namespaced client — `pluginApi.request('/path')` calls `/api/plugin/<id>/path` |
+| `state` | Global app state: `state.servers`, `state.plugins`, `state.whiteLabel` |
+| `navigate` | `(view, params)` — navigate to another view (`'dashboard'`, `'servers'`, etc.) |
+| `showToast` | `(message, type)` — show a toast. `type`: `'info'` \| `'success'` \| `'warning'` \| `'error'` |
+| `showConfirm` | `(message, opts) => Promise<boolean>` — show a confirmation dialog |
+| `onWsMessage` | `(callback) => unsubscribeFn` — listen to WebSocket messages from the backend |
+
+### Sending WebSocket messages to the frontend
+
+Call `broadcast(data)` from your backend. `data` must be a plain object. The `type` field identifies the message:
+
+```js
+// index.js
+broadcast({ type: 'my_plugin_done', result: 'success' });
+
+// ui.js
+_wsUnsub = onWsMessage(msg => {
+  if (msg.type === 'my_plugin_done') showToast('Done!', 'success');
+});
+```
+
+## Reference: OpenTofu Plugin
+
+The built-in OpenTofu plugin (`/app/plugins/opentofu/`) is a complete real-world example. It demonstrates:
+
+- Backend: SQLite table creation, file system access, spawning long-running processes, streaming output via `broadcast`
+- Frontend: tabs, a file tree, a CodeMirror editor, terminal output rendering
+- Docker: mounting workspace directories via `docker-compose.override.yml`
 
 ## Security
 
-Plugins run as **Node.js code on the server** with full access to the file system,
-SSH connections, the Shipyard database, and the network. Only install plugins from
-trusted sources. Shipyard shows a security warning when you enable a new plugin.
+Plugins run as **Node.js code on the server** with full access to the file system, SSH connections, the Shipyard database, and the network.
+
+- Only install plugins from sources you trust completely.
+- Shipyard shows a security warning dialog when you enable a plugin for the first time.
+- Plugin routes inherit Shipyard's JWT auth middleware — unauthenticated requests are rejected before reaching plugin code.

@@ -12,6 +12,8 @@
 | `GITHUB_TOKEN` | – | Optional personal access token for GitHub API — avoids rate limits when Custom Update Tasks fetch the latest release from GitHub |
 | `NODE_ENV` | – | Set to `production` to enable static file serving |
 | `ALLOWED_ORIGINS` | `localhost:3000,localhost:5173` | CORS whitelist (comma-separated) |
+| `DB_PATH` | `server/data/shipyard.db` | Override the SQLite database path |
+| `GITHUB_TOKEN` | – | GitHub personal access token — avoids API rate limits for Custom Update Tasks |
 
 For production deployments, set `JWT_SECRET` and `SHIPYARD_KEY_SECRET` outside the data directory. See [Security Hardening](security.md).
 
@@ -55,7 +57,7 @@ Shipyard/
 │   ├── db.js                # SQLite database
 │   ├── middleware/          # JWT auth
 │   ├── routes/              # API routes
-│   ├── services/            # SSH, Ansible, system info, scheduler
+│   ├── services/            # SSH, Ansible, system info, scheduler, notifier
 │   ├── playbooks/           # Ansible playbooks
 │   └── data/                # Runtime data (DB, SSH key) – never commit
 ├── frontend/                # Frontend (Vite + Vanilla JS)
@@ -66,6 +68,9 @@ Shipyard/
 │       ├── i18n.js          # DE/EN translations
 │       ├── websocket.js     # WebSocket client
 │       └── components/      # UI components
+├── plugins/                 # Bundled plugins
+│   └── opentofu/            # OpenTofu / Terraform workspace manager
+├── plugin-template/         # Starting point for custom plugins
 ├── docs/                    # Documentation
 ├── Dockerfile
 ├── docker-compose.yml
