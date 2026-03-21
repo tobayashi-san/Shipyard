@@ -71,11 +71,14 @@ app.use((req, res, next) => {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  const isProduction = process.env.NODE_ENV === 'production';
   res.setHeader(
     'Content-Security-Policy',
     [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      // In production the Vite build emits only external module scripts — no inline scripts needed.
+      // In development the Express server does not serve the frontend, so this only applies in production.
+      isProduction ? "script-src 'self'" : "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com",
       "font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com",
       "connect-src 'self' ws: wss:",
@@ -216,6 +219,31 @@ app.get('/api/dashboard', (req, res) => {
   }
 });
 
+// ── Rate limiters for destructive actions ─────────────────────────────────────
+const rebootLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: { error: 'Too many reboot requests. Please wait.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const containerRestartLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: { error: 'Too many restart requests. Please wait.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const customUpdateRunLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: { error: 'Too many update executions. Please wait.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Ansible execution via REST + WebSocket
 
 // POST /api/ansible/run - Run a playbook with WebSocket output
@@ -320,7 +348,7 @@ app.post('/api/servers/update-all', async (req, res) => {
 });
 
 // POST /api/servers/:id/reboot - Reboot a server using ansible ad-hoc
-app.post('/api/servers/:id/reboot', async (req, res) => {
+app.post('/api/servers/:id/reboot', rebootLimiter, async (req, res) => {
   const serverId = req.params.id;
   const server = db.servers.getById(serverId);
   if (!server) return res.status(404).json({ error: 'Server not found' });
@@ -359,7 +387,7 @@ app.post('/api/servers/:id/reboot', async (req, res) => {
 });
 
 // POST /api/servers/:id/docker/:container/restart - Restart a docker container
-app.post('/api/servers/:id/docker/:container/restart', async (req, res) => {
+app.post('/api/servers/:id/docker/:container/restart', containerRestartLimiter, async (req, res) => {
   const { id: serverId, container } = req.params;
   if (!/^[a-zA-Z0-9_.-]+$/.test(container)) return res.status(400).json({ error: 'Invalid container name' });
   const server = db.servers.getById(serverId);
@@ -389,14 +417,6 @@ app.post('/api/servers/:id/docker/:container/restart', async (req, res) => {
   }
 });
 
-
-const customUpdateRunLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 10,
-  message: { error: 'Too many update executions. Please wait.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 // POST /api/servers/:id/custom-updates/:taskId/run
 app.post('/api/servers/:id/custom-updates/:taskId/run', customUpdateRunLimiter, async (req, res) => {

@@ -28,13 +28,13 @@ after(() => {
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
-test('setup – rejects password under 8 chars', async () => {
-  const res = await request(app).post('/api/auth/setup').send({ password: '1234567' });
+test('setup – rejects password under 12 chars', async () => {
+  const res = await request(app).post('/api/auth/setup').send({ password: '12345678901' });
   assert.equal(res.status, 400);
 });
 
 test('setup – returns token for valid password', async () => {
-  const res = await request(app).post('/api/auth/setup').send({ password: 'testpass123' });
+  const res = await request(app).post('/api/auth/setup').send({ password: 'testpass1234' });
   assert.equal(res.status, 200);
   assert.equal(typeof res.body.token, 'string');
 });
@@ -47,7 +47,7 @@ test('setup – rejects second setup attempt', async () => {
 // ── Login ─────────────────────────────────────────────────────────────────────
 
 test('login – returns token with correct password', async () => {
-  const res = await request(app).post('/api/auth/login').send({ password: 'testpass123' });
+  const res = await request(app).post('/api/auth/login').send({ password: 'testpass1234' });
   assert.equal(res.status, 200);
   assert.equal(typeof res.body.token, 'string');
 });
@@ -79,7 +79,7 @@ test('protected route – rejects garbage token', async () => {
 test('protected route – allows valid token', async () => {
   const { body: { token } } = await request(app)
     .post('/api/auth/login')
-    .send({ password: 'testpass123' });
+    .send({ password: 'testpass1234' });
   const res = await request(app)
     .get('/api/protected')
     .set('Authorization', `Bearer ${token}`);
@@ -92,7 +92,7 @@ test('protected route – allows valid token', async () => {
 test('change – rejects wrong current password', async () => {
   const { body: { token } } = await request(app)
     .post('/api/auth/login')
-    .send({ password: 'testpass123' });
+    .send({ password: 'testpass1234' });
   const res = await request(app)
     .post('/api/auth/change')
     .set('Authorization', `Bearer ${token}`)
@@ -100,25 +100,25 @@ test('change – rejects wrong current password', async () => {
   assert.equal(res.status, 401);
 });
 
-test('change – rejects new password under 8 chars', async () => {
+test('change – rejects new password under 12 chars', async () => {
   const { body: { token } } = await request(app)
     .post('/api/auth/login')
-    .send({ password: 'testpass123' });
+    .send({ password: 'testpass1234' });
   const res = await request(app)
     .post('/api/auth/change')
     .set('Authorization', `Bearer ${token}`)
-    .send({ currentPassword: 'testpass123', newPassword: 'short' });
+    .send({ currentPassword: 'testpass1234', newPassword: 'short' });
   assert.equal(res.status, 400);
 });
 
 test('change – succeeds with valid current password', async () => {
   const { body: { token } } = await request(app)
     .post('/api/auth/login')
-    .send({ password: 'testpass123' });
+    .send({ password: 'testpass1234' });
   const res = await request(app)
     .post('/api/auth/change')
     .set('Authorization', `Bearer ${token}`)
-    .send({ currentPassword: 'testpass123', newPassword: 'newpassword456' });
+    .send({ currentPassword: 'testpass1234', newPassword: 'newpassword456' });
   assert.equal(res.status, 200);
   assert.ok(res.body.success);
 });
@@ -134,6 +134,6 @@ test('login – works with new password after change', async () => {
 test('login – rejects old password after change', async () => {
   const res = await request(app)
     .post('/api/auth/login')
-    .send({ password: 'testpass123' });
+    .send({ password: 'testpass1234' });
   assert.equal(res.status, 401);
 });

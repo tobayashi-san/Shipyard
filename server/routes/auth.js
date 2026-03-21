@@ -9,9 +9,12 @@ const QRCode = require('qrcode');
 const db = require('../db');
 const authMiddleware = require('../middleware/auth');
 
+const isTest = process.env.NODE_ENV === 'test';
+
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
+  skip: () => isTest,
   message: { error: 'Too many login attempts. Please wait 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -20,6 +23,7 @@ const loginLimiter = rateLimit({
 const changeLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
+  skip: () => isTest,
   message: { error: 'Too many password change attempts. Please wait 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
