@@ -153,6 +153,15 @@ export async function renderServerDetail(serverId) {
             <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
           </div>
         </div>
+        <div class="panel" style="margin-top:16px;">
+          <div class="section-header">
+            <h3><i class="fas fa-cog"></i> ${t('det.customUpdates')}</h3>
+            <button class="btn btn-primary btn-sm" id="btn-add-custom-task"><i class="fas fa-plus"></i> ${t('det.addTask')}</button>
+          </div>
+          <div id="custom-updates-content">
+            <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
+          </div>
+        </div>
       </div>
 
       <!-- History tab -->
@@ -639,10 +648,7 @@ function renderUpdatesData(updates, customTasks = [], serverId = null) {
   const clean = (updates || []).map(({ _cached, ...u }) => u);
   if (clean.length === 0) {
     el.innerHTML = `<div style="padding:16px;display:flex;align-items:center;gap:8px;color:var(--online);font-size:13px;"><i class="fas fa-check-circle"></i> ${t('det.allUpToDate')}${cached ? ` <span style="color:var(--text-muted);font-size:11px;">(${t('det.cached')})</span>` : ''}</div>`;
-    if (serverId) {
-      el.insertAdjacentHTML('beforeend', renderCustomTasksHtml(customTasks));
-      setupCustomTaskListeners(serverId);
-    }
+    renderCustomTasksPanel(customTasks, serverId);
     return;
   }
   const real   = clean.filter(u => !u.phased);
@@ -675,13 +681,12 @@ function renderUpdatesData(updates, customTasks = [], serverId = null) {
     </div>` : ''}
   `;
 
-  if (serverId) {
-    el.insertAdjacentHTML('beforeend', renderCustomTasksHtml(customTasks));
-    setupCustomTaskListeners(serverId);
-  }
+  renderCustomTasksPanel(customTasks, serverId);
 }
 
-function renderCustomTasksHtml(customTasks) {
+function renderCustomTasksPanel(customTasks, serverId) {
+  const el = document.getElementById('custom-updates-content');
+  if (!el) return;
   const rows = (customTasks || []).map(task => {
     const statusCell = task.has_update
       ? `<span class="badge badge-warning" style="font-size:10px;"><i class="fas fa-arrow-up"></i> ${t('det.imageUpdateAvail')}</span>`
@@ -709,11 +714,7 @@ function renderCustomTasksHtml(customTasks) {
 
   const emptyRow = `<tr class="no-hover"><td colspan="6" style="color:var(--text-muted);font-size:13px;padding:12px 16px;">${t('det.noCustomTasks')}</td></tr>`;
 
-  return `
-    <div class="section-header" style="margin-top:32px;border-top:1px solid var(--border);padding-top:20px;">
-      <h3><i class="fas fa-cog"></i> ${t('det.customUpdates')}</h3>
-      <button class="btn btn-primary btn-sm" id="btn-add-custom-task"><i class="fas fa-plus"></i> ${t('det.addTask')}</button>
-    </div>
+  el.innerHTML = `
     <table class="data-table">
       <thead><tr>
         <th>${t('common.name')}</th><th>${t('det.taskType')}</th>
@@ -722,12 +723,16 @@ function renderCustomTasksHtml(customTasks) {
       </tr></thead>
       <tbody>${rows || emptyRow}</tbody>
     </table>`;
+
+  if (serverId) setupCustomTaskListeners(serverId);
 }
 
 function setupCustomTaskListeners(serverId) {
-  document.getElementById('btn-add-custom-task')?.addEventListener('click', () => {
-    showCustomTaskModal(serverId, null);
-  });
+  const addBtn = document.getElementById('btn-add-custom-task');
+  if (addBtn && !addBtn.dataset.bound) {
+    addBtn.dataset.bound = '1';
+    addBtn.addEventListener('click', () => showCustomTaskModal(serverId, null));
+  }
 
   document.querySelectorAll('.custom-task-check').forEach(btn => {
     btn.addEventListener('click', async () => {
