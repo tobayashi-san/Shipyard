@@ -122,6 +122,21 @@ export async function renderSettings() {
           </div>
         </div>
 
+        <div class="settings-group-title">${t('set.timeFormat')}</div>
+        <div class="settings-block">
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span>${t('set.timeFormat')}</span>
+            </div>
+            <div class="settings-row-control">
+              <div class="theme-toggle" id="time-format-toggle">
+                <button class="theme-btn ${(wl.timeFormat || '24h') === '24h' ? 'active' : ''}" data-value="24h">24h</button>
+                <button class="theme-btn ${(wl.timeFormat || '24h') === '12h' ? 'active' : ''}" data-value="12h">12h</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="settings-group-title">${t('set.whiteLabel')}</div>
         <div class="settings-block">
           <div class="settings-row">
@@ -213,6 +228,39 @@ export async function renderSettings() {
         <div class="settings-group-title">${t('set.ansible')}</div>
         <div class="settings-block" id="ansible-status-content">
           <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
+        </div>
+
+        <div class="settings-group-title">${t('set.webhooks')}</div>
+        <div class="settings-block">
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span>${t('set.webhookUrl')}</span>
+              <small>${t('set.webhookUrlHint')}</small>
+            </div>
+            <div class="settings-row-control">
+              <input class="form-input" type="url" id="webhook-url" value="${esc(wl.webhookUrl || '')}" placeholder="https://discord.com/api/webhooks/…" style="max-width:420px;width:100%;">
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span>${t('set.webhookSecret')}</span>
+              <small>${t('set.webhookSecretHint')}</small>
+            </div>
+            <div class="settings-row-control">
+              <input class="form-input" type="password" id="webhook-secret" value="${esc(wl.webhookSecret || '')}" placeholder="optional" style="max-width:420px;width:100%;" autocomplete="off">
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label"></div>
+            <div class="settings-row-control" style="display:flex;gap:8px;">
+              <button class="btn btn-primary btn-sm" id="btn-save-webhook">
+                <i class="fas fa-save"></i> ${t('set.webhookSave')}
+              </button>
+              <button class="btn btn-secondary btn-sm" id="btn-test-webhook">
+                <i class="fas fa-paper-plane"></i> ${t('set.webhookTest')}
+              </button>
+            </div>
+          </div>
         </div>
 
         <div class="settings-group-title">${t('set.polling')}</div>
@@ -421,6 +469,47 @@ function setupSettingsEvents(wl) {
     });
   });
 
+  // Time format toggle
+  document.querySelectorAll('#time-format-toggle .theme-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      document.querySelectorAll('#time-format-toggle .theme-btn').forEach(b => b.classList.toggle('active', b === btn));
+      try { await saveWhiteLabel({ timeFormat: btn.dataset.value }); }
+      catch { showToast(t('set.toastErrorSave'), 'error'); }
+    });
+  });
+
+  // Webhook save
+  document.getElementById('btn-save-webhook')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-save-webhook');
+    btn.disabled = true;
+    try {
+      await api.saveSettings({
+        webhookUrl:    document.getElementById('webhook-url').value.trim(),
+        webhookSecret: document.getElementById('webhook-secret').value,
+      });
+      state.whiteLabel.webhookUrl    = document.getElementById('webhook-url').value.trim();
+      state.whiteLabel.webhookSecret = document.getElementById('webhook-secret').value;
+      showToast(t('set.webhookSaved'), 'success');
+    } catch { showToast(t('set.toastErrorSave'), 'error'); }
+    finally { btn.disabled = false; }
+  });
+
+  // Webhook test
+  document.getElementById('btn-test-webhook')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-test-webhook');
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-sm"></span>`;
+    try {
+      await api.testWebhook();
+      showToast(t('set.webhookTestOk'), 'success');
+    } catch (e) {
+      showToast(t('set.webhookTestFail') + (e.message ? ': ' + e.message : ''), 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<i class="fas fa-paper-plane"></i> ${t('set.webhookTest')}`;
+    }
+  });
+
   // Sync color picker <-> hex input
   const picker = document.getElementById('wl-color');
   const hexInput = document.getElementById('wl-color-hex');
@@ -516,7 +605,7 @@ async function setupSecurityEvents() {
 
     if (status.configured && !current) { showToast(t('set.pwEnterCurrent'), 'error'); return; }
     if (!next) { showToast(t('set.pwEnterNew'), 'error'); return; }
-    if (next.length < 8)   { showToast(t('set.pwTooShort'), 'error'); return; }
+    if (next.length < 12)  { showToast(t('set.pwTooShort'), 'error'); return; }
     if (next !== next2)    { showToast(t('set.pwMismatch'), 'error'); return; }
 
     const btn = document.getElementById('btn-change-password');

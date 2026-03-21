@@ -73,7 +73,7 @@ export async function renderLogin(onSuccess) {
 
     if (isSetup) {
       const pw2 = document.getElementById('login-password2').value;
-      if (pw.length < 8) {
+      if (pw.length < 12) {
         errorEl.textContent = t('login.errorShort');
         errorEl.classList.remove('hidden');
         return;

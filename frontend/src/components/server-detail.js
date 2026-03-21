@@ -4,6 +4,7 @@ import { showToast, showConfirm } from './toast.js';
 import { showAddServerModal } from './add-server-modal.js';
 import { openSshTerminal } from './ssh-terminal.js';
 import { t } from '../i18n.js';
+import { formatDateTimeFull } from '../utils/format.js';
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -1010,9 +1011,7 @@ function formatUptime(seconds) {
 }
 
 function formatDate(dateStr) {
-  if (!dateStr) return '—';
-  try { return new Date(dateStr).toLocaleString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
-  catch { return dateStr; }
+  return formatDateTimeFull(dateStr);
 }
 
 // ============================================================

@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { state, navigate } from '../main.js';
 import { showToast, showConfirm } from './toast.js';
 import { t } from '../i18n.js';
+import { formatDateTimeShort } from '../utils/format.js';
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -115,6 +116,9 @@ export async function renderPlaybooks() {
               <div class="flex-gap">
                 <button class="btn btn-danger btn-sm hidden" id="btn-delete-playbook">
                   <i class="fas fa-trash"></i>
+                </button>
+                <button class="btn btn-secondary btn-sm hidden" id="btn-playbook-history" title="${t('pb.history')}">
+                  <i class="fas fa-history"></i> ${t('pb.history')}
                 </button>
                 <button class="btn btn-secondary btn-sm" id="btn-cancel-edit">${t('common.cancel')}</button>
                 <button class="btn btn-primary btn-sm" id="btn-save-playbook">
@@ -281,6 +285,7 @@ async function selectPlaybook(filename, isInternal) {
   // Hide filename input and delete for internal playbooks
   filenameGroup.classList.toggle('hidden', isInternal);
   if (deleteBtn) deleteBtn.classList.toggle('hidden', isInternal);
+  document.getElementById('btn-playbook-history')?.classList.toggle('hidden', isInternal);
 
   const nameInput = document.getElementById('playbook-filename');
   if (nameInput) nameInput.value = filename.replace(/\.ya?ml$/, '');
@@ -335,6 +340,53 @@ function setupPlaybookEvents() {
     showPanel('none');
     currentFilename = null;
     document.querySelectorAll('.playbook-item').forEach(i => i.classList.remove('active'));
+  });
+
+  document.getElementById('btn-playbook-history')?.addEventListener('click', async () => {
+    if (!currentFilename) return;
+    let versions;
+    try {
+      versions = await api.getPlaybookHistory(currentFilename);
+    } catch (e) {
+      showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+      return;
+    }
+
+    const items = versions.length === 0
+      ? `<p style="color:var(--text-muted);padding:8px 0;">${t('pb.noHistory')}</p>`
+      : versions.map(v => `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
+            <span style="font-size:13px;">
+              <strong>${t('pb.historyVersion', { n: v.version })}</strong>
+              <span style="color:var(--text-muted);margin-left:8px;">${formatDateTimeShort(v.modifiedAt)}</span>
+            </span>
+            <button class="btn btn-secondary btn-sm btn-restore-version" data-version="${v.version}" style="flex-shrink:0;">
+              <i class="fas fa-undo"></i>
+            </button>
+          </div>
+        `).join('');
+
+    const confirmed = await showConfirm(
+      `<strong>${t('pb.historyTitle')}</strong><div style="margin-top:12px;">${items}</div>`,
+      { title: t('pb.historyTitle'), confirmText: null, cancelText: t('common.cancel') }
+    );
+
+    // Attach restore handlers after confirm dialog renders
+    document.querySelectorAll('.btn-restore-version').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const version = parseInt(btn.dataset.version);
+        if (!await showConfirm(t('pb.restoreConfirm'), { title: t('pb.history'), confirmText: t('common.save'), danger: false })) return;
+        try {
+          await api.restorePlaybook(currentFilename, version);
+          showToast(t('pb.restored'), 'success');
+          const data = await api.getPlaybook(currentFilename);
+          setEditorContent(data.content);
+        } catch (err) {
+          showToast(t('common.errorPrefix', { msg: err.message }), 'error');
+        }
+      });
+    });
   });
 
   document.getElementById('btn-cancel-run')?.addEventListener('click', () => {
@@ -564,9 +616,7 @@ async function loadScheduleList() {
 }
 
 function formatScheduleDate(dateStr) {
-  if (!dateStr) return '—';
-  try { return new Date(dateStr + 'Z').toLocaleString(undefined, { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }); }
-  catch { return dateStr; }
+  return formatDateTimeShort(dateStr);
 }
 
 function setupScheduleEvents() {

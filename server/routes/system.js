@@ -64,10 +64,13 @@ router.get('/settings', (req, res) => {
   try {
     const raw = db.settings.getAll();
     res.json({
-      appName:     raw.wl_app_name     || '',
-      appTagline:  raw.wl_app_tagline  || '',
-      accentColor: raw.wl_accent_color || '',
-      theme:       raw.ui_theme        || 'auto',
+      appName:       raw.wl_app_name     || '',
+      appTagline:    raw.wl_app_tagline  || '',
+      accentColor:   raw.wl_accent_color || '',
+      theme:         raw.ui_theme        || 'auto',
+      timeFormat:    raw.ui_time_format  || '24h',
+      webhookUrl:    raw.webhook_url     || '',
+      webhookSecret: raw.webhook_secret  || '',
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -77,11 +80,28 @@ router.get('/settings', (req, res) => {
 // PUT /api/system/settings - Save app settings
 router.put('/settings', (req, res) => {
   try {
-    const { appName, appTagline, accentColor, theme } = req.body;
-    if (appName     !== undefined) db.settings.set('wl_app_name',     appName);
-    if (appTagline  !== undefined) db.settings.set('wl_app_tagline',  appTagline);
-    if (accentColor !== undefined) db.settings.set('wl_accent_color', accentColor);
-    if (theme       !== undefined) db.settings.set('ui_theme',        theme);
+    const { appName, appTagline, accentColor, theme, timeFormat, webhookUrl, webhookSecret } = req.body;
+    if (appName       !== undefined) db.settings.set('wl_app_name',     appName);
+    if (appTagline    !== undefined) db.settings.set('wl_app_tagline',  appTagline);
+    if (accentColor   !== undefined) db.settings.set('wl_accent_color', accentColor);
+    if (theme         !== undefined) db.settings.set('ui_theme',        theme);
+    if (timeFormat    !== undefined) db.settings.set('ui_time_format',  timeFormat);
+    if (webhookUrl    !== undefined) db.settings.set('webhook_url',     webhookUrl);
+    if (webhookSecret !== undefined) db.settings.set('webhook_secret',  webhookSecret);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/system/webhook-test - Send a test webhook notification
+router.post('/webhook-test', async (req, res) => {
+  try {
+    const { sendWebhook } = require('../services/webhook');
+    const result = await sendWebhook('Shipyard Test', 'This is a test notification from Shipyard.', true);
+    if (result && result.ok === false) {
+      return res.status(502).json({ error: 'Webhook request failed', status: result.status });
+    }
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });

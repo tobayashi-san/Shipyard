@@ -215,7 +215,7 @@ export async function renderOnboarding() {
     err.classList.add('hidden');
     err.textContent = '';
 
-    if (pw1.length < 8) {
+    if (pw1.length < 12) {
       err.textContent = t('login.errorShort');
       err.classList.remove('hidden');
       return;

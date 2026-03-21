@@ -37,7 +37,7 @@ function getJwtSecret() {
 }
 
 function makeToken() {
-  return jwt.sign({ ok: true }, getJwtSecret(), { expiresIn: '24h' });
+  return jwt.sign({ ok: true }, getJwtSecret(), { expiresIn: '8h' });
 }
 
 function makeTempToken(payload) {
@@ -58,8 +58,8 @@ router.post('/setup', async (req, res) => {
     return res.status(400).json({ error: 'Password already configured. Use /api/auth/change.' });
   }
   const { password } = req.body;
-  if (!password || typeof password !== 'string' || password.length < 8) {
-    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if (!password || typeof password !== 'string' || password.length < 12) {
+    return res.status(400).json({ error: 'Password must be at least 12 characters' });
   }
   const hash = await bcrypt.hash(password, 12);
   db.settings.set('auth_password_hash', hash);
@@ -100,8 +100,8 @@ router.post('/change', changeLimiter, authMiddleware, async (req, res) => {
   if (!currentPassword || !newPassword) {
     return res.status(400).json({ error: 'currentPassword and newPassword required' });
   }
-  if (typeof newPassword !== 'string' || newPassword.length < 8) {
-    return res.status(400).json({ error: 'New password must be at least 8 characters' });
+  if (typeof newPassword !== 'string' || newPassword.length < 12) {
+    return res.status(400).json({ error: 'New password must be at least 12 characters' });
   }
   const hash = db.settings.get('auth_password_hash');
   if (!hash) {

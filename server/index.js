@@ -5,6 +5,7 @@ const fs      = require('fs');
 const { WebSocketServer } = require('ws');
 const cors = require('cors');
 const path = require('path');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 
@@ -60,6 +61,9 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  if (isHttps) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
   res.setHeader(
     'Content-Security-Policy',
@@ -183,6 +187,7 @@ app.get('/api/dashboard', (req, res) => {
 // Ansible execution via REST + WebSocket
 const ansibleRunner = require('./services/ansible-runner');
 const db = require('./db');
+const { sendWebhook } = require('./services/webhook');
 
 // POST /api/ansible/run - Run a playbook with WebSocket output
 app.post('/api/ansible/run', async (req, res) => {
@@ -191,6 +196,9 @@ app.post('/api/ansible/run', async (req, res) => {
   if (extraVars && (typeof extraVars !== 'object' || Array.isArray(extraVars) ||
       Object.values(extraVars).some(v => !['string', 'number', 'boolean'].includes(typeof v)))) {
     return res.status(400).json({ error: 'extraVars must be a flat object with string/number/boolean values' });
+  }
+  if (extraVars && JSON.stringify(extraVars).length > 4096) {
+    return res.status(400).json({ error: 'extraVars too large (max 4KB)' });
   }
 
   const historyId = db.updateHistory.create(
@@ -219,6 +227,7 @@ app.post('/api/ansible/run', async (req, res) => {
     db.updateHistory.updateStatus(historyId, 'failed', error.message);
     db.auditLog.write('ansible.run', `playbook=${playbook} targets=${targets || 'all'} error=${error.message}`, req.ip, false);
     broadcast({ type: 'ansible_error', historyId, error: error.message });
+    sendWebhook(`Playbook failed: ${playbook}`, error.message, false).catch(() => {});
   }
 });
 
@@ -250,6 +259,7 @@ app.post('/api/servers/:id/update', async (req, res) => {
     db.updateHistory.updateStatus(historyId, 'failed', error.message);
     db.auditLog.write('server.update', `server=${server.name} error=${error.message}`, req.ip, false);
     broadcast({ type: 'update_error', serverId, historyId, error: error.message });
+    sendWebhook(`Update failed: ${server.name}`, error.message, false).catch(() => {});
   }
 });
 
@@ -276,6 +286,7 @@ app.post('/api/servers/update-all', async (req, res) => {
     db.updateHistory.updateStatus(historyId, 'failed', error.message);
     db.auditLog.write('server.update_all', `error=${error.message}`, req.ip, false);
     broadcast({ type: 'bulk_update_error', historyId, error: error.message });
+    sendWebhook('Bulk update failed', error.message, false).catch(() => {});
   }
 });
 
@@ -350,8 +361,16 @@ app.post('/api/servers/:id/docker/:container/restart', async (req, res) => {
 });
 
 
+const customUpdateRunLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: { error: 'Too many update executions. Please wait.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // POST /api/servers/:id/custom-updates/:taskId/run
-app.post('/api/servers/:id/custom-updates/:taskId/run', async (req, res) => {
+app.post('/api/servers/:id/custom-updates/:taskId/run', customUpdateRunLimiter, async (req, res) => {
   const server = db.servers.getById(req.params.id);
   if (!server) return res.status(404).json({ error: 'Server not found' });
   const task = db.customUpdateTasks.getById(req.params.taskId);
@@ -363,7 +382,15 @@ app.post('/api/servers/:id/custom-updates/:taskId/run', async (req, res) => {
   broadcast({ type: 'update_output', serverId: server.id, historyId, stream: 'stdout', data: `Running: ${task.name}\n` });
   try {
     let cmd = task.update_command;
-    if (/^https?:\/\//.test(cmd)) cmd = `bash <(curl -fsSL "${cmd}")`;
+    if (/^https?:\/\//.test(cmd)) {
+      // Reject URLs with shell metacharacters before embedding in shell command
+      if (/["'`$\\;&|<>()\r\n\t ]/.test(cmd)) {
+        db.updateHistory.updateStatus(historyId, 'failed', 'Invalid characters in update URL');
+        broadcast({ type: 'update_error', serverId: server.id, historyId, error: 'Invalid characters in update URL' });
+        return;
+      }
+      cmd = `curl -fsSL -- "${cmd}" | bash`;
+    }
     let fullOutput = '';
     const code = await sshManager.execStream(server, cmd, chunk => {
       fullOutput += chunk;
@@ -379,6 +406,14 @@ app.post('/api/servers/:id/custom-updates/:taskId/run', async (req, res) => {
   }
 });
 
+// Directories that must not be targeted by compose write/action
+const BLOCKED_REMOTE_PREFIXES = ['/etc/', '/usr/', '/bin/', '/sbin/', '/lib/', '/lib64/', '/boot/', '/proc/', '/sys/', '/dev/'];
+
+function isBlockedRemotePath(p) {
+  const normalized = p.replace(/\/+/g, '/').replace(/\/$/, '');
+  return BLOCKED_REMOTE_PREFIXES.some(prefix => (normalized + '/').startsWith(prefix));
+}
+
 // POST /api/servers/:id/docker/compose/write
 app.post('/api/servers/:id/docker/compose/write', async (req, res) => {
   const { id: serverId } = req.params;
@@ -387,6 +422,7 @@ app.post('/api/servers/:id/docker/compose/write', async (req, res) => {
   if (!server) return res.status(404).json({ error: 'Server not found' });
   if (!path || !content) return res.status(400).json({ error: 'path and content required' });
   if (!/^[a-zA-Z0-9/_.-]+$/.test(path) || path.includes('..')) return res.status(400).json({ error: 'Invalid path format' });
+  if (isBlockedRemotePath(path)) return res.status(400).json({ error: 'Path not allowed: system directories are protected' });
 
   try {
     // We use a base64 encoded string to safely transfer the multiline compose file via CLI
@@ -424,6 +460,7 @@ app.post('/api/servers/:id/docker/compose/action', async (req, res) => {
   if (!server) return res.status(404).json({ error: 'Server not found' });
   if (!path || !['up', 'down', 'pull'].includes(action)) return res.status(400).json({ error: 'Invalid path or action' });
   if (!/^[a-zA-Z0-9/_.-]+$/.test(path) || path.includes('..')) return res.status(400).json({ error: 'Invalid path format' });
+  if (isBlockedRemotePath(path)) return res.status(400).json({ error: 'Path not allowed: system directories are protected' });
 
   const historyId = db.updateHistory.create(serverId, `compose_${action}_${path.split('/').pop()}`);
   res.json({ historyId, status: 'started' });
@@ -517,10 +554,15 @@ wssSsh.on('connection', (ws, req) => {
 
   ws.on('message', raw => {
     if (!stream) return;
+    if (raw.length > 65536) return; // 64 KB limit per message
     try {
       const msg = JSON.parse(raw);
-      if (msg.type === 'input')  stream.write(msg.data);
-      if (msg.type === 'resize') stream.setWindow(msg.rows, msg.cols, 0, 0);
+      if (msg.type === 'input' && typeof msg.data === 'string')  stream.write(msg.data);
+      if (msg.type === 'resize') {
+        const rows = Math.min(Math.max(parseInt(msg.rows) || 24, 2), 200);
+        const cols = Math.min(Math.max(parseInt(msg.cols) || 80, 10), 500);
+        stream.setWindow(rows, cols, 0, 0);
+      }
     } catch {}
   });
 
@@ -596,6 +638,9 @@ server.listen(PORT, () => {
   } else {
     console.log('');
   }
+
+  // Prune audit log entries older than 90 days
+  try { db.auditLog.pruneOlderThan(90); } catch {}
 
   // Start scheduler and background polling after server is listening
   const scheduler = require('./services/scheduler');

@@ -405,6 +405,7 @@ module.exports = {
       db.prepare('INSERT INTO audit_log (id, action, detail, ip, success) VALUES (?, ?, ?, ?, ?)').run(id, action, detail || null, ip || null, success ? 1 : 0);
     },
     getRecent: (limit = 100) => db.prepare('SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ?').all(limit),
+    pruneOlderThan: (days) => db.prepare("DELETE FROM audit_log WHERE created_at < datetime('now', ?)").run(`-${days} days`),
   },
 
   settings: {

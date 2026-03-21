@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { state, navigate } from '../main.js';
 import { t } from '../i18n.js';
+import { formatCurrentTime, formatDateTimeShort } from '../utils/format.js';
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -50,7 +51,7 @@ export async function renderDashboard() {
 function renderDashboardData(data) {
   const { summary, servers, recentHistory } = data;
   const ts = document.getElementById('dash-timestamp');
-  if (ts) ts.textContent = t('dash.updatedAt', { time: new Date().toLocaleTimeString() });
+  if (ts) ts.textContent = t('dash.updatedAt', { time: formatCurrentTime() });
 
   const alerts = [];
   servers.forEach(s => {
@@ -227,7 +228,7 @@ function imageUpdatesCell(s) {
     return `<span style="color:var(--text-muted);font-size:11px;" title="${t('dash.imageUpdatesNeverChecked')}">–</span>`;
   }
   const checkedAt = s.image_updates_checked_at
-    ? t('dash.imageUpdatesCheckedAt', { time: toUtcDate(s.image_updates_checked_at).toLocaleString(undefined, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) })
+    ? t('dash.imageUpdatesCheckedAt', { time: formatDateTimeShort(s.image_updates_checked_at) })
     : '';
   if (s.image_updates_count > 0) {
     return `<span class="badge badge-warning" style="font-size:10px;" title="${checkedAt}"><i class="fas fa-cube"></i> ${s.image_updates_count}</span>`;
