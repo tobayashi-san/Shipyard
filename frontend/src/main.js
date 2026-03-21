@@ -1,9 +1,9 @@
 import { renderSidebar } from './components/sidebar.js';
-import { renderDashboard } from './components/dashboard.js';
+import { renderDashboard, refreshDashboardData } from './components/dashboard.js';
 import { renderServerDetail } from './components/server-detail.js';
 import { renderSettings, applyWhiteLabel } from './components/settings.js';
 import { renderPlaybooks } from './components/playbooks.js';
-import { renderServers } from './components/servers.js';
+import { renderServers, refreshServersInPlace } from './components/servers.js';
 import { initWebSocket, onWsMessage } from './websocket.js';
 import { setupComposeModal } from './components/compose-modal.js';
 import { renderLogin } from './components/login.js';
@@ -202,11 +202,14 @@ async function boot() {
                msg.type === 'ansible_error' || msg.type === 'bulk_update_error') {
       appendGlobalTerminal(t('ws.error', { msg: msg.error || msg.message }), 'stderr');
     } else if (msg.type === 'cache_updated') {
-      // Background poller updated the cache – refresh current view silently
+      // Only refresh on system info updates (scope === 'info'), and never
+      // interrupt server-detail — user might be mid-interaction there.
+      if (msg.scope !== 'info') return;
+      if (state.currentView === 'server-detail') return;
       if (state.currentView === 'dashboard') {
-        renderDashboard();
+        refreshDashboardData();
       } else if (state.currentView === 'servers') {
-        renderServers();
+        refreshServersInPlace();
       }
     }
   });

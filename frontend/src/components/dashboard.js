@@ -6,6 +6,15 @@ function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// Called by background poller — only refreshes data, never rebuilds page shell
+export async function refreshDashboardData() {
+  if (!document.getElementById('dash-content')) return; // not on dashboard
+  try {
+    const data = await api.getDashboard();
+    renderDashboardData(data);
+  } catch { /* silently ignore — keep current view intact */ }
+}
+
 export async function renderDashboard() {
   const main = document.querySelector('.main-content');
   if (!main) return;

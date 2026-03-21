@@ -835,6 +835,12 @@ function renderRow(server, depth = 0, folderColor = null) {
   `;
 }
 
+export async function refreshServersInPlace() {
+  const rows = document.querySelectorAll('.server-row[data-server-id]');
+  if (!rows.length) return;
+  rows.forEach(row => loadServerInfo(row.dataset.serverId));
+}
+
 async function loadServerInfo(serverId) {
   try {
     const info = await api.getServerInfo(serverId);
