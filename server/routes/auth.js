@@ -36,6 +36,10 @@ function getJwtSecret() {
   return secret;
 }
 
+function verifyTotp(code, secret) {
+  return otplib.verifySync({ token: String(code).replace(/\s/g, ''), secret, type: 'totp' }).valid;
+}
+
 function makeToken() {
   return jwt.sign({ ok: true }, getJwtSecret(), { expiresIn: '8h' });
 }
@@ -136,7 +140,7 @@ router.post('/totp/login', loginLimiter, (req, res) => {
   const secret = db.settings.get('totp_secret');
   if (!secret) return res.status(400).json({ error: '2FA not configured' });
 
-  if (!otplib.verifySync({ token: String(code).replace(/\s/g, ''), secret, type: 'totp' }).valid) {
+  if (!verifyTotp(code, secret)) {
     db.auditLog.write('auth.totp', 'Invalid TOTP code', req.ip, false);
     return res.status(401).json({ error: 'Invalid authenticator code' });
   }
@@ -175,7 +179,7 @@ router.post('/totp/confirm', authMiddleware, (req, res) => {
   const secret = db.settings.get('totp_secret_pending');
   if (!secret) return res.status(400).json({ error: 'No pending TOTP setup. Call /totp/setup first.' });
 
-  if (!otplib.verifySync({ token: String(code).replace(/\s/g, ''), secret, type: 'totp' }).valid) {
+  if (!verifyTotp(code, secret)) {
     return res.status(400).json({ error: 'Invalid code – try again' });
   }
 

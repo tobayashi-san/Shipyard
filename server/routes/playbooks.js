@@ -6,6 +6,16 @@ const path = require('path');
 
 const PLAYBOOKS_DIR = path.join(__dirname, '..', 'playbooks');
 const MAX_BACKUPS = 5;
+const RESOLVED_PLAYBOOKS_DIR = path.resolve(PLAYBOOKS_DIR);
+
+// Validate filename and resolve safe path; returns { filename, filepath } or null
+function resolvePlaybookPath(raw) {
+  const filename = path.basename(raw);
+  if (!filename.endsWith('.yml') && !filename.endsWith('.yaml')) return null;
+  const filepath = path.join(PLAYBOOKS_DIR, filename);
+  if (!filepath.startsWith(RESOLVED_PLAYBOOKS_DIR + path.sep)) return null;
+  return { filename, filepath };
+}
 
 function rotateBak(filepath) {
   if (!fs.existsSync(filepath)) return;
@@ -30,17 +40,11 @@ router.get('/', (req, res) => {
 // GET /api/playbooks/:filename - Read a playbook's content
 router.get('/:filename', (req, res) => {
   try {
-    const filename = path.basename(req.params.filename);
-    if (!filename.endsWith('.yml') && !filename.endsWith('.yaml')) {
-      return res.status(400).json({ error: 'Invalid filename' });
-    }
-    const filepath = path.join(PLAYBOOKS_DIR, filename);
-    if (!filepath.startsWith(PLAYBOOKS_DIR + path.sep)) {
-      return res.status(400).json({ error: 'Invalid path' });
-    }
+    const resolved = resolvePlaybookPath(req.params.filename);
+    if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
+    const { filepath } = resolved;
     if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'Playbook not found' });
-    const content = fs.readFileSync(filepath, 'utf8');
-    res.json({ content });
+    res.json({ content: fs.readFileSync(filepath, 'utf8') });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -69,14 +73,9 @@ router.post('/', (req, res) => {
 // GET /api/playbooks/:filename/history - List backup versions
 router.get('/:filename/history', (req, res) => {
   try {
-    const filename = path.basename(req.params.filename);
-    if (!filename.endsWith('.yml') && !filename.endsWith('.yaml')) {
-      return res.status(400).json({ error: 'Invalid filename' });
-    }
-    const filepath = path.join(PLAYBOOKS_DIR, filename);
-    if (!filepath.startsWith(path.resolve(PLAYBOOKS_DIR) + path.sep)) {
-      return res.status(400).json({ error: 'Invalid path' });
-    }
+    const resolved = resolvePlaybookPath(req.params.filename);
+    if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
+    const { filepath } = resolved;
     const versions = [];
     for (let i = 1; i <= MAX_BACKUPS; i++) {
       const bakPath = `${filepath}.bak.${i}`;
@@ -94,18 +93,13 @@ router.get('/:filename/history', (req, res) => {
 // GET /api/playbooks/:filename/history/:version - Preview a backup version
 router.get('/:filename/history/:version', (req, res) => {
   try {
-    const filename = path.basename(req.params.filename);
+    const resolved = resolvePlaybookPath(req.params.filename);
+    if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
     const version  = parseInt(req.params.version);
-    if (!filename.endsWith('.yml') && !filename.endsWith('.yaml')) {
-      return res.status(400).json({ error: 'Invalid filename' });
-    }
     if (!version || version < 1 || version > MAX_BACKUPS) {
       return res.status(400).json({ error: 'Invalid version' });
     }
-    const filepath = path.join(PLAYBOOKS_DIR, filename);
-    if (!filepath.startsWith(path.resolve(PLAYBOOKS_DIR) + path.sep)) {
-      return res.status(400).json({ error: 'Invalid path' });
-    }
+    const { filepath } = resolved;
     const bakPath = `${filepath}.bak.${version}`;
     if (!fs.existsSync(bakPath)) return res.status(404).json({ error: 'Backup not found' });
     res.json({ content: fs.readFileSync(bakPath, 'utf8') });
@@ -117,18 +111,13 @@ router.get('/:filename/history/:version', (req, res) => {
 // POST /api/playbooks/:filename/restore/:version - Restore a backup version
 router.post('/:filename/restore/:version', (req, res) => {
   try {
-    const filename = path.basename(req.params.filename);
+    const resolved = resolvePlaybookPath(req.params.filename);
+    if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
     const version  = parseInt(req.params.version);
-    if (!filename.endsWith('.yml') && !filename.endsWith('.yaml')) {
-      return res.status(400).json({ error: 'Invalid filename' });
-    }
     if (!version || version < 1 || version > MAX_BACKUPS) {
       return res.status(400).json({ error: 'Invalid version' });
     }
-    const filepath = path.join(PLAYBOOKS_DIR, filename);
-    if (!filepath.startsWith(path.resolve(PLAYBOOKS_DIR) + path.sep)) {
-      return res.status(400).json({ error: 'Invalid path' });
-    }
+    const { filepath } = resolved;
     const bakPath = `${filepath}.bak.${version}`;
     if (!fs.existsSync(bakPath)) return res.status(404).json({ error: 'Backup not found' });
     const content = fs.readFileSync(bakPath, 'utf8');
@@ -151,7 +140,7 @@ router.delete('/:filename', (req, res) => {
     const INTERNAL = ['update.yml', 'gather-info.yml', 'gather-docker.yml', 'check-image-updates.yml', 'reboot.yml', 'setup-ssh.yml'];
     if (INTERNAL.includes(filename)) return res.status(403).json({ error: 'Cannot delete internal playbook' });
     const filepath = path.join(PLAYBOOKS_DIR, filename);
-    if (!filepath.startsWith(PLAYBOOKS_DIR + path.sep)) {
+    if (!filepath.startsWith(RESOLVED_PLAYBOOKS_DIR + path.sep)) {
       return res.status(400).json({ error: 'Invalid path' });
     }
     if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'Playbook not found' });

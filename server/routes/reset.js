@@ -17,6 +17,12 @@ const resetLimiter = rateLimit({
 const PLAYBOOKS_DIR = path.join(__dirname, '..', 'playbooks');
 const INTERNAL_PLAYBOOKS = ['update.yml', 'gather-info.yml', 'gather-docker.yml', 'check-image-updates.yml', 'reboot.yml', 'setup-ssh.yml'];
 
+function deleteServerTables() {
+  for (const table of ['update_history', 'server_info', 'server_updates_cache', 'docker_containers', 'compose_projects', 'servers']) {
+    db.db.prepare(`DELETE FROM ${table}`).run();
+  }
+}
+
 function deleteUserPlaybooks() {
   if (!fs.existsSync(PLAYBOOKS_DIR)) return;
   for (const file of fs.readdirSync(PLAYBOOKS_DIR)) {
@@ -29,14 +35,7 @@ function deleteUserPlaybooks() {
 // DELETE /api/reset/servers
 router.delete('/servers', resetLimiter, (req, res) => {
   try {
-    db.db.transaction(() => {
-      db.db.prepare('DELETE FROM update_history').run();
-      db.db.prepare('DELETE FROM server_info').run();
-      db.db.prepare('DELETE FROM server_updates_cache').run();
-      db.db.prepare('DELETE FROM docker_containers').run();
-      db.db.prepare('DELETE FROM compose_projects').run();
-      db.db.prepare('DELETE FROM servers').run();
-    })();
+    db.db.transaction(deleteServerTables)();
     db.auditLog.write('reset.servers', 'All servers and related data deleted', req.ip);
     res.json({ success: true });
   } catch (e) {
@@ -83,12 +82,7 @@ router.delete('/auth', resetLimiter, (req, res) => {
 router.delete('/all', resetLimiter, (req, res) => {
   try {
     db.db.transaction(() => {
-      db.db.prepare('DELETE FROM update_history').run();
-      db.db.prepare('DELETE FROM server_info').run();
-      db.db.prepare('DELETE FROM server_updates_cache').run();
-      db.db.prepare('DELETE FROM docker_containers').run();
-      db.db.prepare('DELETE FROM compose_projects').run();
-      db.db.prepare('DELETE FROM servers').run();
+      deleteServerTables();
       db.db.prepare('DELETE FROM schedules').run();
     })();
     deleteUserPlaybooks();

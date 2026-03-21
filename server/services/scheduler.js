@@ -47,6 +47,14 @@ function getPollingConfig() {
 let lastInfoPollTime = 0;
 let getClientCount = () => 0; // injected from index.js
 
+function runNow(pollFn, label) {
+  pollFn().catch(err => console.error(`[Poller] ${label} error:`, err.message));
+}
+
+function makePoller(pollFn, label, intervalMs) {
+  return setInterval(() => runNow(pollFn, label), intervalMs);
+}
+
 // Broadcast function (set during init)
 let broadcast = () => {};
 
@@ -278,26 +286,9 @@ function setupPollingIntervals() {
     }, 60 * 1000); // tick every minute, decide whether to actually poll
   }
 
-  if (cfg.updates.enabled) {
-    updatesPoller = setInterval(
-      () => pollUpdates().catch(err => console.error('[Poller] Updates error:', err.message)),
-      cfg.updates.intervalMs
-    );
-  }
-
-  if (cfg.imageUpdates.enabled) {
-    imageUpdatesPoller = setInterval(
-      () => pollImageUpdates().catch(err => console.error('[Poller] Image updates error:', err.message)),
-      cfg.imageUpdates.intervalMs
-    );
-  }
-
-  if (cfg.customUpdates.enabled) {
-    customUpdatesPoller = setInterval(
-      () => pollCustomUpdates().catch(err => console.error('[Poller] Custom updates error:', err.message)),
-      cfg.customUpdates.intervalMs
-    );
-  }
+  if (cfg.updates.enabled)       updatesPoller       = makePoller(pollUpdates,       'Updates',        cfg.updates.intervalMs);
+  if (cfg.imageUpdates.enabled)  imageUpdatesPoller  = makePoller(pollImageUpdates,  'Image updates',  cfg.imageUpdates.intervalMs);
+  if (cfg.customUpdates.enabled) customUpdatesPoller = makePoller(pollCustomUpdates, 'Custom updates', cfg.customUpdates.intervalMs);
 
   console.log(`[Poller] Config – info:${cfg.info.enabled ? cfg.info.intervalMs/60000+'min' : 'off'} updates:${cfg.updates.enabled ? cfg.updates.intervalMs/60000+'min' : 'off'} images:${cfg.imageUpdates.enabled ? cfg.imageUpdates.intervalMs/60000+'min' : 'off'} custom:${cfg.customUpdates.enabled ? cfg.customUpdates.intervalMs/60000+'min' : 'off'}`);
 }
@@ -307,10 +298,10 @@ function setupPollingIntervals() {
  */
 function startPolling() {
   const cfg = getPollingConfig();
-  if (cfg.info.enabled)          pollSystemInfo().catch(err => console.error('[Poller] System info error:', err.message));
-  if (cfg.updates.enabled)       pollUpdates().catch(err => console.error('[Poller] Updates error:', err.message));
-  if (cfg.imageUpdates.enabled)  pollImageUpdates().catch(err => console.error('[Poller] Image updates error:', err.message));
-  if (cfg.customUpdates.enabled) pollCustomUpdates().catch(err => console.error('[Poller] Custom updates error:', err.message));
+  if (cfg.info.enabled)          runNow(pollSystemInfo,    'System info');
+  if (cfg.updates.enabled)       runNow(pollUpdates,       'Updates');
+  if (cfg.imageUpdates.enabled)  runNow(pollImageUpdates,  'Image updates');
+  if (cfg.customUpdates.enabled) runNow(pollCustomUpdates, 'Custom updates');
   setupPollingIntervals();
 }
 
@@ -329,7 +320,7 @@ function restartPolling() {
  */
 function onClientConnect() {
   if (Date.now() - lastInfoPollTime > STALE_THRESHOLD_MS) {
-    pollSystemInfo().catch(err => console.error('[Poller] On-connect refresh error:', err.message));
+    runNow(pollSystemInfo, 'On-connect refresh');
   }
 }
 

@@ -6,15 +6,15 @@ const systemInfo = require('../services/system-info');
 const ansibleRunner = require('../services/ansible-runner');
 const { parseImageUpdateOutput } = require('../utils/parse-image-updates');
 
+// Deserialize JSON fields for API responses
+function parseServer(s) {
+  return { ...s, tags: JSON.parse(s.tags || '[]'), services: JSON.parse(s.services || '[]') };
+}
+
 // GET /api/servers - List all servers
 router.get('/', (req, res) => {
   try {
-    const servers = db.servers.getAll().map(s => ({
-      ...s,
-      tags: JSON.parse(s.tags || '[]'),
-      services: JSON.parse(s.services || '[]'),
-    }));
-    res.json(servers);
+    res.json(db.servers.getAll().map(parseServer));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -154,11 +154,7 @@ router.get('/:id', (req, res) => {
   try {
     const server = db.servers.getById(req.params.id);
     if (!server) return res.status(404).json({ error: 'Server not found' });
-    res.json({
-      ...server,
-      tags: JSON.parse(server.tags || '[]'),
-      services: JSON.parse(server.services || '[]'),
-    });
+    res.json(parseServer(server));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -181,11 +177,7 @@ router.post('/', (req, res) => {
       services: services || [],
     });
     db.auditLog.write('server.create', `Server "${name}" (${ip_address}) created`, req.ip);
-    res.status(201).json({
-      ...server,
-      tags: JSON.parse(server.tags || '[]'),
-      services: JSON.parse(server.services || '[]'),
-    });
+    res.status(201).json(parseServer(server));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -207,11 +199,7 @@ router.put('/:id', (req, res) => {
       tags: tags || JSON.parse(existing.tags || '[]'),
       services: services || JSON.parse(existing.services || '[]'),
     });
-    res.json({
-      ...server,
-      tags: JSON.parse(server.tags || '[]'),
-      services: JSON.parse(server.services || '[]'),
-    });
+    res.json(parseServer(server));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -476,7 +464,6 @@ router.get('/:id/docker/compose', async (req, res) => {
     const server = db.servers.getById(id);
     if (!server) return res.status(404).json({ error: 'Server not found' });
 
-    const ansibleRunner = require('../services/ansible-runner');
     const result = await ansibleRunner.runAdHoc(
       server.name,
       'command',

@@ -58,6 +58,20 @@ function register({ router, db, broadcast }) {
     return { ...row, env_vars: JSON.parse(row.env_vars || '{}') };
   }
 
+  // Ensure workspace directory exists; returns error string on failure or null on success
+  function ensureWorkspacePath(workspace) {
+    if (fs.existsSync(workspace.path)) return null;
+    try { fs.mkdirSync(workspace.path, { recursive: true }); return null; }
+    catch (e) { return e; }
+  }
+
+  // Human-readable error for EACCES vs other fs errors
+  function permissionError(e, wsPath) {
+    return e.code === 'EACCES'
+      ? `Permission denied. Fix with: chown -R 1001:1001 ${wsPath}`
+      : e.message;
+  }
+
   // Resolve a relative path safely within a workspace (prevent traversal)
   function safePath(wsPath, relPath) {
     const resolved = path.resolve(wsPath, relPath);
@@ -150,14 +164,12 @@ function register({ router, db, broadcast }) {
     const binary = findBinary();
     if (!binary) return res.status(500).json({ error: 'OpenTofu/Terraform binary not found in PATH' });
 
-    if (!fs.existsSync(workspace.path)) {
-      try { fs.mkdirSync(workspace.path, { recursive: true }); }
-      catch (e) {
-        return res.status(400).json({
-          error: `Path "${workspace.path}" does not exist and could not be created: ${e.message}.\n` +
-                 `Make sure the parent directory is mounted in docker-compose.override.yml.`
-        });
-      }
+    const mkdirErr = ensureWorkspacePath(workspace);
+    if (mkdirErr) {
+      return res.status(400).json({
+        error: `Path "${workspace.path}" does not exist and could not be created: ${mkdirErr.message}.\n` +
+               `Make sure the parent directory is mounted in docker-compose.override.yml.`
+      });
     }
 
     const runId = randomUUID();
@@ -204,10 +216,7 @@ function register({ router, db, broadcast }) {
   router.get('/workspaces/:id/check', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
-    if (!fs.existsSync(workspace.path)) {
-      try { fs.mkdirSync(workspace.path, { recursive: true }); }
-      catch {}
-    }
+    ensureWorkspacePath(workspace);
     res.json({ pathExists: fs.existsSync(workspace.path) });
   });
 
@@ -215,9 +224,7 @@ function register({ router, db, broadcast }) {
   router.get('/workspaces/:id/files', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
-    if (!fs.existsSync(workspace.path)) {
-      try { fs.mkdirSync(workspace.path, { recursive: true }); } catch {}
-    }
+    ensureWorkspacePath(workspace);
     if (!fs.existsSync(workspace.path)) return res.status(400).json({ error: 'Path not found in container' });
     res.json({ tree: walkDir(workspace.path, '', 0) });
   });
@@ -244,10 +251,7 @@ function register({ router, db, broadcast }) {
       fs.writeFileSync(fp, req.body.content ?? '', 'utf8');
       res.json({ success: true });
     } catch (e) {
-      const msg = e.code === 'EACCES'
-        ? `Permission denied: "${fp}". Fix with: chown -R 1001:1001 ${workspace.path}`
-        : e.message;
-      res.status(500).json({ error: msg, code: e.code });
+      res.status(500).json({ error: permissionError(e, workspace.path), code: e.code });
     }
   });
 
@@ -264,10 +268,7 @@ function register({ router, db, broadcast }) {
       fs.writeFileSync(fp, '', 'utf8');
       res.json({ success: true });
     } catch (e) {
-      const msg = e.code === 'EACCES'
-        ? `Permission denied. Fix with: chown -R 1001:1001 ${workspace.path}`
-        : e.message;
-      res.status(500).json({ error: msg, code: e.code });
+      res.status(500).json({ error: permissionError(e, workspace.path), code: e.code });
     }
   });
 
@@ -281,10 +282,7 @@ function register({ router, db, broadcast }) {
       fs.unlinkSync(fp);
       res.json({ success: true });
     } catch (e) {
-      const msg = e.code === 'EACCES'
-        ? `Permission denied. Fix with: chown -R 1001:1001 ${workspace.path}`
-        : e.message;
-      res.status(500).json({ error: msg, code: e.code });
+      res.status(500).json({ error: permissionError(e, workspace.path), code: e.code });
     }
   });
 
@@ -294,9 +292,7 @@ function register({ router, db, broadcast }) {
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
     const binary = findBinary();
     if (!binary) return res.status(500).json({ error: 'Binary not found' });
-    if (!fs.existsSync(workspace.path)) {
-      try { fs.mkdirSync(workspace.path, { recursive: true }); } catch {}
-    }
+    ensureWorkspacePath(workspace);
     if (!fs.existsSync(workspace.path)) {
       return res.json({ output: `Error: path "${workspace.path}" does not exist inside the container.\nMount the parent directory via docker-compose.override.yml first.` });
     }

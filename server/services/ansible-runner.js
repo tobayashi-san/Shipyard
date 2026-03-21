@@ -96,137 +96,65 @@ class AnsibleRunner {
     }
   }
 
+  get _ansibleEnv() {
+    return {
+      ...process.env,
+      ANSIBLE_FORCE_COLOR: '0',
+      ANSIBLE_NOCOLOR: '1',
+      ANSIBLE_PYTHON_INTERPRETER: 'auto_silent',
+      // Accept unknown hosts on first connect, verify on subsequent connects
+      ANSIBLE_SSH_ARGS: `-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=${path.join(DATA_DIR, 'known_hosts')}`,
+    };
+  }
+
+  _spawnProcess(binary, args, onOutput, opts = {}) {
+    return new Promise((resolve, reject) => {
+      const child = spawn(binary, args, { env: this._ansibleEnv, ...opts });
+      let stdout = '', stderr = '';
+      child.stdout.on('data', d => { const t = d.toString(); stdout += t; onOutput?.('stdout', t); });
+      child.stderr.on('data', d => { const t = d.toString(); stderr += t; onOutput?.('stderr', t); });
+      child.on('close', code => resolve({ code, stdout, stderr, success: code === 0 }));
+      child.on('error', err => reject(new Error(`Failed to run ${binary}: ${err.message}. Is Ansible installed?`)));
+    });
+  }
+
   /**
    * Run an Ansible playbook with live output streaming
    */
-  runPlaybook(playbookName, targets = 'all', extraVars = {}, onOutput = null) {
-    return new Promise((resolve, reject) => {
-      const { keyPath, cleanup } = this._resolveSshKey();
+  async runPlaybook(playbookName, targets = 'all', extraVars = {}, onOutput = null) {
+    const { keyPath, cleanup } = this._resolveSshKey();
+    try {
       const inventoryPath = this.generateInventory(keyPath);
       const playbookPath = path.resolve(PLAYBOOKS_DIR, playbookName);
 
-      if (!playbookPath.startsWith(path.resolve(PLAYBOOKS_DIR) + path.sep)) {
-        reject(new Error(`Invalid playbook path: ${playbookName}`));
-        return;
-      }
+      if (!playbookPath.startsWith(path.resolve(PLAYBOOKS_DIR) + path.sep))
+        throw new Error(`Invalid playbook path: ${playbookName}`);
+      if (!fs.existsSync(playbookPath))
+        throw new Error(`Playbook not found: ${playbookName}`);
 
-      if (!fs.existsSync(playbookPath)) {
-        reject(new Error(`Playbook not found: ${playbookName}`));
-        return;
-      }
+      const args = ['-i', inventoryPath, playbookPath, '--limit', targets, '-v'];
+      if (Object.keys(extraVars).length > 0) args.push('-e', JSON.stringify(extraVars));
 
-      const args = [
-        '-i', inventoryPath,
-        playbookPath,
-        '--limit', targets,
-        '-v',
-      ];
-
-      // Add extra vars
-      if (Object.keys(extraVars).length > 0) {
-        args.push('-e', JSON.stringify(extraVars));
-      }
-
-      const env = {
-        ...process.env,
-        ANSIBLE_FORCE_COLOR: '0',
-        ANSIBLE_NOCOLOR: '1',
-        ANSIBLE_PYTHON_INTERPRETER: 'auto_silent',
-        // TOFU: accept unknown hosts on first connect, verify on subsequent connects
-        ANSIBLE_SSH_ARGS: `-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=${path.join(DATA_DIR, 'known_hosts')}`,
-      };
-
-      const child = spawn('ansible-playbook', args, {
-        env,
-        cwd: path.join(__dirname, '..'),
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      child.stdout.on('data', (data) => {
-        const text = data.toString();
-        stdout += text;
-        if (onOutput) onOutput('stdout', text);
-      });
-
-      child.stderr.on('data', (data) => {
-        const text = data.toString();
-        stderr += text;
-        if (onOutput) onOutput('stderr', text);
-      });
-
-      child.on('close', (code) => {
-        cleanup();
-        resolve({
-          code,
-          stdout,
-          stderr,
-          success: code === 0,
-        });
-      });
-
-      child.on('error', (err) => {
-        cleanup();
-        reject(new Error(`Failed to run ansible-playbook: ${err.message}. Is Ansible installed?`));
-      });
-    });
+      return await this._spawnProcess('ansible-playbook', args, onOutput,
+        { cwd: path.join(__dirname, '..') });
+    } finally {
+      cleanup();
+    }
   }
 
   /**
    * Run ad-hoc Ansible command
    */
-  runAdHoc(targets, module, args = '', onOutput = null) {
-    return new Promise((resolve, reject) => {
-      const { keyPath, cleanup } = this._resolveSshKey();
+  async runAdHoc(targets, module, args = '', onOutput = null) {
+    const { keyPath, cleanup } = this._resolveSshKey();
+    try {
       const inventoryPath = this.generateInventory(keyPath);
-
-      const cmdArgs = [
-        '-i', inventoryPath,
-        targets,
-        '-m', module,
-      ];
-
-      if (args) {
-        cmdArgs.push('-a', args);
-      }
-
-      const env = {
-        ...process.env,
-        ANSIBLE_FORCE_COLOR: '0',
-        ANSIBLE_NOCOLOR: '1',
-        ANSIBLE_PYTHON_INTERPRETER: 'auto_silent',
-        // TOFU: accept unknown hosts on first connect, verify on subsequent connects
-        ANSIBLE_SSH_ARGS: `-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=${path.join(DATA_DIR, 'known_hosts')}`,
-      };
-
-      const child = spawn('ansible', cmdArgs, { env });
-
-      let stdout = '';
-      let stderr = '';
-
-      child.stdout.on('data', (data) => {
-        const text = data.toString();
-        stdout += text;
-        if (onOutput) onOutput('stdout', text);
-      });
-
-      child.stderr.on('data', (data) => {
-        const text = data.toString();
-        stderr += text;
-        if (onOutput) onOutput('stderr', text);
-      });
-
-      child.on('close', (code) => {
-        cleanup();
-        resolve({ code, stdout, stderr, success: code === 0 });
-      });
-
-      child.on('error', (err) => {
-        cleanup();
-        reject(new Error(`Failed to run ansible: ${err.message}. Is Ansible installed?`));
-      });
-    });
+      const cmdArgs = ['-i', inventoryPath, targets, '-m', module];
+      if (args) cmdArgs.push('-a', args);
+      return await this._spawnProcess('ansible', cmdArgs, onOutput);
+    } finally {
+      cleanup();
+    }
   }
 
   /**

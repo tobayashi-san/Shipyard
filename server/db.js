@@ -172,30 +172,16 @@ db.exec(`
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);`);
 
+// Helper: silently ignore "column already exists" migration errors
+function migrate(sql) { try { db.exec(sql); } catch {} }
+
 // Migrations
-try {
-  db.exec('ALTER TABLE server_info ADD COLUMN reboot_required BOOLEAN DEFAULT 0;');
-} catch (e) {}
-
-try {
-  db.exec("ALTER TABLE servers ADD COLUMN notes TEXT NOT NULL DEFAULT '';");
-} catch (e) {}
-
-try {
-  db.exec('ALTER TABLE docker_containers ADD COLUMN compose_project TEXT;');
-} catch (e) {}
-
-try {
-  db.exec('ALTER TABLE docker_containers ADD COLUMN compose_working_dir TEXT;');
-} catch (e) {}
-
-try {
-  db.exec('ALTER TABLE server_info ADD COLUMN cpu_usage_pct REAL DEFAULT NULL;');
-} catch (e) {}
-
-try {
-  db.exec('ALTER TABLE servers ADD COLUMN group_id TEXT;');
-} catch (e) {}
+migrate('ALTER TABLE server_info ADD COLUMN reboot_required BOOLEAN DEFAULT 0;');
+migrate("ALTER TABLE servers ADD COLUMN notes TEXT NOT NULL DEFAULT '';");
+migrate('ALTER TABLE docker_containers ADD COLUMN compose_project TEXT;');
+migrate('ALTER TABLE docker_containers ADD COLUMN compose_working_dir TEXT;');
+migrate('ALTER TABLE server_info ADD COLUMN cpu_usage_pct REAL DEFAULT NULL;');
+migrate('ALTER TABLE servers ADD COLUMN group_id TEXT;');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS server_groups (
@@ -208,14 +194,8 @@ db.exec(`
   );
 `);
 
-// Migrations for existing server_groups tables
-try {
-  db.exec("ALTER TABLE server_groups ADD COLUMN color TEXT DEFAULT '#6366f1';");
-} catch (e) {}
-
-try {
-  db.exec('ALTER TABLE server_groups ADD COLUMN parent_id TEXT;');
-} catch (e) {}
+migrate("ALTER TABLE server_groups ADD COLUMN color TEXT DEFAULT '#6366f1';");
+migrate('ALTER TABLE server_groups ADD COLUMN parent_id TEXT;');
 
 // Server CRUD
 const serverQueries = {

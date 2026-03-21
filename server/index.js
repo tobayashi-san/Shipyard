@@ -6,6 +6,12 @@ const { WebSocketServer } = require('ws');
 const cors = require('cors');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
+const jwt = require('jsonwebtoken');
+const { Client: SshClient } = require('ssh2');
+const db = require('./db');
+const ansibleRunner = require('./services/ansible-runner');
+const sshManager = require('./services/ssh-manager');
+const { notify } = require('./services/notifier');
 
 const app = express();
 
@@ -211,9 +217,6 @@ app.get('/api/dashboard', (req, res) => {
 });
 
 // Ansible execution via REST + WebSocket
-const ansibleRunner = require('./services/ansible-runner');
-const db = require('./db');
-const { notify } = require('./services/notifier');
 
 // POST /api/ansible/run - Run a playbook with WebSocket output
 app.post('/api/ansible/run', async (req, res) => {
@@ -520,20 +523,10 @@ app.post('/api/servers/:id/docker/compose/action', async (req, res) => {
 // ============================================================
 // SSH Terminal WebSocket  (/ws/ssh)
 // ============================================================
-const { Client: SshClient } = require('ssh2');
-const sshManager = require('./services/ssh-manager');
 
 wssSsh.on('connection', (ws, req) => {
   const url = new URL(req.url, 'http://localhost');
-
-  // Auth
-  const passwordHash = db.settings.get('auth_password_hash');
-  if (passwordHash) {
-    const secret = process.env.JWT_SECRET || db.settings.get('auth_jwt_secret');
-    const token  = url.searchParams.get('token');
-    try { require('jsonwebtoken').verify(token, secret); }
-    catch { ws.close(4001, 'Unauthorized'); return; }
-  }
+  if (!verifyWsAuth(ws, url)) return;
 
   const serverId = url.searchParams.get('serverId');
   const server   = db.servers.getById(serverId);
@@ -608,21 +601,18 @@ wssSsh.on('connection', (ws, req) => {
 
 // WebSocket handling
 const clients = new Set();
-const jwt = require('jsonwebtoken');
+
+function verifyWsAuth(ws, url) {
+  const passwordHash = db.settings.get('auth_password_hash');
+  if (!passwordHash) return true;
+  const secret = process.env.JWT_SECRET || db.settings.get('auth_jwt_secret');
+  try { jwt.verify(url.searchParams.get('token'), secret); return true; }
+  catch { ws.close(4001, 'Unauthorized'); return false; }
+}
 
 wss.on('connection', (ws, req) => {
-  // Validate token if a password is configured
-  const passwordHash = db.settings.get('auth_password_hash');
-  if (passwordHash) {
-    const secret = process.env.JWT_SECRET || db.settings.get('auth_jwt_secret');
-    const token = new URL(req.url, 'http://localhost').searchParams.get('token');
-    try {
-      jwt.verify(token, secret);
-    } catch {
-      ws.close(4001, 'Unauthorized');
-      return;
-    }
-  }
+  const url = new URL(req.url, 'http://localhost');
+  if (!verifyWsAuth(ws, url)) return;
 
   clients.add(ws);
   ws.on('close', () => clients.delete(ws));
@@ -681,9 +671,7 @@ server.listen(PORT, () => {
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\nShutting down...');
-  const scheduler = require('./services/scheduler');
-  scheduler.stopPolling();
-  const sshManager = require('./services/ssh-manager');
+  require('./services/scheduler').stopPolling();
   sshManager.closeAll();
   server.close();
   process.exit(0);

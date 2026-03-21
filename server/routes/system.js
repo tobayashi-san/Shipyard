@@ -5,6 +5,7 @@ const sshManager = require('../services/ssh-manager');
 const ansibleRunner = require('../services/ansible-runner');
 const db = require('../db');
 const scheduler = require('../services/scheduler');
+const { sendWebhook, sendEmail } = require('../services/notifier');
 
 const deployLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -110,7 +111,6 @@ router.put('/settings', (req, res) => {
 // POST /api/system/webhook-test - Send a test webhook notification
 router.post('/webhook-test', async (req, res) => {
   try {
-    const { sendWebhook } = require('../services/notifier');
     const result = await sendWebhook('Shipyard Test', 'This is a test notification from Shipyard.', true);
     if (result && result.ok === false) {
       return res.status(502).json({ error: 'Webhook request failed', status: result.status });
@@ -124,7 +124,6 @@ router.post('/webhook-test', async (req, res) => {
 // POST /api/system/smtp-test - Send a test email
 router.post('/smtp-test', async (req, res) => {
   try {
-    const { sendEmail } = require('../services/notifier');
     await sendEmail('Shipyard Test', 'This is a test email from Shipyard.', true);
     res.json({ success: true });
   } catch (error) {

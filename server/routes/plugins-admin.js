@@ -11,20 +11,10 @@ router.get('/', (req, res) => {
   }
 });
 
-// POST /api/plugins/:id/enable
-router.post('/:id/enable', (req, res) => {
+// POST /api/plugins/:id/enable  and  POST /api/plugins/:id/disable
+router.post('/:id/:action(enable|disable)', (req, res) => {
   try {
-    pluginLoader.setEnabled(req.params.id, true);
-    res.json({ success: true });
-  } catch (e) {
-    res.status(400).json({ error: e.message });
-  }
-});
-
-// POST /api/plugins/:id/disable
-router.post('/:id/disable', (req, res) => {
-  try {
-    pluginLoader.setEnabled(req.params.id, false);
+    pluginLoader.setEnabled(req.params.id, req.params.action === 'enable');
     res.json({ success: true });
   } catch (e) {
     res.status(400).json({ error: e.message });
