@@ -166,6 +166,12 @@ class ApiClient {
     return this.request('/ansible/run', { method: 'POST', body: { playbook, targets, extraVars } });
   }
 
+  // Plugins
+  getPlugins()          { return this.request('/plugins'); }
+  enablePlugin(id)      { return this.request(`/plugins/${id}/enable`,  { method: 'POST' }); }
+  disablePlugin(id)     { return this.request(`/plugins/${id}/disable`, { method: 'POST' }); }
+  reloadPlugins()       { return this.request('/plugins/reload',        { method: 'POST' }); }
+
   // Onboarding
   markOnboardingDone() { return this.request('/system/onboarding-complete', { method: 'POST' }); }
 

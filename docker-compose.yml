@@ -6,6 +6,7 @@ services:
     volumes:
       - shipyard-data:/app/server/data
       - shipyard-playbooks:/app/server/playbooks
+      - shipyard-plugins:/app/plugins
       # To use your own certificate instead of the auto-generated one:
       # - /etc/ssl/certs/shipyard.crt:/certs/shipyard.crt:ro
       # - /etc/ssl/private/shipyard.key:/certs/shipyard.key:ro
@@ -32,3 +33,4 @@ services:
 volumes:
   shipyard-data:
   shipyard-playbooks:
+  shipyard-plugins:

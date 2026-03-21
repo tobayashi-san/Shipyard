@@ -8,6 +8,7 @@ import { initWebSocket, onWsMessage } from './websocket.js';
 import { setupComposeModal } from './components/compose-modal.js';
 import { renderLogin } from './components/login.js';
 import { renderOnboarding } from './components/onboarding.js';
+import { renderPlugin, cleanupPlugin } from './plugins.js';
 import { api } from './api.js';
 import { t } from './i18n.js';
 
@@ -18,15 +19,22 @@ let _wsUnsub = null;
 export const state = {
   currentView: 'dashboard',
   selectedServerId: null,
+  currentPluginId: null,
   servers: [],
+  plugins: [],
   ws: null,
   whiteLabel: {},
 };
 
 // Router
 export function navigate(view, params = {}) {
+  // Cleanup plugin when leaving a plugin view
+  if (state.currentView === 'plugin' && view !== 'plugin') {
+    cleanupPlugin();
+  }
   state.currentView = view;
-  if (params.serverId) state.selectedServerId = params.serverId;
+  if (params.serverId)  state.selectedServerId  = params.serverId;
+  if (params.pluginId)  state.currentPluginId   = params.pluginId;
   render();
 }
 
@@ -50,6 +58,9 @@ function render() {
       break;
     case 'settings':
       renderSettings();
+      break;
+    case 'plugin':
+      renderPlugin(state.currentPluginId);
       break;
     default:
       renderDashboard();
@@ -171,11 +182,12 @@ async function boot() {
   // Redirect to login on any 401
   api.onUnauthorized(() => renderLogin(boot));
 
-  // Load settings + servers in parallel
+  // Load settings, servers, and plugins in parallel
   try {
-    const [settings, servers] = await Promise.all([
+    const [settings, servers, plugins] = await Promise.all([
       api.getSettings(),
       api.getServers(),
+      api.getPlugins().catch(() => []),
     ]);
     state.whiteLabel = settings;
     state.servers = servers.map(s => ({
@@ -183,6 +195,7 @@ async function boot() {
       services: typeof s.services === 'string' ? JSON.parse(s.services) : s.services || [],
       tags: typeof s.tags === 'string' ? JSON.parse(s.tags) : s.tags || [],
     }));
+    state.plugins = plugins;
   } catch (e) {
     console.error('Failed to load initial data:', e);
   }

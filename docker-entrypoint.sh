@@ -26,7 +26,7 @@ fi
 
 # Ensure writable directories are owned by the shipyard user
 # (Docker volumes are created as root on first use)
-chown -R shipyard:shipyard /app/server/data /app/server/playbooks
+chown -R shipyard:shipyard /app/server/data /app/server/playbooks /app/plugins
 
 # Drop from root to shipyard and start the server
 exec gosu shipyard node server/index.js

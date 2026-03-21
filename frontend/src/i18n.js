@@ -581,6 +581,26 @@ const translations = {
 
     // ── Schedules (extra) ─────────────────────────────────────
     'sc.namePlaceholder': 'z.B. Weekly Updates',
+
+    // ── Plugins ───────────────────────────────────────────────
+    'nav.plugins': 'Plugins',
+    'set.tabPlugins': 'Plugins',
+    'set.plugins': 'Plugin-Verwaltung',
+    'set.pluginsHint': 'Plugins erweitern Shipyard um zusätzliche Funktionen. Platziere sie im Verzeichnis <code style="font-family:var(--font-mono);">/app/plugins/&lt;id&gt;/</code>.',
+    'set.pluginsEmpty': 'Keine Plugins gefunden. Platziere ein Plugin-Verzeichnis unter <code style="font-family:var(--font-mono);">/app/plugins/</code>.',
+    'set.pluginsReload': 'Neu laden',
+    'set.pluginsReloaded': 'Plugins neu geladen',
+    'set.pluginsEnabled': 'Aktiviert',
+    'set.pluginsDisabled': 'Deaktiviert',
+    'set.pluginsEnabledToast': '"{name}" aktiviert',
+    'set.pluginsDisabledToast': '"{name}" deaktiviert',
+    'set.pluginsLoadError': 'Laden fehlgeschlagen',
+    'set.pluginsCannotEnable': 'Plugin konnte nicht geladen werden',
+    'set.pluginsWarningTitle': 'Sicherheitshinweis',
+    'set.pluginsWarningText': 'Plugins werden als Node.js-Code auf dem Server ausgeführt und haben uneingeschränkten Zugriff auf SSH, Datenbank und Netzwerk. Installiere nur Plugins aus vertrauenswürdigen Quellen.',
+    'set.pluginsEnableTitle': 'Plugin aktivieren',
+    'set.pluginsEnableWarning': 'Plugin <strong>{name}</strong> aktivieren? Plugins laufen mit vollen Serverrechten. Nur vertrauenswürdige Plugins aktivieren.',
+    'set.pluginsEnableConfirm': 'Aktivieren',
   },
 
   en: {
@@ -1165,6 +1185,26 @@ const translations = {
 
     // ── Schedules (extra) ─────────────────────────────────────
     'sc.namePlaceholder': 'e.g. Weekly Updates',
+
+    // ── Plugins ───────────────────────────────────────────────
+    'nav.plugins': 'Plugins',
+    'set.tabPlugins': 'Plugins',
+    'set.plugins': 'Plugin Management',
+    'set.pluginsHint': 'Plugins extend Shipyard with additional functionality. Place them in <code style="font-family:var(--font-mono);">/app/plugins/&lt;id&gt;/</code>.',
+    'set.pluginsEmpty': 'No plugins found. Place a plugin directory under <code style="font-family:var(--font-mono);">/app/plugins/</code>.',
+    'set.pluginsReload': 'Reload',
+    'set.pluginsReloaded': 'Plugins reloaded',
+    'set.pluginsEnabled': 'Enabled',
+    'set.pluginsDisabled': 'Disabled',
+    'set.pluginsEnabledToast': '"{name}" enabled',
+    'set.pluginsDisabledToast': '"{name}" disabled',
+    'set.pluginsLoadError': 'Failed to load',
+    'set.pluginsCannotEnable': 'Plugin failed to load',
+    'set.pluginsWarningTitle': 'Security Notice',
+    'set.pluginsWarningText': 'Plugins run as Node.js code on the server with full access to SSH, the database, and the network. Only install plugins from trusted sources.',
+    'set.pluginsEnableTitle': 'Enable Plugin',
+    'set.pluginsEnableWarning': 'Enable plugin <strong>{name}</strong>? Plugins run with full server privileges. Only enable plugins from trusted sources.',
+    'set.pluginsEnableConfirm': 'Enable',
   },
 };
 

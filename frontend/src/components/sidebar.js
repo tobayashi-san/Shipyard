@@ -7,6 +7,21 @@ export function renderSidebar() {
   const onlineCount = state.servers.filter(s => s.status === 'online').length;
   const currentLang = getLang();
 
+  // Plugins that are enabled and have a sidebar entry
+  const sidebarPlugins = (state.plugins || []).filter(p => p.enabled && p.sidebar);
+
+  const pluginsSection = sidebarPlugins.length > 0 ? `
+    <div class="nav-section">
+      <div class="nav-section-title">${t('nav.plugins')}</div>
+      ${sidebarPlugins.map(p => `
+        <div class="nav-item ${state.currentView === 'plugin' && state.currentPluginId === p.id ? 'active' : ''}"
+             data-view="plugin" data-plugin-id="${p.id}">
+          <span class="nav-item-icon"><i class="${p.sidebar.icon || 'fas fa-puzzle-piece'}"></i></span>
+          <span>${p.sidebar.label || p.name}</span>
+        </div>
+      `).join('')}
+    </div>` : '';
+
   sidebar.innerHTML = `
     <div class="sidebar-header">
       <div class="sidebar-logo-icon"><i class="fas fa-ship"></i></div>
@@ -37,6 +52,7 @@ export function renderSidebar() {
           <span>${t('nav.settings')}</span>
         </div>
       </div>
+      ${pluginsSection}
     </nav>
 
     <div class="sidebar-footer">
@@ -53,8 +69,9 @@ export function renderSidebar() {
 
   sidebar.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', () => {
-      const view = item.dataset.view;
-      if (view) navigate(view, { serverId: item.dataset.serverId });
+      const view     = item.dataset.view;
+      const pluginId = item.dataset.pluginId;
+      if (view) navigate(view, { serverId: item.dataset.serverId, pluginId });
     });
   });
 

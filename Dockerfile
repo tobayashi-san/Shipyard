@@ -27,6 +27,7 @@ RUN chmod +x docker-entrypoint.sh
 
 RUN mkdir -p /app/.ansible/tmp && chown -R shipyard:shipyard /app/.ansible
 RUN mkdir -p /app/server/playbooks && chown -R shipyard:shipyard /app/server/playbooks
+RUN mkdir -p /app/plugins && chown -R shipyard:shipyard /app/plugins
 
 VOLUME ["/app/server/data"]
 EXPOSE 443

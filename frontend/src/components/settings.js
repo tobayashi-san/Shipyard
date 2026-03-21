@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { state } from '../main.js';
-import { showToast } from './toast.js';
+import { showToast, showConfirm } from './toast.js';
 import { renderLogin } from './login.js';
 import { t } from '../i18n.js';
 
@@ -89,6 +89,9 @@ export async function renderSettings() {
       </button>
       <button class="tab-btn" data-tab="security">
         <i class="fas fa-shield-alt"></i> ${t('set.tabSecurity')}
+      </button>
+      <button class="tab-btn" data-tab="plugins">
+        <i class="fas fa-puzzle-piece"></i> ${t('set.tabPlugins')}
       </button>
       <button class="tab-btn" data-tab="danger">
         <i class="fas fa-triangle-exclamation"></i> ${t('set.tabDanger')}
@@ -404,6 +407,31 @@ export async function renderSettings() {
         </div>
       </div>
 
+      <!-- Tab: Plugins -->
+      <div class="tab-panel" id="tab-plugins">
+        <div class="settings-group-title">${t('set.plugins')}</div>
+        <p style="font-size:13px;color:var(--text-secondary);margin:0 0 8px;">
+          ${t('set.pluginsHint')}
+        </p>
+        <div class="settings-block" id="plugins-list-content">
+          <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:8px;">
+          <button class="btn btn-secondary btn-sm" id="btn-reload-plugins">
+            <i class="fas fa-rotate"></i> ${t('set.pluginsReload')}
+          </button>
+        </div>
+        <div class="settings-block" style="margin-top:20px;background:var(--warning-bg);border:1px solid var(--warning);border-radius:var(--radius);padding:14px 16px;">
+          <div style="display:flex;gap:10px;align-items:flex-start;">
+            <i class="fas fa-triangle-exclamation" style="color:var(--warning);margin-top:2px;flex-shrink:0;"></i>
+            <div style="font-size:13px;color:var(--text-secondary);">
+              <strong style="color:var(--warning);">${t('set.pluginsWarningTitle')}</strong><br>
+              ${t('set.pluginsWarningText')}
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Tab: Danger Zone -->
       <div class="tab-panel" id="tab-danger">
         <div class="settings-group-title" style="color:var(--offline);">
@@ -488,6 +516,7 @@ export async function renderSettings() {
   setupSettingsEvents(wl);
   setupSecurityEvents().catch(() => {});
   setupDangerZone();
+  loadPluginsList();
 }
 
 function setupTabSwitching() {
@@ -1026,5 +1055,112 @@ function setupDangerZone() {
         }
       });
     });
+  });
+}
+
+// ============================================================
+// Plugins Tab
+// ============================================================
+async function loadPluginsList() {
+  const el = document.getElementById('plugins-list-content');
+  if (!el) return;
+
+  async function render(plugins) {
+    if (!plugins.length) {
+      el.innerHTML = `
+        <div class="settings-row" style="border-bottom:none;">
+          <div style="padding:20px 0;color:var(--text-muted);font-size:13px;text-align:center;width:100%;">
+            <i class="fas fa-puzzle-piece" style="opacity:.4;font-size:1.5rem;margin-bottom:8px;display:block;"></i>
+            ${t('set.pluginsEmpty')}
+          </div>
+        </div>`;
+      return;
+    }
+
+    el.innerHTML = plugins.map((p, i) => `
+      <div class="settings-row" ${i === plugins.length - 1 ? 'style="border-bottom:none;"' : ''}>
+        <div class="settings-row-label">
+          <span>${esc(p.name)}${p.version ? ` <small style="color:var(--text-muted);font-weight:400;">v${esc(String(p.version))}</small>` : ''}</span>
+          ${p.description ? `<small>${esc(p.description)}</small>` : ''}
+          ${!p.loaded ? `<small style="color:var(--offline);"><i class="fas fa-circle-exclamation"></i> ${esc(p.error || t('set.pluginsLoadError'))}</small>` : ''}
+        </div>
+        <div class="settings-row-control" style="display:flex;align-items:center;gap:10px;">
+          <label class="toggle-switch" ${!p.loaded ? 'title="' + t('set.pluginsCannotEnable') + '"' : ''}>
+            <input type="checkbox" class="plugin-toggle" data-id="${esc(p.id)}"
+              ${p.enabled ? 'checked' : ''} ${!p.loaded ? 'disabled' : ''}>
+            <span class="toggle-slider"></span>
+          </label>
+          <span style="font-size:12px;color:var(--text-muted);">${p.enabled ? t('set.pluginsEnabled') : t('set.pluginsDisabled')}</span>
+        </div>
+      </div>`).join('');
+
+    // Attach toggle listeners
+    el.querySelectorAll('.plugin-toggle').forEach(tog => {
+      tog.addEventListener('change', async () => {
+        const id      = tog.dataset.id;
+        const enable  = tog.checked;
+        const plugin  = plugins.find(p => p.id === id);
+        tog.disabled  = true;
+
+        // Warn before enabling for the first time
+        if (enable) {
+          const confirmed = await showConfirm(
+            t('set.pluginsEnableWarning', { name: plugin?.name || id }),
+            { title: t('set.pluginsEnableTitle'), confirmText: t('set.pluginsEnableConfirm'), danger: true }
+          );
+          if (!confirmed) {
+            tog.checked  = false;
+            tog.disabled = false;
+            return;
+          }
+        }
+
+        try {
+          if (enable) {
+            await api.enablePlugin(id);
+            state.plugins = await api.getPlugins().catch(() => state.plugins);
+          } else {
+            await api.disablePlugin(id);
+            state.plugins = await api.getPlugins().catch(() => state.plugins);
+          }
+          showToast(enable ? t('set.pluginsEnabledToast', { name: plugin?.name || id }) : t('set.pluginsDisabledToast', { name: plugin?.name || id }), 'success');
+          // Re-render with updated list
+          await render(state.plugins);
+          // Update sidebar
+          const { renderSidebar } = await import('./sidebar.js');
+          renderSidebar();
+        } catch (e) {
+          showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+          tog.checked  = !enable;
+          tog.disabled = false;
+        }
+      });
+    });
+  }
+
+  try {
+    const plugins = await api.getPlugins();
+    state.plugins  = plugins;
+    await render(plugins);
+  } catch (e) {
+    el.innerHTML = `<div style="padding:16px;color:var(--offline);font-size:13px;">${e.message}</div>`;
+  }
+
+  // Reload button
+  document.getElementById('btn-reload-plugins')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-reload-plugins');
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-sm"></span>`;
+    try {
+      const result = await api.reloadPlugins();
+      state.plugins = result.plugins || await api.getPlugins();
+      await render(state.plugins);
+      showToast(t('set.pluginsReloaded'), 'success');
+    } catch (e) {
+      showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<i class="fas fa-rotate"></i> ${t('set.pluginsReload')}`;
+    }
   });
 }

@@ -1,0 +1,11 @@
+{
+  "id": "my-plugin",
+  "name": "My Plugin",
+  "version": "1.0.0",
+  "description": "A short description of what this plugin does.",
+  "author": "Your Name",
+  "sidebar": {
+    "icon": "fas fa-puzzle-piece",
+    "label": "My Plugin"
+  }
+}

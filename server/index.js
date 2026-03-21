@@ -104,18 +104,44 @@ app.use('/api/auth', authRouter);
 app.use('/api', authMiddleware);
 
 // API Routes
-const resetRouter = require('./routes/reset');
-const serversRouter = require('./routes/servers');
-const systemRouter = require('./routes/system');
-const playbooksRouter = require('./routes/playbooks');
-const schedulesRouter = require('./routes/schedules');
+const resetRouter        = require('./routes/reset');
+const serversRouter      = require('./routes/servers');
+const systemRouter       = require('./routes/system');
+const playbooksRouter    = require('./routes/playbooks');
+const schedulesRouter    = require('./routes/schedules');
 const customUpdatesRouter = require('./routes/custom-updates');
+const pluginsAdminRouter = require('./routes/plugins-admin');
+const pluginLoader       = require('./services/plugin-loader');
 app.use('/api/reset', resetRouter);
 app.use('/api/servers', serversRouter);
 app.use('/api/servers/:id/custom-updates', customUpdatesRouter);
 app.use('/api/system', systemRouter);
 app.use('/api/playbooks', playbooksRouter);
 app.use('/api/schedules', schedulesRouter);
+app.use('/api/plugins', pluginsAdminRouter);
+
+// Dynamic plugin data routes — auth is handled inside each plugin's own router
+app.use('/api/plugin/:pluginId', (req, res, next) => {
+  const { pluginId } = req.params;
+  const pluginRouter = pluginLoader.getRouter(pluginId);
+  if (!pluginRouter) return res.status(404).json({ error: `Plugin '${pluginId}' not found or not enabled` });
+  pluginRouter(req, res, next);
+});
+
+// Serve plugin UI files (only for enabled plugins)
+app.get('/plugins/:pluginId/ui.js', (req, res) => {
+  const { pluginId } = req.params;
+  if (!pluginLoader.isEnabled(pluginId)) {
+    return res.status(404).type('application/javascript').send('// Plugin not found or not enabled\n');
+  }
+  const uiPath = pluginLoader.getUiPath(pluginId);
+  if (!uiPath) {
+    return res.status(404).type('application/javascript').send('// ui.js not found\n');
+  }
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(uiPath);
+});
 
 // GET /api/dashboard – aggregated stats from DB cache (no SSH, instant)
 app.get('/api/dashboard', (req, res) => {
@@ -647,6 +673,9 @@ server.listen(PORT, () => {
   scheduler.setClientCountFn(() => clients.size);
   scheduler.init(broadcast);
   scheduler.startPolling();
+
+  // Load plugins after all helpers are available
+  pluginLoader.loadAll({ db, broadcast, sshManager, ansibleRunner, scheduler });
 });
 
 // Graceful shutdown
