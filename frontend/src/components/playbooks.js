@@ -366,16 +366,19 @@ function setupPlaybookEvents() {
           </div>
         `).join('');
 
-    const confirmed = await showConfirm(
+    // showConfirm builds the DOM synchronously — start it but don't await yet
+    const dialogPromise = showConfirm(
       `<strong>${t('pb.historyTitle')}</strong><div style="margin-top:12px;">${items}</div>`,
       { title: t('pb.historyTitle'), confirmText: null, cancelText: t('common.cancel') }
     );
 
-    // Attach restore handlers after confirm dialog renders
+    // Attach restore handlers NOW while the dialog is in the DOM
     document.querySelectorAll('.btn-restore-version').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const version = parseInt(btn.dataset.version);
+        // Close the history dialog first
+        document.querySelector('.modal-overlay')?.remove();
         if (!await showConfirm(t('pb.restoreConfirm'), { title: t('pb.history'), confirmText: t('common.save'), danger: false })) return;
         try {
           await api.restorePlaybook(currentFilename, version);
@@ -387,6 +390,8 @@ function setupPlaybookEvents() {
         }
       });
     });
+
+    await dialogPromise;
   });
 
   document.getElementById('btn-cancel-run')?.addEventListener('click', () => {
