@@ -364,13 +364,13 @@ app.post('/api/servers/:id/custom-updates/:taskId/run', async (req, res) => {
   try {
     let cmd = task.update_command;
     if (/^https?:\/\//.test(cmd)) cmd = `bash <(curl -fsSL "${cmd}")`;
-    const result = await sshManager.execCommand(server, cmd);
-    const output = (result.stdout || '') + (result.stderr || '');
-    output.split('\n').forEach(line => {
-      broadcast({ type: 'update_output', serverId: server.id, historyId, stream: 'stdout', data: line + '\n' });
+    let fullOutput = '';
+    const code = await sshManager.execStream(server, cmd, chunk => {
+      fullOutput += chunk;
+      broadcast({ type: 'update_output', serverId: server.id, historyId, stream: 'stdout', data: chunk });
     });
-    const success = result.code === 0;
-    db.updateHistory.updateStatus(historyId, success ? 'success' : 'failed', output);
+    const success = code === 0;
+    db.updateHistory.updateStatus(historyId, success ? 'success' : 'failed', fullOutput);
     db.auditLog.write('custom_update.run', `server=${server.name} task=${task.name}`, req.ip, success);
     broadcast({ type: 'update_complete', serverId: server.id, historyId, success });
   } catch (error) {

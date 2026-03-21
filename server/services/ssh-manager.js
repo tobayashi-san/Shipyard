@@ -254,6 +254,21 @@ class SSHManager {
   }
 
   /**
+   * Execute a command with streaming stdout/stderr callbacks
+   */
+  async execStream(server, command, onData) {
+    const ssh = await this.getConnection(server);
+    return new Promise((resolve, reject) => {
+      ssh.connection.exec(command, (err, stream) => {
+        if (err) return reject(err);
+        stream.on('data', chunk => onData(chunk.toString()));
+        stream.stderr.on('data', chunk => onData(chunk.toString()));
+        stream.on('close', code => resolve(code));
+      });
+    });
+  }
+
+  /**
    * Test SSH connectivity to a server
    */
   async testConnection(server) {
