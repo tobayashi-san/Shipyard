@@ -156,6 +156,7 @@ class ApiClient {
   savePlaybook(filename, content) { return this.request('/playbooks', { method: 'POST', body: { filename, content } }); }
   deletePlaybook(filename) { return this.request(`/playbooks/${encodeURIComponent(filename)}`, { method: 'DELETE' }); }
   getPlaybookHistory(filename) { return this.request(`/playbooks/${encodeURIComponent(filename)}/history`); }
+  getPlaybookVersion(filename, version) { return this.request(`/playbooks/${encodeURIComponent(filename)}/history/${version}`); }
   restorePlaybook(filename, version) { return this.request(`/playbooks/${encodeURIComponent(filename)}/restore/${version}`, { method: 'POST' }); }
   testWebhook() { return this.request('/system/webhook-test', { method: 'POST' }); }
   testSmtp()    { return this.request('/system/smtp-test',    { method: 'POST' }); }

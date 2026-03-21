@@ -91,11 +91,34 @@ router.get('/:filename/history', (req, res) => {
   }
 });
 
+// GET /api/playbooks/:filename/history/:version - Preview a backup version
+router.get('/:filename/history/:version', (req, res) => {
+  try {
+    const filename = path.basename(req.params.filename);
+    const version  = parseInt(req.params.version);
+    if (!filename.endsWith('.yml') && !filename.endsWith('.yaml')) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+    if (!version || version < 1 || version > MAX_BACKUPS) {
+      return res.status(400).json({ error: 'Invalid version' });
+    }
+    const filepath = path.join(PLAYBOOKS_DIR, filename);
+    if (!filepath.startsWith(path.resolve(PLAYBOOKS_DIR) + path.sep)) {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+    const bakPath = `${filepath}.bak.${version}`;
+    if (!fs.existsSync(bakPath)) return res.status(404).json({ error: 'Backup not found' });
+    res.json({ content: fs.readFileSync(bakPath, 'utf8') });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // POST /api/playbooks/:filename/restore/:version - Restore a backup version
 router.post('/:filename/restore/:version', (req, res) => {
   try {
     const filename = path.basename(req.params.filename);
-    const version = parseInt(req.params.version);
+    const version  = parseInt(req.params.version);
     if (!filename.endsWith('.yml') && !filename.endsWith('.yaml')) {
       return res.status(400).json({ error: 'Invalid filename' });
     }
@@ -111,6 +134,10 @@ router.post('/:filename/restore/:version', (req, res) => {
     const content = fs.readFileSync(bakPath, 'utf8');
     rotateBak(filepath);
     fs.writeFileSync(filepath, content, 'utf8');
+    // rotateBak shifted every backup up by 1, so the file we just restored
+    // from is now also sitting at .bak.(version+1) — remove the duplicate.
+    const dupPath = `${filepath}.bak.${version + 1}`;
+    if (fs.existsSync(dupPath)) fs.unlinkSync(dupPath);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });

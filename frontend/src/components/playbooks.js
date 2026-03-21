@@ -352,46 +352,9 @@ function setupPlaybookEvents() {
       return;
     }
 
-    const items = versions.length === 0
-      ? `<p style="color:var(--text-muted);padding:8px 0;">${t('pb.noHistory')}</p>`
-      : versions.map(v => `
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
-            <span style="font-size:13px;">
-              <strong>${t('pb.historyVersion', { n: v.version })}</strong>
-              <span style="color:var(--text-muted);margin-left:8px;">${formatDateTimeShort(v.modifiedAt)}</span>
-            </span>
-            <button class="btn btn-secondary btn-sm btn-restore-version" data-version="${v.version}" style="flex-shrink:0;">
-              <i class="fas fa-undo"></i>
-            </button>
-          </div>
-        `).join('');
-
-    // showConfirm builds the DOM synchronously — start it but don't await yet
-    const dialogPromise = showConfirm(
-      `<strong>${t('pb.historyTitle')}</strong><div style="margin-top:12px;">${items}</div>`,
-      { title: t('pb.historyTitle'), confirmText: null, cancelText: t('common.cancel') }
-    );
-
-    // Attach restore handlers NOW while the dialog is in the DOM
-    document.querySelectorAll('.btn-restore-version').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const version = parseInt(btn.dataset.version);
-        // Close the history dialog first
-        document.querySelector('.modal-overlay')?.remove();
-        if (!await showConfirm(t('pb.restoreConfirm'), { title: t('pb.history'), confirmText: t('common.save'), danger: false })) return;
-        try {
-          await api.restorePlaybook(currentFilename, version);
-          showToast(t('pb.restored'), 'success');
-          const data = await api.getPlaybook(currentFilename);
-          setEditorContent(data.content);
-        } catch (err) {
-          showToast(t('common.errorPrefix', { msg: err.message }), 'error');
-        }
-      });
+    showHistoryModal(currentFilename, versions, (restoredContent) => {
+      setEditorContent(restoredContent);
     });
-
-    await dialogPromise;
   });
 
   document.getElementById('btn-cancel-run')?.addEventListener('click', () => {
@@ -626,6 +589,121 @@ function formatScheduleDate(dateStr) {
 
 function setupScheduleEvents() {
   document.getElementById('btn-new-schedule')?.addEventListener('click', () => openScheduleDialog(null));
+}
+
+// ============================================================
+// Playbook History Modal
+// ============================================================
+function showHistoryModal(filename, versions, onRestored) {
+  const overlay = document.getElementById('modal-overlay');
+  overlay.classList.remove('hidden');
+
+  function renderRows(openVersion = null) {
+    if (versions.length === 0) {
+      return `<p style="color:var(--text-muted);padding:8px 0;font-size:13px;">${t('pb.noHistory')}</p>`;
+    }
+    return versions.map(v => {
+      const isOpen = openVersion === v.version;
+      return `
+        <div class="pb-hist-row" data-version="${v.version}">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">
+            <span style="font-size:13px;">
+              <strong>${t('pb.historyVersion', { n: v.version })}</strong>
+              <span style="color:var(--text-muted);margin-left:8px;">${formatDateTimeShort(v.modifiedAt)}</span>
+            </span>
+            <div style="display:flex;gap:6px;flex-shrink:0;">
+              <button class="btn btn-secondary btn-sm btn-preview-version" data-version="${v.version}"
+                title="${t('pb.historyPreview')}" style="${isOpen ? 'color:var(--accent);' : ''}">
+                <i class="fas fa-eye"></i>
+              </button>
+              <button class="btn btn-secondary btn-sm btn-restore-version" data-version="${v.version}"
+                title="${t('pb.history')}">
+                <i class="fas fa-undo"></i>
+              </button>
+            </div>
+          </div>
+          ${isOpen ? `
+          <div class="pb-hist-preview" style="margin-bottom:8px;">
+            <div class="loading-state" style="padding:12px;" id="pb-hist-preview-${v.version}">
+              <div class="loader"></div>
+            </div>
+          </div>` : ''}
+        </div>`;
+    }).join('');
+  }
+
+  function render(openVersion = null) {
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:620px;width:95%;">
+        <h2><i class="fas fa-history"></i> ${t('pb.historyTitle')}</h2>
+        <div class="form-body" style="max-height:70vh;overflow-y:auto;" id="pb-hist-list">
+          ${renderRows(openVersion)}
+        </div>
+        <div class="form-actions" style="padding-top:12px;">
+          <button class="btn btn-secondary" id="pb-hist-close">${t('common.close')}</button>
+        </div>
+      </div>`;
+
+    document.getElementById('pb-hist-close').addEventListener('click', close);
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+    // Preview buttons
+    overlay.querySelectorAll('.btn-preview-version').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const v = parseInt(btn.dataset.version);
+        // Toggle: close if already open
+        const currentOpen = overlay.querySelector('.pb-hist-preview') ? parseInt(overlay.querySelector('.pb-hist-row .btn-preview-version[style*="accent"]')?.dataset.version) || null : null;
+        if (currentOpen === v) { render(null); return; }
+        render(v);
+        // Load content
+        const previewEl = document.getElementById(`pb-hist-preview-${v}`);
+        try {
+          const data = await api.getPlaybookVersion(filename, v);
+          if (previewEl) {
+            previewEl.innerHTML = `<pre style="
+              background:var(--bg-secondary);
+              border:1px solid var(--border);
+              border-radius:var(--radius);
+              padding:12px 14px;
+              font-family:var(--font-mono);
+              font-size:12px;
+              line-height:1.5;
+              overflow-x:auto;
+              white-space:pre;
+              margin:0;
+              color:var(--text-primary);
+            ">${esc(data.content)}</pre>`;
+          }
+        } catch (err) {
+          if (previewEl) previewEl.innerHTML = `<p style="color:var(--offline);font-size:13px;padding:8px 0;">${err.message}</p>`;
+        }
+      });
+    });
+
+    // Restore buttons
+    overlay.querySelectorAll('.btn-restore-version').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const v = parseInt(btn.dataset.version);
+        close();
+        if (!await showConfirm(t('pb.restoreConfirm'), { title: t('pb.history'), confirmText: t('common.save'), danger: false })) return;
+        try {
+          await api.restorePlaybook(filename, v);
+          showToast(t('pb.restored'), 'success');
+          const data = await api.getPlaybook(filename);
+          onRestored(data.content);
+        } catch (err) {
+          showToast(t('common.errorPrefix', { msg: err.message }), 'error');
+        }
+      });
+    });
+  }
+
+  function close() {
+    overlay.classList.add('hidden');
+    overlay.innerHTML = '';
+  }
+
+  render();
 }
 
 async function openScheduleDialog(editId) {
