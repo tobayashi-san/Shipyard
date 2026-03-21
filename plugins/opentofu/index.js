@@ -255,7 +255,7 @@ function register({ router, db, broadcast }) {
     }
   });
 
-  // POST /api/plugin/opentofu/workspaces/:id/file?path=rel/path  — create new file
+  // POST /api/plugin/opentofu/workspaces/:id/file  body: { path }  — create new file
   router.post('/workspaces/:id/file', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });

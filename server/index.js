@@ -11,6 +11,7 @@ const { Client: SshClient } = require('ssh2');
 const db = require('./db');
 const ansibleRunner = require('./services/ansible-runner');
 const sshManager = require('./services/ssh-manager');
+const systemInfo = require('./services/system-info');
 const { notify } = require('./services/notifier');
 
 const app = express();
@@ -376,7 +377,7 @@ app.post('/api/servers/:id/reboot', rebootLimiter, async (req, res) => {
     // Refresh info right away
     if (result.success) {
       setTimeout(() => {
-        require('./services/system-info').getSystemInfo(server)
+        systemInfo.getSystemInfo(server)
           .then(info => db.serverInfo.upsert(server.id, info)).catch(() => {});
       }, 5000); // give it a little time to boot before polling again
     }

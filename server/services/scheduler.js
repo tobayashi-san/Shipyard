@@ -233,7 +233,7 @@ async function checkCustomTask(server, task) {
     try {
       const headers = { 'Accept': 'application/vnd.github+json', 'User-Agent': 'Shipyard/1.0' };
       if (process.env.GITHUB_TOKEN) headers['Authorization'] = `Bearer ${process.env.GITHUB_TOKEN}`;
-      const res = await fetch(`https://api.github.com/repos/${task.github_repo}/releases/latest`, { headers });
+      const res = await fetch(`https://api.github.com/repos/${task.github_repo}/releases/latest`, { headers, signal: AbortSignal.timeout(15000) });
       if (res.ok) {
         const data = await res.json();
         lastVersion = data.tag_name || lastVersion;

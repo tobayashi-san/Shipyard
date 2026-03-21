@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router({ mergeParams: true });
 const db = require('../db');
+const scheduler = require('../services/scheduler');
 
 const GITHUB_REPO_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
 
@@ -56,7 +57,6 @@ router.post('/:taskId/check', async (req, res) => {
   const task = db.customUpdateTasks.getById(req.params.taskId);
   if (!task || task.server_id !== req.params.id) return res.status(404).json({ error: 'Task not found' });
   try {
-    const scheduler = require('../services/scheduler');
     await scheduler.checkCustomTask(server, task);
     res.json(db.customUpdateTasks.getById(task.id));
   } catch (err) {
