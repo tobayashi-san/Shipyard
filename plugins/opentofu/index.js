@@ -52,10 +52,25 @@ function register({ router, db, broadcast }) {
     } catch {}
   }
 
+  // Env var names that must never be overridden by workspace config
+  const BLOCKED_ENV_VARS = new Set([
+    'LD_PRELOAD', 'LD_LIBRARY_PATH', 'PATH', 'NODE_OPTIONS',
+    'HOME', 'USER', 'SHELL', 'HOSTNAME', 'PWD',
+  ]);
+
+  function sanitizeEnvVars(vars) {
+    if (!vars || typeof vars !== 'object') return {};
+    const clean = {};
+    for (const [k, v] of Object.entries(vars)) {
+      if (!BLOCKED_ENV_VARS.has(k.toUpperCase()) && typeof v === 'string') clean[k] = v;
+    }
+    return clean;
+  }
+
   function getWorkspace(id) {
     const row = db.db.prepare('SELECT * FROM tofu_workspaces WHERE id = ?').get(id);
     if (!row) return null;
-    return { ...row, env_vars: JSON.parse(row.env_vars || '{}') };
+    return { ...row, env_vars: sanitizeEnvVars(JSON.parse(row.env_vars || '{}')) };
   }
 
   // Ensure workspace directory exists; returns error string on failure or null on success

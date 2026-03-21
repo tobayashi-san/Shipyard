@@ -71,7 +71,7 @@ router.get('/settings', (req, res) => {
       theme:         raw.ui_theme        || 'auto',
       timeFormat:    raw.ui_time_format  || '24h',
       webhookUrl:    raw.webhook_url     || '',
-      webhookSecret: raw.webhook_secret  || '',
+      webhookSecret: raw.webhook_secret  ? '••••••••' : '',
       smtpHost:      raw.smtp_host       || '',
       smtpPort:      raw.smtp_port       || '587',
       smtpUser:      raw.smtp_user       || '',
