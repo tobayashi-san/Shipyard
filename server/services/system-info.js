@@ -93,7 +93,7 @@ class SystemInfoService {
   async getAvailableUpdates(server) {
     try {
       const result = await sshManager.execCommand(server,
-        '(apt list --upgradable 2>/dev/null | grep "/" || yum list updates -q 2>/dev/null); echo "---PHASED---"; apt-get -s dist-upgrade 2>/dev/null | awk \'/deferred due to phasing:/{p=1;next} p&&/^[0-9]/{exit} p&&NF{print $1}\' 2>/dev/null || true'
+        '(apt-get update -qq 2>/dev/null; apt list --upgradable 2>/dev/null | grep "/" || yum check-update -q 2>/dev/null); echo "---PHASED---"; apt-get -s dist-upgrade 2>/dev/null | awk \'/deferred due to phasing:/{p=1;next} p&&/^[0-9]/{exit} p&&NF{print $1}\' 2>/dev/null || true'
       );
 
       const [upgradableRaw = '', phasedRaw = ''] = result.stdout.split('---PHASED---');
