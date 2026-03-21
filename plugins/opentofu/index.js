@@ -137,21 +137,11 @@ function register({ router, db, broadcast }) {
     if (!binary) return res.status(500).json({ error: 'OpenTofu/Terraform binary not found in PATH' });
 
     if (!fs.existsSync(workspace.path)) {
-      if (action === 'init') {
-        // Auto-create the directory so tofu init can bootstrap a new workspace
-        try { fs.mkdirSync(workspace.path, { recursive: true }); }
-        catch (e) {
-          return res.status(400).json({
-            error: `Cannot create "${workspace.path}": ${e.message}.\n` +
-                   `Mount the parent directory in docker-compose.override.yml first.`
-          });
-        }
-      } else {
+      try { fs.mkdirSync(workspace.path, { recursive: true }); }
+      catch (e) {
         return res.status(400).json({
-          error: `Path "${workspace.path}" does not exist inside the container.\n` +
-                 `Add a volume mount in docker-compose.override.yml:\n` +
-                 `  - /your/host/path:${workspace.path}:rw\n` +
-                 `Then restart: docker compose up -d`
+          error: `Path "${workspace.path}" does not exist and could not be created: ${e.message}.\n` +
+                 `Make sure the parent directory is mounted in docker-compose.override.yml.`
         });
       }
     }
@@ -200,6 +190,10 @@ function register({ router, db, broadcast }) {
   router.get('/workspaces/:id/check', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    if (!fs.existsSync(workspace.path)) {
+      try { fs.mkdirSync(workspace.path, { recursive: true }); }
+      catch {}
+    }
     res.json({ pathExists: fs.existsSync(workspace.path) });
   });
 
@@ -207,6 +201,9 @@ function register({ router, db, broadcast }) {
   router.get('/workspaces/:id/files', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    if (!fs.existsSync(workspace.path)) {
+      try { fs.mkdirSync(workspace.path, { recursive: true }); } catch {}
+    }
     if (!fs.existsSync(workspace.path)) return res.status(400).json({ error: 'Path not found in container' });
     res.json({ tree: walkDir(workspace.path, '', 0) });
   });
@@ -284,7 +281,10 @@ function register({ router, db, broadcast }) {
     const binary = findBinary();
     if (!binary) return res.status(500).json({ error: 'Binary not found' });
     if (!fs.existsSync(workspace.path)) {
-      return res.json({ output: `Error: path "${workspace.path}" does not exist inside the container.\nMount it via docker-compose.override.yml first.` });
+      try { fs.mkdirSync(workspace.path, { recursive: true }); } catch {}
+    }
+    if (!fs.existsSync(workspace.path)) {
+      return res.json({ output: `Error: path "${workspace.path}" does not exist inside the container.\nMount the parent directory via docker-compose.override.yml first.` });
     }
     try {
       const output = execSync(`${binary} state list -no-color`, {
