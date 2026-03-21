@@ -175,9 +175,9 @@ function setupGuide() {
             <strong style="font-size:14px;">How workspaces work</strong>
           </div>
           <ul style="font-size:13px;color:var(--text-secondary);margin:0;padding-left:20px;line-height:2;">
-            <li>Each workspace points to a <strong>directory inside the container</strong> containing your <code>.tf</code> files.</li>
-            <li>If your infra lives at <code>/home/user/infra</code> on the host, mount it as<br>
-                <code style="font-family:var(--font-mono);font-size:12px;">- /home/user/infra:/infra:rw</code> and set the workspace path to <code>/infra</code>.</li>
+            <li>Each workspace points to a <strong>path inside the container</strong> — not a path on your host.</li>
+            <li>Mount your <code>.tf</code> directory via <code>docker-compose.override.yml</code>, e.g.<br>
+                <code style="font-family:var(--font-mono);font-size:12px;">- /home/user/infra:/infra:rw</code> → then set the workspace path to <code>/infra</code>.</li>
             <li>Add cloud credentials (e.g. <code>AWS_ACCESS_KEY_ID</code>, <code>TF_VAR_*</code>) as environment variables inside the workspace settings.</li>
             <li>You can create workspaces now — they will work once the binary is mounted.</li>
           </ul>
@@ -425,9 +425,14 @@ function openWorkspaceModal(existing) {
           <div class="form-group">
             <label class="form-label">Path on server</label>
             <input class="form-input" id="tofu-ws-path" type="text"
-              placeholder="/opt/infra/production" value="${esc(existing?.path || '')}" required
+              placeholder="/infra/production" value="${esc(existing?.path || '')}" required
               style="font-family:var(--font-mono);">
-            <div class="form-hint">Absolute path to the directory containing your .tf files.</div>
+            <div class="form-hint">
+              Path <strong>inside the container</strong> to the directory containing your <code>.tf</code> files.
+              Mount your host directory first via <code>docker-compose.override.yml</code>, e.g.
+              <code>- /home/user/infra:/infra:rw</code> → use <code>/infra</code> here.
+              On a bare-metal install any host path works directly.
+            </div>
           </div>
           <div class="form-group">
             <label class="form-label">Description <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
