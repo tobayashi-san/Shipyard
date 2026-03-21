@@ -68,6 +68,28 @@ function handleWsMessage(msg) {
 
 // ── App shell ─────────────────────────────────────────────────────────────
 function renderApp(container, status) {
+  if (!status.installed) {
+    container.innerHTML = `
+      <div style="display:flex;flex-direction:column;height:100%;overflow:hidden;">
+        <div class="page-header" style="flex-shrink:0;">
+          <div>
+            <h2 style="display:flex;align-items:center;gap:10px;">
+              <i class="fas fa-cube"></i> OpenTofu
+            </h2>
+            <p>${statusBadge(status)}</p>
+          </div>
+          <div>
+            <button class="btn btn-primary btn-sm" id="tofu-btn-new">
+              <i class="fas fa-plus"></i> Workspace
+            </button>
+          </div>
+        </div>
+        ${setupGuide()}
+      </div>`;
+    document.getElementById('tofu-btn-new')?.addEventListener('click', () => openWorkspaceModal(null));
+    return;
+  }
+
   container.innerHTML = `
     <div style="display:flex;flex-direction:column;height:100%;overflow:hidden;">
 
@@ -109,17 +131,58 @@ function renderApp(container, status) {
 
 function statusBadge(status) {
   if (!status.installed) return `
-    <span class="badge badge-offline" style="margin-right:8px;">
-      <i class="fas fa-times"></i> OpenTofu/Terraform not found in PATH
-    </span>
-    <span style="font-size:12px;color:var(--text-muted);">
-      Mount the binary into the container:
-      <code style="font-family:var(--font-mono);background:var(--bg-secondary);padding:1px 5px;border-radius:3px;">
-        - /usr/bin/tofu:/usr/bin/tofu:ro
-      </code>
-      in your <code style="font-family:var(--font-mono);">docker-compose.yml</code>
+    <span class="badge badge-offline">
+      <i class="fas fa-times"></i> Binary not found in PATH
     </span>`;
   return `<span class="badge badge-online"><i class="fas fa-check"></i> ${esc(status.binary)} ${esc(status.version || '')}</span>`;
+}
+
+function setupGuide() {
+  return `
+    <div style="flex:1;overflow-y:auto;padding:32px 40px;">
+      <div style="max-width:640px;">
+        <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:24px 28px;margin-bottom:24px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+            <i class="fas fa-info-circle" style="color:var(--accent);font-size:1.1rem;"></i>
+            <strong style="font-size:14px;">Setup required — OpenTofu/Terraform binary not found</strong>
+          </div>
+          <p style="font-size:13px;color:var(--text-secondary);margin:0 0 20px 0;line-height:1.6;">
+            Shipyard runs in Docker and cannot access binaries installed on your host directly.
+            Mount the binary from your host into the container by adding the following to your
+            <code style="font-family:var(--font-mono);background:var(--bg-tertiary,var(--bg));padding:1px 5px;border-radius:3px;">docker-compose.yml</code>:
+          </p>
+
+          <div style="font-family:var(--font-mono);font-size:12.5px;background:var(--bg-tertiary,#111);
+                      border:1px solid var(--border);border-radius:6px;padding:14px 16px;line-height:1.8;">
+            <span style="color:var(--text-muted);">services:</span><br>
+            <span style="color:var(--text-muted);">&nbsp;&nbsp;shipyard:</span><br>
+            <span style="color:var(--text-muted);">&nbsp;&nbsp;&nbsp;&nbsp;volumes:</span><br>
+            <span style="color:#4ade80;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- /usr/bin/tofu:/usr/bin/tofu:ro&nbsp;&nbsp;&nbsp;<span style="color:var(--text-muted);"># or terraform</span></span><br>
+            <span style="color:var(--text-muted);font-size:11px;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--text-muted);"># also mount your .tf directories:</span></span><br>
+            <span style="color:#60a5fa;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- /path/to/your/infra:/infra:rw</span>
+          </div>
+
+          <p style="font-size:12px;color:var(--text-muted);margin:14px 0 0 0;">
+            After adding the volume, restart the container:
+            <code style="font-family:var(--font-mono);background:var(--bg-tertiary,var(--bg));padding:1px 5px;border-radius:3px;">docker compose up -d</code>
+          </p>
+        </div>
+
+        <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:24px 28px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+            <i class="fas fa-folder-open" style="color:var(--accent);font-size:1.1rem;"></i>
+            <strong style="font-size:14px;">How workspaces work</strong>
+          </div>
+          <ul style="font-size:13px;color:var(--text-secondary);margin:0;padding-left:20px;line-height:2;">
+            <li>Each workspace points to a <strong>directory inside the container</strong> containing your <code>.tf</code> files.</li>
+            <li>If your infra lives at <code>/home/user/infra</code> on the host, mount it as<br>
+                <code style="font-family:var(--font-mono);font-size:12px;">- /home/user/infra:/infra:rw</code> and set the workspace path to <code>/infra</code>.</li>
+            <li>Add cloud credentials (e.g. <code>AWS_ACCESS_KEY_ID</code>, <code>TF_VAR_*</code>) as environment variables inside the workspace settings.</li>
+            <li>You can create workspaces now — they will work once the binary is mounted.</li>
+          </ul>
+        </div>
+      </div>
+    </div>`;
 }
 
 function renderWorkspaceList() {
