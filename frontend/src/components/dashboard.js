@@ -85,15 +85,9 @@ function renderDashboardData(data) {
               <thead><tr>
                 <th style="width:10px;"></th>
                 <th>${t('common.name')}</th>
-                <th>${t('dash.colOs')}</th>
-                <th style="width:100px;">${t('dash.colRam')}</th>
-                <th style="width:100px;">${t('dash.colDisk')}</th>
-                <th>${t('dash.colLoad')}</th>
-                <th>${t('dash.colUptime')}</th>
-                <th>${t('dash.colContainers')}</th>
+                <th style="width:110px;">${t('dash.colRam')}</th>
+                <th style="width:110px;">${t('dash.colDisk')}</th>
                 <th>${t('dash.colUpdates')}</th>
-                <th>${t('dash.colImageUpdates')}</th>
-                <th>${t('dash.colCustomUpdates')}</th>
               </tr></thead>
               <tbody>
                 ${servers.map(s => serverHealthRow(s)).join('')}
@@ -178,9 +172,6 @@ function serverHealthRow(s) {
   const dotCls = s.status === 'online' ? 'online' : s.status === 'offline' ? 'offline' : 'unknown';
   const ramBar = miniBar(s.ram_pct);
   const diskBar = miniBar(s.disk_pct);
-  const osShort = s.os ? s.os.replace(/[0-9]+\.[0-9]+(\.[0-9]+)?/g, '').replace('Linux', '').replace('GNU/', '').trim().split(' ').slice(0, 2).join(' ') : '—';
-  const uptime = s.uptime_seconds ? formatUptime(s.uptime_seconds) : '—';
-  const load = s.load_avg ? s.load_avg.split(' ')[0] : '—';
 
   return `
     <tr class="server-health-row" data-server-id="${s.id}" style="cursor:pointer;">
@@ -189,15 +180,9 @@ function serverHealthRow(s) {
         <strong>${esc(s.name)}</strong>
         <div style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);">${esc(s.ip_address)}</div>
       </td>
-      <td style="font-size:12px;color:var(--text-muted);">${esc(osShort)}</td>
       <td>${ramBar}</td>
       <td>${diskBar}</td>
-      <td style="font-family:var(--font-mono);font-size:12px;">${load}</td>
-      <td style="font-size:12px;color:var(--text-muted);">${uptime}</td>
-      <td style="font-size:12px;">${s.containers_running > 0 ? `<span style="color:var(--online);">${s.containers_running}</span><span style="color:var(--text-muted);">/${s.containers_total}</span>` : '<span style="color:var(--text-muted);">—</span>'}</td>
-      <td>${s.updates_count > 0 ? `<span class="badge badge-warning" style="font-size:10px;">${s.updates_count}</span>` : '<span style="color:var(--text-muted);font-size:12px;">—</span>'}</td>
-      <td>${imageUpdatesCell(s)}</td>
-      <td>${s.custom_updates_count > 0 ? `<span class="badge badge-warning" style="font-size:10px;"><i class="fas fa-cog"></i> ${s.custom_updates_count}</span>` : '<span style="color:var(--text-muted);font-size:12px;">—</span>'}</td>
+      <td>${updatesCell(s)}</td>
     </tr>
   `;
 }
@@ -213,6 +198,19 @@ function miniBar(pct) {
       <span style="font-family:var(--font-mono);font-size:11px;width:30px;">${pct}%</span>
     </div>
   `;
+}
+
+function updatesCell(s) {
+  const parts = [];
+  if (s.updates_count > 0)
+    parts.push(`<span title="${t('dash.colUpdates')}" style="white-space:nowrap;"><i class="fas fa-box" style="font-size:10px;margin-right:3px;"></i>${s.updates_count}</span>`);
+  if (s.image_updates_count > 0)
+    parts.push(`<span title="${t('dash.colImageUpdates')}" style="white-space:nowrap;"><i class="fas fa-cube" style="font-size:10px;margin-right:3px;"></i>${s.image_updates_count}</span>`);
+  if (s.custom_updates_count > 0)
+    parts.push(`<span title="${t('dash.colCustomUpdates')}" style="white-space:nowrap;"><i class="fas fa-cog" style="font-size:10px;margin-right:3px;"></i>${s.custom_updates_count}</span>`);
+  if (parts.length === 0)
+    return `<span style="color:var(--online);font-size:13px;" title="${t('dash.allClear')}"><i class="fas fa-check-circle"></i></span>`;
+  return `<span class="badge badge-warning" style="font-size:11px;display:inline-flex;gap:8px;align-items:center;">${parts.join('')}</span>`;
 }
 
 function imageUpdatesCell(s) {
