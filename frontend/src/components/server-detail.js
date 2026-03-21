@@ -148,6 +148,7 @@ export async function renderServerDetail(serverId) {
         <div class="panel">
           <div class="section-header">
             <h3><i class="fas fa-box-open"></i> ${t('det.tabUpdates')}</h3>
+            <button class="btn btn-secondary btn-sm" id="btn-refresh-updates" title="${t('common.refresh')}"><i class="fas fa-sync-alt"></i></button>
           </div>
           <div id="updates-content">
             <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
@@ -457,6 +458,18 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
   });
 
   setupComposeBtn(serverId);
+
+  const refreshUpdatesBtn = document.getElementById('btn-refresh-updates');
+  if (refreshUpdatesBtn) {
+    refreshUpdatesBtn.addEventListener('click', async () => {
+      refreshUpdatesBtn.disabled = true;
+      refreshUpdatesBtn.querySelector('i').classList.add('fa-spin');
+      await loadUpdates(serverId)
+        .catch(() => {})
+        .finally(() => { refreshUpdatesBtn.disabled = false; refreshUpdatesBtn.querySelector('i').classList.remove('fa-spin'); });
+    });
+  }
+
   const refreshBtn = document.getElementById('btn-refresh-docker');
   if (refreshBtn) {
     refreshBtn.addEventListener('click', async () => {

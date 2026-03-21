@@ -81,13 +81,13 @@ function renderDashboardData(data) {
               <p>${t('dash.noServersHint').replace('Server', `<a href="#" id="link-to-servers">${t('nav.servers')}</a>`)}</p>
             </div>
           ` : `
-            <table class="data-table">
+            <table class="data-table" style="table-layout:fixed;">
               <thead><tr>
-                <th style="width:10px;"></th>
+                <th style="width:28px;"></th>
                 <th>${t('common.name')}</th>
-                <th style="width:110px;">${t('dash.colRam')}</th>
-                <th style="width:110px;">${t('dash.colDisk')}</th>
-                <th>${t('dash.colUpdates')}</th>
+                <th style="width:120px;">${t('dash.colRam')}</th>
+                <th style="width:120px;">${t('dash.colDisk')}</th>
+                <th style="width:130px;">${t('dash.colUpdates')}</th>
               </tr></thead>
               <tbody>
                 ${servers.map(s => serverHealthRow(s)).join('')}
