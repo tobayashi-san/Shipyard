@@ -7,9 +7,6 @@ services:
       - shipyard-data:/app/server/data
       - shipyard-playbooks:/app/server/playbooks
       - shipyard-plugins:/app/plugins
-      # To access infrastructure directories from the OpenTofu plugin,
-      # add your own volume mounts here, e.g.:
-      # - /path/to/your/infra:/infra
       # To use your own certificate instead of the auto-generated one:
       # - /etc/ssl/certs/shipyard.crt:/certs/shipyard.crt:ro
       # - /etc/ssl/private/shipyard.key:/certs/shipyard.key:ro

@@ -108,7 +108,17 @@ function renderApp(container, status) {
 }
 
 function statusBadge(status) {
-  if (!status.installed) return `<span class="badge badge-offline"><i class="fas fa-times"></i> OpenTofu/Terraform not found in PATH</span>`;
+  if (!status.installed) return `
+    <span class="badge badge-offline" style="margin-right:8px;">
+      <i class="fas fa-times"></i> OpenTofu/Terraform not found in PATH
+    </span>
+    <span style="font-size:12px;color:var(--text-muted);">
+      Mount the binary into the container:
+      <code style="font-family:var(--font-mono);background:var(--bg-secondary);padding:1px 5px;border-radius:3px;">
+        - /usr/bin/tofu:/usr/bin/tofu:ro
+      </code>
+      in your <code style="font-family:var(--font-mono);">docker-compose.yml</code>
+    </span>`;
   return `<span class="badge badge-online"><i class="fas fa-check"></i> ${esc(status.binary)} ${esc(status.version || '')}</span>`;
 }
 
