@@ -230,7 +230,13 @@ const serverQueries = {
     WHERE id = ?
   `),
   delete: db.prepare('DELETE FROM servers WHERE id = ?'),
-  updateStatus: db.prepare(`UPDATE servers SET status = ?, last_seen = datetime('now') WHERE id = ?`),
+  updateStatus: (id, status) => {
+    if (status === 'online') {
+      db.prepare(`UPDATE servers SET status = ?, last_seen = datetime('now') WHERE id = ?`).run(status, id);
+    } else {
+      db.prepare(`UPDATE servers SET status = ? WHERE id = ?`).run(status, id);
+    }
+  },
 };
 
 // Server Info
