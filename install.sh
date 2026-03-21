@@ -58,14 +58,14 @@ if ! command -v node &>/dev/null; then
   elif is_fedora_based; then
     echo "  Install: sudo dnf install nodejs"
   else
-    echo "  Install Node.js 18+ from https://nodejs.org"
+    echo "  Install Node.js 20+ from https://nodejs.org"
   fi
   exit 1
 fi
 
 NODE_MAJOR=$(node -e "console.log(parseInt(process.versions.node))")
-if [ "$NODE_MAJOR" -lt 18 ]; then
-  echo "ERROR: Node.js 18+ required (found $(node -v))"
+if [ "$NODE_MAJOR" -lt 20 ]; then
+  echo "ERROR: Node.js 20+ required (found $(node -v))"
   exit 1
 fi
 echo "→ Node.js $(node -v) ✓"
@@ -86,7 +86,7 @@ if ! command -v ansible &>/dev/null; then
   read -rp "  Continue anyway? [y/N] " CONT
   if [[ ! "$CONT" =~ ^[Yy]$ ]]; then exit 1; fi
 else
-  echo "→ Ansible $(ansible --version | head -1 | awk '{print $NF}') ✓"
+  echo "→ Ansible $(ansible --version | head -1) ✓"
 fi
 
 INSTALL_DIR="$(cd "$(dirname "$0")" && pwd)"
