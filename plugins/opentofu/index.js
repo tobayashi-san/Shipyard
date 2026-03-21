@@ -63,7 +63,7 @@ function register({ router, db, broadcast }) {
     catch { return []; }
     const result = [];
     for (const e of entries) {
-      if (e.name === '.terraform' && depth > 0) continue; // skip provider cache subdirs
+      if (e.name === '.terraform') continue; // auto-generated provider cache, skip entirely
       const childRel = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
         result.push({ type: 'dir', name: e.name, path: childRel,
@@ -137,12 +137,23 @@ function register({ router, db, broadcast }) {
     if (!binary) return res.status(500).json({ error: 'OpenTofu/Terraform binary not found in PATH' });
 
     if (!fs.existsSync(workspace.path)) {
-      return res.status(400).json({
-        error: `Path "${workspace.path}" does not exist inside the container.\n` +
-               `Add a volume mount in docker-compose.override.yml:\n` +
-               `  - /your/host/path:${workspace.path}:rw\n` +
-               `Then restart: docker compose up -d`
-      });
+      if (action === 'init') {
+        // Auto-create the directory so tofu init can bootstrap a new workspace
+        try { fs.mkdirSync(workspace.path, { recursive: true }); }
+        catch (e) {
+          return res.status(400).json({
+            error: `Cannot create "${workspace.path}": ${e.message}.\n` +
+                   `Mount the parent directory in docker-compose.override.yml first.`
+          });
+        }
+      } else {
+        return res.status(400).json({
+          error: `Path "${workspace.path}" does not exist inside the container.\n` +
+                 `Add a volume mount in docker-compose.override.yml:\n` +
+                 `  - /your/host/path:${workspace.path}:rw\n` +
+                 `Then restart: docker compose up -d`
+        });
+      }
     }
 
     const runId = randomUUID();
@@ -221,7 +232,49 @@ function register({ router, db, broadcast }) {
     try {
       fs.writeFileSync(fp, req.body.content ?? '', 'utf8');
       res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) {
+      const msg = e.code === 'EACCES'
+        ? `Permission denied: "${fp}". Fix with: chown -R 1001:1001 ${workspace.path}`
+        : e.message;
+      res.status(500).json({ error: msg, code: e.code });
+    }
+  });
+
+  // POST /api/plugin/opentofu/workspaces/:id/file?path=rel/path  — create new file
+  router.post('/workspaces/:id/file', (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    const fp = safePath(workspace.path, req.body.path || '');
+    if (!fp) return res.status(400).json({ error: 'Invalid path' });
+    if (fs.existsSync(fp)) return res.status(409).json({ error: 'File already exists' });
+    try {
+      const dir = path.dirname(fp);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(fp, '', 'utf8');
+      res.json({ success: true });
+    } catch (e) {
+      const msg = e.code === 'EACCES'
+        ? `Permission denied. Fix with: chown -R 1001:1001 ${workspace.path}`
+        : e.message;
+      res.status(500).json({ error: msg, code: e.code });
+    }
+  });
+
+  // DELETE /api/plugin/opentofu/workspaces/:id/file?path=rel/path  — delete file
+  router.delete('/workspaces/:id/file', (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    const fp = safePath(workspace.path, req.query.path || '');
+    if (!fp) return res.status(400).json({ error: 'Invalid path' });
+    try {
+      fs.unlinkSync(fp);
+      res.json({ success: true });
+    } catch (e) {
+      const msg = e.code === 'EACCES'
+        ? `Permission denied. Fix with: chown -R 1001:1001 ${workspace.path}`
+        : e.message;
+      res.status(500).json({ error: msg, code: e.code });
+    }
   });
 
   // GET /api/plugin/opentofu/workspaces/:id/state

@@ -319,10 +319,20 @@ async function renderDetail() {
 
     <!-- Files tab -->
     <div id="tofu-tab-files-body" style="flex:1;overflow:hidden;display:${_activeTab==='files'?'flex':'none'};">
-      <div id="tofu-file-tree"
-        style="width:200px;flex-shrink:0;border-right:1px solid var(--border);overflow-y:auto;
-               padding:8px 0;font-size:12.5px;background:var(--bg-secondary);">
-        <div style="padding:8px 12px;color:var(--text-muted);"><i class="fas fa-spinner fa-spin"></i></div>
+      <div style="width:200px;flex-shrink:0;border-right:1px solid var(--border);
+                  display:flex;flex-direction:column;background:var(--bg-secondary);">
+        <div style="padding:6px 8px;border-bottom:1px solid var(--border);display:flex;align-items:center;
+                    justify-content:space-between;flex-shrink:0;">
+          <span style="font-size:11px;color:var(--text-muted);font-weight:500;text-transform:uppercase;
+                       letter-spacing:.05em;">Files</span>
+          <button class="btn btn-secondary btn-sm" id="tofu-btn-newfile" title="New file"
+            style="padding:2px 7px;font-size:11px;">
+            <i class="fas fa-plus"></i>
+          </button>
+        </div>
+        <div id="tofu-file-tree" style="flex:1;overflow-y:auto;padding:4px 0;">
+          <div style="padding:8px 12px;color:var(--text-muted);"><i class="fas fa-spinner fa-spin"></i></div>
+        </div>
       </div>
       <div id="tofu-file-editor" style="flex:1;overflow:hidden;display:flex;flex-direction:column;">
         <div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:13px;">
@@ -398,7 +408,7 @@ async function loadFileTree(ws) {
 }
 
 function renderTree(nodes, ws, depth = 0) {
-  if (!nodes || nodes.length === 0) return `<div style="padding:8px 12px;color:var(--text-muted);">Empty directory</div>`;
+  if (!nodes || nodes.length === 0) return `<div style="padding:8px 12px;color:var(--text-muted);font-size:12px;">Empty directory</div>`;
   return nodes.map(node => {
     const indent = depth * 12;
     if (node.type === 'dir') {
@@ -407,9 +417,9 @@ function renderTree(nodes, ws, depth = 0) {
         : '';
       return `
         <div class="tofu-tree-dir" data-path="${esc(node.path)}"
-          style="padding:4px 12px 4px ${12 + indent}px;cursor:pointer;display:flex;align-items:center;gap:6px;
+          style="padding:4px 8px 4px ${10 + indent}px;cursor:pointer;display:flex;align-items:center;gap:5px;
                  color:var(--text-secondary);user-select:none;">
-          <i class="fas fa-folder" style="font-size:11px;color:#60a5fa;width:12px;"></i>
+          <i class="fas fa-folder" style="font-size:11px;color:#60a5fa;width:12px;flex-shrink:0;"></i>
           <span style="font-size:12px;">${esc(node.name)}</span>
         </div>
         ${children}`;
@@ -418,11 +428,18 @@ function renderTree(nodes, ws, depth = 0) {
     const isOpen = _openFile?.path === node.path;
     return `
       <div class="tofu-tree-file" data-path="${esc(node.path)}"
-        style="padding:4px 12px 4px ${12 + indent}px;cursor:pointer;display:flex;align-items:center;gap:6px;
+        style="padding:3px 6px 3px ${10 + indent}px;cursor:pointer;display:flex;align-items:center;gap:5px;
                border-radius:4px;margin:1px 4px;
                ${isOpen ? 'background:var(--accent-light);' : ''}">
-        <i class="${icon}" style="font-size:11px;color:var(--text-muted);width:12px;"></i>
-        <span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(node.name)}</span>
+        <i class="${icon}" style="font-size:11px;color:var(--text-muted);width:12px;flex-shrink:0;"></i>
+        <span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${esc(node.name)}</span>
+        <button class="tofu-file-delete" data-path="${esc(node.path)}"
+          title="Delete file"
+          style="opacity:0;border:none;background:none;color:var(--offline);cursor:pointer;
+                 padding:1px 3px;font-size:10px;flex-shrink:0;border-radius:3px;"
+          onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity=0">
+          <i class="fas fa-trash"></i>
+        </button>
       </div>`;
   }).join('');
 }
@@ -438,7 +455,15 @@ function fileIcon(name) {
 }
 
 function bindTreeEvents(ws) {
+  document.getElementById('tofu-btn-newfile')?.addEventListener('click', () => promptNewFile(ws));
+
   document.getElementById('tofu-file-tree')?.addEventListener('click', async e => {
+    const delBtn = e.target.closest('.tofu-file-delete');
+    if (delBtn) {
+      e.stopPropagation();
+      deleteFile(ws, delBtn.dataset.path);
+      return;
+    }
     const fileEl = e.target.closest('.tofu-tree-file');
     if (fileEl) { openFileEditor(ws, fileEl.dataset.path); return; }
     const dirEl = e.target.closest('.tofu-tree-dir');
@@ -447,6 +472,77 @@ function bindTreeEvents(ws) {
       if (children) children.style.display = children.style.display === 'none' ? '' : 'none';
     }
   });
+
+  // Show delete button on row hover
+  document.getElementById('tofu-file-tree')?.addEventListener('mouseover', e => {
+    const row = e.target.closest('.tofu-tree-file');
+    if (row) row.querySelector('.tofu-file-delete')?.style && (row.querySelector('.tofu-file-delete').style.opacity = '1');
+  });
+  document.getElementById('tofu-file-tree')?.addEventListener('mouseout', e => {
+    const row = e.target.closest('.tofu-tree-file');
+    if (row) row.querySelector('.tofu-file-delete')?.style && (row.querySelector('.tofu-file-delete').style.opacity = '0');
+  });
+}
+
+function promptNewFile(ws) {
+  const overlay = document.getElementById('modal-overlay');
+  overlay.classList.remove('hidden');
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:380px;width:95%;">
+      <h2><i class="fas fa-file-plus"></i> New File</h2>
+      <div class="form-body">
+        <form id="tofu-newfile-form">
+          <div class="form-group">
+            <label class="form-label">Filename</label>
+            <input class="form-input" id="tofu-newfile-name" type="text"
+              placeholder="main.tf" autofocus style="font-family:var(--font-mono);">
+            <div class="form-hint">Relative to workspace root. Use slashes for subdirectories: <code>modules/vpc/main.tf</code></div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-secondary" id="tofu-newfile-cancel">Cancel</button>
+            <button type="submit" class="btn btn-primary">Create</button>
+          </div>
+        </form>
+      </div>
+    </div>`;
+  const close = () => { overlay.classList.add('hidden'); overlay.innerHTML = ''; };
+  document.getElementById('tofu-newfile-cancel').addEventListener('click', close);
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  document.getElementById('tofu-newfile-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const name = document.getElementById('tofu-newfile-name').value.trim();
+    if (!name) return;
+    try {
+      await _pluginApi.request(`/workspaces/${ws.id}/file`, { method: 'POST', body: { path: name } });
+      close();
+      _fileTree = null;
+      await loadFileTree(ws);
+      openFileEditor(ws, name);
+      _showToast('File created', 'success');
+    } catch (err) {
+      _showToast('Error: ' + err.message, 'error');
+    }
+  });
+  setTimeout(() => document.getElementById('tofu-newfile-name')?.focus(), 50);
+}
+
+async function deleteFile(ws, filePath) {
+  const ok = await _showConfirm(`Delete <code>${esc(filePath)}</code>? This cannot be undone.`,
+    { title: 'Delete File', confirmText: 'Delete', danger: true });
+  if (!ok) return;
+  try {
+    await _pluginApi.request(`/workspaces/${ws.id}/file?path=${encodeURIComponent(filePath)}`, { method: 'DELETE' });
+    if (_openFile?.path === filePath) {
+      _openFile = null;
+      const editorEl = document.getElementById('tofu-file-editor');
+      if (editorEl) editorEl.innerHTML = `<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:13px;"><span>Select a file to edit</span></div>`;
+    }
+    _fileTree = null;
+    await loadFileTree(ws);
+    _showToast('File deleted', 'success');
+  } catch (err) {
+    _showToast('Error: ' + err.message, 'error');
+  }
 }
 
 async function openFileEditor(ws, filePath) {
@@ -531,7 +627,10 @@ async function openFileEditor(ws, filePath) {
       save.innerHTML = '<i class="fas fa-save"></i> Save';
       _showToast('File saved', 'success');
     } catch (err) {
-      _showToast('Save failed: ' + err.message, 'error');
+      const msg = err.message.includes('Permission denied') || err.message.includes('EACCES')
+        ? 'Permission denied — run on host: chown -R 1001:1001 ' + ws.path
+        : 'Save failed: ' + err.message;
+      _showToast(msg, 'error');
       save.disabled = false;
       save.innerHTML = '<i class="fas fa-save"></i> Save*';
     }
