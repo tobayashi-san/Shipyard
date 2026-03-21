@@ -464,6 +464,8 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
     refreshUpdatesBtn.addEventListener('click', async () => {
       refreshUpdatesBtn.disabled = true;
       refreshUpdatesBtn.querySelector('i').classList.add('fa-spin');
+      const updatesEl = document.getElementById('updates-content');
+      if (updatesEl) updatesEl.innerHTML = `<div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>`;
       try {
         const [updates, customTasks] = await Promise.all([
           api.getServerUpdates(serverId, true),
@@ -471,6 +473,7 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
         ]);
         renderUpdatesData(updates, customTasks, serverId);
       } catch (e) {
+        if (updatesEl) updatesEl.innerHTML = `<div style="padding:16px;color:var(--offline);font-size:13px;">${esc(e.message)}</div>`;
         showToast(t('common.errorPrefix', { msg: e.message }), 'error');
       } finally {
         refreshUpdatesBtn.disabled = false;
