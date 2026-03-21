@@ -148,8 +148,9 @@ function setupGuide() {
           </div>
           <p style="font-size:13px;color:var(--text-secondary);margin:0 0 20px 0;line-height:1.6;">
             Shipyard runs in Docker and cannot access binaries installed on your host directly.
-            Mount the binary from your host into the container by adding the following to your
-            <code style="font-family:var(--font-mono);background:var(--bg-tertiary,var(--bg));padding:1px 5px;border-radius:3px;">docker-compose.yml</code>:
+            Create a <code style="font-family:var(--font-mono);background:var(--bg-tertiary,var(--bg));padding:1px 5px;border-radius:3px;">docker-compose.override.yml</code>
+            next to your <code style="font-family:var(--font-mono);background:var(--bg-tertiary,var(--bg));padding:1px 5px;border-radius:3px;">docker-compose.yml</code>
+            and add the following:
           </p>
 
           <div style="font-family:var(--font-mono);font-size:12.5px;background:var(--bg-tertiary,#111);
@@ -157,13 +158,13 @@ function setupGuide() {
             <span style="color:var(--text-muted);">services:</span><br>
             <span style="color:var(--text-muted);">&nbsp;&nbsp;shipyard:</span><br>
             <span style="color:var(--text-muted);">&nbsp;&nbsp;&nbsp;&nbsp;volumes:</span><br>
-            <span style="color:#4ade80;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- /usr/bin/tofu:/usr/bin/tofu:ro&nbsp;&nbsp;&nbsp;<span style="color:var(--text-muted);"># or terraform</span></span><br>
-            <span style="color:var(--text-muted);font-size:11px;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--text-muted);"># also mount your .tf directories:</span></span><br>
+            <span style="color:#4ade80;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- /usr/bin/tofu:/usr/bin/tofu:ro&nbsp;&nbsp;&nbsp;<span style="color:var(--text-muted);"># or /usr/bin/terraform</span></span><br>
+            <span style="color:var(--text-muted);">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--text-muted);"># also mount your .tf directories:</span></span><br>
             <span style="color:#60a5fa;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- /path/to/your/infra:/infra:rw</span>
           </div>
 
           <p style="font-size:12px;color:var(--text-muted);margin:14px 0 0 0;">
-            After adding the volume, restart the container:
+            Docker Compose merges override files automatically. After saving, restart:
             <code style="font-family:var(--font-mono);background:var(--bg-tertiary,var(--bg));padding:1px 5px;border-radius:3px;">docker compose up -d</code>
           </p>
         </div>
