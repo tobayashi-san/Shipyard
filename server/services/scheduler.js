@@ -240,7 +240,8 @@ async function checkCustomTask(server, task) {
     } catch { /* keep stale */ }
   }
 
-  const hasUpdate = !!(lastVersion && currentVersion && lastVersion !== currentVersion);
+  const normalize = v => v ? v.trim().replace(/^v/i, '') : v;
+  const hasUpdate = !!(lastVersion && currentVersion && normalize(lastVersion) !== normalize(currentVersion));
   db.customUpdateTasks.setVersionInfo(task.id, currentVersion, lastVersion, hasUpdate);
 }
 
