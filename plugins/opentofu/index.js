@@ -1,4 +1,5 @@
 const { spawn, execSync } = require('child_process');
+const fs = require('fs');
 const { randomUUID }      = require('crypto');
 
 // Map of currently running processes: runId -> ChildProcess
@@ -103,6 +104,15 @@ function register({ router, db, broadcast }) {
     const binary = findBinary();
     if (!binary) return res.status(500).json({ error: 'OpenTofu/Terraform binary not found in PATH' });
 
+    if (!fs.existsSync(workspace.path)) {
+      return res.status(400).json({
+        error: `Path "${workspace.path}" does not exist inside the container.\n` +
+               `Add a volume mount in docker-compose.override.yml:\n` +
+               `  - /your/host/path:${workspace.path}:rw\n` +
+               `Then restart: docker compose up -d`
+      });
+    }
+
     const runId = randomUUID();
     const args  = [action, '-no-color'];
     if (action === 'apply' || action === 'destroy') args.push('-auto-approve');
@@ -143,12 +153,22 @@ function register({ router, db, broadcast }) {
     res.json({ success: true });
   });
 
+  // GET /api/plugin/opentofu/workspaces/:id/check
+  router.get('/workspaces/:id/check', (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    res.json({ pathExists: fs.existsSync(workspace.path) });
+  });
+
   // GET /api/plugin/opentofu/workspaces/:id/state
   router.get('/workspaces/:id/state', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
     const binary = findBinary();
     if (!binary) return res.status(500).json({ error: 'Binary not found' });
+    if (!fs.existsSync(workspace.path)) {
+      return res.json({ output: `Error: path "${workspace.path}" does not exist inside the container.\nMount it via docker-compose.override.yml first.` });
+    }
     try {
       const output = execSync(`${binary} state list -no-color`, {
         cwd: workspace.path,

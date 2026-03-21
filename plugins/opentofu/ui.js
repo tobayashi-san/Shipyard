@@ -229,13 +229,34 @@ function refreshList() {
 }
 
 // ── Detail panel ──────────────────────────────────────────────────────────
-function renderDetail() {
+async function renderDetail() {
   const detail = document.getElementById('tofu-detail');
   if (!detail) return;
   const ws = _workspaces.find(w => w.id === _selected);
   if (!ws) { detail.innerHTML = emptyDetail(); return; }
 
+  let pathWarning = '';
+  try {
+    const check = await _pluginApi.request(`/workspaces/${ws.id}/check`);
+    if (!check.pathExists) {
+      pathWarning = `
+        <div style="background:#7f1d1d22;border:1px solid #ef444466;border-radius:6px;
+                    padding:10px 14px;margin:12px 24px 0;font-size:12.5px;line-height:1.7;">
+          <i class="fas fa-exclamation-triangle" style="color:#ef4444;margin-right:6px;"></i>
+          <strong style="color:#ef4444;">Path not found inside container:</strong>
+          <code style="font-family:var(--font-mono);margin:0 4px;">${esc(ws.path)}</code><br>
+          Add a volume mount in <code>docker-compose.override.yml</code>:
+          <code style="font-family:var(--font-mono);display:block;margin-top:4px;padding:4px 8px;
+                       background:var(--bg-secondary);border-radius:4px;">
+            - /your/host/path:${esc(ws.path)}:rw
+          </code>
+          Then restart: <code>docker compose up -d</code>
+        </div>`;
+    }
+  } catch {}
+
   detail.innerHTML = `
+    ${pathWarning}
     <div style="padding:20px 24px;border-bottom:1px solid var(--border);flex-shrink:0;
                 display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
       <div>
