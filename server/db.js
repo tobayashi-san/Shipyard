@@ -230,13 +230,8 @@ const serverQueries = {
     WHERE id = ?
   `),
   delete: db.prepare('DELETE FROM servers WHERE id = ?'),
-  updateStatus: (id, status) => {
-    if (status === 'online') {
-      db.prepare(`UPDATE servers SET status = ?, last_seen = datetime('now') WHERE id = ?`).run(status, id);
-    } else {
-      db.prepare(`UPDATE servers SET status = ? WHERE id = ?`).run(status, id);
-    }
-  },
+  updateStatus: db.prepare(`UPDATE servers SET status = ? WHERE id = ?`),
+  updateStatusOnline: db.prepare(`UPDATE servers SET status = ?, last_seen = datetime('now') WHERE id = ?`),
 };
 
 // Server Info
@@ -309,7 +304,10 @@ module.exports = {
       return serverQueries.getById.get(id);
     },
     delete: (id) => serverQueries.delete.run(id),
-    updateStatus: (id, status) => serverQueries.updateStatus.run(status, id),
+    updateStatus: (id, status) => {
+      if (status === 'online') serverQueries.updateStatusOnline.run(status, id);
+      else serverQueries.updateStatus.run(status, id);
+    },
     setNotes: (id, notes) => db.prepare("UPDATE servers SET notes = ? WHERE id = ?").run(notes, id),
   },
   serverInfo: {
