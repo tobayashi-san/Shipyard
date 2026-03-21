@@ -159,7 +159,7 @@ function register({ router, db, broadcast }) {
     const runId = randomUUID();
     const args  = [action, '-no-color'];
     if (action === 'apply' || action === 'destroy') args.push('-auto-approve');
-    if (action !== 'init') args.push('-input=false');
+    if (action === 'plan' || action === 'apply' || action === 'destroy') args.push('-input=false');
 
     const env = { ...process.env, ...workspace.env_vars };
 
