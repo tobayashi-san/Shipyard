@@ -10,8 +10,15 @@ RUN cd frontend && npm run build
 # node:20-slim (Debian) is required — better-sqlite3 is a native addon
 # that needs glibc (fcntl64). Alpine's musl libc is incompatible.
 FROM node:20-slim
+
+# Install system tools + OpenTofu (auto-detects amd64/arm64)
+ARG TOFU_VERSION=1.8.8
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ansible openssh-client openssl gosu \
+      ansible openssh-client openssl gosu curl \
+    && ARCH=$(dpkg --print-architecture) \
+    && curl -fsSL "https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}/tofu_${TOFU_VERSION}_${ARCH}.tar.gz" \
+       | tar -xz -C /usr/local/bin tofu \
+    && chmod +x /usr/local/bin/tofu \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a dedicated non-root user for runtime
