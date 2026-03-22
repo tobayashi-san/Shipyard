@@ -19,22 +19,28 @@ const PLAYBOOKS_DIR = path.join(__dirname, '..', 'playbooks');
 const INTERNAL_PLAYBOOKS = ['update.yml', 'gather-docker.yml', 'check-image-updates.yml', 'reboot.yml', 'setup-ssh.yml'];
 
 function deleteServerTables() {
-  for (const table of ['update_history', 'server_info', 'server_updates_cache', 'docker_containers', 'compose_projects', 'servers']) {
-    db.db.prepare(`DELETE FROM ${table}`).run();
-  }
+  db.db.prepare('DELETE FROM server_info').run();
+  db.db.prepare('DELETE FROM update_history').run();
+  db.db.prepare('DELETE FROM docker_containers').run();
+  db.db.prepare('DELETE FROM compose_projects').run();
+  db.db.prepare('DELETE FROM server_updates_cache').run();
+  db.db.prepare('DELETE FROM docker_image_updates_cache').run();
+  db.db.prepare('DELETE FROM custom_update_tasks').run();
+  db.db.prepare('DELETE FROM servers').run();
+  db.db.prepare('DELETE FROM server_groups').run();
 }
 
 function deleteUserPlaybooks() {
   if (!fs.existsSync(PLAYBOOKS_DIR)) return;
-  for (const file of fs.readdirSync(PLAYBOOKS_DIR)) {
-    if (!INTERNAL_PLAYBOOKS.includes(file) && (file.endsWith('.yml') || file.endsWith('.yaml'))) {
-      fs.unlinkSync(path.join(PLAYBOOKS_DIR, file));
+  for (const f of fs.readdirSync(PLAYBOOKS_DIR)) {
+    if (!INTERNAL_PLAYBOOKS.includes(f) && f.endsWith('.yml')) {
+      fs.unlinkSync(path.join(PLAYBOOKS_DIR, f));
     }
   }
 }
 
 // DELETE /api/reset/servers
-router.delete(\1, resetLimiter, adminOnly, (req, res) => {
+router.delete('/servers', resetLimiter, adminOnly, (req, res) => {
   try {
     db.db.transaction(deleteServerTables)();
     db.auditLog.write('reset.servers', 'All servers and related data deleted', req.ip);
@@ -45,7 +51,7 @@ router.delete(\1, resetLimiter, adminOnly, (req, res) => {
 });
 
 // DELETE /api/reset/schedules
-router.delete(\1, resetLimiter, adminOnly, (req, res) => {
+router.delete('/schedules', resetLimiter, adminOnly, (req, res) => {
   try {
     db.db.prepare('DELETE FROM schedules').run();
     db.auditLog.write('reset.schedules', 'All schedules deleted', req.ip);
@@ -56,7 +62,7 @@ router.delete(\1, resetLimiter, adminOnly, (req, res) => {
 });
 
 // DELETE /api/reset/playbooks
-router.delete(\1, resetLimiter, adminOnly, (req, res) => {
+router.delete('/playbooks', resetLimiter, adminOnly, (req, res) => {
   try {
     deleteUserPlaybooks();
     db.auditLog.write('reset.playbooks', 'All user playbooks deleted', req.ip);
@@ -67,7 +73,7 @@ router.delete(\1, resetLimiter, adminOnly, (req, res) => {
 });
 
 // DELETE /api/reset/auth — clears password + JWT secret + onboarding flag
-router.delete(\1, resetLimiter, adminOnly, (req, res) => {
+router.delete('/auth', resetLimiter, adminOnly, (req, res) => {
   try {
     db.settings.set('auth_password_hash', '');
     db.settings.set('auth_jwt_secret', crypto.randomBytes(64).toString('hex'));
@@ -80,7 +86,7 @@ router.delete(\1, resetLimiter, adminOnly, (req, res) => {
 });
 
 // DELETE /api/reset/all — wipe everything
-router.delete(\1, resetLimiter, adminOnly, (req, res) => {
+router.delete('/all', resetLimiter, adminOnly, (req, res) => {
   try {
     db.db.transaction(() => {
       deleteServerTables();
