@@ -8,6 +8,7 @@ import { t } from '../i18n.js';
 export async function renderLogin(onSuccess) {
   const status = await api.getAuthStatus();
   const isSetup = !status.configured;
+  const username = status.username || 'admin';
 
   document.body.innerHTML = `
     <div class="login-screen">
@@ -21,6 +22,9 @@ export async function renderLogin(onSuccess) {
             <div class="login-sub">${isSetup ? t('login.setup') : t('login.signin')}</div>
           </div>
         </div>
+        ${!isSetup ? `<div style="text-align:center;font-size:14px;color:var(--text-muted);margin-bottom:4px;">
+          <i class="fas fa-user" style="margin-right:6px;opacity:.6;"></i>${username}
+        </div>` : ''}
 
         ${isSetup ? `
           <p class="login-hint">

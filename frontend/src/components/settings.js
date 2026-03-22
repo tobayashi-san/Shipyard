@@ -1,7 +1,6 @@
 import { api } from '../api.js';
 import { state } from '../main.js';
 import { showToast, showConfirm } from './toast.js';
-import { renderLogin } from './login.js';
 import { t } from '../i18n.js';
 import { esc } from '../utils/format.js';
 
@@ -86,9 +85,6 @@ export async function renderSettings() {
       </button>
       <button class="tab-btn" data-tab="notifications">
         <i class="fas fa-bell"></i> Notifications
-      </button>
-      <button class="tab-btn" data-tab="security">
-        <i class="fas fa-shield-alt"></i> ${t('set.tabSecurity')}
       </button>
       <button class="tab-btn" data-tab="git">
         <i class="fab fa-git-alt"></i> Git
@@ -328,91 +324,6 @@ export async function renderSettings() {
         </div>
       </div>
 
-      <!-- Tab: Security -->
-      <div class="tab-panel" id="tab-security">
-        <div class="settings-group-title">${t('set.pwChange')}</div>
-        <div class="settings-block">
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span>${t('set.pwCurrent')}</span>
-            </div>
-            <div class="settings-row-control">
-              <input class="form-input" type="password" id="sec-current" placeholder="${t('set.pwCurrent')}" style="max-width:320px;" autocomplete="current-password">
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span>${t('set.pwNew')}</span>
-              <small>${t('set.pwMinChars')}</small>
-            </div>
-            <div class="settings-row-control">
-              <input class="form-input" type="password" id="sec-new" placeholder="${t('set.pwNew')}" style="max-width:320px;" autocomplete="new-password">
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span>${t('set.pwConfirm')}</span>
-            </div>
-            <div class="settings-row-control">
-              <input class="form-input" type="password" id="sec-new2" placeholder="${t('login.repeatPassword')}" style="max-width:320px;" autocomplete="new-password">
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-label"></div>
-            <div class="settings-row-control">
-              <button class="btn btn-primary btn-sm" id="btn-change-password">
-                <i class="fas fa-lock"></i> ${t('set.pwChangeBtn')}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="settings-group-title">${t('set.totp')}</div>
-        <div class="settings-block" id="totp-block">
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span id="totp-status-label">${t('set.totpDisabled')}</span>
-              <small>${t('set.totpHint')}</small>
-            </div>
-            <div class="settings-row-control" id="totp-controls">
-              <button class="btn btn-primary btn-sm" id="btn-totp-enable">
-                <i class="fas fa-shield-alt"></i> ${t('set.totpEnable')}
-              </button>
-            </div>
-          </div>
-          <!-- QR setup panel (hidden until setup clicked) -->
-          <div id="totp-setup-panel" style="display:none;padding:16px 20px 16px;flex-direction:column;gap:12px;border-top:1px solid var(--border);">
-            <p style="margin:0;color:var(--text-muted);font-size:13px;">${t('set.totpScanQR')}</p>
-            <img id="totp-qr" style="width:200px;height:200px;border-radius:8px;background:#fff;padding:8px;" alt="QR Code">
-            <p style="margin:0;color:var(--text-muted);font-size:12px;">${t('set.totpSecret')} <code id="totp-secret-text" style="font-family:var(--font-mono);word-break:break-all;"></code></p>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-              <label style="font-size:13px;color:var(--text-muted);white-space:nowrap;">${t('set.totpEnterCode')}</label>
-              <input class="form-input" type="text" id="totp-confirm-code" inputmode="numeric"
-                pattern="[0-9 ]*" maxlength="7" placeholder="______"
-                style="font-size:1.2rem;letter-spacing:6px;text-align:center;max-width:140px;">
-              <button class="btn btn-primary btn-sm" id="btn-totp-verify">
-                <i class="fas fa-check"></i> ${t('set.totpVerify')}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="settings-group-title">${t('set.session')}</div>
-        <div class="settings-block">
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span>${t('set.logout')}</span>
-              <small>${t('set.logoutHint')}</small>
-            </div>
-            <div class="settings-row-control">
-              <button class="btn btn-danger btn-sm" id="btn-logout">
-                <i class="fas fa-sign-out-alt"></i> ${t('set.logout')}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- Tab: Plugins -->
       <div class="tab-panel" id="tab-plugins">
         <div class="settings-group-title">${t('set.plugins')}</div>
@@ -528,7 +439,6 @@ export async function renderSettings() {
   loadPollingConfig();
   setupSettingsEvents(wl);
   setupNotificationsEvents();
-  setupSecurityEvents().catch(() => {});
   setupDangerZone();
   loadPluginsList();
 
@@ -722,111 +632,6 @@ function setupNotificationsEvents() {
 }
 
 // ============================================================
-// Security Tab
-// ============================================================
-async function setupSecurityEvents() {
-  const status = await api.getAuthStatus();
-
-  // If no password is set yet, hide the "current password" field
-  const currentRow = document.getElementById('sec-current')?.closest('.settings-row');
-  if (!status.configured && currentRow) {
-    currentRow.style.display = 'none';
-  }
-
-  document.getElementById('btn-change-password')?.addEventListener('click', async () => {
-    const current = document.getElementById('sec-current').value;
-    const next    = document.getElementById('sec-new').value;
-    const next2   = document.getElementById('sec-new2').value;
-
-    if (status.configured && !current) { showToast(t('set.pwEnterCurrent'), 'error'); return; }
-    if (!next) { showToast(t('set.pwEnterNew'), 'error'); return; }
-    if (next.length < 12)  { showToast(t('set.pwTooShort'), 'error'); return; }
-    if (next !== next2)    { showToast(t('set.pwMismatch'), 'error'); return; }
-
-    const btn = document.getElementById('btn-change-password');
-    btn.disabled = true;
-    btn.innerHTML = `<span class="spinner-sm"></span> ${t('set.saving')}`;
-    try {
-      if (status.configured) {
-        await api.authChangePassword(current, next);
-      } else {
-        const result = await api.authSetup(next);
-        api.setToken(result.token);
-      }
-      showToast(t('set.toastPwSaved'), 'success');
-      setTimeout(() => {
-        api.setToken(null);
-        renderLogin(() => location.reload());
-      }, 1500);
-    } catch (err) {
-      showToast(t('set.toastPwError', { msg: err.message }), 'error');
-    } finally {
-      btn.disabled = false;
-      btn.innerHTML = `<i class="fas fa-lock"></i> ${t('set.pwChangeBtn')}`;
-      document.getElementById('sec-current').value = '';
-      document.getElementById('sec-new').value = '';
-      document.getElementById('sec-new2').value = '';
-    }
-  });
-
-  document.getElementById('btn-logout')?.addEventListener('click', () => {
-    api.setToken(null);
-    renderLogin(() => location.reload());
-  });
-
-  // ── TOTP ───────────────────────────────────────────────────
-  async function loadTotpStatus() {
-    try {
-      const { enabled } = await api.totpStatus();
-      const label    = document.getElementById('totp-status-label');
-      const controls = document.getElementById('totp-controls');
-      if (!label || !controls) return;
-      if (enabled) {
-        label.textContent = t('set.totpEnabled');
-        label.style.color = 'var(--online)';
-        controls.innerHTML = `<button class="btn btn-danger btn-sm" id="btn-totp-disable">
-          <i class="fas fa-shield-alt"></i> ${t('set.totpDisable')}</button>`;
-        document.getElementById('btn-totp-disable')?.addEventListener('click', async () => {
-          await api.totpDisable();
-          showToast(t('set.totpDeactivated'), 'success');
-          loadTotpStatus();
-        });
-      } else {
-        label.textContent = t('set.totpDisabled');
-        label.style.color = '';
-        controls.innerHTML = `<button class="btn btn-primary btn-sm" id="btn-totp-enable">
-          <i class="fas fa-shield-alt"></i> ${t('set.totpEnable')}</button>`;
-        document.getElementById('btn-totp-enable')?.addEventListener('click', async () => {
-          const panel = document.getElementById('totp-setup-panel');
-          panel.style.display = 'flex';
-          try {
-            const data = await api.totpSetup();
-            document.getElementById('totp-qr').src = data.qrDataUrl;
-            document.getElementById('totp-secret-text').textContent = data.secret;
-          } catch (err) {
-            panel.style.display = 'none';
-            showToast(err.message || t('set.totpSetupError'), 'error');
-          }
-        });
-      }
-    } catch {}
-  }
-  loadTotpStatus();
-
-  document.getElementById('btn-totp-verify')?.addEventListener('click', async () => {
-    const code = document.getElementById('totp-confirm-code')?.value.replace(/\s/g, '');
-    if (!code) return;
-    try {
-      await api.totpConfirm(code);
-      showToast(t('set.totpConfirmed'), 'success');
-      document.getElementById('totp-setup-panel').style.display = 'none';
-      loadTotpStatus();
-    } catch (err) {
-      showToast(err.message || t('set.totpInvalid'), 'error');
-    }
-  });
-}
-
 // ============================================================
 // SSH Key
 // ============================================================

@@ -46,9 +46,31 @@ function makeTempToken(payload) {
 // GET /api/auth/status – is a password configured? Is onboarding done?
 router.get('/status', (req, res) => {
   res.json({
-    configured: !!db.settings.get('auth_password_hash'),
+    configured:    !!db.settings.get('auth_password_hash'),
     onboardingDone: !!db.settings.get('onboarding_done'),
+    username:      db.settings.get('auth_username') || 'admin',
   });
+});
+
+// GET /api/auth/profile
+router.get('/profile', authMiddleware, (req, res) => {
+  res.json({
+    username: db.settings.get('auth_username') || 'admin',
+    email:    db.settings.get('auth_email')    || '',
+  });
+});
+
+// PUT /api/auth/profile
+router.put('/profile', authMiddleware, (req, res) => {
+  const { username, email } = req.body;
+  if (username !== undefined) {
+    const u = String(username).trim().slice(0, 64);
+    if (!u) return res.status(400).json({ error: 'Username cannot be empty' });
+    db.settings.set('auth_username', u);
+  }
+  if (email !== undefined) db.settings.set('auth_email', String(email).trim().slice(0, 256));
+  db.auditLog.write('auth.profile', 'Profile updated', req.ip);
+  res.json({ success: true });
 });
 
 // POST /api/auth/setup – first-time password setup (only when no password exists)

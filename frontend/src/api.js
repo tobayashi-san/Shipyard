@@ -76,6 +76,8 @@ class ApiClient {
   totpSetup()               { return this.request('/auth/totp/setup',   { method: 'POST' }); }
   totpConfirm(code)         { return this.request('/auth/totp/confirm', { method: 'POST', body: { code } }); }
   totpDisable()             { return this.request('/auth/totp',         { method: 'DELETE' }); }
+  getProfile()              { return this.request('/auth/profile'); }
+  updateProfile(data)       { return this.request('/auth/profile', { method: 'PUT', body: data }); }
   totpLogin(tempToken, code) {
     return fetch('/api/auth/totp/login', {
       method: 'POST',
