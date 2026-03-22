@@ -67,12 +67,24 @@ function setEditorContent(content) {
 // ── Tab state ─────────────────────────────────────────────────
 let activeTab = 'templates';
 
+function allowedTabs() {
+  const tabs = ['templates'];
+  if (hasCap('canRunPlaybooks'))    tabs.push('run');
+  if (hasCap('canViewVars'))        tabs.push('vars');
+  if (hasCap('canViewSchedules'))   tabs.push('schedules');
+  if (hasCap('canViewAudit'))       tabs.push('history');
+  return tabs;
+}
+
 // ============================================================
 // Page Entry
 // ============================================================
 export async function renderPlaybooks() {
   const main = document.querySelector('.main-content');
   if (!main) return;
+
+  // Reset activeTab if user no longer has access to it
+  if (!allowedTabs().includes(activeTab)) activeTab = allowedTabs()[0];
 
   main.innerHTML = `
     <div class="page-header">
@@ -101,18 +113,18 @@ export async function renderPlaybooks() {
       <button class="tab-btn${activeTab === 'templates' ? ' active' : ''}" data-tab="templates">
         <i class="fas fa-file-code"></i> ${t('pb.tabTemplates')}
       </button>
-      <button class="tab-btn${activeTab === 'run' ? ' active' : ''}" data-tab="run">
+      ${hasCap('canRunPlaybooks') ? `<button class="tab-btn${activeTab === 'run' ? ' active' : ''}" data-tab="run">
         <i class="fas fa-play"></i> ${t('pb.tabRun')}
-      </button>
-      <button class="tab-btn${activeTab === 'vars' ? ' active' : ''}" data-tab="vars">
+      </button>` : ''}
+      ${hasCap('canViewVars') ? `<button class="tab-btn${activeTab === 'vars' ? ' active' : ''}" data-tab="vars">
         <i class="fas fa-sliders-h"></i> ${t('pb.tabVars')}
-      </button>
-      <button class="tab-btn${activeTab === 'schedules' ? ' active' : ''}" data-tab="schedules">
+      </button>` : ''}
+      ${hasCap('canViewSchedules') ? `<button class="tab-btn${activeTab === 'schedules' ? ' active' : ''}" data-tab="schedules">
         <i class="fas fa-clock"></i> ${t('pb.tabSchedules')}
-      </button>
-      <button class="tab-btn${activeTab === 'history' ? ' active' : ''}" data-tab="history">
+      </button>` : ''}
+      ${hasCap('canViewAudit') ? `<button class="tab-btn${activeTab === 'history' ? ' active' : ''}" data-tab="history">
         <i class="fas fa-history"></i> ${t('pb.tabHistory')}
-      </button>
+      </button>` : ''}
     </div>
 
     <div id="pb-tab-content" class="page-content">

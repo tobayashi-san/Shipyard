@@ -1182,115 +1182,155 @@ async function loadRolesTab() {
       ]},
     ];
 
+    // Tab definitions — access + caps per section
+    const formTabs = [
+      {
+        id: 'servers', label: 'Servers', icon: 'fa-server',
+        accessSection: `
+          <div style="margin-bottom:12px;">
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px;">Accessible Servers</div>
+            <div style="display:flex;flex-direction:column;gap:6px;">
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+                <input type="radio" name="rf-servers" value="all" ${!serversRestricted ? 'checked' : ''}> All servers
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+                <input type="radio" name="rf-servers" value="restricted" ${serversRestricted ? 'checked' : ''}> Restricted to:
+              </label>
+            </div>
+            <div id="rf-servers-detail" style="margin-top:10px;padding-left:20px;display:${serversRestricted ? 'block' : 'none'};">
+              ${groups.length > 0 ? `
+              <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;">Server Groups / Folders</div>
+              <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px;">
+                ${groups.map(g => `
+                  <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+                    <input type="checkbox" class="rf-group-chk" value="${esc(g.id)}" ${checkedGroups.includes(g.id) ? 'checked' : ''}>
+                    <span style="width:10px;height:10px;border-radius:2px;background:${esc(g.color || '#6366f1')};flex-shrink:0;display:inline-block;"></span>
+                    ${esc(g.name)}
+                  </label>`).join('')}
+              </div>` : ''}
+              ${servers.length > 0 ? `
+              <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;">Individual Servers</div>
+              <div style="display:flex;flex-direction:column;gap:4px;max-height:160px;overflow-y:auto;">
+                ${servers.map(s => `
+                  <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+                    <input type="checkbox" class="rf-server-chk" value="${esc(s.id)}" ${checkedServers.includes(s.id) ? 'checked' : ''}>
+                    <span class="status-dot ${s.status === 'online' ? 'online' : s.status === 'offline' ? 'offline' : 'unknown'}" style="flex-shrink:0;"></span>
+                    ${esc(s.name)}
+                    <span style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);">${esc(s.ip_address)}</span>
+                  </label>`).join('')}
+              </div>` : ''}
+            </div>
+          </div>`,
+        caps: capGroups.find(g => g.label === 'Servers')?.caps || [],
+      },
+      {
+        id: 'playbooks', label: 'Playbooks', icon: 'fa-terminal',
+        accessSection: `
+          <div style="margin-bottom:12px;">
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px;">Accessible Playbooks</div>
+            <div style="display:flex;flex-direction:column;gap:6px;">
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+                <input type="radio" name="rf-playbooks" value="all" ${!playbooksRestricted ? 'checked' : ''}> All playbooks
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+                <input type="radio" name="rf-playbooks" value="restricted" ${playbooksRestricted ? 'checked' : ''}> Restricted to:
+              </label>
+            </div>
+            <div id="rf-playbooks-detail" style="margin-top:8px;padding-left:20px;display:${playbooksRestricted ? 'flex' : 'none'};flex-direction:column;gap:4px;max-height:160px;overflow-y:auto;">
+              ${playbooks.map(pb => `
+                <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+                  <input type="checkbox" class="rf-pb-chk" value="${esc(pb.filename)}" ${checkedPbooks.includes(pb.filename) ? 'checked' : ''}>
+                  <i class="fas fa-terminal" style="font-size:10px;color:var(--text-muted);"></i>
+                  ${esc(pb.filename)}
+                </label>`).join('')}
+            </div>
+          </div>`,
+        caps: capGroups.find(g => g.label === 'Playbooks')?.caps || [],
+      },
+      {
+        id: 'schedules', label: 'Schedules', icon: 'fa-clock',
+        accessSection: '',
+        caps: capGroups.find(g => g.label === 'Schedules')?.caps || [],
+      },
+      {
+        id: 'variables', label: 'Variables', icon: 'fa-sliders-h',
+        accessSection: '',
+        caps: capGroups.find(g => g.label === 'Variables')?.caps || [],
+      },
+      {
+        id: 'plugins', label: 'Plugins', icon: 'fa-puzzle-piece',
+        accessSection: plugins.filter(pl => pl.sidebar).length > 0 ? `
+          <div style="margin-bottom:12px;">
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px;">Accessible Plugins</div>
+            <div style="display:flex;flex-direction:column;gap:6px;">
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+                <input type="radio" name="rf-plugins" value="all" ${!pluginsRestricted ? 'checked' : ''}> All plugins
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+                <input type="radio" name="rf-plugins" value="restricted" ${pluginsRestricted ? 'checked' : ''}> Restricted to:
+              </label>
+            </div>
+            <div id="rf-plugins-detail" style="margin-top:8px;padding-left:20px;display:${pluginsRestricted ? 'flex' : 'none'};flex-direction:column;gap:4px;">
+              ${plugins.map(pl => `
+                <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+                  <input type="checkbox" class="rf-plugin-chk" value="${esc(pl.id)}" ${checkedPlugins.includes(pl.id) ? 'checked' : ''}>
+                  <i class="${esc(pl.sidebar?.icon || 'fas fa-puzzle-piece')}" style="font-size:10px;color:var(--text-muted);"></i>
+                  ${esc(pl.sidebar?.label || pl.name || pl.id)}
+                </label>`).join('')}
+            </div>
+          </div>` : '<div style="font-size:13px;color:var(--text-muted);padding:8px 0;">No plugins installed.</div>',
+        caps: [],
+      },
+      {
+        id: 'other', label: 'Other', icon: 'fa-ellipsis-h',
+        accessSection: '',
+        caps: capGroups.find(g => g.label === 'Other')?.caps || [],
+      },
+    ];
+
+    let activeFormTab = formTabs[0].id;
+
+    function renderFormTab(tabId) {
+      const tab = formTabs.find(t => t.id === tabId);
+      if (!tab) return '';
+      return `
+        ${tab.accessSection}
+        ${tab.caps.length > 0 ? `
+        <div>
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px;">Permissions</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            ${tab.caps.map(c => `
+              <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;">
+                <input type="checkbox" class="rf-cap-chk" value="${esc(c.key)}" ${p[c.key] !== false ? 'checked' : ''}>
+                ${c.label}
+              </label>`).join('')}
+          </div>
+        </div>` : ''}
+      `;
+    }
+
     area.innerHTML = `
       <div class="settings-block" style="border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;">
         <div style="font-size:14px;font-weight:600;margin-bottom:14px;">${isEdit ? `Edit Role: ${esc(role.name)}` : 'New Role'}</div>
 
-        <div class="form-group" style="margin-bottom:14px;">
+        <div class="form-group" style="margin-bottom:16px;">
           <label class="form-label">Name</label>
           <input class="form-input" type="text" id="rf-name" value="${esc(role?.name || '')}" style="max-width:300px;" placeholder="e.g. Ops Team">
         </div>
 
-        <!-- Server Access -->
-        <div style="margin-bottom:14px;">
-          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px;">Server Access</div>
-          <div style="display:flex;flex-direction:column;gap:6px;">
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-              <input type="radio" name="rf-servers" value="all" ${!serversRestricted ? 'checked' : ''}> All servers
-            </label>
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-              <input type="radio" name="rf-servers" value="restricted" ${serversRestricted ? 'checked' : ''}> Restricted to:
-            </label>
-          </div>
-          <div id="rf-servers-detail" style="margin-top:10px;padding-left:20px;display:${serversRestricted ? 'block' : 'none'};">
-            ${groups.length > 0 ? `
-            <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;">Server Groups</div>
-            <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px;">
-              ${groups.map(g => `
-                <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-                  <input type="checkbox" class="rf-group-chk" value="${esc(g.id)}" ${checkedGroups.includes(g.id) ? 'checked' : ''}>
-                  <span style="width:10px;height:10px;border-radius:2px;background:${esc(g.color || '#6366f1')};flex-shrink:0;display:inline-block;"></span>
-                  ${esc(g.name)}
-                </label>`).join('')}
-            </div>` : ''}
-            ${servers.length > 0 ? `
-            <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;">Individual Servers</div>
-            <div style="display:flex;flex-direction:column;gap:4px;max-height:180px;overflow-y:auto;">
-              ${servers.map(s => `
-                <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-                  <input type="checkbox" class="rf-server-chk" value="${esc(s.id)}" ${checkedServers.includes(s.id) ? 'checked' : ''}>
-                  <span class="status-dot ${s.status === 'online' ? 'online' : s.status === 'offline' ? 'offline' : 'unknown'}" style="flex-shrink:0;"></span>
-                  ${esc(s.name)}
-                  <span style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);">${esc(s.ip_address)}</span>
-                </label>`).join('')}
-            </div>` : ''}
-          </div>
+        <!-- Per-category tabs -->
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:8px;" id="rf-form-tabs">
+          ${formTabs.map(t => `
+            <button type="button" class="tab-btn${t.id === activeFormTab ? ' active' : ''}" data-ftab="${esc(t.id)}"
+              style="font-size:12px;padding:4px 10px;">
+              <i class="fas ${esc(t.icon)}"></i> ${t.label}
+            </button>`).join('')}
+        </div>
+        <div id="rf-form-tab-content" style="min-height:120px;">
+          ${renderFormTab(activeFormTab)}
         </div>
 
-        <!-- Playbook Access -->
-        <div style="margin-bottom:14px;">
-          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px;">Playbook Access</div>
-          <div style="display:flex;flex-direction:column;gap:6px;">
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-              <input type="radio" name="rf-playbooks" value="all" ${!playbooksRestricted ? 'checked' : ''}> All playbooks
-            </label>
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-              <input type="radio" name="rf-playbooks" value="restricted" ${playbooksRestricted ? 'checked' : ''}> Restricted to:
-            </label>
-          </div>
-          <div id="rf-playbooks-detail" style="margin-top:8px;padding-left:20px;display:${playbooksRestricted ? 'flex' : 'none'};flex-direction:column;gap:4px;max-height:160px;overflow-y:auto;">
-            ${playbooks.map(pb => `
-              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-                <input type="checkbox" class="rf-pb-chk" value="${esc(pb.filename)}" ${checkedPbooks.includes(pb.filename) ? 'checked' : ''}>
-                <i class="fas fa-terminal" style="font-size:10px;color:var(--text-muted);"></i>
-                ${esc(pb.filename)}
-              </label>`).join('')}
-          </div>
-        </div>
-
-        <!-- Plugin Access -->
-        ${plugins.filter(pl => pl.sidebar).length > 0 ? `
-        <div style="margin-bottom:14px;">
-          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px;">Plugin / Feature Access</div>
-          <div style="display:flex;flex-direction:column;gap:6px;">
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-              <input type="radio" name="rf-plugins" value="all" ${!pluginsRestricted ? 'checked' : ''}> All plugins
-            </label>
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-              <input type="radio" name="rf-plugins" value="restricted" ${pluginsRestricted ? 'checked' : ''}> Restricted to:
-            </label>
-          </div>
-          <div id="rf-plugins-detail" style="margin-top:8px;padding-left:20px;display:${pluginsRestricted ? 'flex' : 'none'};flex-direction:column;gap:4px;">
-            ${plugins.map(pl => `
-              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-                <input type="checkbox" class="rf-plugin-chk" value="${esc(pl.id)}" ${checkedPlugins.includes(pl.id) ? 'checked' : ''}>
-                <i class="${esc(pl.sidebar?.icon || 'fas fa-puzzle-piece')}" style="font-size:10px;color:var(--text-muted);"></i>
-                ${esc(pl.sidebar?.label || pl.name || pl.id)}
-              </label>`).join('')}
-          </div>
-        </div>` : ''}
-
-        <!-- Capabilities -->
-        <div style="margin-bottom:16px;">
-          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:10px;">Capabilities</div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;">
-            ${capGroups.map(group => `
-              <div>
-                <div style="font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;display:flex;align-items:center;gap:6px;">
-                  ${group.label}
-                </div>
-                <div style="display:flex;flex-direction:column;gap:5px;">
-                  ${group.caps.map(c => `
-                    <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;">
-                      <input type="checkbox" class="rf-cap-chk" value="${esc(c.key)}" ${p[c.key] !== false ? 'checked' : ''}>
-                      ${c.label}
-                    </label>`).join('')}
-                </div>
-              </div>`).join('')}
-          </div>
-        </div>
-
-        <div style="display:flex;gap:8px;">
+        <div style="display:flex;gap:8px;margin-top:16px;">
           <button class="btn btn-primary btn-sm" id="rf-save"><i class="fas fa-save"></i> ${isEdit ? 'Save' : 'Create'}</button>
           <button class="btn btn-secondary btn-sm" id="rf-cancel">Cancel</button>
         </div>
@@ -1298,23 +1338,65 @@ async function loadRolesTab() {
       </div>
     `;
 
-    // Toggle server/playbook/plugin detail sections
-    area.querySelectorAll('input[name="rf-servers"]').forEach(r => {
-      r.addEventListener('change', () => {
-        document.getElementById('rf-servers-detail').style.display = r.value === 'restricted' ? 'block' : 'none';
+    // Form tab switching — collect checked caps before switching so they survive re-render
+    const savedCaps = {};
+    function collectCaps() {
+      area.querySelectorAll('.rf-cap-chk').forEach(chk => { savedCaps[chk.value] = chk.checked; });
+    }
+    function renderFormTabWithSaved(tabId) {
+      const tab = formTabs.find(t => t.id === tabId);
+      if (!tab) return '';
+      const restored = tab.caps.map(c => ({
+        ...c,
+        checked: savedCaps[c.key] !== undefined ? savedCaps[c.key] : p[c.key] !== false,
+      }));
+      return `
+        ${tab.accessSection}
+        ${restored.length > 0 ? `
+        <div>
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px;">Permissions</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            ${restored.map(c => `
+              <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;">
+                <input type="checkbox" class="rf-cap-chk" value="${esc(c.key)}" ${c.checked ? 'checked' : ''}>
+                ${c.label}
+              </label>`).join('')}
+          </div>
+        </div>` : ''}
+      `;
+    }
+
+    area.querySelectorAll('#rf-form-tabs .tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        collectCaps();
+        activeFormTab = btn.dataset.ftab;
+        area.querySelectorAll('#rf-form-tabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.ftab === activeFormTab));
+        document.getElementById('rf-form-tab-content').innerHTML = renderFormTabWithSaved(activeFormTab);
+        bindDetailToggles();
       });
     });
-    area.querySelectorAll('input[name="rf-playbooks"]').forEach(r => {
-      r.addEventListener('change', () => {
-        document.getElementById('rf-playbooks-detail').style.display = r.value === 'restricted' ? 'flex' : 'none';
+
+    function bindDetailToggles() {
+      area.querySelectorAll('input[name="rf-servers"]').forEach(r => {
+        r.addEventListener('change', () => {
+          const el = document.getElementById('rf-servers-detail');
+          if (el) el.style.display = r.value === 'restricted' ? 'block' : 'none';
+        });
       });
-    });
-    area.querySelectorAll('input[name="rf-plugins"]').forEach(r => {
-      r.addEventListener('change', () => {
-        const el = document.getElementById('rf-plugins-detail');
-        if (el) el.style.display = r.value === 'restricted' ? 'flex' : 'none';
+      area.querySelectorAll('input[name="rf-playbooks"]').forEach(r => {
+        r.addEventListener('change', () => {
+          const el = document.getElementById('rf-playbooks-detail');
+          if (el) el.style.display = r.value === 'restricted' ? 'flex' : 'none';
+        });
       });
-    });
+      area.querySelectorAll('input[name="rf-plugins"]').forEach(r => {
+        r.addEventListener('change', () => {
+          const el = document.getElementById('rf-plugins-detail');
+          if (el) el.style.display = r.value === 'restricted' ? 'flex' : 'none';
+        });
+      });
+    }
+    bindDetailToggles();
 
     document.getElementById('rf-cancel')?.addEventListener('click', () => { area.innerHTML = ''; });
     document.getElementById('rf-save')?.addEventListener('click', async () => {
@@ -1330,6 +1412,9 @@ async function loadRolesTab() {
       const playbooksMode = area.querySelector('input[name="rf-playbooks"]:checked')?.value;
       const pluginsMode   = area.querySelector('input[name="rf-plugins"]') ? area.querySelector('input[name="rf-plugins"]:checked')?.value : 'all';
 
+      // Collect current visible caps, then merge with savedCaps
+      collectCaps();
+
       const permissions = {};
       if (serversMode === 'all') {
         permissions.servers = 'all';
@@ -1343,7 +1428,8 @@ async function loadRolesTab() {
         : [...area.querySelectorAll('.rf-pb-chk:checked')].map(c => c.value);
       permissions.plugins = (!pluginsMode || pluginsMode === 'all') ? 'all'
         : [...area.querySelectorAll('.rf-plugin-chk:checked')].map(c => c.value);
-      area.querySelectorAll('.rf-cap-chk').forEach(chk => { permissions[chk.value] = chk.checked; });
+      // Apply all caps from savedCaps (covers tabs not currently visible)
+      Object.entries(savedCaps).forEach(([key, val]) => { permissions[key] = val; });
 
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner-sm"></span>';
