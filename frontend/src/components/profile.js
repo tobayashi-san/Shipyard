@@ -38,7 +38,7 @@ export async function showProfileModal() {
     left:${rect ? rect.right + 8 : 232}px;
     z-index:1100;
     width:320px;
-    background:var(--bg-card);
+    background:var(--bg-panel);
     border:1px solid var(--border);
     border-radius:var(--radius);
     box-shadow:0 8px 32px rgba(0,0,0,.35);
