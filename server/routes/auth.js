@@ -31,7 +31,8 @@ const changeLimiter = rateLimit({
 });
 
 function verifyTotp(code, secret) {
-  return otplib.authenticator.check(String(code).replace(/\s/g, ''), secret);
+  const result = otplib.verifySync({ token: String(code).replace(/\s/g, ''), secret });
+  return result.valid;
 }
 
 function makeToken() {
@@ -151,12 +152,12 @@ router.get('/totp/status', authMiddleware, (req, res) => {
 // POST /api/auth/totp/setup – generate a new TOTP secret and return QR code
 router.post('/totp/setup', authMiddleware, async (req, res) => {
   try {
-    const secret = otplib.authenticator.generateSecret();
+    const secret = otplib.generateSecret();
     // Store temporarily – only persisted after /totp/confirm
     db.settings.set('totp_secret_pending', secret);
 
     const appName = db.settings.get('wl_app_name') || 'Shipyard';
-    const otpauthUrl = otplib.authenticator.keyuri('admin', appName, secret);
+    const otpauthUrl = otplib.generateURI({ label: 'admin', issuer: appName, secret });
     const qrDataUrl = await QRCode.toDataURL(otpauthUrl);
 
     res.json({ secret, otpauthUrl, qrDataUrl });
