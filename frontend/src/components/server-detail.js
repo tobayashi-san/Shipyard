@@ -313,6 +313,16 @@ function renderServerInfo(info) {
 
   const bar = (pct) => `<div class="progress-fill${pct > 90 ? ' critical' : pct > 70 ? ' high' : ''}" style="width:${pct}%"></div>`;
 
+  // RAM: show used in MB or GB depending on size
+  const ramUsedLabel  = info.ram_total_mb ? (info.ram_used_mb  >= 1024 ? (info.ram_used_mb  / 1024).toFixed(1) + ' GB' : Math.round(info.ram_used_mb)  + ' MB') : null;
+  const ramTotalLabel = info.ram_total_mb ? (info.ram_total_mb >= 1024 ? (info.ram_total_mb / 1024).toFixed(1) + ' GB' : Math.round(info.ram_total_mb) + ' MB') : null;
+  const ramAbsolute   = ramUsedLabel ? `${ramUsedLabel} / ${ramTotalLabel} (${ramPct}%)` : '—';
+
+  // Disk: always GB
+  const diskUsedLabel  = info.disk_total_gb ? info.disk_used_gb.toFixed(1)  + ' GB' : null;
+  const diskTotalLabel = info.disk_total_gb ? info.disk_total_gb.toFixed(1) + ' GB' : null;
+  const diskAbsolute   = diskUsedLabel ? `${diskUsedLabel} / ${diskTotalLabel} (${diskPct}%)` : '—';
+
   resEl.innerHTML = `
     ${cpuPct !== null ? `
     <div class="progress-row">
@@ -323,17 +333,12 @@ function renderServerInfo(info) {
     <div class="progress-row">
       <div class="progress-label">RAM</div>
       <div class="progress-track">${bar(ramPct)}</div>
-      <div class="progress-value">${ramPct}%</div>
-    </div>
-    <div class="progress-row">
-      <div class="progress-label">Disk</div>
-      <div class="progress-track">${bar(diskPct)}</div>
-      <div class="progress-value">${diskPct}%</div>
+      <div class="progress-value">${ramAbsolute}</div>
     </div>
     <div class="progress-row" style="border-bottom:none;">
-      <div class="progress-label">RAM total</div>
-      <div class="progress-track" style="border:none;background:none;"></div>
-      <div class="progress-value" style="width:auto;font-size:11px;color:var(--text-muted);">${info.ram_total_mb ? Math.round(info.ram_total_mb / 1024) + ' GB' : '—'}</div>
+      <div class="progress-label">Disk</div>
+      <div class="progress-track">${bar(diskPct)}</div>
+      <div class="progress-value">${diskAbsolute}</div>
     </div>
   `;
 }

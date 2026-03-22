@@ -94,8 +94,10 @@ function renderDashboardData(data) {
               <thead><tr>
                 <th style="width:28px;"></th>
                 <th>${t('common.name')}</th>
-                <th style="width:120px;">${t('dash.colRam')}</th>
-                <th style="width:120px;">${t('dash.colDisk')}</th>
+                <th style="width:140px;">${t('dash.colRam')}</th>
+                <th style="width:140px;">${t('dash.colDisk')}</th>
+                <th style="width:130px;">${t('dash.colCpu')}</th>
+                <th style="width:90px;">${t('dash.colUptime')}</th>
                 <th style="width:130px;">${t('dash.colUpdates')}</th>
               </tr></thead>
               <tbody>
@@ -172,9 +174,10 @@ function renderDashboardData(data) {
 }
 
 function statCard(icon, value, label, color) {
+  const iconBg = color ? `background:${color}1a;color:${color};` : '';
   return `
     <div class="dash-stat-card">
-      <div class="dash-stat-icon" style="${color ? `color:${color}` : ''}"><i class="fas ${icon}"></i></div>
+      <div class="dash-stat-icon" style="${iconBg}"><i class="fas ${icon}"></i></div>
       <div>
         <div class="dash-stat-value" style="${color ? `color:${color}` : ''}">${value}</div>
         <div class="dash-stat-label">${label}</div>
@@ -187,6 +190,8 @@ function serverHealthRow(s) {
   const dotCls = s.status === 'online' ? 'online' : s.status === 'offline' ? 'offline' : 'unknown';
   const ramBar = miniBar(s.ram_pct);
   const diskBar = miniBar(s.disk_pct);
+  const cpuBar = miniBar(s.cpu_pct);
+  const uptime = formatUptime(s.uptime_seconds);
 
   return `
     <tr class="server-health-row" data-server-id="${s.id}" style="cursor:pointer;">
@@ -199,6 +204,8 @@ function serverHealthRow(s) {
       </td>
       <td>${ramBar}</td>
       <td>${diskBar}</td>
+      <td>${cpuBar}</td>
+      <td><span style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">${esc(uptime)}</span></td>
       <td>${updatesCell(s)}</td>
     </tr>
   `;
@@ -208,8 +215,8 @@ function miniBar(pct) {
   if (pct === null || pct === undefined) return '<span style="color:var(--text-muted);font-size:12px;">—</span>';
   const cls = pct > 90 ? ' critical' : pct > 70 ? ' high' : '';
   return `
-    <div style="display:flex;align-items:center;gap:5px;">
-      <div class="progress-track" style="height:5px;width:60px;flex-shrink:0;">
+    <div style="display:flex;align-items:center;gap:6px;">
+      <div class="progress-track" style="height:5px;width:90px;flex-shrink:0;">
         <div class="progress-fill${cls}" style="width:${pct}%;"></div>
       </div>
       <span style="font-family:var(--font-mono);font-size:11px;width:30px;">${pct}%</span>
