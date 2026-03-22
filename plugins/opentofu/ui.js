@@ -945,8 +945,8 @@ function openWorkspaceModal(ws) {
         </div>
         <div class="form-group">
           <label class="form-label">Path (inside container)</label>
-          <input class="form-input text-mono" id="ws-path" value="${esc(ws?.path||'')}" placeholder="/opt/infra/production" required>
-          <div class="form-hint">Mount via docker-compose.override.yml: <code>- /host/path:/opt/infra:rw</code></div>
+          <input class="form-input text-mono" id="ws-path" value="${esc(ws?.path||'')}" placeholder="/workspaces/production" required>
+          <div class="form-hint">Default volume: <code>/workspaces</code> — or bind-mount a host path in docker-compose.override.yml</div>
         </div>
         <div class="form-group">
           <label class="form-label">Description (optional)</label>
@@ -959,6 +959,26 @@ function openWorkspaceModal(ws) {
             placeholder="AWS_ACCESS_KEY_ID=AKIA...\nTF_VAR_region=eu-central-1"
           >${esc(envLines)}</textarea>
         </div>
+        ${!ws ? `
+        <div class="form-group" style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:500;">
+            <input type="checkbox" id="ws-scaffold" style="width:16px;height:16px;">
+            Initialize with starter files
+          </label>
+          <div id="ws-scaffold-opts" style="display:none;margin-top:10px;">
+            <label class="form-label">Provider template</label>
+            <select class="form-input" id="ws-provider" style="max-width:240px;">
+              <option value="">None (blank files)</option>
+              <option value="aws">AWS</option>
+              <option value="azurerm">Azure</option>
+              <option value="google">Google Cloud</option>
+              <option value="hcloud">Hetzner Cloud</option>
+              <option value="digitalocean">DigitalOcean</option>
+              <option value="kubernetes">Kubernetes</option>
+            </select>
+            <div class="form-hint">Creates main.tf, variables.tf, outputs.tf and (if provider selected) providers.tf</div>
+          </div>
+        </div>` : ''}
         <div class="form-actions">
           <button class="btn btn-secondary" id="ws-cancel">Cancel</button>
           <button class="btn btn-primary" id="ws-save">${ws ? 'Save' : 'Create'}</button>
@@ -971,12 +991,20 @@ function openWorkspaceModal(ws) {
   document.getElementById('ws-cancel').addEventListener('click', close);
   overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
 
+  document.getElementById('ws-scaffold')?.addEventListener('change', e => {
+    document.getElementById('ws-scaffold-opts').style.display = e.target.checked ? 'block' : 'none';
+  });
+
   document.getElementById('ws-save').addEventListener('click', async () => {
     const name    = document.getElementById('ws-name').value.trim();
     const wPath   = document.getElementById('ws-path').value.trim();
     const desc    = document.getElementById('ws-desc').value.trim();
     const env_vars = parseEnvBlock(document.getElementById('ws-env').value);
     if (!name || !wPath) { _showToast('Name and path are required', 'error'); return; }
+    const scaffoldEl = document.getElementById('ws-scaffold');
+    const scaffold = scaffoldEl?.checked
+      ? { provider: document.getElementById('ws-provider').value || null }
+      : null;
     const btn = document.getElementById('ws-save');
     btn.disabled = true;
     try {
@@ -986,7 +1014,7 @@ function openWorkspaceModal(ws) {
         });
       } else {
         const { id } = await _pluginApi.request('/workspaces', {
-          method: 'POST', body: JSON.stringify({ name, path: wPath, description: desc, env_vars }),
+          method: 'POST', body: JSON.stringify({ name, path: wPath, description: desc, env_vars, scaffold }),
         });
         _selected = id;
         _mainTab  = 'workspaces';

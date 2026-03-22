@@ -182,12 +182,171 @@ function register({ router, db, broadcast }) {
     'SSL_CERT_FILE','SSL_CERT_DIR','NODE_EXTRA_CA_CERTS',
   ]);
 
-  const ALLOWED_PATH_PREFIXES = ['/opt/','/srv/','/home/','/var/lib/','/app/'];
+  const ALLOWED_PATH_PREFIXES = ['/opt/','/srv/','/home/','/var/lib/','/app/','/workspaces/'];
 
   function isAllowedPath(p) {
     const resolved = path.resolve(p);
     if (resolved.includes('..')) return false;
     return ALLOWED_PATH_PREFIXES.some(prefix => resolved.startsWith(prefix));
+  }
+
+  const PROVIDER_CONFIGS = {
+    aws: {
+      providers_tf: `terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.aws_region
+}
+`,
+      extra_variables: `
+variable "aws_region" {
+  type        = string
+  description = "AWS region"
+  default     = "eu-central-1"
+}
+`,
+    },
+    azurerm: {
+      providers_tf: `terraform {
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 3.0"
+    }
+  }
+}
+
+provider "azurerm" {
+  features {}
+}
+`,
+      extra_variables: '',
+    },
+    google: {
+      providers_tf: `terraform {
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 5.0"
+    }
+  }
+}
+
+provider "google" {
+  project = var.gcp_project
+  region  = var.gcp_region
+}
+`,
+      extra_variables: `
+variable "gcp_project" {
+  type        = string
+  description = "GCP project ID"
+}
+
+variable "gcp_region" {
+  type        = string
+  description = "GCP region"
+  default     = "europe-west3"
+}
+`,
+    },
+    hcloud: {
+      providers_tf: `terraform {
+  required_providers {
+    hcloud = {
+      source  = "hetznercloud/hcloud"
+      version = "~> 1.0"
+    }
+  }
+}
+
+provider "hcloud" {
+  token = var.hcloud_token
+}
+`,
+      extra_variables: `
+variable "hcloud_token" {
+  type        = string
+  description = "Hetzner Cloud API token"
+  sensitive   = true
+}
+`,
+    },
+    digitalocean: {
+      providers_tf: `terraform {
+  required_providers {
+    digitalocean = {
+      source  = "digitalocean/digitalocean"
+      version = "~> 2.0"
+    }
+  }
+}
+
+provider "digitalocean" {
+  token = var.do_token
+}
+`,
+      extra_variables: `
+variable "do_token" {
+  type        = string
+  description = "DigitalOcean API token"
+  sensitive   = true
+}
+`,
+    },
+    kubernetes: {
+      providers_tf: `terraform {
+  required_providers {
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.0"
+    }
+  }
+}
+
+provider "kubernetes" {
+  config_path = "~/.kube/config"
+}
+`,
+      extra_variables: '',
+    },
+  };
+
+  function scaffoldWorkspace(wsPath, provider) {
+    fs.mkdirSync(wsPath, { recursive: true });
+
+    const providerCfg = PROVIDER_CONFIGS[provider];
+
+    const mainTf = `# ${provider ? `${provider.toUpperCase()} ` : ''}Infrastructure
+# Managed by Shipyard / OpenTofu
+
+# Add your resources here
+`;
+
+    const variablesTf = `# Input variables
+${providerCfg?.extra_variables || ''}`;
+
+    const outputsTf = `# Outputs
+# output "example" {
+#   value       = resource.type.name.attribute
+#   description = "An example output"
+# }
+`;
+
+    fs.writeFileSync(path.join(wsPath, 'main.tf'), mainTf);
+    fs.writeFileSync(path.join(wsPath, 'variables.tf'), variablesTf);
+    fs.writeFileSync(path.join(wsPath, 'outputs.tf'), outputsTf);
+
+    if (providerCfg) {
+      fs.writeFileSync(path.join(wsPath, 'providers.tf'), providerCfg.providers_tf);
+    }
   }
 
   function sanitizeEnvVars(vars) {
@@ -276,13 +435,16 @@ function register({ router, db, broadcast }) {
   });
 
   router.post('/workspaces', (req, res) => {
-    const { name, path: wPath, description, env_vars } = req.body;
+    const { name, path: wPath, description, env_vars, scaffold } = req.body;
     if (!name || !wPath) return res.status(400).json({ error: 'name and path are required' });
-    if (!isAllowedPath(wPath)) return res.status(400).json({ error: 'Path must be under /opt/, /srv/, /home/, /var/lib/, or /app/' });
+    if (!isAllowedPath(wPath)) return res.status(400).json({ error: 'Path must be under /workspaces/, /opt/, /srv/, /home/, /var/lib/, or /app/' });
     const id = randomUUID();
     db.db.prepare('INSERT INTO tofu_workspaces (id, name, path, description, env_vars) VALUES (?, ?, ?, ?, ?)')
       .run(id, name.trim(), wPath.trim(), (description || '').trim(), JSON.stringify(env_vars || {}));
     syncPathsFile();
+    if (scaffold) {
+      try { scaffoldWorkspace(wPath.trim(), scaffold.provider || null); } catch (e) { /* path not mounted yet — files can be created later */ }
+    }
     res.json({ success: true, id });
   });
 
