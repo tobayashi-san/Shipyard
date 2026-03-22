@@ -1160,6 +1160,7 @@ async function loadRolesTab() {
         { key: 'canUpdateServers',        label: 'Run updates & reboot' },
         { key: 'canUseTerminal',          label: 'SSH terminal' },
         { key: 'canManageDocker',         label: 'Docker (logs, restart, compose)' },
+        { key: 'canManageCustomUpdates',  label: 'Custom update tasks' },
         { key: 'canExportImportServers',  label: 'Export / Import servers' },
       ]},
       { label: 'Playbooks', caps: [

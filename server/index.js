@@ -459,7 +459,7 @@ app.post('/api/servers/:id/docker/:container/restart', containerRestartLimiter, 
 
 // POST /api/servers/:id/custom-updates/:taskId/run
 app.post('/api/servers/:id/custom-updates/:taskId/run', customUpdateRunLimiter, (req, res, next) => {
-  if (!can(getPermissions(req.user), 'canUpdateServers')) return res.status(403).json({ error: 'Permission denied' });
+  if (!can(getPermissions(req.user), 'canManageCustomUpdates')) return res.status(403).json({ error: 'Permission denied' });
   next();
 }, async (req, res) => {
   const server = db.servers.getById(req.params.id);

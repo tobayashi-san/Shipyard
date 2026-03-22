@@ -151,15 +151,15 @@ export async function renderServerDetail(serverId) {
             <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
           </div>
         </div>
-        <div class="panel" style="margin-top:16px;">
+        ${hasCap('canManageCustomUpdates') ? `<div class="panel" style="margin-top:16px;">
           <div class="section-header">
             <h3><i class="fas fa-cog"></i> ${t('det.customUpdates')}</h3>
-            ${hasCap('canUpdateServers') ? `<button class="btn btn-primary btn-sm" id="btn-add-custom-task"><i class="fas fa-plus"></i> ${t('det.addTask')}</button>` : ''}
+            <button class="btn btn-primary btn-sm" id="btn-add-custom-task"><i class="fas fa-plus"></i> ${t('det.addTask')}</button>
           </div>
           <div id="custom-updates-content">
             <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
           </div>
-        </div>
+        </div>` : ''}
       </div>
 
       <!-- History tab -->
@@ -270,7 +270,7 @@ export async function renderServerDetail(serverId) {
     try {
       const [updates, customTasks] = await Promise.all([
         api.getServerUpdates(serverId, true),
-        api.getCustomUpdateTasks(serverId),
+        hasCap('canManageCustomUpdates') ? api.getCustomUpdateTasks(serverId) : Promise.resolve([]),
       ]);
       renderUpdatesData(updates, customTasks, serverId);
     } catch (e) {
@@ -906,7 +906,7 @@ async function loadUpdates(serverId) {
   try {
     const [updates, customTasks] = await Promise.all([
       api.getServerUpdates(serverId),
-      api.getCustomUpdateTasks(serverId),
+      hasCap('canManageCustomUpdates') ? api.getCustomUpdateTasks(serverId) : Promise.resolve([]),
     ]);
     renderUpdatesData(updates, customTasks, serverId);
     if (updates?.length > 0 && updates[0]?._cached) {
