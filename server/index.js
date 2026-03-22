@@ -326,7 +326,7 @@ app.post('/api/ansible/run', async (req, res) => {
 
 // POST /api/servers/:id/update - Run system update on a server
 app.post('/api/servers/:id/update', (req, res, next) => {
-  if (!can(getPermissions(req.user), 'canUpdateServers')) return res.status(403).json({ error: 'Permission denied' });
+  if (!can(getPermissions(req.user), 'canRunUpdates')) return res.status(403).json({ error: 'Permission denied' });
   next();
 }, async (req, res) => {
   const serverId = req.params.id;
@@ -361,7 +361,7 @@ app.post('/api/servers/:id/update', (req, res, next) => {
 
 // POST /api/servers/update-all - Run system update on all servers
 app.post('/api/servers/update-all', (req, res, next) => {
-  if (!can(getPermissions(req.user), 'canUpdateServers')) return res.status(403).json({ error: 'Permission denied' });
+  if (!can(getPermissions(req.user), 'canRunUpdates')) return res.status(403).json({ error: 'Permission denied' });
   next();
 }, async (req, res) => {
   const historyId = db.updateHistory.create('bulk_update', 'system_update_all');
@@ -391,7 +391,7 @@ app.post('/api/servers/update-all', (req, res, next) => {
 
 // POST /api/servers/:id/reboot - Reboot a server using ansible ad-hoc
 app.post('/api/servers/:id/reboot', rebootLimiter, (req, res, next) => {
-  if (!can(getPermissions(req.user), 'canUpdateServers')) return res.status(403).json({ error: 'Permission denied' });
+  if (!can(getPermissions(req.user), 'canRebootServers')) return res.status(403).json({ error: 'Permission denied' });
   next();
 }, async (req, res) => {
   const serverId = req.params.id;
@@ -468,7 +468,7 @@ app.post('/api/servers/:id/docker/:container/restart', containerRestartLimiter, 
 
 // POST /api/servers/:id/custom-updates/:taskId/run
 app.post('/api/servers/:id/custom-updates/:taskId/run', customUpdateRunLimiter, (req, res, next) => {
-  if (!can(getPermissions(req.user), 'canManageCustomUpdates')) return res.status(403).json({ error: 'Permission denied' });
+  if (!can(getPermissions(req.user), 'canRunCustomUpdates')) return res.status(403).json({ error: 'Permission denied' });
   next();
 }, async (req, res) => {
   const server = db.servers.getById(req.params.id);

@@ -52,8 +52,8 @@ export async function renderServerDetail(serverId) {
       <div class="page-header-actions">
         ${hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm" id="btn-edit-server"><i class="fas fa-edit"></i> ${t('common.edit')}</button>` : ''}
         ${hasCap('canUseTerminal') ? `<button class="btn btn-secondary btn-sm" id="btn-terminal"><i class="fas fa-terminal"></i> ${t('common.terminal')}</button>` : ''}
-        ${hasCap('canUpdateServers') ? `<button class="btn btn-secondary btn-sm" id="btn-update-server"><i class="fas fa-arrow-up"></i> ${t('det.updates')}</button>` : ''}
-        ${hasCap('canUpdateServers') ? `<button class="btn btn-danger btn-sm" id="btn-reboot-server"><i class="fas fa-power-off"></i> ${t('det.reboot')}</button>` : ''}
+        ${hasCap('canRunUpdates') ? `<button class="btn btn-secondary btn-sm" id="btn-update-server"><i class="fas fa-arrow-up"></i> ${t('det.updates')}</button>` : ''}
+        ${hasCap('canRebootServers') ? `<button class="btn btn-danger btn-sm" id="btn-reboot-server"><i class="fas fa-power-off"></i> ${t('det.reboot')}</button>` : ''}
       </div>
     </div>
 
@@ -61,7 +61,7 @@ export async function renderServerDetail(serverId) {
     <div class="tab-bar">
       <button class="tab-btn active" data-tab="overview">${t('det.tabOverview')}</button>
       <button class="tab-btn" data-tab="docker">${t('det.tabDocker')}</button>
-      <button class="tab-btn" data-tab="updates">${t('det.tabUpdates')}</button>
+      ${(hasCap('canViewUpdates') || hasCap('canRunUpdates') || hasCap('canRebootServers') || hasCap('canViewCustomUpdates') || hasCap('canRunCustomUpdates') || hasCap('canEditCustomUpdates') || hasCap('canDeleteCustomUpdates')) ? `<button class="tab-btn" data-tab="updates">${t('det.tabUpdates')}</button>` : ''}
       <button class="tab-btn" data-tab="history">${t('det.tabHistory')}</button>
       <button class="tab-btn" data-tab="notes">
         <i class="fas fa-sticky-note" style="margin-right:5px;"></i>${t('det.tabNotes')}
@@ -142,7 +142,7 @@ export async function renderServerDetail(serverId) {
 
       <!-- Updates tab -->
       <div class="tab-panel" id="tab-updates">
-        <div class="panel">
+        ${(hasCap('canViewUpdates') || hasCap('canRunUpdates')) ? `<div class="panel">
           <div class="section-header">
             <h3><i class="fas fa-box-open"></i> ${t('det.tabUpdates')}</h3>
             <button class="btn btn-secondary btn-sm" id="btn-refresh-updates" title="${t('common.refresh')}"><i class="fas fa-sync-alt"></i></button>
@@ -150,11 +150,11 @@ export async function renderServerDetail(serverId) {
           <div id="updates-content">
             <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
           </div>
-        </div>
-        ${hasCap('canManageCustomUpdates') ? `<div class="panel" style="margin-top:16px;">
+        </div>` : ''}
+        ${(hasCap('canViewCustomUpdates') || hasCap('canRunCustomUpdates') || hasCap('canEditCustomUpdates') || hasCap('canDeleteCustomUpdates')) ? `<div class="panel" style="margin-top:16px;">
           <div class="section-header">
             <h3><i class="fas fa-cog"></i> ${t('det.customUpdates')}</h3>
-            <button class="btn btn-primary btn-sm" id="btn-add-custom-task"><i class="fas fa-plus"></i> ${t('det.addTask')}</button>
+            ${hasCap('canEditCustomUpdates') ? `<button class="btn btn-primary btn-sm" id="btn-add-custom-task"><i class="fas fa-plus"></i> ${t('det.addTask')}</button>` : ''}
           </div>
           <div id="custom-updates-content">
             <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
@@ -270,7 +270,7 @@ export async function renderServerDetail(serverId) {
     try {
       const [updates, customTasks] = await Promise.all([
         api.getServerUpdates(serverId, true),
-        hasCap('canManageCustomUpdates') ? api.getCustomUpdateTasks(serverId) : Promise.resolve([]),
+        hasCap('canViewCustomUpdates') ? api.getCustomUpdateTasks(serverId) : Promise.resolve([]),
       ]);
       renderUpdatesData(updates, customTasks, serverId);
     } catch (e) {
@@ -730,10 +730,10 @@ function renderCustomTasksPanel(customTasks, serverId) {
         <td class="mono" style="font-size:11px;">${esc(task.last_version || '—')}</td>
         <td>${statusCell}</td>
         <td style="white-space:nowrap;">
-          <button class="btn btn-secondary btn-sm custom-task-check" data-id="${esc(task.id)}" title="${t('det.checkNow')}"><i class="fas fa-sync-alt"></i></button>
-          <button class="btn btn-primary btn-sm custom-task-run" data-id="${esc(task.id)}" data-name="${esc(task.name)}" title="${t('det.runUpdate')}"><i class="fas fa-play"></i></button>
-          <button class="btn btn-secondary btn-sm custom-task-edit" data-id="${esc(task.id)}" title="${t('common.edit')}"><i class="fas fa-edit"></i></button>
-          <button class="btn btn-danger btn-sm custom-task-delete" data-id="${esc(task.id)}" data-name="${esc(task.name)}" title="${t('common.delete')}"><i class="fas fa-trash"></i></button>
+          ${hasCap('canRunCustomUpdates') ? `<button class="btn btn-secondary btn-sm custom-task-check" data-id="${esc(task.id)}" title="${t('det.checkNow')}"><i class="fas fa-sync-alt"></i></button>` : ''}
+          ${hasCap('canRunCustomUpdates') ? `<button class="btn btn-primary btn-sm custom-task-run" data-id="${esc(task.id)}" data-name="${esc(task.name)}" title="${t('det.runUpdate')}"><i class="fas fa-play"></i></button>` : ''}
+          ${hasCap('canEditCustomUpdates') ? `<button class="btn btn-secondary btn-sm custom-task-edit" data-id="${esc(task.id)}" title="${t('common.edit')}"><i class="fas fa-edit"></i></button>` : ''}
+          ${hasCap('canDeleteCustomUpdates') ? `<button class="btn btn-danger btn-sm custom-task-delete" data-id="${esc(task.id)}" data-name="${esc(task.name)}" title="${t('common.delete')}"><i class="fas fa-trash"></i></button>` : ''}
         </td>
       </tr>`;
   }).join('');
@@ -906,7 +906,7 @@ async function loadUpdates(serverId) {
   try {
     const [updates, customTasks] = await Promise.all([
       api.getServerUpdates(serverId),
-      hasCap('canManageCustomUpdates') ? api.getCustomUpdateTasks(serverId) : Promise.resolve([]),
+      hasCap('canViewCustomUpdates') ? api.getCustomUpdateTasks(serverId) : Promise.resolve([]),
     ]);
     renderUpdatesData(updates, customTasks, serverId);
     if (updates?.length > 0 && updates[0]?._cached) {

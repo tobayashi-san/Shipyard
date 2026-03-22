@@ -28,11 +28,18 @@ const USER_DEFAULTS = {
   canEditVars:   true,
   canDeleteVars: true,
   // Server actions
-  canUpdateServers:        true,
   canUseTerminal:          true,
   canManageDocker:         true,
-  canManageCustomUpdates:  true,
   canExportImportServers:  true,
+  // Updates
+  canViewUpdates:          true,
+  canRunUpdates:           true,
+  canRebootServers:        true,
+  // Custom update tasks
+  canViewCustomUpdates:    true,
+  canRunCustomUpdates:     true,
+  canEditCustomUpdates:    true,
+  canDeleteCustomUpdates:  true,
   // Misc
   canViewAudit: true,
 };
@@ -74,7 +81,8 @@ function filterPlugins(plugins, permissions) {
 
 function can(permissions, capability) {
   if (!permissions || permissions.full) return true;
-  return !!permissions[capability];
+  // Only deny if explicitly set to false — mirrors frontend hasCap() behaviour
+  return permissions[capability] !== false;
 }
 
 module.exports = { getPermissions, filterServers, filterPlaybooks, filterPlugins, can };

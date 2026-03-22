@@ -1157,10 +1157,8 @@ async function loadRolesTab() {
         { key: 'canAddServers',           label: 'Add servers' },
         { key: 'canEditServers',          label: 'Edit servers' },
         { key: 'canDeleteServers',        label: 'Delete servers' },
-        { key: 'canUpdateServers',        label: 'Run updates & reboot' },
         { key: 'canUseTerminal',          label: 'SSH terminal' },
         { key: 'canManageDocker',         label: 'Docker (logs, restart, compose)' },
-        { key: 'canManageCustomUpdates',  label: 'Custom update tasks' },
         { key: 'canExportImportServers',  label: 'Export / Import servers' },
       ]},
       { label: 'Playbooks', caps: [
@@ -1251,6 +1249,19 @@ async function loadRolesTab() {
             </div>
           </div>`,
         caps: capGroups.find(g => g.label === 'Playbooks')?.caps || [],
+      },
+      {
+        id: 'updates', label: 'Updates', icon: 'fa-arrow-up',
+        accessSection: '',
+        caps: [
+          { key: 'canViewUpdates',         label: 'View available updates' },
+          { key: 'canRunUpdates',           label: 'Run system update' },
+          { key: 'canRebootServers',        label: 'Reboot servers' },
+          { key: 'canViewCustomUpdates',    label: 'View custom update tasks' },
+          { key: 'canRunCustomUpdates',     label: 'Run / check custom tasks' },
+          { key: 'canEditCustomUpdates',    label: 'Add / edit custom tasks' },
+          { key: 'canDeleteCustomUpdates',  label: 'Delete custom tasks' },
+        ],
       },
       {
         id: 'schedules', label: 'Schedules', icon: 'fa-clock',

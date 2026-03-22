@@ -84,7 +84,7 @@ export async function renderServers() {
     <div id="bulk-bar" class="bulk-bar ${selectedIds.size === 0 ? 'hidden' : ''}">
       <span id="bulk-count" class="bulk-count">${t('srv.selected', { count: selectedIds.size })}</span>
       <div class="bulk-actions">
-        ${hasCap('canUpdateServers') ? `<button class="btn btn-secondary btn-sm" id="btn-bulk-update">
+        ${hasCap('canRunUpdates') ? `<button class="btn btn-secondary btn-sm" id="btn-bulk-update">
           <i class="fas fa-download"></i> ${t('srv.startUpdates')}
         </button>` : ''}
         ${hasCap('canRunPlaybooks') ? `<button class="btn btn-secondary btn-sm" id="btn-bulk-playbook">
