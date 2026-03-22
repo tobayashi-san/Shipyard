@@ -944,7 +944,7 @@ function openWorkspaceModal(ws) {
           <input class="form-input" id="ws-name" value="${esc(ws?.name||'')}" placeholder="production" required>
         </div>
         <div class="form-group">
-          <label class="form-label">Path (inside container)</label>
+          <label class="form-label">Path <span style="font-weight:400;color:var(--text-muted);font-size:12px;">(auto-filled, override if needed)</span></label>
           <input class="form-input text-mono" id="ws-path" value="${esc(ws?.path||'')}" placeholder="/workspaces/production" required>
           <div class="form-hint">Default volume: <code>/workspaces</code> — or bind-mount a host path in docker-compose.override.yml</div>
         </div>
@@ -991,6 +991,19 @@ function openWorkspaceModal(ws) {
 
   document.getElementById('ws-cancel').addEventListener('click', close);
   overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+  // Auto-fill path from name (only when creating, and only if user hasn't manually edited it)
+  if (!ws) {
+    const nameEl = document.getElementById('ws-name');
+    const pathEl = document.getElementById('ws-path');
+    let pathTouched = false;
+    pathEl.addEventListener('input', () => { pathTouched = true; });
+    nameEl.addEventListener('input', () => {
+      if (pathTouched) return;
+      const slug = nameEl.value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      pathEl.value = slug ? `/workspaces/${slug}` : '';
+    });
+  }
 
   document.getElementById('ws-scaffold')?.addEventListener('change', e => {
     document.getElementById('ws-scaffold-opts').style.display = e.target.checked ? 'block' : 'none';
