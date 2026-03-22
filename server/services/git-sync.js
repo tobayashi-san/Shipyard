@@ -249,11 +249,15 @@ async function pull() {
   if (!cfg.repoUrl) return { success: false, stderr: 'No repository configured' };
   if (!await isGitRepo()) return { success: false, stderr: 'Git workspace not initialized – run setup first' };
 
+  // Abort any in-progress rebase or merge before pulling
+  await runGit(['rebase', '--abort']).catch(() => {});
+  await runGit(['merge', '--abort']).catch(() => {});
+
   await applyGitIdentity();
   const authUrl = cfg.authToken ? buildAuthUrl(cfg.repoUrl, cfg.authToken) : cfg.repoUrl;
   await setRemote(authUrl);
 
-  const r = await runGit(['pull', '--rebase', 'origin', cfg.branch]);
+  const r = await runGit(['pull', '--no-rebase', '--no-edit', 'origin', cfg.branch]);
   if (r.success) syncFromWorkspace();
   return r;
 }
