@@ -1151,13 +1151,35 @@ async function loadRolesTab() {
     const checkedPbooks  = playbooksRestricted ? (p.playbooks || []) : [];
     const checkedPlugins = pluginsRestricted   ? (p.plugins   || []) : [];
 
-    const caps = [
-      { key: 'canManageServers',    label: 'Manage servers (add / edit / delete)' },
-      { key: 'canManagePlaybooks',  label: 'Edit playbooks' },
-      { key: 'canRunPlaybooks',     label: 'Run playbooks & schedules' },
-      { key: 'canManageSchedules',  label: 'Manage schedules' },
-      { key: 'canManageVars',       label: 'Manage Ansible variables' },
-      { key: 'canViewAudit',        label: 'View audit log' },
+    const capGroups = [
+      { label: 'Servers', caps: [
+        { key: 'canViewServers',   label: 'View servers' },
+        { key: 'canAddServers',    label: 'Add servers' },
+        { key: 'canEditServers',   label: 'Edit servers' },
+        { key: 'canDeleteServers', label: 'Delete servers' },
+      ]},
+      { label: 'Playbooks', caps: [
+        { key: 'canViewPlaybooks',   label: 'View playbooks' },
+        { key: 'canEditPlaybooks',   label: 'Create / edit playbooks' },
+        { key: 'canDeletePlaybooks', label: 'Delete playbooks' },
+        { key: 'canRunPlaybooks',    label: 'Run playbooks & ad-hoc' },
+      ]},
+      { label: 'Schedules', caps: [
+        { key: 'canViewSchedules',   label: 'View schedules' },
+        { key: 'canAddSchedules',    label: 'Add schedules' },
+        { key: 'canEditSchedules',   label: 'Edit schedules' },
+        { key: 'canDeleteSchedules', label: 'Delete schedules' },
+        { key: 'canToggleSchedules', label: 'Enable / disable schedules' },
+      ]},
+      { label: 'Variables', caps: [
+        { key: 'canViewVars',   label: 'View variables' },
+        { key: 'canAddVars',    label: 'Add variables' },
+        { key: 'canEditVars',   label: 'Edit variables' },
+        { key: 'canDeleteVars', label: 'Delete variables' },
+      ]},
+      { label: 'Other', caps: [
+        { key: 'canViewAudit', label: 'View audit log' },
+      ]},
     ];
 
     area.innerHTML = `
@@ -1250,13 +1272,21 @@ async function loadRolesTab() {
 
         <!-- Capabilities -->
         <div style="margin-bottom:16px;">
-          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px;">Capabilities</div>
-          <div style="display:flex;flex-direction:column;gap:6px;">
-            ${caps.map(c => `
-              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-                <input type="checkbox" class="rf-cap-chk" value="${esc(c.key)}" ${p[c.key] !== false ? 'checked' : ''}>
-                ${c.label}
-              </label>`).join('')}
+          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:10px;">Capabilities</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;">
+            ${capGroups.map(group => `
+              <div>
+                <div style="font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;display:flex;align-items:center;gap:6px;">
+                  ${group.label}
+                </div>
+                <div style="display:flex;flex-direction:column;gap:5px;">
+                  ${group.caps.map(c => `
+                    <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;">
+                      <input type="checkbox" class="rf-cap-chk" value="${esc(c.key)}" ${p[c.key] !== false ? 'checked' : ''}>
+                      ${c.label}
+                    </label>`).join('')}
+                </div>
+              </div>`).join('')}
           </div>
         </div>
 
@@ -1313,9 +1343,7 @@ async function loadRolesTab() {
         : [...area.querySelectorAll('.rf-pb-chk:checked')].map(c => c.value);
       permissions.plugins = (!pluginsMode || pluginsMode === 'all') ? 'all'
         : [...area.querySelectorAll('.rf-plugin-chk:checked')].map(c => c.value);
-      area.querySelectorAll('.rf-cap-chk').forEach(chk => {
-        permissions[chk.value] = chk.checked;
-      });
+      area.querySelectorAll('.rf-cap-chk').forEach(chk => { permissions[chk.value] = chk.checked; });
 
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner-sm"></span>';

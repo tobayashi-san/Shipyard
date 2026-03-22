@@ -283,8 +283,11 @@ db.exec(`
     const adminPerm = JSON.stringify({ full: true });
     const userPerm  = JSON.stringify({
       servers: 'all', playbooks: 'all', plugins: 'all',
-      canManageServers: true, canManagePlaybooks: true, canRunPlaybooks: true,
-      canManageSchedules: true, canManageVars: true, canViewAudit: true,
+      canViewServers: true, canAddServers: true, canEditServers: true, canDeleteServers: true,
+      canViewPlaybooks: true, canEditPlaybooks: true, canDeletePlaybooks: true, canRunPlaybooks: true,
+      canViewSchedules: true, canAddSchedules: true, canEditSchedules: true, canDeleteSchedules: true, canToggleSchedules: true,
+      canViewVars: true, canAddVars: true, canEditVars: true, canDeleteVars: true,
+      canViewAudit: true,
     });
     db.prepare(`INSERT OR IGNORE INTO roles (id, name, is_system, permissions) VALUES ('admin', 'Admin', 1, ?)`).run(adminPerm);
     db.prepare(`INSERT OR IGNORE INTO roles (id, name, is_system, permissions) VALUES ('user', 'User', 1, ?)`).run(userPerm);

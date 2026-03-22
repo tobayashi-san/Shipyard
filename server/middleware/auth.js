@@ -9,6 +9,16 @@ function adminOnly(req, res, next) {
   next();
 }
 
+function requireCap(capability) {
+  return (req, res, next) => {
+    const { getPermissions, can } = require('../utils/permissions');
+    if (!can(getPermissions(req.user), capability)) {
+      return res.status(403).json({ error: 'Permission denied' });
+    }
+    next();
+  };
+}
+
 const authMiddleware = function authMiddleware(req, res, next) {
   // Initial setup mode: no users AND no legacy password hash
   const userCount = db.users.count();
@@ -61,3 +71,4 @@ const authMiddleware = function authMiddleware(req, res, next) {
 
 module.exports = authMiddleware;
 module.exports.adminOnly = adminOnly;
+module.exports.requireCap = requireCap;

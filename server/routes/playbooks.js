@@ -28,7 +28,7 @@ function rotateBak(filepath) {
   fs.copyFileSync(filepath, `${filepath}.bak.1`);
 }
 
-const { getPermissions, filterPlaybooks } = require('../utils/permissions');
+const { getPermissions, filterPlaybooks, can } = require('../utils/permissions');
 
 // GET /api/playbooks - List all available playbooks
 router.get('/', (req, res) => {
@@ -54,7 +54,7 @@ router.get('/:filename', (req, res) => {
 });
 
 // POST /api/playbooks - Create or update a playbook
-router.post('/', (req, res) => {
+router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canEditPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
     const { filename, content } = req.body;
     if (!filename || !content) return res.status(400).json({ error: 'filename and content are required' });
@@ -139,7 +139,7 @@ router.post('/:filename/restore/:version', (req, res) => {
 });
 
 // DELETE /api/playbooks/:filename - Delete a playbook
-router.delete('/:filename', (req, res) => {
+router.delete('/:filename', (req, res, next) => { if (!can(getPermissions(req.user), 'canDeletePlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
     const filename = path.basename(req.params.filename);
     const INTERNAL = ['update.yml', 'gather-docker.yml', 'check-image-updates.yml', 'reboot.yml', 'setup-ssh.yml'];

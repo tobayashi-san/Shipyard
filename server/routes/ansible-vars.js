@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { getPermissions, can } = require('../utils/permissions');
 
 const MAX_KEY_LEN = 100;
 const MAX_VAL_LEN = 10000;
@@ -19,7 +20,7 @@ router.get('/', (req, res) => {
 });
 
 // POST /api/ansible-vars
-router.post('/', (req, res) => {
+router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAddVars')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   const { key, value, description } = req.body;
   const err = validateKey(key);
   if (err) return res.status(400).json({ error: err });
@@ -35,7 +36,7 @@ router.post('/', (req, res) => {
 });
 
 // PUT /api/ansible-vars/:id
-router.put('/:id', (req, res) => {
+router.put('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'canEditVars')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   const { key, value, description } = req.body;
   const err = validateKey(key);
   if (err) return res.status(400).json({ error: err });
@@ -52,7 +53,7 @@ router.put('/:id', (req, res) => {
 });
 
 // DELETE /api/ansible-vars/:id
-router.delete('/:id', (req, res) => {
+router.delete('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'canDeleteVars')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   db.ansibleVars.delete(req.params.id);
   res.json({ success: true });
 });

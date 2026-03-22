@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../db');
 const cron = require('node-cron');
 const scheduler = require('../services/scheduler');
+const { getPermissions, can } = require('../utils/permissions');
 
 // GET /api/schedules — list all
 router.get('/', (req, res) => {
@@ -18,7 +19,7 @@ router.get('/:id', (req, res) => {
 });
 
 // POST /api/schedules — create
-router.post('/', (req, res) => {
+router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAddSchedules')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   const { name, playbook, targets, cronExpression } = req.body;
   if (!name || !playbook || !cronExpression) {
     return res.status(400).json({ error: 'name, playbook, and cronExpression are required' });
@@ -38,7 +39,7 @@ router.post('/', (req, res) => {
 });
 
 // PUT /api/schedules/:id — update
-router.put('/:id', (req, res) => {
+router.put('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'canEditSchedules')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   const existing = db.schedules.getById(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Schedule not found' });
 
@@ -65,7 +66,7 @@ router.put('/:id', (req, res) => {
 });
 
 // POST /api/schedules/:id/toggle — toggle enabled
-router.post('/:id/toggle', (req, res) => {
+router.post('/:id/toggle', (req, res, next) => { if (!can(getPermissions(req.user), 'canToggleSchedules')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   const existing = db.schedules.getById(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Schedule not found' });
 
@@ -76,7 +77,7 @@ router.post('/:id/toggle', (req, res) => {
 });
 
 // DELETE /api/schedules/:id
-router.delete('/:id', (req, res) => {
+router.delete('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'canDeleteSchedules')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   const existing = db.schedules.getById(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Schedule not found' });
 

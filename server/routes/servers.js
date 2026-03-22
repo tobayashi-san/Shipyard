@@ -11,7 +11,7 @@ function parseServer(s) {
   return { ...s, tags: JSON.parse(s.tags || '[]'), services: JSON.parse(s.services || '[]') };
 }
 
-const { getPermissions, filterServers } = require('../utils/permissions');
+const { getPermissions, filterServers, can } = require('../utils/permissions');
 
 // GET /api/servers - List all servers
 router.get('/', (req, res) => {
@@ -191,7 +191,7 @@ router.get('/:id', (req, res) => {
 });
 
 // POST /api/servers - Add a new server
-router.post('/', (req, res) => {
+router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAddServers')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
     const { name, hostname, ip_address, ssh_port, ssh_user, tags, services } = req.body;
     if (!name || !ip_address) {
@@ -214,7 +214,7 @@ router.post('/', (req, res) => {
 });
 
 // PUT /api/servers/:id - Update server
-router.put('/:id', (req, res) => {
+router.put('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'canEditServers')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
     const existing = db.servers.getById(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Server not found' });
@@ -236,7 +236,7 @@ router.put('/:id', (req, res) => {
 });
 
 // DELETE /api/servers/:id - Delete server
-router.delete('/:id', (req, res) => {
+router.delete('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'canDeleteServers')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
     const server = db.servers.getById(req.params.id);
     if (!server) return res.status(404).json({ error: 'Server not found' });

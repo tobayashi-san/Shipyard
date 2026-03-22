@@ -6,11 +6,28 @@ const USER_DEFAULTS = {
   servers: 'all',
   playbooks: 'all',
   plugins: 'all',
-  canManageServers: true,
-  canManagePlaybooks: true,
-  canRunPlaybooks: true,
-  canManageSchedules: true,
-  canManageVars: true,
+  // Servers
+  canViewServers:    true,
+  canAddServers:     true,
+  canEditServers:    true,
+  canDeleteServers:  true,
+  // Playbooks
+  canViewPlaybooks:   true,
+  canEditPlaybooks:   true,
+  canDeletePlaybooks: true,
+  canRunPlaybooks:    true,
+  // Schedules
+  canViewSchedules:   true,
+  canAddSchedules:    true,
+  canEditSchedules:   true,
+  canDeleteSchedules: true,
+  canToggleSchedules: true,
+  // Variables
+  canViewVars:   true,
+  canAddVars:    true,
+  canEditVars:   true,
+  canDeleteVars: true,
+  // Misc
   canViewAudit: true,
 };
 
