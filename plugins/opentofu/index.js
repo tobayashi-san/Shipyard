@@ -17,18 +17,25 @@ const _running = new Map();
 // ── Tofu <-> Git workspace sync ────────────────────────────────────────────
 const GIT_WORKSPACE_DIR = path.resolve(path.join(__dirname, '..', '..', 'server', 'data', 'git-workspace'));
 const TOFU_SUBDIR       = 'tofu';
-const TOFU_EXTENSIONS   = ['.tf', '.tfvars', '.tfvars.json', '.auto.tfvars'];
+// Only .tf files are synced to git — .tfvars may contain secrets
+const TOFU_EXTENSIONS   = ['.tf'];
 
 function tofuGitDir(workspaceName) {
   return path.join(GIT_WORKSPACE_DIR, TOFU_SUBDIR, workspaceName);
 }
+
+// Patterns that are never synced to git regardless of workspace .gitignore
+const NEVER_SYNC = ['.tfvars', '.tfvars.json', '.auto.tfvars', '.tfstate', '.tfstate.backup'];
 
 function syncOneToGit(name, wsPath) {
   if (!fs.existsSync(wsPath)) return;
   const destDir = tofuGitDir(name);
   fs.mkdirSync(destDir, { recursive: true });
   const srcFiles = new Set(
-    fs.readdirSync(wsPath).filter(f => TOFU_EXTENSIONS.some(e => f.endsWith(e)))
+    fs.readdirSync(wsPath).filter(f =>
+      (f === '.gitignore' || TOFU_EXTENSIONS.some(e => f.endsWith(e))) &&
+      !NEVER_SYNC.some(e => f.endsWith(e))
+    )
   );
   for (const f of srcFiles) fs.copyFileSync(path.join(wsPath, f), path.join(destDir, f));
   // Remove from git dir what no longer exists locally
@@ -381,6 +388,23 @@ ${providerCfg?.extra_variables || ''}`;
 # }
 `;
 
+    const gitignore = `# Secret variable files — never commit these
+*.tfvars
+*.tfvars.json
+*.auto.tfvars
+
+# OpenTofu / Terraform state and cache
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.backup
+*.tfstate.*.backup
+crash.log
+override.tf
+override.tf.json
+`;
+
+    fs.writeFileSync(path.join(wsPath, '.gitignore'), gitignore);
     fs.writeFileSync(path.join(wsPath, 'main.tf'), mainTf);
     fs.writeFileSync(path.join(wsPath, 'variables.tf'), variablesTf);
     fs.writeFileSync(path.join(wsPath, 'outputs.tf'), outputsTf);
