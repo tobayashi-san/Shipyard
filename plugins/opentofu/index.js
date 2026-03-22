@@ -15,7 +15,7 @@ function getGitSync() {
 const _running = new Map();
 
 // ── Tofu <-> Git workspace sync ────────────────────────────────────────────
-const GIT_WORKSPACE_DIR = path.resolve(path.join(__dirname, '..', '..', 'server', 'git-workspace'));
+const GIT_WORKSPACE_DIR = path.resolve(path.join(__dirname, '..', '..', 'server', 'data', 'git-workspace'));
 const TOFU_SUBDIR       = 'tofu';
 const TOFU_EXTENSIONS   = ['.tf', '.tfvars', '.tfvars.json', '.auto.tfvars'];
 
@@ -132,6 +132,12 @@ function register({ router, db, broadcast }) {
   `).run();
 
   syncPathsFile();
+
+  // ── Register git sync hook so tofu files are included in push/status ─────
+  const gs = getGitSync();
+  if (gs?.registerSyncHook) {
+    gs.registerSyncHook(() => syncAllToGit(getAllWorkspaces()));
+  }
 
   // ── Binary detection (cached) ────────────────────────────────────────────
   let _cachedBinary  = undefined;

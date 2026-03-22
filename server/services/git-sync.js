@@ -29,6 +29,11 @@ const PLAYBOOKS_SUBDIR = 'playbooks';
 // Path to temp SSH key file – written once, reused, cleaned on exit
 let _tmpKeyPath = null;
 
+// Plugins can register sync hooks that run before every push/status check
+const _syncHooks = [];
+function registerSyncHook(fn) { _syncHooks.push(fn); }
+function runSyncHooks() { for (const fn of _syncHooks) { try { fn(); } catch {} } }
+
 // ── Config ────────────────────────────────────────────────────
 
 function getConfig() {
@@ -178,7 +183,8 @@ function syncFromWorkspace() {
 async function getStatus() {
   if (!await isGitRepo()) return { initialized: false };
 
-  // Sync playbooks into workspace first so status reflects actual file state
+  // Sync all sources into workspace so status reflects actual file state
+  runSyncHooks();
   try { syncToWorkspace(); } catch {}
 
   const cfg = getConfig();
@@ -284,6 +290,7 @@ async function push(message) {
   await applyGitIdentity();
 
   // Auto-commit any pending changes before pushing
+  runSyncHooks();
   syncToWorkspace();
   await runGit(['add', '-A']);
   const statusR = await runGit(['status', '--porcelain']);
@@ -412,4 +419,4 @@ process.on('exit', () => {
   }
 });
 
-module.exports = { getConfig, isConfigured, getStatus, getLog, getBranches, checkout, pull, commit, push, autoPull, autoPush, setup };
+module.exports = { getConfig, isConfigured, getStatus, getLog, getBranches, checkout, pull, commit, push, autoPull, autoPush, setup, registerSyncHook };
