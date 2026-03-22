@@ -14,11 +14,26 @@
       register: running_services
       changed_when: false
 
-    - name: Get upgradable packages count
+    - name: Get upgradable packages count (Debian/Ubuntu)
       shell: "apt list --upgradable 2>/dev/null | grep -c upgradable || echo 0"
       register: upgradable_count
       changed_when: false
       failed_when: false
+      when: ansible_os_family == "Debian"
+
+    - name: Get upgradable packages count (RHEL/CentOS)
+      shell: "dnf check-update --quiet 2>/dev/null | grep -cE '^[a-zA-Z]' || echo 0"
+      register: upgradable_count
+      changed_when: false
+      failed_when: false
+      when: ansible_os_family == "RedHat"
+
+    - name: Get upgradable packages count (Arch)
+      shell: "checkupdates 2>/dev/null | wc -l || echo 0"
+      register: upgradable_count
+      changed_when: false
+      failed_when: false
+      when: ansible_os_family == "Archlinux"
 
     - name: Check if reboot is required
       stat:

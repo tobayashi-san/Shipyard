@@ -45,7 +45,6 @@ function getPollingConfig() {
 }
 
 let lastInfoPollTime = 0;
-let getClientCount = () => 0; // injected from index.js
 
 function runNow(pollFn, label) {
   pollFn().catch(err => console.error(`[Poller] ${label} error:`, err.message));
@@ -334,4 +333,4 @@ function stopPolling() {
   if (customUpdatesPoller)  { clearInterval(customUpdatesPoller);  customUpdatesPoller = null; }
 }
 
-module.exports = { init, register, unregister, reload, startPolling, stopPolling, restartPolling, onClientConnect, checkCustomTask, getPollingConfig, DEFAULTS, setClientCountFn: fn => { getClientCount = fn; } };
+module.exports = { init, register, unregister, reload, startPolling, stopPolling, restartPolling, onClientConnect, checkCustomTask, getPollingConfig, DEFAULTS };

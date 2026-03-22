@@ -2,11 +2,7 @@ import { api } from '../api.js';
 import { state, navigate } from '../main.js';
 import { showToast, showConfirm } from './toast.js';
 import { t } from '../i18n.js';
-import { formatDateTimeShort } from '../utils/format.js';
-
-function esc(s) {
-  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
+import { formatDateTimeShort, esc } from '../utils/format.js';
 import { EditorView, basicSetup } from 'codemirror';
 import { yaml } from '@codemirror/lang-yaml';
 import { EditorState } from '@codemirror/state';
@@ -522,9 +518,9 @@ async function loadScheduleList() {
                     style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent);">
                 </label>
               </td>
-              <td style="font-weight:500;">${s.name}</td>
-              <td class="text-mono" style="font-size:12px;">${s.playbook}</td>
-              <td>${s.targets || 'all'}</td>
+              <td style="font-weight:500;">${esc(s.name)}</td>
+              <td class="text-mono" style="font-size:12px;">${esc(s.playbook)}</td>
+              <td>${esc(s.targets || 'all')}</td>
               <td style="font-size:12px;">${cronLabel(s.cron_expression)}</td>
               <td>
                 ${s.last_run
@@ -736,13 +732,13 @@ async function openScheduleDialog(editId) {
         <form id="schedule-form">
           <div class="form-group">
             <label class="form-label">${t('sc.name')}</label>
-            <input class="form-input" type="text" id="sched-name" placeholder="${t('sc.namePlaceholder')}" value="${existing?.name || ''}" required>
+            <input class="form-input" type="text" id="sched-name" placeholder="${t('sc.namePlaceholder')}" value="${esc(existing?.name || '')}" required>
           </div>
           <div class="form-group">
             <label class="form-label">${t('sc.playbook')}</label>
             <select class="form-input" id="sched-playbook" required>
               <option value="">${t('sc.selectPlaybook')}</option>
-              ${playbooks.map(p => `<option value="${p.filename}" ${existing?.playbook === p.filename ? 'selected' : ''}>${p.description} (${p.filename})</option>`).join('')}
+              ${playbooks.map(p => `<option value="${esc(p.filename)}" ${existing?.playbook === p.filename ? 'selected' : ''}>${esc(p.description)} (${esc(p.filename)})</option>`).join('')}
             </select>
           </div>
           <div class="form-group">
@@ -775,7 +771,7 @@ async function openScheduleDialog(editId) {
             <label class="form-label">${t('sc.dayOfMonth')}</label>
             <input class="form-input" type="number" id="sched-monthday" min="1" max="28"
               value="${parsed.monthday}" placeholder="1–28">
-            <div class="form-hint">1–28 (Tag 29–31 existiert nicht in jedem Monat)</div>
+            <div class="form-hint">${t('common.dayHint')}</div>
           </div>
           <div class="form-actions">
             <button type="button" class="btn btn-secondary" id="sched-cancel">${t('common.cancel')}</button>

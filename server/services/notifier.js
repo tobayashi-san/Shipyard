@@ -88,16 +88,17 @@ async function sendEmail(title, message, success) {
     port,
     secure,
     auth: user ? { user, pass } : undefined,
-    tls: { rejectUnauthorized: false },
+    tls: { rejectUnauthorized: !secure },
   });
 
+  function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   const icon = success ? '✅' : '❌';
   await transporter.sendMail({
     from,
     to,
     subject: `${icon} ${title}`,
     text: `${title}\n\n${message}`,
-    html: `<p><strong>${icon} ${title}</strong></p><p>${message.replace(/\n/g, '<br>')}</p>`,
+    html: `<p><strong>${icon} ${escHtml(title)}</strong></p><p>${escHtml(message).replace(/\n/g, '<br>')}</p>`,
   });
 }
 

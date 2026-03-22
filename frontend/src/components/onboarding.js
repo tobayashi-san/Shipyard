@@ -1,10 +1,7 @@
 import { api } from '../api.js';
 import { showToast } from './toast.js';
 import { t } from '../i18n.js';
-
-function esc(s) {
-  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
+import { esc } from '../utils/format.js';
 
 const STEPS = 5;
 

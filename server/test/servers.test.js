@@ -25,8 +25,8 @@ app.use('/api/servers', serversRouter);
 let token;
 
 before(async () => {
-  await request(app).post('/api/auth/setup').send({ password: 'testpass123' });
-  const { body } = await request(app).post('/api/auth/login').send({ password: 'testpass123' });
+  await request(app).post('/api/auth/setup').send({ password: 'testpass12345' });
+  const { body } = await request(app).post('/api/auth/login').send({ password: 'testpass12345' });
   token = body.token;
 });
 

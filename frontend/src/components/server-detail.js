@@ -4,11 +4,7 @@ import { showToast, showConfirm } from './toast.js';
 import { showAddServerModal } from './add-server-modal.js';
 import { openSshTerminal } from './ssh-terminal.js';
 import { t } from '../i18n.js';
-import { formatDateTimeFull } from '../utils/format.js';
-
-function esc(s) {
-  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
+import { formatDateTimeFull, esc } from '../utils/format.js';
 
 // Docker returns CreatedAt as "2025-01-15 10:23:45 +0000 UTC" which new Date() can't parse
 function parseContainerDate(d) {
@@ -884,7 +880,7 @@ function showCustomTaskModal(serverId, task) {
       update_command: document.getElementById('ctm-update-cmd').value.trim(),
     };
     if (!data.name || !data.update_command) {
-      showToast(t('common.errorPrefix', { msg: 'Name und Update-Befehl sind erforderlich' }), 'error');
+      showToast(t('common.errorPrefix', { msg: t('common.nameAndCmdRequired') }), 'error');
       return;
     }
     try {
@@ -1027,7 +1023,7 @@ async function setupNotesTab(serverId) {
     const { notes } = await api.getServerNotes(serverId);
     textarea.value = notes;
   } catch {
-    if (status) { status.textContent = 'Laden fehlgeschlagen'; status.className = 'notes-saved-indicator error'; }
+    if (status) { status.textContent = t('common.loadFailed'); status.className = 'notes-saved-indicator error'; }
   }
   textarea.focus();
 

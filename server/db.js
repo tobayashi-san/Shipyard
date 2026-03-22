@@ -172,8 +172,12 @@ db.exec(`
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);`);
 
-// Helper: silently ignore "column already exists" migration errors
-function migrate(sql) { try { db.exec(sql); } catch {} }
+// Helper: silently ignore "duplicate column" migration errors, rethrow others
+function migrate(sql) {
+  try { db.exec(sql); } catch (e) {
+    if (!e.message || !e.message.includes('duplicate column')) throw e;
+  }
+}
 
 // Migrations
 migrate('ALTER TABLE server_info ADD COLUMN reboot_required BOOLEAN DEFAULT 0;');
@@ -182,6 +186,29 @@ migrate('ALTER TABLE docker_containers ADD COLUMN compose_project TEXT;');
 migrate('ALTER TABLE docker_containers ADD COLUMN compose_working_dir TEXT;');
 migrate('ALTER TABLE server_info ADD COLUMN cpu_usage_pct REAL DEFAULT NULL;');
 migrate('ALTER TABLE servers ADD COLUMN group_id TEXT;');
+
+// Remove FK constraint from update_history so bulk/ansible operations can store targets
+try {
+  const hasFk = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='update_history'").get();
+  if (hasFk && hasFk.sql && hasFk.sql.includes('FOREIGN KEY')) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS update_history_new (
+        id TEXT PRIMARY KEY,
+        server_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        output TEXT,
+        started_at TEXT DEFAULT (datetime('now')),
+        completed_at TEXT
+      );
+      INSERT OR IGNORE INTO update_history_new SELECT * FROM update_history;
+      DROP TABLE update_history;
+      ALTER TABLE update_history_new RENAME TO update_history;
+      CREATE INDEX IF NOT EXISTS idx_update_history_server_id  ON update_history(server_id);
+      CREATE INDEX IF NOT EXISTS idx_update_history_started_at ON update_history(started_at);
+    `);
+  }
+} catch {}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS server_groups (

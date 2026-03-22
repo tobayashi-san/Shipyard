@@ -1,10 +1,20 @@
+function findMatchingBracket(str, start) {
+  let depth = 0;
+  for (let i = start; i < str.length; i++) {
+    if (str[i] === '[') depth++;
+    else if (str[i] === ']') { depth--; if (depth === 0) return i; }
+  }
+  return -1;
+}
+
 function parseImageUpdateOutput(stdout) {
-  const jsonStart = stdout.indexOf('"msg": [');
-  if (jsonStart === -1) return [];
-  const jsonEnd = stdout.indexOf(']', jsonStart);
+  const marker = stdout.indexOf('"msg": [');
+  if (marker === -1) return [];
+  const arrayStart = stdout.indexOf('[', marker);
+  const jsonEnd = findMatchingBracket(stdout, arrayStart);
   if (jsonEnd === -1) return [];
   try {
-    return JSON.parse(stdout.substring(jsonStart + 7, jsonEnd + 1))
+    return JSON.parse(stdout.substring(arrayStart, jsonEnd + 1))
       .filter(line => line && line.includes('|'))
       .map(line => {
         const [image, status] = line.split('|');

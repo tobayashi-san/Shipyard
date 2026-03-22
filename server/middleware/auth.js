@@ -1,10 +1,6 @@
 const jwt = require('jsonwebtoken');
 const db = require('../db');
-
-function getJwtSecret() {
-  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
-  return db.settings.get('auth_jwt_secret');
-}
+const { getJwtSecret } = require('../utils/jwt-secret');
 
 module.exports = function authMiddleware(req, res, next) {
   // If no password has been configured yet, allow all requests (initial setup mode)

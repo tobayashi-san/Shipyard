@@ -1,11 +1,7 @@
 import { api } from '../api.js';
 import { state, navigate } from '../main.js';
 import { t } from '../i18n.js';
-import { formatCurrentTime, formatDateTimeShort } from '../utils/format.js';
-
-function esc(s) {
-  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
+import { formatCurrentTime, formatDateTimeShort, esc } from '../utils/format.js';
 
 // Called by background poller — only refreshes data, never rebuilds page shell
 export async function refreshDashboardData() {
@@ -221,19 +217,6 @@ function updatesCell(s) {
   if (parts.length === 0)
     return `<span style="color:var(--online);font-size:13px;" title="${t('dash.allClear')}"><i class="fas fa-check-circle"></i></span>`;
   return `<span class="badge badge-warning" style="font-size:11px;display:inline-flex;gap:8px;align-items:center;">${parts.join('')}</span>`;
-}
-
-function imageUpdatesCell(s) {
-  if (s.image_updates_count === null) {
-    return `<span style="color:var(--text-muted);font-size:11px;" title="${t('dash.imageUpdatesNeverChecked')}">–</span>`;
-  }
-  const checkedAt = s.image_updates_checked_at
-    ? t('dash.imageUpdatesCheckedAt', { time: formatDateTimeShort(s.image_updates_checked_at) })
-    : '';
-  if (s.image_updates_count > 0) {
-    return `<span class="badge badge-warning" style="font-size:10px;" title="${checkedAt}"><i class="fas fa-cube"></i> ${s.image_updates_count}</span>`;
-  }
-  return `<span style="color:var(--text-muted);font-size:11px;" title="${checkedAt}"><i class="fas fa-check" style="color:var(--online);"></i></span>`;
 }
 
 function formatUptime(seconds) {

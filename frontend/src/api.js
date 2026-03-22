@@ -24,7 +24,7 @@ class ApiClient {
     const headers = { 'Content-Type': 'application/json' };
     if (this._token) headers['Authorization'] = `Bearer ${this._token}`;
 
-    const config = { headers, ...options };
+    const config = { ...options, headers: { ...options.headers, ...headers } };
     if (config.body && typeof config.body === 'object') {
       config.body = JSON.stringify(config.body);
     }
@@ -47,6 +47,7 @@ class ApiClient {
       throw new Error(errMsg);
     }
 
+    if (response.status === 204) return null;
     return response.json();
   }
 

@@ -3,10 +3,7 @@ import { state } from '../main.js';
 import { showToast, showConfirm } from './toast.js';
 import { renderLogin } from './login.js';
 import { t } from '../i18n.js';
-
-function esc(s) {
-  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
+import { esc } from '../utils/format.js';
 
 // ============================================================
 // White-label config (stored in DB via API)
@@ -959,7 +956,7 @@ async function loadPollingConfig() {
     });
 
   } catch (err) {
-    el.innerHTML = `<div style="padding:16px;color:var(--offline);font-size:13px;">${err.message}</div>`;
+    el.innerHTML = `<div style="padding:16px;color:var(--offline);font-size:13px;">${esc(err.message)}</div>`;
   }
 }
 
@@ -996,7 +993,7 @@ async function loadAnsibleStatus() {
       </div>` : ''}
     `;
   } catch (error) {
-    el.innerHTML = `<div class="settings-row" style="border-bottom:none;padding:16px 28px;color:var(--offline);font-size:13px;">${error.message}</div>`;
+    el.innerHTML = `<div class="settings-row" style="border-bottom:none;padding:16px 28px;color:var(--offline);font-size:13px;">${esc(error.message)}</div>`;
   }
 }
 
@@ -1143,7 +1140,7 @@ async function loadPluginsList() {
     state.plugins  = plugins;
     await render(plugins);
   } catch (e) {
-    el.innerHTML = `<div style="padding:16px;color:var(--offline);font-size:13px;">${e.message}</div>`;
+    el.innerHTML = `<div style="padding:16px;color:var(--offline);font-size:13px;">${esc(e.message)}</div>`;
   }
 
   // Reload button

@@ -106,7 +106,8 @@ app.get('/api/health', (req, res) => {
 });
 
 // Auth – mount BEFORE the auth middleware so login/setup routes are always reachable
-const { router: authRouter, getJwtSecret } = require('./routes/auth');
+const { router: authRouter } = require('./routes/auth');
+const { getJwtSecret } = require('./utils/jwt-secret');
 const authMiddleware = require('./middleware/auth');
 app.use('/api/auth', authRouter);
 
@@ -626,7 +627,7 @@ const clients = new Set();
 function verifyWsAuth(ws, url) {
   const passwordHash = db.settings.get('auth_password_hash');
   if (!passwordHash) return true;
-  const secret = process.env.JWT_SECRET || db.settings.get('auth_jwt_secret');
+  const secret = getJwtSecret();
   try { jwt.verify(url.searchParams.get('token'), secret); return true; }
   catch { ws.close(4001, 'Unauthorized'); return false; }
 }
@@ -681,7 +682,6 @@ server.listen(PORT, () => {
 
   // Start scheduler and background polling after server is listening
   const scheduler = require('./services/scheduler');
-  scheduler.setClientCountFn(() => clients.size);
   scheduler.init(broadcast);
   scheduler.startPolling();
 

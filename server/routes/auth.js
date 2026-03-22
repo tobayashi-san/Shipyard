@@ -8,6 +8,7 @@ const otplib = require('otplib');
 const QRCode = require('qrcode');
 const db = require('../db');
 const authMiddleware = require('../middleware/auth');
+const { getJwtSecret } = require('../utils/jwt-secret');
 
 const isTest = process.env.NODE_ENV === 'test';
 
@@ -29,19 +30,8 @@ const changeLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-function getJwtSecret() {
-  // Prefer environment variable – avoids storing the secret in the DB at rest
-  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
-  let secret = db.settings.get('auth_jwt_secret');
-  if (!secret) {
-    secret = crypto.randomBytes(64).toString('hex');
-    db.settings.set('auth_jwt_secret', secret);
-  }
-  return secret;
-}
-
 function verifyTotp(code, secret) {
-  return otplib.verifySync({ token: String(code).replace(/\s/g, ''), secret, type: 'totp' }).valid;
+  return otplib.authenticator.check(String(code).replace(/\s/g, ''), secret);
 }
 
 function makeToken() {
@@ -161,12 +151,12 @@ router.get('/totp/status', authMiddleware, (req, res) => {
 // POST /api/auth/totp/setup – generate a new TOTP secret and return QR code
 router.post('/totp/setup', authMiddleware, async (req, res) => {
   try {
-    const secret = otplib.generateSecret();
+    const secret = otplib.authenticator.generateSecret();
     // Store temporarily – only persisted after /totp/confirm
     db.settings.set('totp_secret_pending', secret);
 
     const appName = db.settings.get('wl_app_name') || 'Shipyard';
-    const otpauthUrl = otplib.generateURI({ label: 'admin', issuer: appName, secret, type: 'totp' });
+    const otpauthUrl = otplib.authenticator.keyuri('admin', appName, secret);
     const qrDataUrl = await QRCode.toDataURL(otpauthUrl);
 
     res.json({ secret, otpauthUrl, qrDataUrl });
@@ -202,4 +192,4 @@ router.delete('/totp', authMiddleware, (req, res) => {
   res.json({ success: true });
 });
 
-module.exports = { router, getJwtSecret };
+module.exports = { router };

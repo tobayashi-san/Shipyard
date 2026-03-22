@@ -175,11 +175,15 @@ Environment=SSL_CERT=${SSL_CERT_ENV}"
     START_URL="https://localhost:443"
   fi
 
-  SECRET_ENV_LINES=""
-  if [ -n "$JWT_SECRET_VAL" ]; then
-    SECRET_ENV_LINES="Environment=JWT_SECRET=${JWT_SECRET_VAL}
-Environment=SHIPYARD_KEY_SECRET=${KEY_SECRET_VAL}"
-  fi
+  ENV_FILE="/etc/shipyard/env"
+  sudo mkdir -p /etc/shipyard
+  {
+    echo "NODE_ENV=production"
+    [ -n "$SSL_KEY_ENV" ] && echo "SSL_KEY=${SSL_KEY_ENV}" && echo "SSL_CERT=${SSL_CERT_ENV}"
+    [ -n "$JWT_SECRET_VAL" ] && echo "JWT_SECRET=${JWT_SECRET_VAL}" && echo "SHIPYARD_KEY_SECRET=${KEY_SECRET_VAL}"
+  } | sudo tee "$ENV_FILE" > /dev/null
+  sudo chmod 600 "$ENV_FILE"
+  sudo chown root:root "$ENV_FILE"
 
   sudo tee "$SERVICE_FILE" > /dev/null << SERVICE
 [Unit]
@@ -192,9 +196,7 @@ User=${SERVICE_USER}
 WorkingDirectory=${INSTALL_DIR}
 ExecStart=$(which node) ${INSTALL_DIR}/server/index.js
 Restart=on-failure
-Environment=NODE_ENV=production
-${HTTPS_ENV_LINES}
-${SECRET_ENV_LINES}
+EnvironmentFile=${ENV_FILE}
 
 [Install]
 WantedBy=multi-user.target
@@ -209,10 +211,13 @@ SERVICE
   echo "  sudo systemctl status shipyard"
 else
   echo ""
-  echo "✓ Build complete. Start manually with:"
-  CMD="NODE_ENV=production"
-  [ -n "$SSL_KEY_ENV" ] && CMD="$CMD SSL_KEY=$SSL_KEY_ENV SSL_CERT=$SSL_CERT_ENV"
-  [ -n "$JWT_SECRET_VAL" ] && CMD="$CMD JWT_SECRET=$JWT_SECRET_VAL SHIPYARD_KEY_SECRET=$KEY_SECRET_VAL"
-  CMD="$CMD node $INSTALL_DIR/server/index.js"
-  echo "  $CMD"
+  ENV_FILE="$INSTALL_DIR/.env"
+  {
+    echo "NODE_ENV=production"
+    [ -n "$SSL_KEY_ENV" ] && echo "SSL_KEY=${SSL_KEY_ENV}" && echo "SSL_CERT=${SSL_CERT_ENV}"
+    [ -n "$JWT_SECRET_VAL" ] && echo "JWT_SECRET=${JWT_SECRET_VAL}" && echo "SHIPYARD_KEY_SECRET=${KEY_SECRET_VAL}"
+  } > "$ENV_FILE"
+  chmod 600 "$ENV_FILE"
+  echo "✓ Build complete. Secrets saved to $ENV_FILE (mode 600)"
+  echo "  Start with: env \$(cat $ENV_FILE | xargs) node $INSTALL_DIR/server/index.js"
 fi

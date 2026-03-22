@@ -191,13 +191,13 @@ router.put('/:id', (req, res) => {
 
     const { name, hostname, ip_address, ssh_port, ssh_user, tags, services } = req.body;
     const server = db.servers.update(req.params.id, {
-      name: name || existing.name,
-      hostname: hostname || existing.hostname,
-      ip_address: ip_address || existing.ip_address,
-      ssh_port: ssh_port || existing.ssh_port,
-      ssh_user: ssh_user || existing.ssh_user,
-      tags: tags || JSON.parse(existing.tags || '[]'),
-      services: services || JSON.parse(existing.services || '[]'),
+      name: name ?? existing.name,
+      hostname: hostname ?? existing.hostname,
+      ip_address: ip_address ?? existing.ip_address,
+      ssh_port: ssh_port ?? existing.ssh_port,
+      ssh_user: ssh_user ?? existing.ssh_user,
+      tags: tags ?? JSON.parse(existing.tags || '[]'),
+      services: services ?? JSON.parse(existing.services || '[]'),
     });
     res.json(parseServer(server));
   } catch (error) {
@@ -364,11 +364,16 @@ function buildDockerResponse(serverId) {
 async function refreshDockerCache(server) {
   const result = await ansibleRunner.runPlaybook('gather-docker.yml', server.name);
   if (!result.success) return;
-  const jsonStart = result.stdout.indexOf('"msg": [');
-  if (jsonStart === -1) return;
-  const jsonEnd = result.stdout.indexOf(']', jsonStart);
+  const marker = result.stdout.indexOf('"msg": [');
+  if (marker === -1) return;
+  const arrayStart = result.stdout.indexOf('[', marker);
+  let depth = 0, jsonEnd = -1;
+  for (let i = arrayStart; i < result.stdout.length; i++) {
+    if (result.stdout[i] === '[') depth++;
+    else if (result.stdout[i] === ']') { depth--; if (depth === 0) { jsonEnd = i; break; } }
+  }
   if (jsonEnd === -1) return;
-  const jsonStr = result.stdout.substring(jsonStart + 7, jsonEnd + 1);
+  const jsonStr = result.stdout.substring(arrayStart, jsonEnd + 1);
   try {
     const containers = JSON.parse(jsonStr).filter(line => line.trim()).map(line => {
       const parts = line.split('|');

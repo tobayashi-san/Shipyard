@@ -4,10 +4,7 @@ import { showToast, showConfirm, showPrompt } from './toast.js';
 import { showAddServerModal } from './add-server-modal.js';
 import { showRunPlaybookModal } from './run-playbook-modal.js';
 import { t } from '../i18n.js';
-
-function esc(s) {
-  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
+import { esc } from '../utils/format.js';
 
 // Selection state – survives soft re-renders within the same page visit
 let selectedIds = new Set();
@@ -415,13 +412,20 @@ function attachEvents() {
     }
   });
 
+  // ── Visible servers helper (respects groups/pagination) ──
+  function getVisibleServers() {
+    const filtered = activeTag ? state.servers.filter(s => (s.tags || []).includes(activeTag)) : state.servers;
+    if (serverGroups.length > 0) return filtered;
+    return filtered.slice((serverPage - 1) * PAGE_SIZE, serverPage * PAGE_SIZE);
+  }
+
   // ── Select all (current page) ─────────────────────────────
   document.getElementById('select-all')?.addEventListener('change', e => {
-    const pageSvrs = state.servers.slice((serverPage - 1) * PAGE_SIZE, serverPage * PAGE_SIZE);
+    const visible = getVisibleServers();
     if (e.target.checked) {
-      pageSvrs.forEach(s => selectedIds.add(s.id));
+      visible.forEach(s => selectedIds.add(s.id));
     } else {
-      pageSvrs.forEach(s => selectedIds.delete(s.id));
+      visible.forEach(s => selectedIds.delete(s.id));
     }
     updateBulkBar();
     document.querySelectorAll('.server-checkbox').forEach(cb => {
@@ -436,12 +440,12 @@ function attachEvents() {
       if (e.target.checked) selectedIds.add(id);
       else selectedIds.delete(id);
       updateBulkBar();
-      const pageSvrs = state.servers.slice((serverPage - 1) * PAGE_SIZE, serverPage * PAGE_SIZE);
+      const visible = getVisibleServers();
       const selectAll = document.getElementById('select-all');
       if (selectAll) {
-        const pageSelected = pageSvrs.filter(s => selectedIds.has(s.id)).length;
-        selectAll.checked = pageSelected === pageSvrs.length;
-        selectAll.indeterminate = pageSelected > 0 && pageSelected < pageSvrs.length;
+        const pageSelected = visible.filter(s => selectedIds.has(s.id)).length;
+        selectAll.checked = pageSelected === visible.length;
+        selectAll.indeterminate = pageSelected > 0 && pageSelected < visible.length;
       }
     });
   });

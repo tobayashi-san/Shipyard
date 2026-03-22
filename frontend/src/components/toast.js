@@ -1,4 +1,5 @@
 import { t } from '../i18n.js';
+import { esc } from '../utils/format.js';
 
 let toastContainer = null;
 
@@ -56,7 +57,7 @@ export function showConfirm(message, { title = '', confirmText = '', danger = fa
     overlay.innerHTML = `
       <div class="modal" style="max-width:420px;">
         <div class="modal-header">
-          <h3 class="modal-title">${resolvedTitle}</h3>
+          <h3 class="modal-title">${esc(resolvedTitle)}</h3>
         </div>
         <div class="modal-body">
           <p style="margin:0;font-size:14px;line-height:1.6;">${message}</p>
@@ -93,11 +94,11 @@ export function showPrompt(label, { title = '', confirmText = '', defaultValue =
     overlay.innerHTML = `
       <div class="modal" style="max-width:400px;">
         <div class="modal-header">
-          <h3 class="modal-title">${resolvedTitle}</h3>
+          <h3 class="modal-title">${esc(resolvedTitle)}</h3>
         </div>
         <div class="modal-body">
-          <label style="display:block;font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.02em;margin-bottom:6px;">${label}</label>
-          <input class="form-input" id="sp-input" type="text" value="${defaultValue}" placeholder="${placeholder}" style="width:100%;">
+          <label style="display:block;font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.02em;margin-bottom:6px;">${esc(label)}</label>
+          <input class="form-input" id="sp-input" type="text" value="${esc(defaultValue)}" placeholder="${esc(placeholder)}" style="width:100%;">
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" id="sp-cancel">${t('common.cancel')}</button>

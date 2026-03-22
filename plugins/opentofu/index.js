@@ -23,24 +23,31 @@ function register({ router, db, broadcast }) {
   // Write paths file immediately so the next container restart can chown them
   syncPathsFile();
 
-  // ── Binary detection ──────────────────────────────────────────────────────
+  // ── Binary detection (cached) ────────────────────────────────────────────
+  let _cachedBinary = undefined;
+  let _cachedVersion = undefined;
+
   function findBinary() {
+    if (_cachedBinary !== undefined) return _cachedBinary;
     for (const bin of ['tofu', 'opentofu', 'terraform']) {
-      try { execSync(`which ${bin}`, { stdio: 'ignore' }); return bin; } catch {}
+      try { execSync(`which ${bin}`, { stdio: 'ignore' }); _cachedBinary = bin; return bin; } catch {}
     }
+    _cachedBinary = null;
     return null;
   }
 
   function getVersion(bin) {
+    if (_cachedVersion !== undefined) return _cachedVersion;
     try {
       const raw = execSync(`${bin} version -json`, { encoding: 'utf8', timeout: 5000 });
       const parsed = JSON.parse(raw);
-      return parsed.terraform_version || parsed.tofu_version || null;
+      _cachedVersion = parsed.terraform_version || parsed.tofu_version || null;
     } catch {
       try {
-        return execSync(`${bin} version`, { encoding: 'utf8', timeout: 5000 }).split('\n')[0].trim();
-      } catch { return null; }
+        _cachedVersion = execSync(`${bin} version`, { encoding: 'utf8', timeout: 5000 }).split('\n')[0].trim();
+      } catch { _cachedVersion = null; }
     }
+    return _cachedVersion;
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -56,7 +63,20 @@ function register({ router, db, broadcast }) {
   const BLOCKED_ENV_VARS = new Set([
     'LD_PRELOAD', 'LD_LIBRARY_PATH', 'PATH', 'NODE_OPTIONS',
     'HOME', 'USER', 'SHELL', 'HOSTNAME', 'PWD',
+    'JWT_SECRET', 'SHIPYARD_KEY_SECRET', 'GIT_SSH_COMMAND',
+    'BASH_ENV', 'ENV', 'CDPATH',
+    'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY',
+    'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS',
   ]);
+
+  // Allowed workspace paths must be under these prefixes
+  const ALLOWED_PATH_PREFIXES = ['/opt/', '/srv/', '/home/', '/var/lib/', '/app/'];
+
+  function isAllowedPath(p) {
+    const resolved = require('path').resolve(p);
+    if (resolved.includes('..')) return false;
+    return ALLOWED_PATH_PREFIXES.some(prefix => resolved.startsWith(prefix));
+  }
 
   function sanitizeEnvVars(vars) {
     if (!vars || typeof vars !== 'object') return {};
@@ -133,13 +153,14 @@ function register({ router, db, broadcast }) {
   // GET /api/plugin/opentofu/workspaces
   router.get('/workspaces', (req, res) => {
     const rows = db.db.prepare('SELECT * FROM tofu_workspaces ORDER BY created_at ASC').all();
-    res.json(rows.map(r => ({ ...r, env_vars: JSON.parse(r.env_vars || '{}') })));
+    res.json(rows.map(r => ({ ...r, env_vars: sanitizeEnvVars(JSON.parse(r.env_vars || '{}')) })));
   });
 
   // POST /api/plugin/opentofu/workspaces
   router.post('/workspaces', (req, res) => {
     const { name, path: wPath, description, env_vars } = req.body;
     if (!name || !wPath) return res.status(400).json({ error: 'name and path are required' });
+    if (!isAllowedPath(wPath)) return res.status(400).json({ error: 'Path must be under /opt/, /srv/, /home/, /var/lib/, or /app/' });
     const id = randomUUID();
     db.db.prepare(
       'INSERT INTO tofu_workspaces (id, name, path, description, env_vars) VALUES (?, ?, ?, ?, ?)'
@@ -152,6 +173,7 @@ function register({ router, db, broadcast }) {
   router.put('/workspaces/:id', (req, res) => {
     const { name, path: wPath, description, env_vars } = req.body;
     if (!name || !wPath) return res.status(400).json({ error: 'name and path are required' });
+    if (!isAllowedPath(wPath)) return res.status(400).json({ error: 'Path must be under /opt/, /srv/, /home/, /var/lib/, or /app/' });
     const result = db.db.prepare(
       'UPDATE tofu_workspaces SET name=?, path=?, description=?, env_vars=? WHERE id=?'
     ).run(name.trim(), wPath.trim(), (description || '').trim(), JSON.stringify(env_vars || {}), req.params.id);

@@ -1,6 +1,7 @@
 import { state, navigate } from '../main.js';
 import { showRunPlaybookModal } from './run-playbook-modal.js';
 import { t, setLang, getLang } from '../i18n.js';
+import { esc } from '../utils/format.js';
 
 export function renderSidebar() {
   const sidebar = document.getElementById('sidebar');
@@ -16,8 +17,8 @@ export function renderSidebar() {
       ${sidebarPlugins.map(p => `
         <div class="nav-item ${state.currentView === 'plugin' && state.currentPluginId === p.id ? 'active' : ''}"
              data-view="plugin" data-plugin-id="${p.id}">
-          <span class="nav-item-icon"><i class="${p.sidebar.icon || 'fas fa-puzzle-piece'}"></i></span>
-          <span>${p.sidebar.label || p.name}</span>
+          <span class="nav-item-icon"><i class="${esc(p.sidebar.icon || 'fas fa-puzzle-piece')}"></i></span>
+          <span>${esc(p.sidebar.label || p.name)}</span>
         </div>
       `).join('')}
     </div>` : '';
@@ -26,8 +27,8 @@ export function renderSidebar() {
     <div class="sidebar-header">
       <div class="sidebar-logo-icon"><i class="fas fa-ship"></i></div>
       <div class="sidebar-logo-text">
-        <h1>${state.whiteLabel?.appName || 'Shipyard'}</h1>
-        <span>${state.whiteLabel?.appTagline || 'Infrastructure'}</span>
+        <h1>${esc(state.whiteLabel?.appName || 'Shipyard')}</h1>
+        <span>${esc(state.whiteLabel?.appTagline || 'Infrastructure')}</span>
       </div>
     </div>
 

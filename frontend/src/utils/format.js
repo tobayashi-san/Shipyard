@@ -1,5 +1,15 @@
 import { state } from '../main.js';
 
+/** Escape HTML special characters to prevent XSS */
+export function esc(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 function toUtcDate(s) {
   if (!s) return new Date(NaN);
   const str = String(s);
