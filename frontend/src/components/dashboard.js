@@ -174,9 +174,11 @@ function renderDashboardData(data) {
 function statCard(icon, value, label, color) {
   return `
     <div class="dash-stat-card">
-      <div class="dash-stat-icon"><i class="fas ${icon}"></i></div>
-      <div class="dash-stat-value" style="${color ? `color:${color}` : ''}">${value}</div>
-      <div class="dash-stat-label">${label}</div>
+      <div class="dash-stat-icon" style="${color ? `color:${color}` : ''}"><i class="fas ${icon}"></i></div>
+      <div>
+        <div class="dash-stat-value" style="${color ? `color:${color}` : ''}">${value}</div>
+        <div class="dash-stat-label">${label}</div>
+      </div>
     </div>
   `;
 }
@@ -190,8 +192,10 @@ function serverHealthRow(s) {
     <tr class="server-health-row" data-server-id="${s.id}" style="cursor:pointer;">
       <td><span class="status-dot ${dotCls}"></span></td>
       <td>
-        <strong>${esc(s.name)}</strong>
-        <div style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);">${esc(s.ip_address)}</div>
+        <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
+          <strong>${esc(s.name)}</strong>
+          <span style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);">${esc(s.ip_address)}</span>
+        </div>
       </td>
       <td>${ramBar}</td>
       <td>${diskBar}</td>

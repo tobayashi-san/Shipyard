@@ -1380,21 +1380,24 @@ input[type="color"].form-input::-moz-color-swatch {
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px 18px;
+  padding: 12px 14px;
   box-shadow: var(--shadow-sm);
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
 }
 
 .dash-stat-icon {
-  font-size: 13px;
+  font-size: 18px;
   color: var(--text-muted);
-  margin-bottom: 4px;
+  flex-shrink: 0;
+  width: 24px;
+  text-align: center;
 }
 
 .dash-stat-value {
-  font-size: 26px;
+  font-size: 22px;
   font-weight: 700;
   line-height: 1;
   color: var(--text-primary);
@@ -1405,8 +1408,9 @@ input[type="color"].form-input::-moz-color-swatch {
   font-size: 11px;
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.05em;
   font-weight: 500;
+  margin-top: 2px;
 }
 
 .dash-grid {
