@@ -11,10 +11,13 @@ function parseServer(s) {
   return { ...s, tags: JSON.parse(s.tags || '[]'), services: JSON.parse(s.services || '[]') };
 }
 
+const { getPermissions, filterServers } = require('../utils/permissions');
+
 // GET /api/servers - List all servers
 router.get('/', (req, res) => {
   try {
-    res.json(db.servers.getAll().map(parseServer));
+    const perms = getPermissions(req.user);
+    res.json(filterServers(db.servers.getAll(), perms).map(parseServer));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

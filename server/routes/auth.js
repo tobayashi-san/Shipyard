@@ -59,11 +59,14 @@ router.get('/status', (req, res) => {
 
 // GET /api/auth/profile
 router.get('/profile', authMiddleware, (req, res) => {
+  const { getPermissions } = require('../utils/permissions');
+  const permissions = getPermissions(req.user);
   res.json({
-    id:       req.user.id,
-    username: req.user.username,
-    email:    req.user.email || '',
-    role:     req.user.role,
+    id:          req.user.id,
+    username:    req.user.username,
+    email:       req.user.email || '',
+    role:        req.user.role,
+    permissions,
   });
 });
 

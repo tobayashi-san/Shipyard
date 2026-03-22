@@ -113,7 +113,9 @@ app.use('/api/auth', authRouter);
 
 // Users management (admin-only, enforced inside the router)
 const usersRouter = require('./routes/users');
+const rolesRouter = require('./routes/roles');
 app.use('/api/users', authMiddleware, usersRouter);
+app.use('/api/roles', authMiddleware, rolesRouter);
 
 // Protect all other /api routes
 app.use('/api', authMiddleware);
@@ -167,10 +169,13 @@ app.get('/plugins/:pluginId/ui.js', (req, res) => {
   res.sendFile(uiPath);
 });
 
+const { getPermissions, filterServers, filterPlugins } = require('./utils/permissions');
+
 // GET /api/dashboard – aggregated stats from DB cache (no SSH, instant)
 app.get('/api/dashboard', (req, res) => {
   try {
-    const servers = db.servers.getAll();
+    const perms = getPermissions(req.user);
+    const servers = filterServers(db.servers.getAll(), perms);
     const online = servers.filter(s => s.status === 'online').length;
     const offline = servers.filter(s => s.status === 'offline').length;
 

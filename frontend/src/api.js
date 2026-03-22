@@ -228,6 +228,12 @@ class ApiClient {
   updateUser(id, data)             { return this.request(`/users/${id}`, { method: 'PUT', body: data }); }
   resetUserPassword(id, password)  { return this.request(`/users/${id}/password`, { method: 'PUT', body: { password } }); }
   deleteUser(id)                   { return this.request(`/users/${id}`, { method: 'DELETE' }); }
+
+  // Role management
+  getRoles()                       { return this.request('/roles'); }
+  createRole(data)                 { return this.request('/roles', { method: 'POST', body: data }); }
+  updateRole(id, data)             { return this.request(`/roles/${id}`, { method: 'PUT', body: data }); }
+  deleteRole(id)                   { return this.request(`/roles/${id}`, { method: 'DELETE' }); }
 }
 
 export const api = new ApiClient();

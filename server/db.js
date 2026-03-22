@@ -267,6 +267,30 @@ db.exec(`
 migrate("ALTER TABLE server_groups ADD COLUMN color TEXT DEFAULT '#6366f1';");
 migrate('ALTER TABLE server_groups ADD COLUMN parent_id TEXT;');
 
+// Roles table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS roles (
+    id TEXT PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    is_system INTEGER DEFAULT 0,
+    permissions TEXT DEFAULT '{}'
+  );
+`);
+
+// Seed built-in roles
+(function seedRoles() {
+  try {
+    const adminPerm = JSON.stringify({ full: true });
+    const userPerm  = JSON.stringify({
+      servers: 'all', playbooks: 'all', plugins: 'all',
+      canManageServers: true, canManagePlaybooks: true, canRunPlaybooks: true,
+      canManageSchedules: true, canManageVars: true, canViewAudit: true,
+    });
+    db.prepare(`INSERT OR IGNORE INTO roles (id, name, is_system, permissions) VALUES ('admin', 'Admin', 1, ?)`).run(adminPerm);
+    db.prepare(`INSERT OR IGNORE INTO roles (id, name, is_system, permissions) VALUES ('user', 'User', 1, ?)`).run(userPerm);
+  } catch (e) { console.error('[db] Role seed error:', e.message); }
+})();
+
 // Migration: if users table is empty AND auth_password_hash exists, create admin user from settings
 (function migrateAdminUser() {
   try {
@@ -606,6 +630,21 @@ module.exports = {
         ON CONFLICT(server_id) DO UPDATE SET results_json = excluded.results_json, updated_at = datetime('now')
       `).run(serverId, JSON.stringify(results));
     },
+  },
+
+  roles: {
+    getAll:  () => db.prepare('SELECT * FROM roles ORDER BY is_system DESC, name').all(),
+    getById: (id) => db.prepare('SELECT * FROM roles WHERE id = ?').get(id),
+    create:  (name, permissions) => {
+      const id = uuidv4();
+      db.prepare('INSERT INTO roles (id, name, permissions) VALUES (?, ?, ?)').run(id, name, JSON.stringify(permissions || {}));
+      return db.prepare('SELECT * FROM roles WHERE id = ?').get(id);
+    },
+    update:  (id, name, permissions) => {
+      db.prepare('UPDATE roles SET name = ?, permissions = ? WHERE id = ?').run(name, JSON.stringify(permissions), id);
+      return db.prepare('SELECT * FROM roles WHERE id = ?').get(id);
+    },
+    delete:  (id) => db.prepare('DELETE FROM roles WHERE id = ?').run(id),
   },
 
   users: {

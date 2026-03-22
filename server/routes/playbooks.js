@@ -28,11 +28,13 @@ function rotateBak(filepath) {
   fs.copyFileSync(filepath, `${filepath}.bak.1`);
 }
 
+const { getPermissions, filterPlaybooks } = require('../utils/permissions');
+
 // GET /api/playbooks - List all available playbooks
 router.get('/', (req, res) => {
   try {
-    const playbooks = ansibleRunner.getAvailablePlaybooks();
-    res.json(playbooks);
+    const perms = getPermissions(req.user);
+    res.json(filterPlaybooks(ansibleRunner.getAvailablePlaybooks(), perms));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

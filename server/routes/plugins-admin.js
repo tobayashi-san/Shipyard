@@ -2,11 +2,13 @@ const express      = require('express');
 const router       = express.Router();
 const pluginLoader = require('../services/plugin-loader');
 const { adminOnly } = require('../middleware/auth');
+const { getPermissions, filterPlugins } = require('../utils/permissions');
 
-// GET /api/plugins — list all plugins
+// GET /api/plugins — list plugins visible to this user
 router.get('/', (req, res) => {
   try {
-    res.json(pluginLoader.list());
+    const perms = getPermissions(req.user);
+    res.json(filterPlugins(pluginLoader.list(), perms));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

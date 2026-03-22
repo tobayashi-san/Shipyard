@@ -28,8 +28,9 @@ router.post('/', adminOnly, async (req, res) => {
   if (!password || typeof password !== 'string' || password.length < 12) {
     return res.status(400).json({ error: 'Password must be at least 12 characters' });
   }
-  const validRoles = ['admin', 'user'];
-  const userRole = validRoles.includes(role) ? role : 'user';
+  // Accept any role that exists in the roles table, or 'admin'/'user' as fallback
+  const knownRoles = db.roles.getAll().map(r => r.id);
+  const userRole = knownRoles.includes(role) ? role : 'user';
   try {
     const hash = await bcrypt.hash(password, 12);
     const user = db.users.create(username.trim(), email || '', hash, userRole);
@@ -55,7 +56,8 @@ router.put('/:id', adminOnly, (req, res) => {
   }
   if (email !== undefined) fields.email = String(email).trim().slice(0, 256);
   if (role !== undefined) {
-    if (!['admin', 'user'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+    const knownRoles = db.roles.getAll().map(r => r.id);
+    if (!knownRoles.includes(role)) return res.status(400).json({ error: 'Invalid role' });
     fields.role = role;
   }
   try {

@@ -6,9 +6,13 @@ import { esc } from '../utils/format.js';
 
 export function renderSidebar() {
   const sidebar = document.getElementById('sidebar');
+  const perms = state.user?.permissions;
   const onlineCount = state.servers.filter(s => s.status === 'online').length;
-  // Plugins that are enabled and have a sidebar entry
-  const sidebarPlugins = (state.plugins || []).filter(p => p.enabled && p.sidebar);
+  // Plugins that are enabled, have a sidebar entry, and user has permission
+  const allSidebarPlugins = (state.plugins || []).filter(p => p.enabled && p.sidebar);
+  const sidebarPlugins = (!perms || perms.full || perms.plugins === 'all')
+    ? allSidebarPlugins
+    : allSidebarPlugins.filter(p => Array.isArray(perms.plugins) && perms.plugins.includes(p.id));
 
   const pluginsSection = sidebarPlugins.length > 0 ? `
     <div class="nav-section">

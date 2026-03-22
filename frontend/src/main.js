@@ -24,7 +24,7 @@ export const state = {
   plugins: [],
   ws: null,
   whiteLabel: {},
-  user: null, // { id, username, email, role }
+  user: null, // { id, username, email, role, permissions }
 };
 
 // Router

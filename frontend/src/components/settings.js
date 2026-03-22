@@ -95,6 +95,9 @@ export async function renderSettings() {
       <button class="tab-btn" data-tab="users">
         <i class="fas fa-users"></i> Users
       </button>
+      <button class="tab-btn" data-tab="roles">
+        <i class="fas fa-shield-halved"></i> Roles
+      </button>
       <button class="tab-btn" data-tab="danger">
         <i class="fas fa-triangle-exclamation"></i> ${t('set.tabDanger')}
       </button>
@@ -433,6 +436,13 @@ export async function renderSettings() {
         </div>
       </div>
 
+      <!-- Tab: Roles -->
+      <div class="tab-panel" id="tab-roles">
+        <div id="roles-settings-content">
+          <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
+        </div>
+      </div>
+
       <!-- Tab: Git -->
       <div class="tab-panel" id="tab-git">
         <div id="git-settings-content">
@@ -456,6 +466,13 @@ export async function renderSettings() {
   document.querySelector('.tab-btn[data-tab="users"]')?.addEventListener('click', () => {
     if (!document.getElementById('users-settings-content')?.dataset.loaded) {
       loadUsersTab();
+    }
+  });
+
+  // Roles tab loads lazily when first clicked
+  document.querySelector('.tab-btn[data-tab="roles"]')?.addEventListener('click', () => {
+    if (!document.getElementById('roles-settings-content')?.dataset.loaded) {
+      loadRolesTab();
     }
   });
 
@@ -1010,12 +1027,330 @@ async function loadPluginsList() {
 }
 
 // ============================================================
+// Roles Tab
+// ============================================================
+async function loadRolesTab() {
+  const content = document.getElementById('roles-settings-content');
+  if (!content) return;
+  content.dataset.loaded = '1';
+
+  async function renderRoles() {
+    let roles = [], servers = [], groups = [], plugins = [], playbooks = [];
+    try {
+      [roles, servers, groups, plugins, playbooks] = await Promise.all([
+        api.getRoles(),
+        api.getServers(),
+        api.getServerGroups(),
+        api.getPlugins(),
+        api.getPlaybooks(),
+      ]);
+    } catch (e) {
+      content.innerHTML = `<div style="padding:16px;color:var(--offline);font-size:13px;">${esc(e.message)}</div>`;
+      return;
+    }
+
+    const customRoles = roles.filter(r => !r.is_system);
+
+    content.innerHTML = `
+      <div class="settings-group-title">Role Management</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
+        Roles control what servers, playbooks, and features each user can access.
+        The built-in <strong>Admin</strong> and <strong>User</strong> roles cannot be changed.
+      </div>
+
+      <!-- Built-in roles -->
+      <div class="settings-block" style="margin-bottom:16px;">
+        ${roles.filter(r => r.is_system).map((r, i, arr) => `
+          <div class="settings-row" ${i === arr.length - 1 ? 'style="border-bottom:none;"' : ''}>
+            <div class="settings-row-label">
+              <span><i class="fas fa-lock" style="font-size:11px;color:var(--text-muted);margin-right:6px;"></i>${esc(r.name)}</span>
+              <small>${r.id === 'admin' ? 'Full access to everything' : 'Default access — all servers, playbooks and features'}</small>
+            </div>
+            <div class="settings-row-control">
+              <span class="badge badge-muted">Built-in</span>
+            </div>
+          </div>`).join('')}
+      </div>
+
+      <!-- Custom roles -->
+      <div class="settings-group-title" style="margin-top:16px;">Custom Roles</div>
+      <div class="settings-block" id="roles-list">
+        ${customRoles.length === 0 ? `
+          <div class="settings-row" style="border-bottom:none;">
+            <div style="padding:20px 0;color:var(--text-muted);font-size:13px;text-align:center;width:100%;">
+              <i class="fas fa-shield-halved" style="opacity:.4;font-size:1.5rem;margin-bottom:8px;display:block;"></i>
+              No custom roles yet. Create one to restrict user access.
+            </div>
+          </div>` :
+          customRoles.map((r, i) => {
+            const p = r.permissions || {};
+            const serverSummary = p.servers === 'all' ? 'All servers'
+              : `${(p.servers?.groups || []).length} group(s), ${(p.servers?.servers || []).length} server(s)`;
+            const playbookSummary = p.playbooks === 'all' ? 'All playbooks' : `${(p.playbooks || []).length} playbook(s)`;
+            const pluginSummary  = p.plugins  === 'all' ? 'All plugins'  : `${(p.plugins  || []).length} plugin(s)`;
+            return `
+            <div class="settings-row" ${i === customRoles.length - 1 ? 'style="border-bottom:none;"' : ''}>
+              <div class="settings-row-label">
+                <span>${esc(r.name)}</span>
+                <small>${serverSummary} · ${playbookSummary} · ${pluginSummary}</small>
+              </div>
+              <div class="settings-row-control" style="gap:8px;">
+                <button class="btn btn-secondary btn-sm btn-edit-role" data-id="${esc(r.id)}"><i class="fas fa-edit"></i> Edit</button>
+                <button class="btn btn-danger btn-sm btn-del-role" data-id="${esc(r.id)}" data-name="${esc(r.name)}"><i class="fas fa-trash"></i></button>
+              </div>
+            </div>`;
+          }).join('')
+        }
+      </div>
+
+      <div style="margin-top:12px;">
+        <button class="btn btn-primary btn-sm" id="btn-add-role">
+          <i class="fas fa-plus"></i> New Role
+        </button>
+      </div>
+      <div id="roles-form-area" style="margin-top:16px;"></div>
+    `;
+
+    // Store for form use
+    content._meta = { servers, groups, plugins, playbooks };
+
+    document.getElementById('btn-add-role')?.addEventListener('click', () => showRoleForm(null));
+
+    content.querySelectorAll('.btn-edit-role').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const role = roles.find(r => r.id === btn.dataset.id);
+        if (role) showRoleForm(role);
+      });
+    });
+
+    content.querySelectorAll('.btn-del-role').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm(`Delete role "${btn.dataset.name}"?`)) return;
+        try {
+          await api.deleteRole(btn.dataset.id);
+          showToast('Role deleted', 'success');
+          await renderRoles();
+        } catch (e) { showToast('Error: ' + e.message, 'error'); }
+      });
+    });
+  }
+
+  function showRoleForm(role) {
+    const isEdit = !!role;
+    const area   = document.getElementById('roles-form-area');
+    if (!area) return;
+    const { servers = [], groups = [], plugins = [], playbooks = [] } = content._meta || {};
+    const p = role?.permissions || {};
+
+    const serversRestricted  = p.servers   !== 'all' && p.servers != null;
+    const playbooksRestricted = p.playbooks !== 'all' && p.playbooks != null;
+    const pluginsRestricted   = p.plugins   !== 'all' && p.plugins  != null;
+
+    const checkedGroups  = serversRestricted  ? (p.servers?.groups   || []) : [];
+    const checkedServers = serversRestricted  ? (p.servers?.servers  || []) : [];
+    const checkedPbooks  = playbooksRestricted ? (p.playbooks || []) : [];
+    const checkedPlugins = pluginsRestricted   ? (p.plugins   || []) : [];
+
+    const caps = [
+      { key: 'canManageServers',    label: 'Manage servers (add / edit / delete)' },
+      { key: 'canManagePlaybooks',  label: 'Edit playbooks' },
+      { key: 'canRunPlaybooks',     label: 'Run playbooks & schedules' },
+      { key: 'canManageSchedules',  label: 'Manage schedules' },
+      { key: 'canManageVars',       label: 'Manage Ansible variables' },
+      { key: 'canViewAudit',        label: 'View audit log' },
+    ];
+
+    area.innerHTML = `
+      <div class="settings-block" style="border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;">
+        <div style="font-size:14px;font-weight:600;margin-bottom:14px;">${isEdit ? `Edit Role: ${esc(role.name)}` : 'New Role'}</div>
+
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label">Name</label>
+          <input class="form-input" type="text" id="rf-name" value="${esc(role?.name || '')}" style="max-width:300px;" placeholder="e.g. Ops Team">
+        </div>
+
+        <!-- Server Access -->
+        <div style="margin-bottom:14px;">
+          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px;">Server Access</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+              <input type="radio" name="rf-servers" value="all" ${!serversRestricted ? 'checked' : ''}> All servers
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+              <input type="radio" name="rf-servers" value="restricted" ${serversRestricted ? 'checked' : ''}> Restricted to:
+            </label>
+          </div>
+          <div id="rf-servers-detail" style="margin-top:10px;padding-left:20px;display:${serversRestricted ? 'block' : 'none'};">
+            ${groups.length > 0 ? `
+            <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;">Server Groups</div>
+            <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px;">
+              ${groups.map(g => `
+                <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+                  <input type="checkbox" class="rf-group-chk" value="${esc(g.id)}" ${checkedGroups.includes(g.id) ? 'checked' : ''}>
+                  <span style="width:10px;height:10px;border-radius:2px;background:${esc(g.color || '#6366f1')};flex-shrink:0;display:inline-block;"></span>
+                  ${esc(g.name)}
+                </label>`).join('')}
+            </div>` : ''}
+            ${servers.length > 0 ? `
+            <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;">Individual Servers</div>
+            <div style="display:flex;flex-direction:column;gap:4px;max-height:180px;overflow-y:auto;">
+              ${servers.map(s => `
+                <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+                  <input type="checkbox" class="rf-server-chk" value="${esc(s.id)}" ${checkedServers.includes(s.id) ? 'checked' : ''}>
+                  <span class="status-dot ${s.status === 'online' ? 'online' : s.status === 'offline' ? 'offline' : 'unknown'}" style="flex-shrink:0;"></span>
+                  ${esc(s.name)}
+                  <span style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);">${esc(s.ip_address)}</span>
+                </label>`).join('')}
+            </div>` : ''}
+          </div>
+        </div>
+
+        <!-- Playbook Access -->
+        <div style="margin-bottom:14px;">
+          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px;">Playbook Access</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+              <input type="radio" name="rf-playbooks" value="all" ${!playbooksRestricted ? 'checked' : ''}> All playbooks
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+              <input type="radio" name="rf-playbooks" value="restricted" ${playbooksRestricted ? 'checked' : ''}> Restricted to:
+            </label>
+          </div>
+          <div id="rf-playbooks-detail" style="margin-top:8px;padding-left:20px;display:${playbooksRestricted ? 'flex' : 'none'};flex-direction:column;gap:4px;max-height:160px;overflow-y:auto;">
+            ${playbooks.map(pb => `
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+                <input type="checkbox" class="rf-pb-chk" value="${esc(pb.filename)}" ${checkedPbooks.includes(pb.filename) ? 'checked' : ''}>
+                <i class="fas fa-terminal" style="font-size:10px;color:var(--text-muted);"></i>
+                ${esc(pb.filename)}
+              </label>`).join('')}
+          </div>
+        </div>
+
+        <!-- Plugin Access -->
+        ${plugins.filter(pl => pl.sidebar).length > 0 ? `
+        <div style="margin-bottom:14px;">
+          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px;">Plugin / Feature Access</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+              <input type="radio" name="rf-plugins" value="all" ${!pluginsRestricted ? 'checked' : ''}> All plugins
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+              <input type="radio" name="rf-plugins" value="restricted" ${pluginsRestricted ? 'checked' : ''}> Restricted to:
+            </label>
+          </div>
+          <div id="rf-plugins-detail" style="margin-top:8px;padding-left:20px;display:${pluginsRestricted ? 'flex' : 'none'};flex-direction:column;gap:4px;">
+            ${plugins.map(pl => `
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+                <input type="checkbox" class="rf-plugin-chk" value="${esc(pl.id)}" ${checkedPlugins.includes(pl.id) ? 'checked' : ''}>
+                <i class="${esc(pl.sidebar?.icon || 'fas fa-puzzle-piece')}" style="font-size:10px;color:var(--text-muted);"></i>
+                ${esc(pl.sidebar?.label || pl.name || pl.id)}
+              </label>`).join('')}
+          </div>
+        </div>` : ''}
+
+        <!-- Capabilities -->
+        <div style="margin-bottom:16px;">
+          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px;">Capabilities</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            ${caps.map(c => `
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+                <input type="checkbox" class="rf-cap-chk" value="${esc(c.key)}" ${p[c.key] !== false ? 'checked' : ''}>
+                ${c.label}
+              </label>`).join('')}
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" id="rf-save"><i class="fas fa-save"></i> ${isEdit ? 'Save' : 'Create'}</button>
+          <button class="btn btn-secondary btn-sm" id="rf-cancel">Cancel</button>
+        </div>
+        <p class="login-error hidden" id="rf-error" style="margin-top:8px;"></p>
+      </div>
+    `;
+
+    // Toggle server/playbook/plugin detail sections
+    area.querySelectorAll('input[name="rf-servers"]').forEach(r => {
+      r.addEventListener('change', () => {
+        document.getElementById('rf-servers-detail').style.display = r.value === 'restricted' ? 'block' : 'none';
+      });
+    });
+    area.querySelectorAll('input[name="rf-playbooks"]').forEach(r => {
+      r.addEventListener('change', () => {
+        document.getElementById('rf-playbooks-detail').style.display = r.value === 'restricted' ? 'flex' : 'none';
+      });
+    });
+    area.querySelectorAll('input[name="rf-plugins"]').forEach(r => {
+      r.addEventListener('change', () => {
+        const el = document.getElementById('rf-plugins-detail');
+        if (el) el.style.display = r.value === 'restricted' ? 'flex' : 'none';
+      });
+    });
+
+    document.getElementById('rf-cancel')?.addEventListener('click', () => { area.innerHTML = ''; });
+    document.getElementById('rf-save')?.addEventListener('click', async () => {
+      const btn   = document.getElementById('rf-save');
+      const errEl = document.getElementById('rf-error');
+      errEl.classList.add('hidden');
+
+      const name = document.getElementById('rf-name').value.trim();
+      if (!name) { errEl.textContent = 'Name required'; errEl.classList.remove('hidden'); return; }
+
+      // Build permissions object
+      const serversMode   = area.querySelector('input[name="rf-servers"]:checked')?.value;
+      const playbooksMode = area.querySelector('input[name="rf-playbooks"]:checked')?.value;
+      const pluginsMode   = area.querySelector('input[name="rf-plugins"]') ? area.querySelector('input[name="rf-plugins"]:checked')?.value : 'all';
+
+      const permissions = {};
+      if (serversMode === 'all') {
+        permissions.servers = 'all';
+      } else {
+        permissions.servers = {
+          groups:  [...area.querySelectorAll('.rf-group-chk:checked')].map(c => c.value),
+          servers: [...area.querySelectorAll('.rf-server-chk:checked')].map(c => c.value),
+        };
+      }
+      permissions.playbooks = playbooksMode === 'all' ? 'all'
+        : [...area.querySelectorAll('.rf-pb-chk:checked')].map(c => c.value);
+      permissions.plugins = (!pluginsMode || pluginsMode === 'all') ? 'all'
+        : [...area.querySelectorAll('.rf-plugin-chk:checked')].map(c => c.value);
+      area.querySelectorAll('.rf-cap-chk').forEach(chk => {
+        permissions[chk.value] = chk.checked;
+      });
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-sm"></span>';
+      try {
+        if (isEdit) {
+          await api.updateRole(role.id, { name, permissions });
+          showToast('Role updated', 'success');
+        } else {
+          await api.createRole({ name, permissions });
+          showToast('Role created', 'success');
+        }
+        area.innerHTML = '';
+        await renderRoles();
+      } catch (e) {
+        errEl.textContent = e.message;
+        errEl.classList.remove('hidden');
+        btn.disabled = false;
+        btn.innerHTML = `<i class="fas fa-save"></i> ${isEdit ? 'Save' : 'Create'}`;
+      }
+    });
+  }
+
+  await renderRoles();
+}
+
+// ============================================================
 // Users Tab
 // ============================================================
 async function loadUsersTab() {
   const content = document.getElementById('users-settings-content');
   if (!content) return;
   content.dataset.loaded = '1';
+  let _allRoles = [];
+  try { _allRoles = await api.getRoles(); } catch {}
+  content._allRoles = _allRoles;
 
   async function renderUsers() {
     let users = [];
@@ -1043,7 +1378,7 @@ async function loadUsersTab() {
                 <small>${esc(u.email || '')}</small>
               </div>
               <div class="settings-row-control" style="gap:8px;flex-wrap:wrap;align-items:center;">
-                <span class="badge ${u.role === 'admin' ? 'badge-accent' : 'badge-muted'}">${esc(u.role)}</span>
+                <span class="badge ${u.role === 'admin' ? 'badge-accent' : 'badge-muted'}">${esc((_allRoles.find(r => r.id === u.role) || {}).name || u.role)}</span>
                 <button class="btn btn-secondary btn-sm btn-edit-user" data-id="${esc(u.id)}" data-username="${esc(u.username)}" data-email="${esc(u.email || '')}" data-role="${esc(u.role)}">
                   <i class="fas fa-edit"></i> Edit
                 </button>
@@ -1117,9 +1452,8 @@ async function loadUsersTab() {
         </div>` : ''}
         <div class="form-group" style="margin-bottom:14px;">
           <label class="form-label">Role</label>
-          <select class="form-input" id="uf-role" style="max-width:160px;">
-            <option value="user" ${(user?.role || 'user') === 'user' ? 'selected' : ''}>user</option>
-            <option value="admin" ${user?.role === 'admin' ? 'selected' : ''}>admin</option>
+          <select class="form-input" id="uf-role" style="max-width:200px;">
+            ${(content._allRoles || []).map(r => `<option value="${esc(r.id)}" ${(user?.role || 'user') === r.id ? 'selected' : ''}>${esc(r.name)}${r.is_system ? '' : ' (custom)'}</option>`).join('')}
           </select>
         </div>
         <div style="display:flex;gap:8px;">
