@@ -218,6 +218,11 @@ a { color: var(--accent); text-decoration: none; }
   text-align: center;
 }
 
+.sidebar-bottom-nav {
+  padding: 4px 8px;
+  border-top: 1px solid rgba(255,255,255,0.07);
+}
+
 .sidebar-footer {
   padding: 12px 16px;
   border-top: 1px solid rgba(255,255,255,0.07);

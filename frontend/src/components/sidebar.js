@@ -47,13 +47,16 @@ export function renderSidebar() {
           <span class="nav-item-icon"><i class="fas fa-terminal"></i></span>
           <span>${t('nav.playbooks')}</span>
         </div>
-        <div class="nav-item ${state.currentView === 'settings' ? 'active' : ''}" data-view="settings">
-          <span class="nav-item-icon"><i class="fas fa-cog"></i></span>
-          <span>${t('nav.settings')}</span>
-        </div>
       </div>
       ${pluginsSection}
     </nav>
+
+    <div class="sidebar-bottom-nav">
+      <div class="nav-item ${state.currentView === 'settings' ? 'active' : ''}" data-view="settings">
+        <span class="nav-item-icon"><i class="fas fa-cog"></i></span>
+        <span>${t('nav.settings')}</span>
+      </div>
+    </div>
 
     <div class="sidebar-footer">
       <div class="sidebar-footer-info">
