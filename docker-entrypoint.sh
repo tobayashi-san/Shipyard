@@ -26,6 +26,7 @@ fi
 
 # Ensure writable directories are owned by the shipyard user
 # (Docker volumes are created as root on first use)
+mkdir -p /app/server/data/bin
 chown -R shipyard:shipyard /app/server/data /app/server/playbooks /app/plugins
 
 # Seed bundled plugins into the volume; update if the bundled version changed

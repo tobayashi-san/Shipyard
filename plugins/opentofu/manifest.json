@@ -1,7 +1,7 @@
 {
   "id": "opentofu",
   "name": "OpenTofu",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "description": "Manage OpenTofu / Terraform workspaces and run infrastructure-as-code commands.",
   "sidebar": {
     "icon": "fas fa-cube",
