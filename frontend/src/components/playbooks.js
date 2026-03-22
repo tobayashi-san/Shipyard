@@ -899,50 +899,35 @@ async function loadScheduleList() {
       return;
     }
     el.innerHTML = `
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th style="width:40px;">${t('sc.active')}</th>
-            <th>${t('sc.name')}</th>
-            <th>${t('sc.playbook')}</th>
-            <th>${t('sc.target')}</th>
-            <th>${t('sc.schedule')}</th>
-            <th>${t('sc.lastRun')}</th>
-            <th style="width:80px;"></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${schedules.map(s => `
-            <tr>
-              <td>
-                <label style="cursor:pointer;">
-                  <input type="checkbox" class="schedule-toggle" data-id="${s.id}" ${s.enabled ? 'checked' : ''}
-                    style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent);">
-                </label>
-              </td>
-              <td style="font-weight:500;">${esc(s.name)}</td>
-              <td class="text-mono" style="font-size:12px;">${esc(s.playbook)}</td>
-              <td>${esc(s.targets || 'all')}</td>
-              <td style="font-size:12px;">${cronLabel(s.cron_expression)}</td>
-              <td>
+      <div class="settings-block" style="margin:0;">
+        ${schedules.map(s => `
+          <div class="settings-row" style="gap:12px;flex-wrap:nowrap;">
+            <label style="cursor:pointer;flex-shrink:0;display:flex;align-items:center;">
+              <input type="checkbox" class="schedule-toggle" data-id="${s.id}" ${s.enabled ? 'checked' : ''}
+                style="width:15px;height:15px;cursor:pointer;accent-color:var(--accent);">
+            </label>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(s.name)}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;display:flex;gap:8px;flex-wrap:wrap;">
+                <span><i class="fas fa-terminal" style="opacity:.6;margin-right:3px;"></i>${esc(s.playbook)}</span>
+                <span><i class="fas fa-server" style="opacity:.6;margin-right:3px;"></i>${esc(s.targets || 'all')}</span>
+                <span><i class="fas fa-clock" style="opacity:.6;margin-right:3px;"></i>${cronLabel(s.cron_expression)}</span>
                 ${s.last_run
-                  ? `<span class="badge badge-${s.last_status === 'success' ? 'online' : 'offline'}">${s.last_status}</span>
-                     <span style="font-size:11px;color:var(--text-muted);margin-left:4px;">${formatDateTimeShort(s.last_run)}</span>`
-                  : '<span style="color:var(--text-muted);">—</span>'
-                }
-              </td>
-              <td style="text-align:right;">
-                <button class="btn btn-secondary btn-icon btn-sm schedule-edit" data-id="${s.id}" title="${t('common.edit')}">
-                  <i class="fas fa-pen"></i>
-                </button>
-                <button class="btn btn-danger btn-icon btn-sm schedule-delete" data-id="${s.id}" title="${t('common.delete')}">
-                  <i class="fas fa-trash"></i>
-                </button>
-              </td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
+                  ? `<span><span class="badge badge-${s.last_status === 'success' ? 'online' : 'offline'}" style="font-size:10px;">${s.last_status}</span> <span style="opacity:.7;">${formatDateTimeShort(s.last_run)}</span></span>`
+                  : ''}
+              </div>
+            </div>
+            <div style="display:flex;gap:4px;flex-shrink:0;">
+              <button class="btn btn-secondary btn-icon btn-sm schedule-edit" data-id="${s.id}" title="${t('common.edit')}">
+                <i class="fas fa-pen"></i>
+              </button>
+              <button class="btn btn-danger btn-icon btn-sm schedule-delete" data-id="${s.id}" title="${t('common.delete')}">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
     `;
 
     el.querySelectorAll('.schedule-toggle').forEach(cb => {
