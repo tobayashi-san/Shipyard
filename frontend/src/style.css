@@ -906,10 +906,8 @@ button:focus-visible, .btn:focus-visible, .form-input:focus-visible, .tab-btn:fo
 
 /* Move-to-group dropdown */
 .move-dropdown {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 200;
+  position: fixed;
+  z-index: 1050;
   background: var(--bg-panel);
   border: 1px solid var(--border-section);
   border-radius: var(--radius);

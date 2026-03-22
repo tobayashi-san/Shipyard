@@ -246,8 +246,21 @@ function attachEvents() {
           </div>
         `).join('')}
       `;
-      btn.style.position = 'relative';
-      btn.appendChild(dropdown);
+      // Position relative to viewport so it never pushes the card
+      const btnRect = btn.getBoundingClientRect();
+      dropdown.style.position = 'fixed';
+      dropdown.style.right = 'auto';
+      dropdown.style.top = 'auto';
+      dropdown.style.left = (btnRect.right - 180) + 'px';
+      document.body.appendChild(dropdown);
+      // After render, decide: open up or down
+      const ddH = dropdown.offsetHeight;
+      const spaceBelow = window.innerHeight - btnRect.bottom;
+      if (spaceBelow < ddH + 8) {
+        dropdown.style.top = (btnRect.top - ddH - 4) + 'px';
+      } else {
+        dropdown.style.top = (btnRect.bottom + 4) + 'px';
+      }
       dropdown.querySelectorAll('.move-dropdown-item').forEach(item => {
         item.addEventListener('click', async ev => {
           ev.stopPropagation();
