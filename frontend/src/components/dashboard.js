@@ -18,9 +18,6 @@ export async function renderDashboard() {
 
   main.innerHTML = `
     <div class="page-header">
-      <button class="btn btn-icon sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('open');document.getElementById('sidebar-backdrop').classList.toggle('open');">
-        <i class="fas fa-bars"></i>
-      </button>
       <div>
         <h2>${t('dash.title')}</h2>
         <p id="dash-timestamp">${t('common.loading')}</p>
@@ -69,12 +66,12 @@ function renderDashboardData(data) {
   content.innerHTML = `
     <!-- Stat Cards -->
     <div class="dash-stat-row">
-      ${statCard('fa-server', summary.total, t('dash.totalServers'), '', 'var(--accent)')}
-      ${statCard('fa-check-circle', summary.online, t('dash.online'), 'var(--online)', 'var(--online)')}
-      ${statCard('fa-times-circle', summary.offline, t('dash.offline'), summary.offline > 0 ? 'var(--offline)' : '', 'var(--offline)')}
-      ${statCard('fa-redo', summary.rebootRequired, t('dash.needsReboot'), summary.rebootRequired > 0 ? 'var(--warning)' : '', 'var(--warning)')}
-      ${statCard('fa-arrow-up', summary.totalUpdates, t('dash.updatesAvailable'), summary.totalUpdates > 0 ? 'var(--warning)' : '', 'var(--warning)')}
-      ${statCard('fa-exclamation-triangle', summary.criticalDisk + summary.criticalRam, t('dash.resourcesCritical'), (summary.criticalDisk + summary.criticalRam) > 0 ? 'var(--offline)' : '', 'var(--offline)')}
+      ${statCard('fa-server', summary.total, t('dash.totalServers'), '')}
+      ${statCard('fa-check-circle', summary.online, t('dash.online'), 'var(--online)')}
+      ${statCard('fa-times-circle', summary.offline, t('dash.offline'), summary.offline > 0 ? 'var(--offline)' : '')}
+      ${statCard('fa-redo', summary.rebootRequired, t('dash.needsReboot'), summary.rebootRequired > 0 ? 'var(--warning)' : '')}
+      ${statCard('fa-arrow-up', summary.totalUpdates, t('dash.updatesAvailable'), summary.totalUpdates > 0 ? 'var(--warning)' : '')}
+      ${statCard('fa-exclamation-triangle', summary.criticalDisk + summary.criticalRam, t('dash.resourcesCritical'), (summary.criticalDisk + summary.criticalRam) > 0 ? 'var(--offline)' : '')}
     </div>
 
     <div class="dash-grid">
@@ -174,11 +171,9 @@ function renderDashboardData(data) {
   });
 }
 
-function statCard(icon, value, label, color, borderColor) {
-  const styles = [];
-  if (borderColor) styles.push(`border-left:3px solid ${borderColor}`);
+function statCard(icon, value, label, color) {
   return `
-    <div class="dash-stat-card" style="${styles.join(';')}">
+    <div class="dash-stat-card">
       <div class="dash-stat-icon"><i class="fas ${icon}"></i></div>
       <div class="dash-stat-value" style="${color ? `color:${color}` : ''}">${value}</div>
       <div class="dash-stat-label">${label}</div>

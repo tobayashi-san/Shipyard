@@ -1437,9 +1437,9 @@ input[type="color"].form-input::-webkit-color-swatch {
 .dash-alert:last-child { border-bottom: none; }
 .dash-alert:hover { background: var(--bg-row-hover); }
 
-.dash-alert-error   { color: var(--offline); background: var(--offline-bg); }
-.dash-alert-warning  { color: var(--warning); background: var(--warning-bg); }
-.dash-alert-info    { color: var(--accent);  background: var(--accent-light); }
+.dash-alert-error   { color: var(--offline); }
+.dash-alert-warning  { color: var(--warning); }
+.dash-alert-info    { color: var(--accent); }
 
 .dash-history-item {
   display: flex;
@@ -2055,26 +2055,6 @@ input[type="color"].form-input::-webkit-color-swatch {
 }
 
 @media (max-width: 768px) {
-  .sidebar {
-    position: fixed;
-    left: -100%;
-    top: 0;
-    bottom: 0;
-    z-index: 1000;
-    transition: left 250ms ease;
-  }
-  .sidebar.open { left: 0; }
-  .sidebar-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.5);
-    z-index: 999;
-    display: none;
-  }
-  .sidebar-backdrop.open { display: block; }
-
-  .main-content { width: 100%; }
-
   .page-header {
     padding: 0 16px;
     flex-wrap: wrap;
