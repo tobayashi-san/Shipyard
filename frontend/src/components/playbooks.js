@@ -1257,11 +1257,21 @@ async function openScheduleDialog(editId) {
           </div>
           <div class="form-group">
             <label class="form-label">${t('sc.target')}</label>
-            <select class="form-input" id="sched-targets">
-              <option value="all" ${!existing || existing.targets === 'all' ? 'selected' : ''}>${t('pb.allServers')}</option>
-              ${state.servers.map(s => `<option value="${s.name}" ${existing?.targets === s.name ? 'selected' : ''}>${s.name}</option>`).join('')}
-              <option value="localhost" ${existing?.targets === 'localhost' ? 'selected' : ''}>localhost</option>
-            </select>
+            <div id="sched-targets-box" style="border:1px solid var(--border);border-radius:var(--radius-sm);max-height:150px;overflow-y:auto;background:var(--bg-panel);">
+              ${[
+                { value: 'all',       label: t('pb.allServers'), special: true },
+                ...state.servers.map(s => ({ value: s.name, label: s.name })),
+                { value: 'localhost', label: 'localhost' },
+              ].map(opt => {
+                const sel = !existing ? opt.value === 'all'
+                  : existing.targets === 'all' ? opt.value === 'all'
+                  : existing.targets.split(',').map(x=>x.trim()).includes(opt.value);
+                return `<label style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);">
+                  <input type="checkbox" class="sched-target-cb" value="${esc(opt.value)}"${sel ? ' checked' : ''}${opt.special ? ' id="sched-target-all"' : ''}>
+                  ${opt.special ? `<span style="color:var(--text-muted);"><i class="fas fa-layer-group" style="margin-right:4px;"></i>${esc(opt.label)}</span>` : `<span>${esc(opt.label)}</span>`}
+                </label>`;
+              }).join('')}
+            </div>
           </div>
           <div class="form-row">
             <div class="form-group" style="margin-bottom:0;">
@@ -1298,6 +1308,16 @@ async function openScheduleDialog(editId) {
     </div>
   `;
 
+  // "All servers" toggles individual checkboxes
+  const allCb = document.getElementById('sched-target-all');
+  const serverCbs = () => document.querySelectorAll('.sched-target-cb:not(#sched-target-all)');
+  allCb?.addEventListener('change', () => {
+    if (allCb.checked) serverCbs().forEach(cb => { cb.checked = false; cb.closest('label').style.opacity = '.4'; cb.disabled = true; });
+    else serverCbs().forEach(cb => { cb.disabled = false; cb.closest('label').style.opacity = ''; });
+  });
+  // Initialize disabled state if "all" is pre-checked
+  if (allCb?.checked) serverCbs().forEach(cb => { cb.disabled = true; cb.closest('label').style.opacity = '.4'; });
+
   const intervalSel = document.getElementById('sched-interval');
   const timeGroup = document.getElementById('sched-time-group');
   const weekdayGroup = document.getElementById('sched-weekday-group');
@@ -1323,7 +1343,10 @@ async function openScheduleDialog(editId) {
     e.preventDefault();
     const name = document.getElementById('sched-name').value.trim();
     const playbook = document.getElementById('sched-playbook').value;
-    const targets = document.getElementById('sched-targets').value;
+    const checkedCbs = [...document.querySelectorAll('.sched-target-cb:checked')];
+    const targets = checkedCbs.length === 0 ? 'all'
+      : checkedCbs.some(cb => cb.value === 'all') ? 'all'
+      : checkedCbs.map(cb => cb.value).join(',');
     const interval = intervalSel.value;
     const hour   = parseInt(document.getElementById('sched-hour').value)   || 0;
     const minute = parseInt(document.getElementById('sched-minute').value) || 0;
