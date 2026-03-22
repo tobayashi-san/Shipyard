@@ -178,6 +178,9 @@ function syncFromWorkspace() {
 async function getStatus() {
   if (!await isGitRepo()) return { initialized: false };
 
+  // Sync playbooks into workspace first so status reflects actual file state
+  try { syncToWorkspace(); } catch {}
+
   const cfg = getConfig();
   const [branchRes, statusRes] = await Promise.all([
     runGit(['branch', '--show-current']),
@@ -259,7 +262,10 @@ async function pull() {
   const authUrl = cfg.authToken ? buildAuthUrl(cfg.repoUrl, cfg.authToken) : cfg.repoUrl;
   await setRemote(authUrl);
 
-  const r = await runGit(['pull', '--no-rebase', '--no-edit', 'origin', cfg.branch]);
+  let r = await runGit(['pull', '--no-rebase', '--no-edit', 'origin', cfg.branch]);
+  if (!r.success && r.stderr.includes('unrelated histories')) {
+    r = await runGit(['pull', '--no-rebase', '--no-edit', '--allow-unrelated-histories', 'origin', cfg.branch]);
+  }
   if (r.success) syncFromWorkspace();
   return r;
 }
