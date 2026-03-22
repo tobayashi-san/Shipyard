@@ -902,9 +902,9 @@ async function loadScheduleList() {
       <div class="settings-block" style="margin:0;">
         ${schedules.map(s => `
           <div class="settings-row" style="gap:12px;flex-wrap:nowrap;">
-            <label style="cursor:pointer;flex-shrink:0;display:flex;align-items:center;">
-              <input type="checkbox" class="schedule-toggle" data-id="${s.id}" ${s.enabled ? 'checked' : ''}
-                style="width:15px;height:15px;cursor:pointer;accent-color:var(--accent);">
+            <label class="toggle-switch" style="flex-shrink:0;">
+              <input type="checkbox" class="schedule-toggle" data-id="${s.id}" ${s.enabled ? 'checked' : ''}>
+              <span class="toggle-slider"></span>
             </label>
             <div style="flex:1;min-width:0;">
               <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(s.name)}</div>
