@@ -105,7 +105,8 @@ router.post('/commit', async (req, res) => {
 
 // POST /api/playbooks-git/push
 router.post('/push', async (req, res) => {
-  const r = await gitSync.push();
+  const { message } = req.body || {};
+  const r = await gitSync.push(message);
   if (!r.success) return res.status(500).json({ error: r.stderr });
   res.json({ success: true, output: r.stdout });
 });

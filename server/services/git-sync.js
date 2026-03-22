@@ -277,15 +277,25 @@ async function commit(message) {
   return runGit(['commit', '-m', message]);
 }
 
-async function push() {
+async function push(message) {
   const cfg = getConfig();
   if (!cfg.repoUrl) return { success: false, stderr: 'No repository configured' };
 
-  // Check that at least one commit exists before pushing
-  const headCheck = await runGit(['rev-parse', 'HEAD']);
-  if (!headCheck.success) return { success: false, stderr: 'Nothing to push — no commits yet. Commit your changes first.' };
-
   await applyGitIdentity();
+
+  // Auto-commit any pending changes before pushing
+  syncToWorkspace();
+  await runGit(['add', '-A']);
+  const statusR = await runGit(['status', '--porcelain']);
+  if (statusR.stdout) {
+    const msg = (message && typeof message === 'string') ? message : 'Update playbooks';
+    await runGit(['commit', '-m', msg]);
+  }
+
+  // Check that at least one commit exists
+  const headCheck = await runGit(['rev-parse', 'HEAD']);
+  if (!headCheck.success) return { success: false, stderr: 'Nothing to push — no commits in workspace.' };
+
   const authUrl = cfg.authToken ? buildAuthUrl(cfg.repoUrl, cfg.authToken) : cfg.repoUrl;
   await setRemote(authUrl);
   return runGit(['push', 'origin', `HEAD:${cfg.branch}`]);

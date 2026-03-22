@@ -1348,9 +1348,6 @@ function renderGitDashboardPanel(cfg) {
           <button id="btn-git-push" class="btn btn-secondary btn-sm">
             <i class="fas fa-arrow-up"></i> Push
           </button>
-          <button id="btn-git-commit" class="btn btn-secondary btn-sm">
-            <i class="fas fa-circle-dot"></i> Commit
-          </button>
           <span id="git-status-msg" style="font-size:12px;color:var(--text-muted);margin-left:4px;"></span>
         </div>
       </div>
@@ -1478,20 +1475,9 @@ function _setupGitDashboardEvents(panel) {
     msg.textContent = 'Pushing…';
     try {
       await api.request('/playbooks-git/push', { method: 'POST' });
-      msg.textContent = 'Push successful.';
-    } catch (e) { msg.textContent = 'Push failed: ' + e.message; }
-  });
-
-  panel.querySelector('#btn-git-commit')?.addEventListener('click', async () => {
-    const msg = panel.querySelector('#git-status-msg');
-    const message = prompt('Commit message:');
-    if (!message) return;
-    msg.textContent = 'Committing…';
-    try {
-      await api.request('/playbooks-git/commit', { method: 'POST', body: { message } });
-      msg.textContent = 'Committed.';
+      msg.textContent = 'Pushed to git.';
       _loadGitLog(panel);
-    } catch (e) { msg.textContent = 'Commit failed: ' + e.message; }
+    } catch (e) { msg.textContent = 'Push failed: ' + e.message; }
   });
 
   panel.querySelector('#btn-git-checkout')?.addEventListener('click', async () => {
