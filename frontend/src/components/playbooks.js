@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { state, navigate } from '../main.js';
+import { state, navigate, hasCap } from '../main.js';
 import { showToast, showConfirm } from './toast.js';
 import { t } from '../i18n.js';
 import { formatDateTimeShort, esc } from '../utils/format.js';
@@ -205,9 +205,9 @@ function renderTemplatesHTML() {
       <div class="panel" id="playbook-list-panel">
         <div class="section-header">
           <h3><i class="fas fa-list"></i> ${t('pb.title')}</h3>
-          <button class="btn btn-primary btn-sm" id="btn-new-playbook">
+          ${hasCap('canEditPlaybooks') ? `<button class="btn btn-primary btn-sm" id="btn-new-playbook">
             <i class="fas fa-plus"></i> ${t('pb.new')}
-          </button>
+          </button>` : ''}
         </div>
         <div id="playbook-list">
           <div class="loading-state"><div class="loader"></div> ${t('pb.loading')}</div>
@@ -219,14 +219,14 @@ function renderTemplatesHTML() {
           <div class="section-header" id="editor-header">
             <h3><i class="fas fa-edit"></i> <span id="editor-title">${t('pb.editTitle')}</span></h3>
             <div class="flex-gap">
-              <button class="btn btn-danger btn-sm hidden" id="btn-delete-playbook"><i class="fas fa-trash"></i></button>
+              ${hasCap('canDeletePlaybooks') ? `<button class="btn btn-danger btn-sm hidden" id="btn-delete-playbook"><i class="fas fa-trash"></i></button>` : ''}
               <button class="btn btn-secondary btn-sm hidden" id="btn-playbook-history" title="${t('pb.history')}">
                 <i class="fas fa-history"></i> ${t('pb.history')}
               </button>
               <button class="btn btn-secondary btn-sm" id="btn-cancel-edit">${t('common.cancel')}</button>
-              <button class="btn btn-primary btn-sm" id="btn-save-playbook">
+              ${hasCap('canEditPlaybooks') ? `<button class="btn btn-primary btn-sm" id="btn-save-playbook">
                 <i class="fas fa-save"></i> ${t('common.save')}
-              </button>
+              </button>` : ''}
             </div>
           </div>
           <div class="form-body">
@@ -309,6 +309,8 @@ async function loadPlaybookList() {
     listEl.innerHTML = html;
 
     listEl.querySelectorAll('.playbook-item').forEach(item => {
+      if (!hasCap('canEditPlaybooks') && !hasCap('canDeletePlaybooks')) return;
+      item.style.cursor = 'pointer';
       item.addEventListener('click', () => selectPlaybook(item.dataset.filename, item.dataset.internal === 'true'));
     });
     listEl.querySelectorAll('.btn-run-playbook').forEach(btn => {
@@ -332,10 +334,10 @@ function renderPlaybookGroup(label, playbooks, isInternal) {
             <div class="playbook-item-name">${esc(p.description)}</div>
             <div class="playbook-item-file">${esc(p.filename)}</div>
           </div>
-          <button class="btn btn-secondary btn-sm btn-run-playbook" data-filename="${esc(p.filename)}"
+          ${hasCap('canRunPlaybooks') ? `<button class="btn btn-secondary btn-sm btn-run-playbook" data-filename="${esc(p.filename)}"
             data-description="${esc(p.description)}" title="${t('common.run')}" style="flex-shrink:0;">
             <i class="fas fa-play"></i>
-          </button>
+          </button>` : ''}
         </div>
       `).join('')}
     </div>
@@ -662,9 +664,9 @@ function renderVarsHTML() {
     <div class="panel">
       <div class="section-header">
         <h3><i class="fas fa-sliders-h"></i> ${t('vars.title')}</h3>
-        <button class="btn btn-primary btn-sm" id="btn-add-var">
+        ${hasCap('canAddVars') ? `<button class="btn btn-primary btn-sm" id="btn-add-var">
           <i class="fas fa-plus"></i> ${t('vars.add')}
-        </button>
+        </button>` : ''}
       </div>
       <div id="vars-list">
         <div class="loading-state"><div class="loader"></div> ${t('pb.loading')}</div>
@@ -728,12 +730,8 @@ async function loadVarsList() {
               <td class="text-mono" style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(v.value)}</td>
               <td style="color:var(--text-muted);font-size:13px;">${esc(v.description || '')}</td>
               <td style="text-align:right;">
-                <button class="btn btn-secondary btn-icon btn-sm var-edit" data-id="${v.id}" title="${t('common.edit')}">
-                  <i class="fas fa-pen"></i>
-                </button>
-                <button class="btn btn-danger btn-icon btn-sm var-delete" data-id="${v.id}" data-key="${esc(v.key)}" title="${t('common.delete')}">
-                  <i class="fas fa-trash"></i>
-                </button>
+                ${hasCap('canEditVars') ? `<button class="btn btn-secondary btn-icon btn-sm var-edit" data-id="${v.id}" title="${t('common.edit')}"><i class="fas fa-pen"></i></button>` : ''}
+                ${hasCap('canDeleteVars') ? `<button class="btn btn-danger btn-icon btn-sm var-delete" data-id="${v.id}" data-key="${esc(v.key)}" title="${t('common.delete')}"><i class="fas fa-trash"></i></button>` : ''}
               </td>
             </tr>
           `).join('')}
@@ -878,9 +876,9 @@ function renderSchedulesHTML() {
     <div class="panel">
       <div class="section-header">
         <h3><i class="fas fa-clock"></i> ${t('pb.schedules')}</h3>
-        <button class="btn btn-primary btn-sm" id="btn-new-schedule">
+        ${hasCap('canAddSchedules') ? `<button class="btn btn-primary btn-sm" id="btn-new-schedule">
           <i class="fas fa-plus"></i> ${t('pb.newSchedule')}
-        </button>
+        </button>` : ''}
       </div>
       <div id="schedule-list">
         <div class="loading-state"><div class="loader"></div> ${t('pb.loading')}</div>
@@ -902,10 +900,10 @@ async function loadScheduleList() {
       <div class="settings-block" style="margin:0;">
         ${schedules.map(s => `
           <div class="settings-row" style="gap:12px;flex-wrap:nowrap;">
-            <label class="toggle-switch" style="flex-shrink:0;">
+            ${hasCap('canToggleSchedules') ? `<label class="toggle-switch" style="flex-shrink:0;">
               <input type="checkbox" class="schedule-toggle" data-id="${s.id}" ${s.enabled ? 'checked' : ''}>
               <span class="toggle-slider"></span>
-            </label>
+            </label>` : `<span class="status-dot ${s.enabled ? 'online' : 'unknown'}" style="flex-shrink:0;margin-top:2px;"></span>`}
             <div style="flex:1;min-width:0;">
               <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(s.name)}</div>
               <div style="font-size:11px;color:var(--text-muted);margin-top:2px;display:flex;gap:8px;flex-wrap:wrap;">
@@ -918,12 +916,8 @@ async function loadScheduleList() {
               </div>
             </div>
             <div style="display:flex;gap:4px;flex-shrink:0;">
-              <button class="btn btn-secondary btn-icon btn-sm schedule-edit" data-id="${s.id}" title="${t('common.edit')}">
-                <i class="fas fa-pen"></i>
-              </button>
-              <button class="btn btn-danger btn-icon btn-sm schedule-delete" data-id="${s.id}" title="${t('common.delete')}">
-                <i class="fas fa-trash"></i>
-              </button>
+              ${hasCap('canEditSchedules') ? `<button class="btn btn-secondary btn-icon btn-sm schedule-edit" data-id="${s.id}" title="${t('common.edit')}"><i class="fas fa-pen"></i></button>` : ''}
+              ${hasCap('canDeleteSchedules') ? `<button class="btn btn-danger btn-icon btn-sm schedule-delete" data-id="${s.id}" title="${t('common.delete')}"><i class="fas fa-trash"></i></button>` : ''}
             </div>
           </div>
         `).join('')}

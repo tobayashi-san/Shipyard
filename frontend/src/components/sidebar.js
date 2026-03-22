@@ -1,4 +1,4 @@
-import { state, navigate } from '../main.js';
+import { state, navigate, hasCap } from '../main.js';
 import { showRunPlaybookModal } from './run-playbook-modal.js';
 import { showProfileMenu } from './profile.js';
 import { t } from '../i18n.js';
@@ -42,15 +42,17 @@ export function renderSidebar() {
           <span class="nav-item-icon"><i class="fas fa-th-large"></i></span>
           <span>${t('nav.dashboard')}</span>
         </div>
+        ${hasCap('canViewServers') ? `
         <div class="nav-item ${state.currentView === 'servers' || state.currentView === 'server-detail' ? 'active' : ''}" data-view="servers">
           <span class="nav-item-icon"><i class="fas fa-server"></i></span>
           <span>${t('nav.servers')}</span>
           ${onlineCount > 0 ? `<span class="nav-item-badge">${onlineCount}</span>` : ''}
-        </div>
+        </div>` : ''}
+        ${hasCap('canViewPlaybooks') ? `
         <div class="nav-item ${state.currentView === 'playbooks' ? 'active' : ''}" data-view="playbooks">
           <span class="nav-item-icon"><i class="fas fa-terminal"></i></span>
           <span>${t('nav.playbooks')}</span>
-        </div>
+        </div>` : ''}
       </div>
       ${pluginsSection}
     </nav>

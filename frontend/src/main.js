@@ -16,6 +16,14 @@ import { t } from './i18n.js';
 let _wsUnsub = null;
 
 // State
+// Returns true if the current user has the given capability
+export function hasCap(key) {
+  const p = state.user?.permissions;
+  if (!p) return true;      // not loaded yet → optimistic
+  if (p.full) return true;  // admin
+  return p[key] !== false;  // default true unless explicitly false
+}
+
 export const state = {
   currentView: 'dashboard',
   selectedServerId: null,
@@ -49,12 +57,15 @@ function render() {
       renderDashboard();
       break;
     case 'servers':
+      if (!hasCap('canViewServers')) { renderDashboard(); return; }
       renderServers();
       break;
     case 'server-detail':
+      if (!hasCap('canViewServers')) { renderDashboard(); return; }
       renderServerDetail(state.selectedServerId);
       break;
     case 'playbooks':
+      if (!hasCap('canViewPlaybooks')) { renderDashboard(); return; }
       renderPlaybooks();
       break;
     case 'settings':

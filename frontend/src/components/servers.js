@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { state, navigate, openGlobalTerminal } from '../main.js';
+import { state, navigate, openGlobalTerminal, hasCap } from '../main.js';
 import { showToast, showConfirm, showPrompt } from './toast.js';
 import { showAddServerModal } from './add-server-modal.js';
 import { showRunPlaybookModal } from './run-playbook-modal.js';
@@ -71,12 +71,12 @@ export async function renderServers() {
           <i class="fas fa-file-import"></i> ${t('srv.import')}
           <input type="file" id="btn-import-file" accept=".json,.csv" style="display:none;">
         </label>
-        <button class="btn btn-secondary btn-sm" id="btn-create-group">
+        ${hasCap('canAddServers') ? `<button class="btn btn-secondary btn-sm" id="btn-create-group">
           <i class="fas fa-folder-plus"></i> ${t('srv.folder')}
         </button>
         <button class="btn btn-primary btn-sm" id="btn-add-server">
           <i class="fas fa-plus"></i> ${t('srv.add')}
-        </button>
+        </button>` : ''}
       </div>
     </div>
 
@@ -104,9 +104,9 @@ export async function renderServers() {
             <div class="empty-state-icon"><i class="fas fa-server"></i></div>
             <h3>${t('srv.noServers')}</h3>
             <p>${t('srv.noServersHint')}</p>
-            <button class="btn btn-primary" id="btn-empty-add">
+            ${hasCap('canAddServers') ? `<button class="btn btn-primary" id="btn-empty-add">
               <i class="fas fa-plus"></i> ${t('srv.add')}
-            </button>
+            </button>` : ''}
           </div>
         ` : `
           <table class="data-table" id="server-table">
@@ -725,9 +725,9 @@ function renderGroupNode(node, depth, serversByGroup) {
         <i class="fas fa-folder${collapsed ? '' : '-open'}" style="color:${color};flex-shrink:0;"></i>
         <span class="group-name">${esc(node.name)}</span>
         <div class="group-header-actions">
-          <button class="btn btn-secondary btn-sm create-subgroup-btn" data-parent-id="${node.id}" title="${t('srv.createSubfolder')}"><i class="fas fa-folder-plus"></i></button>
-          <button class="btn btn-secondary btn-sm rename-group-btn" data-group-id="${node.id}" title="${t('srv.editFolder')}"><i class="fas fa-pen"></i></button>
-          <button class="btn btn-danger btn-sm delete-group-btn" data-group-id="${node.id}" data-group-name="${esc(node.name)}" title="${t('srv.deleteFolder')}"><i class="fas fa-trash"></i></button>
+          ${hasCap('canAddServers') ? `<button class="btn btn-secondary btn-sm create-subgroup-btn" data-parent-id="${node.id}" title="${t('srv.createSubfolder')}"><i class="fas fa-folder-plus"></i></button>` : ''}
+          ${hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm rename-group-btn" data-group-id="${node.id}" title="${t('srv.editFolder')}"><i class="fas fa-pen"></i></button>` : ''}
+          ${hasCap('canDeleteServers') ? `<button class="btn btn-danger btn-sm delete-group-btn" data-group-id="${node.id}" data-group-name="${esc(node.name)}" title="${t('srv.deleteFolder')}"><i class="fas fa-trash"></i></button>` : ''}
         </div>
         <span class="group-badge">${members.length + countDescendantServers(node, serversByGroup)}</span>
       </div>
@@ -840,13 +840,13 @@ function renderRow(server, depth = 0, folderColor = null) {
       </td>
       <td class="text-mono" style="color:var(--text-muted);font-size:11px;">${lastSeen}</td>
       <td class="row-actions" style="white-space:nowrap;">
-        ${serverGroups.length > 0 ? `<button class="btn btn-secondary btn-sm btn-move-server" data-server-id="${server.id}" title="${t('srv.moveTo')}"><i class="fas fa-folder-open"></i></button>` : ''}
-        <button class="btn btn-secondary btn-sm btn-edit-server" data-server-id="${server.id}" title="${t('srv.edit')}">
+        ${serverGroups.length > 0 && hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm btn-move-server" data-server-id="${server.id}" title="${t('srv.moveTo')}"><i class="fas fa-folder-open"></i></button>` : ''}
+        ${hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm btn-edit-server" data-server-id="${server.id}" title="${t('srv.edit')}">
           <i class="fas fa-edit"></i>
-        </button>
-        <button class="btn btn-danger btn-sm btn-delete-server" data-server-id="${server.id}" data-server-name="${esc(server.name)}" title="${t('srv.delete')}">
+        </button>` : ''}
+        ${hasCap('canDeleteServers') ? `<button class="btn btn-danger btn-sm btn-delete-server" data-server-id="${server.id}" data-server-name="${esc(server.name)}" title="${t('srv.delete')}">
           <i class="fas fa-trash"></i>
-        </button>
+        </button>` : ''}
       </td>
     </tr>
   `;
