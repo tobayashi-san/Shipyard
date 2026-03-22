@@ -2086,3 +2086,18 @@ input[type="color"].form-input::-moz-color-swatch {
   .login-card { margin: 16px; padding: 24px; }
   .page-header-actions { width: 100%; justify-content: flex-end; }
 }
+
+/* Profile context menu */
+.profile-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: background .12s;
+}
+.profile-menu-item:hover { background: var(--bg-row-hover); }
+.profile-menu-item--danger { color: var(--danger); }
+.profile-menu-item--danger:hover { background: rgba(239,68,68,.08); }

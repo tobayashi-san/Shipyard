@@ -6,6 +6,7 @@ const ansibleRunner = require('../services/ansible-runner');
 const db = require('../db');
 const scheduler = require('../services/scheduler');
 const { sendWebhook, sendEmail } = require('../services/notifier');
+const { adminOnly } = require('../middleware/auth');
 
 const deployLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -61,7 +62,7 @@ router.post('/deploy', deployLimiter, async (req, res) => {
 });
 
 // GET /api/system/settings - Get all app settings (white label etc.)
-router.get('/settings', (req, res) => {
+router.get('/settings', adminOnly, (req, res) => {
   try {
     const raw = db.settings.getAll();
     res.json({
@@ -84,7 +85,7 @@ router.get('/settings', (req, res) => {
 });
 
 // PUT /api/system/settings - Save app settings
-router.put('/settings', (req, res) => {
+router.put('/settings', adminOnly, (req, res) => {
   try {
     const { appName, appTagline, accentColor, theme, timeFormat,
             webhookUrl, webhookSecret,

@@ -5,6 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const db = require('../db');
+const { adminOnly } = require('../middleware/auth');
 
 const resetLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
@@ -33,7 +34,7 @@ function deleteUserPlaybooks() {
 }
 
 // DELETE /api/reset/servers
-router.delete('/servers', resetLimiter, (req, res) => {
+router.delete(\1, resetLimiter, adminOnly, (req, res) => {
   try {
     db.db.transaction(deleteServerTables)();
     db.auditLog.write('reset.servers', 'All servers and related data deleted', req.ip);
@@ -44,7 +45,7 @@ router.delete('/servers', resetLimiter, (req, res) => {
 });
 
 // DELETE /api/reset/schedules
-router.delete('/schedules', resetLimiter, (req, res) => {
+router.delete(\1, resetLimiter, adminOnly, (req, res) => {
   try {
     db.db.prepare('DELETE FROM schedules').run();
     db.auditLog.write('reset.schedules', 'All schedules deleted', req.ip);
@@ -55,7 +56,7 @@ router.delete('/schedules', resetLimiter, (req, res) => {
 });
 
 // DELETE /api/reset/playbooks
-router.delete('/playbooks', resetLimiter, (req, res) => {
+router.delete(\1, resetLimiter, adminOnly, (req, res) => {
   try {
     deleteUserPlaybooks();
     db.auditLog.write('reset.playbooks', 'All user playbooks deleted', req.ip);
@@ -66,7 +67,7 @@ router.delete('/playbooks', resetLimiter, (req, res) => {
 });
 
 // DELETE /api/reset/auth — clears password + JWT secret + onboarding flag
-router.delete('/auth', resetLimiter, (req, res) => {
+router.delete(\1, resetLimiter, adminOnly, (req, res) => {
   try {
     db.settings.set('auth_password_hash', '');
     db.settings.set('auth_jwt_secret', crypto.randomBytes(64).toString('hex'));
@@ -79,7 +80,7 @@ router.delete('/auth', resetLimiter, (req, res) => {
 });
 
 // DELETE /api/reset/all — wipe everything
-router.delete('/all', resetLimiter, (req, res) => {
+router.delete(\1, resetLimiter, adminOnly, (req, res) => {
   try {
     db.db.transaction(() => {
       deleteServerTables();

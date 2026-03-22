@@ -24,6 +24,7 @@ export const state = {
   plugins: [],
   ws: null,
   whiteLabel: {},
+  user: null, // { id, username, email, role }
 };
 
 // Router
@@ -184,12 +185,14 @@ async function boot() {
 
   // Load settings, servers, and plugins in parallel
   try {
-    const [settings, servers, plugins] = await Promise.all([
+    const [settings, servers, plugins, profile] = await Promise.all([
       api.getSettings(),
       api.getServers(),
       api.getPlugins().catch(() => []),
+      api.getProfile().catch(() => null),
     ]);
     state.whiteLabel = settings;
+    state.user = profile;
     state.servers = servers.map(s => ({
       ...s,
       services: typeof s.services === 'string' ? JSON.parse(s.services) : s.services || [],
