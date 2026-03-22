@@ -87,7 +87,7 @@ class AnsibleRunner {
           const nameMatch = content.match(/-\s*name:\s*(.+)/);
           const description = nameMatch ? nameMatch[1].trim() : file;
           // Flag internal ones
-          const isInternal = file === 'update.yml' || file === 'gather-info.yml' || file === 'gather-docker.yml' || file === 'check-image-updates.yml';
+          const isInternal = file === 'update.yml' || file === 'gather-docker.yml' || file === 'check-image-updates.yml';
           return { filename: file, description, isInternal };
         });
     } catch (e) {

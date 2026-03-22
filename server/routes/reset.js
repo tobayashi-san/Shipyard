@@ -15,7 +15,7 @@ const resetLimiter = rateLimit({
 });
 
 const PLAYBOOKS_DIR = path.join(__dirname, '..', 'playbooks');
-const INTERNAL_PLAYBOOKS = ['update.yml', 'gather-info.yml', 'gather-docker.yml', 'check-image-updates.yml', 'reboot.yml', 'setup-ssh.yml'];
+const INTERNAL_PLAYBOOKS = ['update.yml', 'gather-docker.yml', 'check-image-updates.yml', 'reboot.yml', 'setup-ssh.yml'];
 
 function deleteServerTables() {
   for (const table of ['update_history', 'server_info', 'server_updates_cache', 'docker_containers', 'compose_projects', 'servers']) {

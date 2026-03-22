@@ -17,7 +17,7 @@ class SystemInfoService {
         "cut -d' ' -f1 /proc/uptime 2>/dev/null || echo 0",
         "cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo '0 0 0'",
         "hostname 2>/dev/null || echo unknown",
-        "[ -f /var/run/reboot-required ] && echo 1 || echo 0",
+        "if [ -f /var/run/reboot-required ]; then echo 1; elif command -v needs-restarting >/dev/null 2>&1 && ! needs-restarting -r >/dev/null 2>&1; then echo 1; else echo 0; fi",
         // Two-sample CPU usage: pipe both /proc/stat reads into awk – no variable passing, no quoting issues
         "(grep '^cpu ' /proc/stat; sleep 1; grep '^cpu ' /proc/stat) | awk 'NR==1{for(i=2;i<=NF;i++)a[i]=$i} NR==2{t=0;for(i=2;i<=NF;i++)t+=$i-a[i];print(t>0?int(100*(t-($5-a[5]))/t):0)}' || echo 0",
       ].join('; echo "---SEP---"; ');
@@ -92,9 +92,25 @@ class SystemInfoService {
    */
   async getAvailableUpdates(server) {
     try {
-      const result = await sshManager.execCommand(server,
-        '(apt-get update -qq 2>/dev/null; apt list --upgradable 2>/dev/null | grep "/" || yum check-update -q 2>/dev/null); echo "---PHASED---"; apt-get -s dist-upgrade 2>/dev/null | awk \'/deferred due to phasing:/{p=1;next} p&&/^[0-9]/{exit} p&&NF{print $1}\' 2>/dev/null || true'
-      );
+      const cmd = `if command -v apt-get >/dev/null 2>&1; then
+  apt-get update -qq 2>/dev/null
+  apt list --upgradable 2>/dev/null | grep "/"
+  echo "---PHASED---"
+  apt-get -s dist-upgrade 2>/dev/null | awk '/deferred due to phasing:/{p=1;next} p&&/^[0-9]/{exit} p&&NF{print $1}' 2>/dev/null || true
+elif command -v dnf >/dev/null 2>&1; then
+  dnf check-update -q 2>/dev/null | awk 'NF>=3 && /^[a-zA-Z0-9]/{n=$1; sub(/\\.[^.]+$/,"",n); print n"/updates "$2}'
+  echo "---PHASED---"
+elif command -v yum >/dev/null 2>&1; then
+  yum check-update -q 2>/dev/null | awk 'NF>=3 && /^[a-zA-Z0-9]/{n=$1; sub(/\\.[^.]+$/,"",n); print n"/updates "$2}'
+  echo "---PHASED---"
+elif command -v pacman >/dev/null 2>&1; then
+  checkupdates 2>/dev/null | awk '{print $1"/arch "$4}'
+  echo "---PHASED---"
+elif command -v zypper >/dev/null 2>&1; then
+  zypper -q list-updates 2>/dev/null | awk -F"|" 'NR>3 && NF>=5{gsub(/ /,"",$3); gsub(/ /,"",$5); if($3 && $3!="Name") print $3"/oss "$5}'
+  echo "---PHASED---"
+fi`;
+      const result = await sshManager.execCommand(server, cmd);
 
       const [upgradableRaw = '', phasedRaw = ''] = result.stdout.split('---PHASED---');
 
@@ -128,7 +144,7 @@ class SystemInfoService {
   async getInstalledPackages(server) {
     try {
       const result = await sshManager.execCommand(server,
-        "dpkg-query -W -f='${Package} ${Version}\\n' 2>/dev/null | head -100 || rpm -qa --qf '%{NAME} %{VERSION}\\n' 2>/dev/null | head -100"
+        "dpkg-query -W -f='${Package} ${Version}\\n' 2>/dev/null | head -100 || rpm -qa --qf '%{NAME} %{VERSION}\\n' 2>/dev/null | head -100 || pacman -Q 2>/dev/null | head -100 || zypper search -i 2>/dev/null | awk -F'|' 'NR>3 && NF>=4{gsub(/ /,\"\",$3); gsub(/ /,\"\",$4); print $3\" \"$4}' | head -100"
       );
 
       return result.stdout.trim().split('\n')
