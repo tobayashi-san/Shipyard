@@ -1896,6 +1896,12 @@ input[type="color"].form-input::-moz-color-swatch {
   border: 1px solid rgba(var(--accent-rgb), 0.3);
 }
 
+.badge-muted {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
 .btn-link {
   background: none;
   border: none;

@@ -228,7 +228,7 @@ export async function renderOnboarding() {
     btn.innerHTML = `<span class="spinner-sm"></span> ${t('common.loading')}`;
 
     try {
-      const result = await api.authSetup(pw1);
+      const result = await api.authSetup('admin', pw1);
       api.setToken(result.token);
       setStep(2);
     } catch (e) {

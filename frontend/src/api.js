@@ -55,18 +55,18 @@ class ApiClient {
   getAuthStatus() {
     return fetch('/api/auth/status').then(r => r.json());
   }
-  authSetup(password) {
+  authSetup(username, password) {
     return fetch('/api/auth/setup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ username, password }),
     }).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
   }
-  authLogin(password) {
+  authLogin(username, password) {
     return fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ username, password }),
     }).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
   }
   authChangePassword(currentPassword, newPassword) {
@@ -221,6 +221,13 @@ class ApiClient {
   gitCommit(message)    { return this.request('/playbooks-git/commit', { method: 'POST', body: { message } }); }
   gitPull()             { return this.request('/playbooks-git/pull',  { method: 'POST' }); }
   gitPush()             { return this.request('/playbooks-git/push',  { method: 'POST' }); }
+
+  // User management
+  getUsers()                       { return this.request('/users'); }
+  createUser(data)                 { return this.request('/users', { method: 'POST', body: data }); }
+  updateUser(id, data)             { return this.request(`/users/${id}`, { method: 'PUT', body: data }); }
+  resetUserPassword(id, password)  { return this.request(`/users/${id}/password`, { method: 'PUT', body: { password } }); }
+  deleteUser(id)                   { return this.request(`/users/${id}`, { method: 'DELETE' }); }
 }
 
 export const api = new ApiClient();

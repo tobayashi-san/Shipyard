@@ -92,6 +92,9 @@ export async function renderSettings() {
       <button class="tab-btn" data-tab="plugins">
         <i class="fas fa-puzzle-piece"></i> ${t('set.tabPlugins')}
       </button>
+      <button class="tab-btn" data-tab="users">
+        <i class="fas fa-users"></i> Users
+      </button>
       <button class="tab-btn" data-tab="danger">
         <i class="fas fa-triangle-exclamation"></i> ${t('set.tabDanger')}
       </button>
@@ -423,6 +426,13 @@ export async function renderSettings() {
         </div>
       </div>
 
+      <!-- Tab: Users -->
+      <div class="tab-panel" id="tab-users">
+        <div id="users-settings-content">
+          <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
+        </div>
+      </div>
+
       <!-- Tab: Git -->
       <div class="tab-panel" id="tab-git">
         <div id="git-settings-content">
@@ -441,6 +451,13 @@ export async function renderSettings() {
   setupNotificationsEvents();
   setupDangerZone();
   loadPluginsList();
+
+  // Users tab loads lazily when first clicked
+  document.querySelector('.tab-btn[data-tab="users"]')?.addEventListener('click', () => {
+    if (!document.getElementById('users-settings-content')?.dataset.loaded) {
+      loadUsersTab();
+    }
+  });
 
   // Git tab loads lazily when first clicked
   document.querySelector('.tab-btn[data-tab="git"]')?.addEventListener('click', () => {
@@ -990,6 +1007,211 @@ async function loadPluginsList() {
       btn.innerHTML = `<i class="fas fa-rotate"></i> ${t('set.pluginsReload')}`;
     }
   });
+}
+
+// ============================================================
+// Users Tab
+// ============================================================
+async function loadUsersTab() {
+  const content = document.getElementById('users-settings-content');
+  if (!content) return;
+  content.dataset.loaded = '1';
+
+  async function renderUsers() {
+    let users = [];
+    try {
+      users = await api.getUsers();
+    } catch (e) {
+      content.innerHTML = `<div style="padding:16px;color:var(--offline);font-size:13px;">${esc(e.message)}</div>`;
+      return;
+    }
+
+    content.innerHTML = `
+      <div class="settings-group-title">User Management</div>
+      <div class="settings-block" id="users-list">
+        ${users.length === 0 ? `
+          <div class="settings-row" style="border-bottom:none;">
+            <div style="padding:20px 0;color:var(--text-muted);font-size:13px;text-align:center;width:100%;">
+              <i class="fas fa-users" style="opacity:.4;font-size:1.5rem;margin-bottom:8px;display:block;"></i>
+              No users found.
+            </div>
+          </div>` :
+          users.map((u, i) => `
+            <div class="settings-row" ${i === users.length - 1 ? 'style="border-bottom:none;"' : ''} data-user-id="${esc(u.id)}">
+              <div class="settings-row-label">
+                <span>${esc(u.username)}</span>
+                <small>${esc(u.email || '')}</small>
+              </div>
+              <div class="settings-row-control" style="gap:8px;flex-wrap:wrap;align-items:center;">
+                <span class="badge ${u.role === 'admin' ? 'badge-accent' : 'badge-muted'}">${esc(u.role)}</span>
+                <button class="btn btn-secondary btn-sm btn-edit-user" data-id="${esc(u.id)}" data-username="${esc(u.username)}" data-email="${esc(u.email || '')}" data-role="${esc(u.role)}">
+                  <i class="fas fa-edit"></i> Edit
+                </button>
+                <button class="btn btn-secondary btn-sm btn-reset-pw" data-id="${esc(u.id)}" data-username="${esc(u.username)}">
+                  <i class="fas fa-key"></i> Reset PW
+                </button>
+                <button class="btn btn-danger btn-sm btn-del-user" data-id="${esc(u.id)}" data-username="${esc(u.username)}" style="display:${u.id === (window.__currentUserId || '') ? 'none' : ''};">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </div>
+            </div>`).join('')
+        }
+      </div>
+      <div style="margin-top:12px;">
+        <button class="btn btn-primary btn-sm" id="btn-add-user">
+          <i class="fas fa-user-plus"></i> Add User
+        </button>
+      </div>
+      <div id="users-form-area" style="margin-top:16px;"></div>
+    `;
+
+    // Add user button
+    document.getElementById('btn-add-user')?.addEventListener('click', () => showUserForm(null));
+
+    // Edit buttons
+    content.querySelectorAll('.btn-edit-user').forEach(btn => {
+      btn.addEventListener('click', () => {
+        showUserForm({ id: btn.dataset.id, username: btn.dataset.username, email: btn.dataset.email, role: btn.dataset.role });
+      });
+    });
+
+    // Reset password buttons
+    content.querySelectorAll('.btn-reset-pw').forEach(btn => {
+      btn.addEventListener('click', () => showResetPasswordForm(btn.dataset.id, btn.dataset.username));
+    });
+
+    // Delete buttons
+    content.querySelectorAll('.btn-del-user').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm(`Delete user "${btn.dataset.username}"? This cannot be undone.`)) return;
+        try {
+          await api.deleteUser(btn.dataset.id);
+          showToast('User deleted', 'success');
+          await renderUsers();
+        } catch (e) {
+          showToast('Error: ' + e.message, 'error');
+        }
+      });
+    });
+  }
+
+  function showUserForm(user) {
+    const isEdit = !!user;
+    const area = document.getElementById('users-form-area');
+    if (!area) return;
+    area.innerHTML = `
+      <div class="settings-block" style="border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px;">${isEdit ? 'Edit User' : 'Add User'}</div>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label class="form-label">Username</label>
+          <input class="form-input" type="text" id="uf-username" value="${esc(user?.username || '')}" style="max-width:300px;" autocomplete="off">
+        </div>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label class="form-label">Email</label>
+          <input class="form-input" type="email" id="uf-email" value="${esc(user?.email || '')}" style="max-width:300px;" autocomplete="off">
+        </div>
+        ${!isEdit ? `
+        <div class="form-group" style="margin-bottom:10px;">
+          <label class="form-label">Password</label>
+          <input class="form-input" type="password" id="uf-password" placeholder="Min 12 characters" style="max-width:300px;" autocomplete="new-password">
+        </div>` : ''}
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label">Role</label>
+          <select class="form-input" id="uf-role" style="max-width:160px;">
+            <option value="user" ${(user?.role || 'user') === 'user' ? 'selected' : ''}>user</option>
+            <option value="admin" ${user?.role === 'admin' ? 'selected' : ''}>admin</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" id="uf-save"><i class="fas fa-save"></i> ${isEdit ? 'Save' : 'Create'}</button>
+          <button class="btn btn-secondary btn-sm" id="uf-cancel">Cancel</button>
+        </div>
+        <p class="login-error hidden" id="uf-error" style="margin-top:8px;"></p>
+      </div>
+    `;
+
+    document.getElementById('uf-cancel')?.addEventListener('click', () => { area.innerHTML = ''; });
+    document.getElementById('uf-save')?.addEventListener('click', async () => {
+      const btn = document.getElementById('uf-save');
+      const errEl = document.getElementById('uf-error');
+      errEl.classList.add('hidden');
+      const username = document.getElementById('uf-username').value.trim();
+      const email    = document.getElementById('uf-email').value.trim();
+      const role     = document.getElementById('uf-role').value;
+      const password = isEdit ? null : document.getElementById('uf-password')?.value;
+
+      if (!username) { errEl.textContent = 'Username required'; errEl.classList.remove('hidden'); return; }
+      if (!isEdit && (!password || password.length < 12)) {
+        errEl.textContent = 'Password must be at least 12 characters';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-sm"></span>';
+      try {
+        if (isEdit) {
+          await api.updateUser(user.id, { username, email, role });
+          showToast('User updated', 'success');
+        } else {
+          await api.createUser({ username, email, password, role });
+          showToast('User created', 'success');
+        }
+        area.innerHTML = '';
+        await renderUsers();
+      } catch (e) {
+        errEl.textContent = e.message;
+        errEl.classList.remove('hidden');
+        btn.disabled = false;
+        btn.innerHTML = `<i class="fas fa-save"></i> ${isEdit ? 'Save' : 'Create'}`;
+      }
+    });
+  }
+
+  function showResetPasswordForm(userId, username) {
+    const area = document.getElementById('users-form-area');
+    if (!area) return;
+    area.innerHTML = `
+      <div class="settings-block" style="border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px;">Reset Password for <em>${esc(username)}</em></div>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label class="form-label">New Password</label>
+          <input class="form-input" type="password" id="rp-password" placeholder="Min 12 characters" style="max-width:300px;" autocomplete="new-password">
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" id="rp-save"><i class="fas fa-key"></i> Reset Password</button>
+          <button class="btn btn-secondary btn-sm" id="rp-cancel">Cancel</button>
+        </div>
+        <p class="login-error hidden" id="rp-error" style="margin-top:8px;"></p>
+      </div>
+    `;
+    document.getElementById('rp-cancel')?.addEventListener('click', () => { area.innerHTML = ''; });
+    document.getElementById('rp-save')?.addEventListener('click', async () => {
+      const btn = document.getElementById('rp-save');
+      const errEl = document.getElementById('rp-error');
+      errEl.classList.add('hidden');
+      const password = document.getElementById('rp-password').value;
+      if (!password || password.length < 12) {
+        errEl.textContent = 'Password must be at least 12 characters';
+        errEl.classList.remove('hidden');
+        return;
+      }
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-sm"></span>';
+      try {
+        await api.resetUserPassword(userId, password);
+        showToast('Password reset successfully', 'success');
+        area.innerHTML = '';
+      } catch (e) {
+        errEl.textContent = e.message;
+        errEl.classList.remove('hidden');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-key"></i> Reset Password';
+      }
+    });
+  }
+
+  await renderUsers();
 }
 
 // ============================================================

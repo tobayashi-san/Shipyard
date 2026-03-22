@@ -111,6 +111,10 @@ const { getJwtSecret } = require('./utils/jwt-secret');
 const authMiddleware = require('./middleware/auth');
 app.use('/api/auth', authRouter);
 
+// Users management (admin-only, enforced inside the router)
+const usersRouter = require('./routes/users');
+app.use('/api/users', authMiddleware, usersRouter);
+
 // Protect all other /api routes
 app.use('/api', authMiddleware);
 

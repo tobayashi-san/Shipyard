@@ -8,7 +8,6 @@ import { t } from '../i18n.js';
 export async function renderLogin(onSuccess) {
   const status = await api.getAuthStatus();
   const isSetup = !status.configured;
-  const username = status.username || 'admin';
 
   document.body.innerHTML = `
     <div class="login-screen">
@@ -22,9 +21,6 @@ export async function renderLogin(onSuccess) {
             <div class="login-sub">${isSetup ? t('login.setup') : t('login.signin')}</div>
           </div>
         </div>
-        ${!isSetup ? `<div style="text-align:center;font-size:14px;color:var(--text-muted);margin-bottom:4px;">
-          <i class="fas fa-user" style="margin-right:6px;opacity:.6;"></i>${username}
-        </div>` : ''}
 
         ${isSetup ? `
           <p class="login-hint">
@@ -34,6 +30,18 @@ export async function renderLogin(onSuccess) {
 
         <form id="login-form" autocomplete="on">
           <div class="form-group">
+            <label class="form-label">Username</label>
+            <input
+              class="form-input"
+              type="text"
+              id="login-username"
+              placeholder="${isSetup ? 'admin' : 'Username'}"
+              value="${isSetup ? 'admin' : ''}"
+              autocomplete="username"
+              ${isSetup ? '' : 'autofocus'}
+            >
+          </div>
+          <div class="form-group">
             <label class="form-label">${isSetup ? t('login.newPassword') : t('login.password')}</label>
             <input
               class="form-input"
@@ -41,7 +49,7 @@ export async function renderLogin(onSuccess) {
               id="login-password"
               placeholder="${isSetup ? t('login.minChars') : t('login.password')}"
               autocomplete="${isSetup ? 'new-password' : 'current-password'}"
-              autofocus
+              ${isSetup ? '' : 'autofocus'}
             >
           </div>
           ${isSetup ? `
@@ -71,6 +79,7 @@ export async function renderLogin(onSuccess) {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = document.getElementById('login-btn');
+    const uname = (document.getElementById('login-username')?.value || '').trim();
     const pw = document.getElementById('login-password').value;
     errorEl.classList.add('hidden');
     errorEl.textContent = '';
@@ -93,7 +102,9 @@ export async function renderLogin(onSuccess) {
     btn.innerHTML = '<span class="spinner-sm"></span> …';
 
     try {
-      const result = isSetup ? await api.authSetup(pw) : await api.authLogin(pw);
+      const result = isSetup
+        ? await api.authSetup(uname || 'admin', pw)
+        : await api.authLogin(uname, pw);
       if (result.requires2FA) {
         renderTotp(result.tempToken, onSuccess);
         return;

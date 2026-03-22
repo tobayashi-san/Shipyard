@@ -35,8 +35,12 @@ function verifyTotp(code, secret) {
   return result.valid;
 }
 
-function makeToken() {
-  return jwt.sign({ ok: true }, getJwtSecret(), { expiresIn: '8h' });
+function makeToken(user) {
+  return jwt.sign(
+    { userId: user.id, username: user.username, role: user.role },
+    getJwtSecret(),
+    { expiresIn: '8h' }
+  );
 }
 
 function makeTempToken(payload) {
@@ -45,74 +49,124 @@ function makeTempToken(payload) {
 
 // GET /api/auth/status – is a password configured? Is onboarding done?
 router.get('/status', (req, res) => {
+  const configured = db.users.count() > 0 || !!db.settings.get('auth_password_hash');
   res.json({
-    configured:    !!db.settings.get('auth_password_hash'),
+    configured,
     onboardingDone: !!db.settings.get('onboarding_done'),
-    username:      db.settings.get('auth_username') || 'admin',
+    username: 'admin',
   });
 });
 
 // GET /api/auth/profile
 router.get('/profile', authMiddleware, (req, res) => {
   res.json({
-    username: db.settings.get('auth_username') || 'admin',
-    email:    db.settings.get('auth_email')    || '',
+    id:       req.user.id,
+    username: req.user.username,
+    email:    req.user.email || '',
+    role:     req.user.role,
   });
 });
 
 // PUT /api/auth/profile
 router.put('/profile', authMiddleware, (req, res) => {
   const { username, email } = req.body;
+  const fields = {};
   if (username !== undefined) {
     const u = String(username).trim().slice(0, 64);
     if (!u) return res.status(400).json({ error: 'Username cannot be empty' });
-    db.settings.set('auth_username', u);
+    fields.username = u;
   }
-  if (email !== undefined) db.settings.set('auth_email', String(email).trim().slice(0, 256));
+  if (email !== undefined) fields.email = String(email).trim().slice(0, 256);
+
+  if (Object.keys(fields).length) {
+    db.users.update(req.user.id, fields);
+    // Also keep legacy settings in sync for backwards compat
+    if (fields.username) db.settings.set('auth_username', fields.username);
+    if (fields.email !== undefined) db.settings.set('auth_email', fields.email);
+  }
+
   db.auditLog.write('auth.profile', 'Profile updated', req.ip);
   res.json({ success: true });
 });
 
-// POST /api/auth/setup – first-time password setup (only when no password exists)
+// POST /api/auth/setup – first-time password setup (only when no users exist)
 router.post('/setup', async (req, res) => {
-  if (db.settings.get('auth_password_hash')) {
-    return res.status(400).json({ error: 'Password already configured. Use /api/auth/change.' });
+  if (db.users.count() > 0) {
+    return res.status(400).json({ error: 'Users already exist. Use /api/auth/change.' });
   }
-  const { password } = req.body;
+  let { username, password } = req.body;
+  username = (username && String(username).trim()) || 'admin';
   if (!password || typeof password !== 'string' || password.length < 12) {
     return res.status(400).json({ error: 'Password must be at least 12 characters' });
   }
   const hash = await bcrypt.hash(password, 12);
+
+  // Create first admin user
+  const user = db.users.create(username, '', hash, 'admin');
+
+  // Also persist legacy settings for backward compat
   db.settings.set('auth_password_hash', hash);
-  db.auditLog.write('auth.setup', 'Initial password configured', req.ip);
-  res.json({ token: makeToken() });
+  db.settings.set('auth_username', username);
+
+  db.auditLog.write('auth.setup', `Initial admin user created: ${username}`, req.ip);
+  res.json({ token: makeToken(user) });
 });
 
 // POST /api/auth/login
 router.post('/login', loginLimiter, async (req, res) => {
-  const { password } = req.body;
+  const { username, password } = req.body;
   if (!password || typeof password !== 'string') {
     return res.status(400).json({ error: 'Password required' });
   }
-  const hash = db.settings.get('auth_password_hash');
-  if (!hash) {
-    return res.status(400).json({ error: 'No password configured' });
-  }
-  const valid = await bcrypt.compare(password, hash);
-  if (!valid) {
-    db.auditLog.write('auth.login', 'Failed login attempt', req.ip, false);
-    await new Promise(r => setTimeout(r, 500));
-    return res.status(401).json({ error: 'Incorrect password' });
+
+  let user = null;
+
+  if (username) {
+    user = db.users.getByUsername(String(username).trim());
+  } else {
+    // Legacy: no username provided — try to find admin
+    const all = db.users.getAll();
+    if (all.length === 1) {
+      user = db.users.getByUsername(all[0].username);
+    }
   }
 
-  // If 2FA is enabled, issue a short-lived temp token and ask for TOTP code
-  if (db.settings.get('totp_enabled') === '1') {
-    const tempToken = makeTempToken({ totp_pending: true });
+  if (!user) {
+    // Fallback to legacy settings-based auth
+    const hash = db.settings.get('auth_password_hash');
+    if (!hash) return res.status(400).json({ error: 'No password configured' });
+    const valid = await bcrypt.compare(password, hash);
+    if (!valid) {
+      db.auditLog.write('auth.login', 'Failed login attempt', req.ip, false);
+      await new Promise(r => setTimeout(r, 500));
+      return res.status(401).json({ error: 'Incorrect credentials' });
+    }
+    // Legacy 2FA check
+    if (db.settings.get('totp_enabled') === '1') {
+      const tempToken = makeTempToken({ totp_pending: true });
+      return res.json({ requires2FA: true, tempToken });
+    }
+    db.auditLog.write('auth.login', 'Successful login (legacy)', req.ip);
+    // Issue a legacy-compatible token with ok:true since we have no real user
+    const token = jwt.sign({ ok: true }, getJwtSecret(), { expiresIn: '8h' });
+    return res.json({ token });
+  }
+
+  const valid = await bcrypt.compare(password, user.password_hash);
+  if (!valid) {
+    db.auditLog.write('auth.login', `Failed login attempt for ${user.username}`, req.ip, false);
+    await new Promise(r => setTimeout(r, 500));
+    return res.status(401).json({ error: 'Incorrect credentials' });
+  }
+
+  // If 2FA is enabled for this user, issue a short-lived temp token
+  if (user.totp_enabled) {
+    const tempToken = makeTempToken({ totp_pending: true, userId: user.id });
     return res.json({ requires2FA: true, tempToken });
   }
 
-  db.auditLog.write('auth.login', 'Successful login', req.ip);
-  res.json({ token: makeToken() });
+  db.auditLog.write('auth.login', `Successful login: ${user.username}`, req.ip);
+  res.json({ token: makeToken(user) });
 });
 
 // POST /api/auth/change – change password (requires valid JWT)
@@ -124,20 +178,37 @@ router.post('/change', changeLimiter, authMiddleware, async (req, res) => {
   if (typeof newPassword !== 'string' || newPassword.length < 12) {
     return res.status(400).json({ error: 'New password must be at least 12 characters' });
   }
-  const hash = db.settings.get('auth_password_hash');
-  if (!hash) {
-    return res.status(400).json({ error: 'No password configured. Use /api/auth/setup.' });
+
+  const userId = req.user.id;
+
+  // If legacy user (no real id), fall back to settings-based check
+  if (userId === 'legacy') {
+    const hash = db.settings.get('auth_password_hash');
+    if (!hash) return res.status(400).json({ error: 'No password configured.' });
+    const valid = await bcrypt.compare(currentPassword, hash);
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+    const newHash = await bcrypt.hash(newPassword, 12);
+    db.settings.set('auth_password_hash', newHash);
+    const newSecret = crypto.randomBytes(64).toString('hex');
+    db.settings.set('auth_jwt_secret', newSecret);
+    db.auditLog.write('auth.change', 'Password changed (legacy), all tokens invalidated', req.ip);
+    return res.json({ success: true });
   }
-  const valid = await bcrypt.compare(currentPassword, hash);
-  if (!valid) {
-    return res.status(401).json({ error: 'Current password is incorrect' });
-  }
+
+  const fullUser = db.users.getByUsername(req.user.username);
+  if (!fullUser) return res.status(404).json({ error: 'User not found' });
+  const valid = await bcrypt.compare(currentPassword, fullUser.password_hash);
+  if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
   const newHash = await bcrypt.hash(newPassword, 12);
-  db.settings.set('auth_password_hash', newHash);
+  db.users.setPasswordHash(userId, newHash);
+  // Also update legacy settings hash for admin users
+  if (req.user.role === 'admin') {
+    db.settings.set('auth_password_hash', newHash);
+  }
   // Rotate JWT secret so all existing tokens are invalidated immediately
   const newSecret = crypto.randomBytes(64).toString('hex');
   db.settings.set('auth_jwt_secret', newSecret);
-  db.auditLog.write('auth.change', 'Password changed, all tokens invalidated', req.ip);
+  db.auditLog.write('auth.change', `Password changed for ${req.user.username}, all tokens invalidated`, req.ip);
   res.json({ success: true });
 });
 
@@ -154,20 +225,39 @@ router.post('/totp/login', loginLimiter, (req, res) => {
 
   if (!payload.totp_pending) return res.status(401).json({ error: 'Invalid token type' });
 
+  // New-style: userId in payload
+  if (payload.userId) {
+    const user = db.users.getByUsername(
+      db.users.getById(payload.userId)?.username || ''
+    );
+    if (!user) return res.status(401).json({ error: 'User not found' });
+    const secret = user.totp_secret;
+    if (!secret) return res.status(400).json({ error: '2FA not configured' });
+    if (!verifyTotp(code, secret)) {
+      db.auditLog.write('auth.totp', 'Invalid TOTP code', req.ip, false);
+      return res.status(401).json({ error: 'Invalid authenticator code' });
+    }
+    db.auditLog.write('auth.login', `Successful login (2FA): ${user.username}`, req.ip);
+    return res.json({ token: makeToken(user) });
+  }
+
+  // Legacy path
   const secret = db.settings.get('totp_secret');
   if (!secret) return res.status(400).json({ error: '2FA not configured' });
-
   if (!verifyTotp(code, secret)) {
     db.auditLog.write('auth.totp', 'Invalid TOTP code', req.ip, false);
     return res.status(401).json({ error: 'Invalid authenticator code' });
   }
-
   db.auditLog.write('auth.login', 'Successful login (2FA)', req.ip);
-  res.json({ token: makeToken() });
+  const token = jwt.sign({ ok: true }, getJwtSecret(), { expiresIn: '8h' });
+  res.json({ token });
 });
 
 // GET /api/auth/totp/status – is 2FA enabled?
 router.get('/totp/status', authMiddleware, (req, res) => {
+  if (req.user && req.user.id !== 'legacy') {
+    return res.json({ enabled: !!req.user.totp_enabled });
+  }
   res.json({ enabled: db.settings.get('totp_enabled') === '1' });
 });
 
@@ -175,11 +265,16 @@ router.get('/totp/status', authMiddleware, (req, res) => {
 router.post('/totp/setup', authMiddleware, async (req, res) => {
   try {
     const secret = otplib.generateSecret();
-    // Store temporarily – only persisted after /totp/confirm
-    db.settings.set('totp_secret_pending', secret);
-
     const appName = db.settings.get('wl_app_name') || 'Shipyard';
-    const otpauthUrl = otplib.generateURI({ label: 'admin', issuer: appName, secret });
+    const username = req.user?.username || 'admin';
+
+    if (req.user && req.user.id !== 'legacy') {
+      db.users.setPendingTotp(req.user.id, secret);
+    } else {
+      db.settings.set('totp_secret_pending', secret);
+    }
+
+    const otpauthUrl = otplib.generateURI({ label: username, issuer: appName, secret });
     const qrDataUrl = await QRCode.toDataURL(otpauthUrl);
 
     res.json({ secret, otpauthUrl, qrDataUrl });
@@ -193,24 +288,34 @@ router.post('/totp/confirm', authMiddleware, (req, res) => {
   const { code } = req.body;
   if (!code) return res.status(400).json({ error: 'code required' });
 
-  const secret = db.settings.get('totp_secret_pending');
-  if (!secret) return res.status(400).json({ error: 'No pending TOTP setup. Call /totp/setup first.' });
-
-  if (!verifyTotp(code, secret)) {
-    return res.status(400).json({ error: 'Invalid code – try again' });
+  if (req.user && req.user.id !== 'legacy') {
+    const fullUser = db.users.getByUsername(req.user.username);
+    const secret = fullUser?.totp_secret_pending;
+    if (!secret) return res.status(400).json({ error: 'No pending TOTP setup. Call /totp/setup first.' });
+    if (!verifyTotp(code, secret)) return res.status(400).json({ error: 'Invalid code – try again' });
+    db.users.setTotp(req.user.id, secret, true);
+    db.users.setPendingTotp(req.user.id, '');
+  } else {
+    const secret = db.settings.get('totp_secret_pending');
+    if (!secret) return res.status(400).json({ error: 'No pending TOTP setup. Call /totp/setup first.' });
+    if (!verifyTotp(code, secret)) return res.status(400).json({ error: 'Invalid code – try again' });
+    db.settings.set('totp_secret', secret);
+    db.settings.set('totp_enabled', '1');
+    db.settings.set('totp_secret_pending', '');
   }
 
-  db.settings.set('totp_secret', secret);
-  db.settings.set('totp_enabled', '1');
-  db.settings.set('totp_secret_pending', '');
   db.auditLog.write('auth.totp', '2FA enabled', req.ip);
   res.json({ success: true });
 });
 
 // DELETE /api/auth/totp – disable 2FA
 router.delete('/totp', authMiddleware, (req, res) => {
-  db.settings.set('totp_enabled', '0');
-  db.settings.set('totp_secret', '');
+  if (req.user && req.user.id !== 'legacy') {
+    db.users.setTotp(req.user.id, '', false);
+  } else {
+    db.settings.set('totp_enabled', '0');
+    db.settings.set('totp_secret', '');
+  }
   db.auditLog.write('auth.totp', '2FA disabled', req.ip);
   res.json({ success: true });
 });

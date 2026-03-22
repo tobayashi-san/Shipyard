@@ -249,8 +249,49 @@ db.exec(`
   );
 `);
 
+// Users table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    email TEXT DEFAULT '',
+    password_hash TEXT NOT NULL,
+    role TEXT DEFAULT 'user',
+    totp_secret TEXT DEFAULT '',
+    totp_enabled INTEGER DEFAULT 0,
+    totp_secret_pending TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
 migrate("ALTER TABLE server_groups ADD COLUMN color TEXT DEFAULT '#6366f1';");
 migrate('ALTER TABLE server_groups ADD COLUMN parent_id TEXT;');
+
+// Migration: if users table is empty AND auth_password_hash exists, create admin user from settings
+(function migrateAdminUser() {
+  try {
+    const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
+    if (userCount > 0) return;
+    const hash = db.prepare("SELECT value FROM app_settings WHERE key = 'auth_password_hash'").get();
+    if (!hash) return;
+    const usernameRow = db.prepare("SELECT value FROM app_settings WHERE key = 'auth_username'").get();
+    const emailRow    = db.prepare("SELECT value FROM app_settings WHERE key = 'auth_email'").get();
+    const totpSecretRow  = db.prepare("SELECT value FROM app_settings WHERE key = 'totp_secret'").get();
+    const totpEnabledRow = db.prepare("SELECT value FROM app_settings WHERE key = 'totp_enabled'").get();
+    const id = uuidv4();
+    const username = (usernameRow && usernameRow.value) ? usernameRow.value : 'admin';
+    const email    = (emailRow    && emailRow.value)    ? emailRow.value    : '';
+    const totpSecret  = (totpSecretRow  && totpSecretRow.value)  ? totpSecretRow.value  : '';
+    const totpEnabled = (totpEnabledRow && totpEnabledRow.value === '1') ? 1 : 0;
+    db.prepare(`
+      INSERT INTO users (id, username, email, password_hash, role, totp_secret, totp_enabled)
+      VALUES (?, ?, ?, ?, 'admin', ?, ?)
+    `).run(id, username, email, hash.value, totpSecret, totpEnabled);
+    console.log('[db] Migrated admin user from settings to users table');
+  } catch (e) {
+    console.error('[db] Admin migration error:', e.message);
+  }
+})();
 
 // Server CRUD
 const serverQueries = {
@@ -565,5 +606,38 @@ module.exports = {
         ON CONFLICT(server_id) DO UPDATE SET results_json = excluded.results_json, updated_at = datetime('now')
       `).run(serverId, JSON.stringify(results));
     },
+  },
+
+  users: {
+    getAll: () => db.prepare('SELECT id, username, email, role, totp_enabled, created_at FROM users ORDER BY created_at').all(),
+    getById: (id) => db.prepare('SELECT id, username, email, role, totp_enabled, created_at FROM users WHERE id = ?').get(id),
+    getByUsername: (username) => db.prepare('SELECT * FROM users WHERE username = ?').get(username),
+    create: (username, email, passwordHash, role) => {
+      const id = uuidv4();
+      db.prepare(`
+        INSERT INTO users (id, username, email, password_hash, role)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(id, username, email || '', passwordHash, role || 'user');
+      return db.prepare('SELECT id, username, email, role, totp_enabled, created_at FROM users WHERE id = ?').get(id);
+    },
+    update: (id, fields) => {
+      const allowed = { username: 'username', email: 'email', role: 'role' };
+      const sets = [];
+      const vals = [];
+      for (const [k, v] of Object.entries(fields)) {
+        if (!allowed[k]) continue;
+        sets.push(`${allowed[k]} = ?`);
+        vals.push(v);
+      }
+      if (!sets.length) return;
+      vals.push(id);
+      db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+      return db.prepare('SELECT id, username, email, role, totp_enabled, created_at FROM users WHERE id = ?').get(id);
+    },
+    setPasswordHash: (id, hash) => db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, id),
+    setTotp: (id, secret, enabled) => db.prepare('UPDATE users SET totp_secret = ?, totp_enabled = ? WHERE id = ?').run(secret, enabled ? 1 : 0, id),
+    setPendingTotp: (id, secret) => db.prepare('UPDATE users SET totp_secret_pending = ? WHERE id = ?').run(secret, id),
+    delete: (id) => db.prepare('DELETE FROM users WHERE id = ?').run(id),
+    count: () => db.prepare('SELECT COUNT(*) as c FROM users').get().c,
   },
 };
