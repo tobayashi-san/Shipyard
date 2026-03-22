@@ -210,6 +210,34 @@ try {
   }
 } catch {}
 
+// Schedule execution history
+db.exec(`
+  CREATE TABLE IF NOT EXISTS schedule_history (
+    id TEXT PRIMARY KEY,
+    schedule_id TEXT,
+    schedule_name TEXT NOT NULL,
+    playbook TEXT NOT NULL,
+    targets TEXT DEFAULT 'all',
+    started_at TEXT DEFAULT (datetime('now')),
+    completed_at TEXT,
+    status TEXT DEFAULT 'running',
+    output TEXT DEFAULT ''
+  );
+  CREATE INDEX IF NOT EXISTS idx_schedule_history_started  ON schedule_history(started_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_schedule_history_sched_id ON schedule_history(schedule_id);
+`);
+
+// Ansible variables (global extra_vars injected into every playbook run)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS ansible_vars (
+    id TEXT PRIMARY KEY,
+    key TEXT NOT NULL UNIQUE,
+    value TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS server_groups (
     id TEXT PRIMARY KEY,
@@ -479,6 +507,43 @@ module.exports = {
         VALUES (?, ?, datetime('now'))
         ON CONFLICT(server_id) DO UPDATE SET updates_json = excluded.updates_json, updated_at = datetime('now')
       `).run(serverId, JSON.stringify(updates));
+    },
+  },
+
+  scheduleHistory: {
+    getAll: (limit = 100, scheduleId = null) => {
+      if (scheduleId) return db.prepare('SELECT id,schedule_id,schedule_name,playbook,targets,started_at,completed_at,status FROM schedule_history WHERE schedule_id = ? ORDER BY started_at DESC LIMIT ?').all(scheduleId, limit);
+      return db.prepare('SELECT id,schedule_id,schedule_name,playbook,targets,started_at,completed_at,status FROM schedule_history ORDER BY started_at DESC LIMIT ?').all(limit);
+    },
+    getById: (id) => db.prepare('SELECT * FROM schedule_history WHERE id = ?').get(id),
+    create: (scheduleId, scheduleName, playbook, targets) => {
+      const id = uuidv4();
+      db.prepare('INSERT INTO schedule_history (id, schedule_id, schedule_name, playbook, targets) VALUES (?, ?, ?, ?, ?)').run(id, scheduleId || null, scheduleName, playbook, targets || 'all');
+      return id;
+    },
+    complete: (id, status, output) => {
+      db.prepare("UPDATE schedule_history SET status = ?, output = ?, completed_at = datetime('now') WHERE id = ?").run(status, output || '', id);
+    },
+    prune: () => {
+      db.prepare("DELETE FROM schedule_history WHERE id NOT IN (SELECT id FROM schedule_history ORDER BY started_at DESC LIMIT 200)").run();
+    },
+  },
+
+  ansibleVars: {
+    getAll: () => db.prepare('SELECT * FROM ansible_vars ORDER BY key').all(),
+    create: (key, value, description) => {
+      const id = uuidv4();
+      db.prepare('INSERT INTO ansible_vars (id, key, value, description) VALUES (?, ?, ?, ?)').run(id, key, value, description || '');
+      return db.prepare('SELECT * FROM ansible_vars WHERE id = ?').get(id);
+    },
+    update: (id, key, value, description) => {
+      db.prepare('UPDATE ansible_vars SET key = ?, value = ?, description = ? WHERE id = ?').run(key, value, description || '', id);
+      return db.prepare('SELECT * FROM ansible_vars WHERE id = ?').get(id);
+    },
+    delete: (id) => db.prepare('DELETE FROM ansible_vars WHERE id = ?').run(id),
+    toExtraVars: () => {
+      const rows = db.prepare('SELECT key, value FROM ansible_vars').all();
+      return Object.fromEntries(rows.map(r => [r.key, r.value]));
     },
   },
 

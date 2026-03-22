@@ -190,6 +190,33 @@ class ApiClient {
   updateSchedule(id, data) { return this.request(`/schedules/${id}`, { method: 'PUT', body: data }); }
   deleteSchedule(id) { return this.request(`/schedules/${id}`, { method: 'DELETE' }); }
   toggleSchedule(id) { return this.request(`/schedules/${id}/toggle`, { method: 'POST' }); }
+
+  // Schedule History
+  getScheduleHistory(limit = 100, scheduleId = null) {
+    const q = new URLSearchParams({ limit });
+    if (scheduleId) q.set('scheduleId', scheduleId);
+    return this.request(`/schedule-history?${q}`);
+  }
+  getScheduleHistoryEntry(id) { return this.request(`/schedule-history/${id}`); }
+
+  // Ansible Variables
+  getAnsibleVars() { return this.request('/ansible-vars'); }
+  createAnsibleVar(data) { return this.request('/ansible-vars', { method: 'POST', body: data }); }
+  updateAnsibleVar(id, data) { return this.request(`/ansible-vars/${id}`, { method: 'PUT', body: data }); }
+  deleteAnsibleVar(id) { return this.request(`/ansible-vars/${id}`, { method: 'DELETE' }); }
+
+  // Ad-hoc Commands
+  runAdhoc(targets, module, args) { return this.request('/adhoc/run', { method: 'POST', body: { targets, module, args } }); }
+
+  // Playbooks Git
+  getGitConfig()      { return this.request('/playbooks-git/config'); }
+  saveGitConfig(data) { return this.request('/playbooks-git/config', { method: 'PUT', body: data }); }
+  gitSetup(data)      { return this.request('/playbooks-git/setup', { method: 'POST', body: data }); }
+  getGitStatus()      { return this.request('/playbooks-git/status'); }
+  getGitLog()         { return this.request('/playbooks-git/log'); }
+  gitCommit(message)  { return this.request('/playbooks-git/commit', { method: 'POST', body: { message } }); }
+  gitPull()           { return this.request('/playbooks-git/pull',  { method: 'POST' }); }
+  gitPush()           { return this.request('/playbooks-git/push',  { method: 'POST' }); }
 }
 
 export const api = new ApiClient();

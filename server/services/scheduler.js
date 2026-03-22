@@ -4,6 +4,7 @@ const ansibleRunner = require('./ansible-runner');
 const systemInfo = require('./system-info');
 const sshManager = require('./ssh-manager');
 const { parseImageUpdateOutput } = require('../utils/parse-image-updates');
+const gitSync = require('./git-sync');
 
 // In-memory map: scheduleId -> cron task
 const jobs = new Map();
@@ -101,6 +102,12 @@ function register(schedule) {
     console.log(`[Scheduler] Running "${schedule.name}" (${schedule.playbook}) on ${schedule.targets}`);
     broadcast({ type: 'schedule_start', scheduleId: schedule.id, name: schedule.name });
 
+    // Sync playbooks from git before running
+    await gitSync.autoPull();
+
+    const histId = db.scheduleHistory.create(schedule.id, schedule.name, schedule.playbook, schedule.targets);
+    const outputLines = [];
+
     try {
       const result = await ansibleRunner.runPlaybook(
         schedule.playbook,
@@ -108,15 +115,19 @@ function register(schedule) {
         {},
         (type, data) => {
           broadcast({ type: 'update_output', scheduleId: schedule.id, stream: type, data });
+          outputLines.push(data);
         }
       );
 
       const status = result.success ? 'success' : 'failed';
       db.schedules.updateLastRun(schedule.id, status);
+      db.scheduleHistory.complete(histId, status, outputLines.join(''));
+      db.scheduleHistory.prune();
       broadcast({ type: 'schedule_complete', scheduleId: schedule.id, success: result.success });
       console.log(`[Scheduler] "${schedule.name}" completed: ${status}`);
     } catch (error) {
       db.schedules.updateLastRun(schedule.id, 'failed');
+      db.scheduleHistory.complete(histId, 'failed', outputLines.join('') + (outputLines.length ? '\n' : '') + error.message);
       broadcast({ type: 'schedule_error', scheduleId: schedule.id, error: error.message });
       console.error(`[Scheduler] "${schedule.name}" error:`, error.message);
     } finally {

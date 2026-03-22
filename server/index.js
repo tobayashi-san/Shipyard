@@ -123,12 +123,21 @@ const schedulesRouter    = require('./routes/schedules');
 const customUpdatesRouter = require('./routes/custom-updates');
 const pluginsAdminRouter = require('./routes/plugins-admin');
 const pluginLoader       = require('./services/plugin-loader');
+const scheduleHistoryRouter = require('./routes/schedule-history');
+const ansibleVarsRouter  = require('./routes/ansible-vars');
+const adhocRouter        = require('./routes/adhoc');
+const gitPlaybooksRouter = require('./routes/git-playbooks');
+const gitSync            = require('./services/git-sync');
 app.use('/api/reset', resetRouter);
 app.use('/api/servers', serversRouter);
 app.use('/api/servers/:id/custom-updates', customUpdatesRouter);
 app.use('/api/system', systemRouter);
 app.use('/api/playbooks', playbooksRouter);
 app.use('/api/schedules', schedulesRouter);
+app.use('/api/schedule-history', scheduleHistoryRouter);
+app.use('/api/ansible-vars', ansibleVarsRouter);
+app.use('/api/adhoc', adhocRouter);
+app.use('/api/playbooks-git', gitPlaybooksRouter);
 app.use('/api/plugins', pluginsAdminRouter);
 
 // Dynamic plugin data routes — auth is handled inside each plugin's own router
@@ -266,6 +275,9 @@ app.post('/api/ansible/run', async (req, res) => {
   );
 
   res.json({ historyId, status: 'started' });
+
+  // Sync playbooks from git before running
+  await gitSync.autoPull();
 
   // Run playbook and stream output via WebSocket
   try {

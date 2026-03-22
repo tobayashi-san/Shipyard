@@ -3,13 +3,14 @@ import { state, navigate } from '../main.js';
 import { showToast, showConfirm } from './toast.js';
 import { t } from '../i18n.js';
 import { formatDateTimeShort, esc } from '../utils/format.js';
+import { onWsMessage } from '../websocket.js';
 import { EditorView, basicSetup } from 'codemirror';
 import { yaml } from '@codemirror/lang-yaml';
 import { EditorState } from '@codemirror/state';
 import { syntaxHighlighting } from '@codemirror/language';
 import { classHighlighter } from '@lezer/highlight';
 
-// ── CodeMirror instance ───────────────────────────────────────
+// ── CodeMirror ────────────────────────────────────────────────
 let cmEditor = null;
 
 const cmTheme = EditorView.theme({
@@ -44,16 +45,10 @@ function initEditor() {
   const container = document.getElementById('cm-editor-container');
   if (!container) return;
   if (cmEditor) { cmEditor.destroy(); cmEditor = null; }
-
   cmEditor = new EditorView({
     state: EditorState.create({
       doc: '',
-      extensions: [
-        basicSetup,
-        yaml(),
-        syntaxHighlighting(classHighlighter),
-        cmTheme,
-      ],
+      extensions: [basicSetup, yaml(), syntaxHighlighting(classHighlighter), cmTheme],
     }),
     parent: container,
   });
@@ -65,16 +60,16 @@ function getEditorContent() {
 
 function setEditorContent(content) {
   if (!cmEditor) return;
-  cmEditor.dispatch({
-    changes: { from: 0, to: cmEditor.state.doc.length, insert: content },
-  });
+  cmEditor.dispatch({ changes: { from: 0, to: cmEditor.state.doc.length, insert: content } });
   cmEditor.scrollDOM.scrollTop = 0;
 }
 
-// ============================================================
-// Playbooks Page – list, create, edit, run
-// ============================================================
+// ── Tab state ─────────────────────────────────────────────────
+let activeTab = 'templates';
 
+// ============================================================
+// Page Entry
+// ============================================================
 export async function renderPlaybooks() {
   const main = document.querySelector('.main-content');
   if (!main) return;
@@ -85,132 +80,169 @@ export async function renderPlaybooks() {
         <h2>${t('pb.title')}</h2>
         <p>${t('pb.subtitle')}</p>
       </div>
-      <div class="page-header-actions">
-        <button class="btn btn-primary btn-sm" id="btn-new-playbook">
-          <i class="fas fa-plus"></i> ${t('pb.new')}
-        </button>
-      </div>
     </div>
 
-    <div class="page-content">
-      <div class="page-content-grid" style="margin-bottom:20px;">
-        <!-- Left: Playbook list -->
-        <div class="panel" id="playbook-list-panel">
-          <div class="section-header">
-            <h3><i class="fas fa-list"></i> ${t('pb.title')}</h3>
-          </div>
-          <div id="playbook-list">
-            <div class="loading-state"><div class="loader"></div> ${t('pb.loading')}</div>
-          </div>
+    <div class="tab-bar" id="pb-tab-bar">
+      <button class="tab-btn${activeTab === 'templates' ? ' active' : ''}" data-tab="templates">
+        <i class="fas fa-file-code"></i> ${t('pb.tabTemplates')}
+      </button>
+      <button class="tab-btn${activeTab === 'run' ? ' active' : ''}" data-tab="run">
+        <i class="fas fa-play"></i> ${t('pb.tabRun')}
+      </button>
+      <button class="tab-btn${activeTab === 'vars' ? ' active' : ''}" data-tab="vars">
+        <i class="fas fa-sliders-h"></i> ${t('pb.tabVars')}
+      </button>
+      <button class="tab-btn${activeTab === 'schedules' ? ' active' : ''}" data-tab="schedules">
+        <i class="fas fa-clock"></i> ${t('pb.tabSchedules')}
+      </button>
+      <button class="tab-btn${activeTab === 'history' ? ' active' : ''}" data-tab="history">
+        <i class="fas fa-history"></i> ${t('pb.tabHistory')}
+      </button>
+      <button class="tab-btn${activeTab === 'git' ? ' active' : ''}" data-tab="git">
+        <i class="fab fa-git-alt"></i> ${t('pb.tabGit')}
+      </button>
+    </div>
+
+    <div id="pb-tab-content" class="page-content">
+      ${renderTabContent(activeTab)}
+    </div>
+  `;
+
+  document.getElementById('pb-tab-bar').addEventListener('click', async (e) => {
+    const btn = e.target.closest('.tab-btn');
+    if (!btn) return;
+    const tab = btn.dataset.tab;
+    if (tab === activeTab) return;
+    activeTab = tab;
+    document.querySelectorAll('#pb-tab-bar .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    const content = document.getElementById('pb-tab-content');
+    content.innerHTML = renderTabContent(tab);
+    await initTab(tab);
+  });
+
+  await initTab(activeTab);
+}
+
+function renderTabContent(tab) {
+  switch (tab) {
+    case 'templates': return renderTemplatesHTML();
+    case 'run':       return renderQuickRunHTML();
+    case 'vars':      return renderVarsHTML();
+    case 'schedules': return renderSchedulesHTML();
+    case 'history':   return renderHistoryHTML();
+    case 'git':       return renderGitHTML();
+    default: return '';
+  }
+}
+
+async function initTab(tab) {
+  switch (tab) {
+    case 'templates': await loadPlaybookList(); setupPlaybookEvents(); break;
+    case 'run':       await loadQuickRunPlaybooks(); setupQuickRunEvents(); break;
+    case 'vars':      await loadVarsList(); setupVarsEvents(); break;
+    case 'schedules': await loadScheduleList(); setupScheduleEvents(); break;
+    case 'history':   await loadHistoryList(); break;
+    case 'git':       await loadGitTab(); break;
+  }
+}
+
+// ============================================================
+// Tab: Templates
+// ============================================================
+let currentFilename = null;
+
+function renderTemplatesHTML() {
+  return `
+    <div class="page-content-grid">
+      <div class="panel" id="playbook-list-panel">
+        <div class="section-header">
+          <h3><i class="fas fa-list"></i> ${t('pb.title')}</h3>
+          <button class="btn btn-primary btn-sm" id="btn-new-playbook">
+            <i class="fas fa-plus"></i> ${t('pb.new')}
+          </button>
         </div>
+        <div id="playbook-list">
+          <div class="loading-state"><div class="loader"></div> ${t('pb.loading')}</div>
+        </div>
+      </div>
 
-        <!-- Right: Editor / Run panel -->
-        <div id="playbook-editor-panel" class="hidden">
-          <div class="panel">
-            <div class="section-header" id="editor-header">
-              <h3><i class="fas fa-edit"></i> <span id="editor-title">${t('pb.editTitle')}</span></h3>
-              <div class="flex-gap">
-                <button class="btn btn-danger btn-sm hidden" id="btn-delete-playbook">
-                  <i class="fas fa-trash"></i>
-                </button>
-                <button class="btn btn-secondary btn-sm hidden" id="btn-playbook-history" title="${t('pb.history')}">
-                  <i class="fas fa-history"></i> ${t('pb.history')}
-                </button>
-                <button class="btn btn-secondary btn-sm" id="btn-cancel-edit">${t('common.cancel')}</button>
-                <button class="btn btn-primary btn-sm" id="btn-save-playbook">
-                  <i class="fas fa-save"></i> ${t('common.save')}
-                </button>
-              </div>
-            </div>
-            <div class="form-body">
-              <div class="form-group" id="filename-group">
-                <label class="form-label">${t('pb.filename')}</label>
-                <input class="form-input text-mono" type="text" id="playbook-filename" placeholder="${t('pb.filenamePlaceholder')}">
-              </div>
-              <div class="form-group">
-                <label class="form-label">${t('pb.yaml')}</label>
-                <div id="cm-editor-container" class="cm-editor-wrap"></div>
-              </div>
+      <div id="playbook-editor-panel" class="hidden">
+        <div class="panel">
+          <div class="section-header" id="editor-header">
+            <h3><i class="fas fa-edit"></i> <span id="editor-title">${t('pb.editTitle')}</span></h3>
+            <div class="flex-gap">
+              <button class="btn btn-danger btn-sm hidden" id="btn-delete-playbook"><i class="fas fa-trash"></i></button>
+              <button class="btn btn-secondary btn-sm hidden" id="btn-playbook-history" title="${t('pb.history')}">
+                <i class="fas fa-history"></i> ${t('pb.history')}
+              </button>
+              <button class="btn btn-secondary btn-sm" id="btn-cancel-edit">${t('common.cancel')}</button>
+              <button class="btn btn-primary btn-sm" id="btn-save-playbook">
+                <i class="fas fa-save"></i> ${t('common.save')}
+              </button>
             </div>
           </div>
-        </div>
-
-        <!-- Right: Run panel -->
-        <div id="playbook-run-panel" class="hidden">
-          <div class="panel">
-            <div class="section-header">
-              <h3><i class="fas fa-play"></i> <span id="run-playbook-name">${t('common.run')}</span></h3>
-              <button class="btn btn-secondary btn-sm" id="btn-cancel-run">${t('common.close')}</button>
+          <div class="form-body">
+            <div class="form-group" id="filename-group">
+              <label class="form-label">${t('pb.filename')}</label>
+              <input class="form-input text-mono" type="text" id="playbook-filename" placeholder="${t('pb.filenamePlaceholder')}">
             </div>
-            <div class="form-body">
-              <div class="form-group">
-                <label class="form-label">${t('pb.target')}</label>
-                <select class="form-input" id="run-target">
-                  <option value="all">${t('pb.allServers')}</option>
-                  ${state.servers.map(s => `<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('')}
-                  <option value="localhost">localhost</option>
-                </select>
-              </div>
-              <div style="padding-top:4px;">
-                <button class="btn btn-primary" id="btn-run-confirm">
-                  <i class="fas fa-play"></i> ${t('common.run')}
-                </button>
-              </div>
-            </div>
-
-            <div id="run-output" class="hidden" style="border-top:1px solid var(--border);">
-              <div class="terminal" style="border:none;border-radius:0;">
-                <div class="terminal-header">
-                  <div class="terminal-dots">
-                    <div class="terminal-dot red"></div>
-                    <div class="terminal-dot yellow"></div>
-                    <div class="terminal-dot green"></div>
-                  </div>
-                  <div class="terminal-title" id="run-terminal-title">${t('pb.output')}</div>
-                </div>
-                <div class="terminal-body" id="run-terminal-body"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Welcome placeholder -->
-        <div id="playbook-welcome">
-          <div class="panel">
-            <div class="empty-state">
-              <div class="empty-state-icon"><i class="fas fa-terminal"></i></div>
-              <h3>${t('pb.noPlaybooks')}</h3>
-              <p>${t('pb.selectHint')}</p>
+            <div class="form-group">
+              <label class="form-label">${t('pb.yaml')}</label>
+              <div id="cm-editor-container" class="cm-editor-wrap"></div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Schedules Section -->
-      <div class="panel">
-        <div class="section-header">
-          <h3><i class="fas fa-clock"></i> ${t('pb.schedules')}</h3>
-          <button class="btn btn-primary btn-sm" id="btn-new-schedule">
-            <i class="fas fa-plus"></i> ${t('pb.newSchedule')}
-          </button>
+      <div id="playbook-run-panel" class="hidden">
+        <div class="panel">
+          <div class="section-header">
+            <h3><i class="fas fa-play"></i> <span id="run-playbook-name">${t('common.run')}</span></h3>
+            <button class="btn btn-secondary btn-sm" id="btn-cancel-run">${t('common.close')}</button>
+          </div>
+          <div class="form-body">
+            <div class="form-group">
+              <label class="form-label">${t('pb.target')}</label>
+              <select class="form-input" id="run-target">
+                <option value="all">${t('pb.allServers')}</option>
+                ${state.servers.map(s => `<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('')}
+                <option value="localhost">localhost</option>
+              </select>
+            </div>
+            <div style="padding-top:4px;">
+              <button class="btn btn-primary" id="btn-run-confirm">
+                <i class="fas fa-play"></i> ${t('common.run')}
+              </button>
+            </div>
+          </div>
+          <div id="run-output" class="hidden" style="border-top:1px solid var(--border);">
+            <div class="terminal" style="border:none;border-radius:0;">
+              <div class="terminal-header">
+                <div class="terminal-dots">
+                  <div class="terminal-dot red"></div>
+                  <div class="terminal-dot yellow"></div>
+                  <div class="terminal-dot green"></div>
+                </div>
+                <div class="terminal-title" id="run-terminal-title">${t('pb.output')}</div>
+              </div>
+              <div class="terminal-body" id="run-terminal-body"></div>
+            </div>
+          </div>
         </div>
-        <div id="schedule-list">
-          <div class="loading-state"><div class="loader"></div> ${t('pb.loading')}</div>
+      </div>
+
+      <div id="playbook-welcome">
+        <div class="panel">
+          <div class="empty-state">
+            <div class="empty-state-icon"><i class="fas fa-terminal"></i></div>
+            <h3>${t('pb.noPlaybooks')}</h3>
+            <p>${t('pb.selectHint')}</p>
+          </div>
         </div>
       </div>
     </div>
   `;
-
-  await loadPlaybookList();
-  await loadScheduleList();
-  setupPlaybookEvents();
-  setupScheduleEvents();
 }
-
-// ============================================================
-// List
-// ============================================================
-let currentFilename = null;
 
 async function loadPlaybookList() {
   const listEl = document.getElementById('playbook-list');
@@ -221,20 +253,13 @@ async function loadPlaybookList() {
       listEl.innerHTML = `<div class="empty-state" style="padding:20px;"><p>${t('pb.noPlaybooks')}.</p></div>`;
       return;
     }
-
     const user = playbooks.filter(p => !p.isInternal);
     const internal = playbooks.filter(p => p.isInternal);
-
     let html = '';
-    if (user.length > 0) {
-      html += renderPlaybookGroup(t('pb.custom'), user, false);
-    }
-    if (internal.length > 0) {
-      html += renderPlaybookGroup(t('pb.internal'), internal, true);
-    }
+    if (user.length > 0) html += renderPlaybookGroup(t('pb.custom'), user, false);
+    if (internal.length > 0) html += renderPlaybookGroup(t('pb.internal'), internal, true);
     listEl.innerHTML = html;
 
-    // Click handlers
     listEl.querySelectorAll('.playbook-item').forEach(item => {
       item.addEventListener('click', () => selectPlaybook(item.dataset.filename, item.dataset.internal === 'true'));
     });
@@ -259,7 +284,8 @@ function renderPlaybookGroup(label, playbooks, isInternal) {
             <div class="playbook-item-name">${esc(p.description)}</div>
             <div class="playbook-item-file">${esc(p.filename)}</div>
           </div>
-          <button class="btn btn-secondary btn-sm btn-run-playbook" data-filename="${esc(p.filename)}" data-description="${esc(p.description)}" title="${t('common.run')}" style="flex-shrink:0;">
+          <button class="btn btn-secondary btn-sm btn-run-playbook" data-filename="${esc(p.filename)}"
+            data-description="${esc(p.description)}" title="${t('common.run')}" style="flex-shrink:0;">
             <i class="fas fa-play"></i>
           </button>
         </div>
@@ -268,24 +294,15 @@ function renderPlaybookGroup(label, playbooks, isInternal) {
   `;
 }
 
-// ============================================================
-// Editor
-// ============================================================
 async function selectPlaybook(filename, isInternal) {
   currentFilename = filename;
-  showPanel('editor');
+  showTemplatePanel('editor');
   document.getElementById('editor-title').textContent = filename;
-  const filenameGroup = document.getElementById('filename-group');
-  const deleteBtn = document.getElementById('btn-delete-playbook');
-
-  // Hide filename input and delete for internal playbooks
-  filenameGroup.classList.toggle('hidden', isInternal);
-  if (deleteBtn) deleteBtn.classList.toggle('hidden', isInternal);
+  document.getElementById('filename-group').classList.toggle('hidden', isInternal);
+  document.getElementById('btn-delete-playbook')?.classList.toggle('hidden', isInternal);
   document.getElementById('btn-playbook-history')?.classList.toggle('hidden', isInternal);
-
   const nameInput = document.getElementById('playbook-filename');
   if (nameInput) nameInput.value = filename.replace(/\.ya?ml$/, '');
-
   setEditorContent(t('pb.editorLoading'));
   try {
     const data = await api.getPlaybook(filename);
@@ -293,37 +310,28 @@ async function selectPlaybook(filename, isInternal) {
   } catch (e) {
     setEditorContent(t('pb.editorLoadError', { msg: e.message }));
   }
-
-  // Highlight active item
-  document.querySelectorAll('.playbook-item').forEach(i => {
-    i.classList.toggle('active', i.dataset.filename === filename);
-  });
+  document.querySelectorAll('.playbook-item').forEach(i => i.classList.toggle('active', i.dataset.filename === filename));
 }
 
 function openRunPanel(filename, description) {
   currentFilename = filename;
-  showPanel('run');
+  showTemplatePanel('run');
   document.getElementById('run-playbook-name').textContent = description || filename;
   document.getElementById('run-output').classList.add('hidden');
   document.getElementById('run-terminal-body').innerHTML = '';
 }
 
-function showPanel(which) {
+function showTemplatePanel(which) {
   document.getElementById('playbook-editor-panel').classList.toggle('hidden', which !== 'editor');
   document.getElementById('playbook-run-panel').classList.toggle('hidden', which !== 'run');
   document.getElementById('playbook-welcome').classList.toggle('hidden', which !== 'none');
-  if (which === 'editor' && !cmEditor) {
-    initEditor();
-  }
+  if (which === 'editor' && !cmEditor) initEditor();
 }
 
-// ============================================================
-// Events
-// ============================================================
 function setupPlaybookEvents() {
   document.getElementById('btn-new-playbook')?.addEventListener('click', () => {
     currentFilename = null;
-    showPanel('editor');
+    showTemplatePanel('editor');
     document.getElementById('editor-title').textContent = t('pb.new');
     document.getElementById('filename-group').classList.remove('hidden');
     document.getElementById('btn-delete-playbook').classList.add('hidden');
@@ -333,38 +341,32 @@ function setupPlaybookEvents() {
   });
 
   document.getElementById('btn-cancel-edit')?.addEventListener('click', () => {
-    showPanel('none');
+    showTemplatePanel('none');
     currentFilename = null;
+    document.querySelectorAll('.playbook-item').forEach(i => i.classList.remove('active'));
+  });
+
+  document.getElementById('btn-cancel-run')?.addEventListener('click', () => {
+    showTemplatePanel('none');
     document.querySelectorAll('.playbook-item').forEach(i => i.classList.remove('active'));
   });
 
   document.getElementById('btn-playbook-history')?.addEventListener('click', async () => {
     if (!currentFilename) return;
-    let versions;
     try {
-      versions = await api.getPlaybookHistory(currentFilename);
+      const versions = await api.getPlaybookHistory(currentFilename);
+      showHistoryModal(currentFilename, versions, (content) => setEditorContent(content));
     } catch (e) {
       showToast(t('common.errorPrefix', { msg: e.message }), 'error');
-      return;
     }
-
-    showHistoryModal(currentFilename, versions, (restoredContent) => {
-      setEditorContent(restoredContent);
-    });
-  });
-
-  document.getElementById('btn-cancel-run')?.addEventListener('click', () => {
-    showPanel('none');
-    document.querySelectorAll('.playbook-item').forEach(i => i.classList.remove('active'));
   });
 
   document.getElementById('btn-save-playbook')?.addEventListener('click', async () => {
     const filenameInput = document.getElementById('playbook-filename');
     const content = getEditorContent().trim();
     const filename = currentFilename || (filenameInput.value.trim() + '.yml');
-
     if (!filename) { showToast(t('pb.needFilename'), 'error'); return; }
-    if (!content) { showToast(t('pb.needContent'), 'error'); return; }
+    if (!content)  { showToast(t('pb.needContent'), 'error'); return; }
 
     const btn = document.getElementById('btn-save-playbook');
     btn.disabled = true; btn.innerHTML = `<span class="spinner-sm"></span> ${t('common.save')}…`;
@@ -386,7 +388,7 @@ function setupPlaybookEvents() {
     try {
       await api.deletePlaybook(currentFilename);
       showToast(t('pb.deleted', { name: currentFilename }), 'success');
-      showPanel('none');
+      showTemplatePanel('none');
       currentFilename = null;
       await loadPlaybookList();
     } catch (e) {
@@ -426,7 +428,345 @@ function setupPlaybookEvents() {
 }
 
 // ============================================================
-// Schedules
+// Tab: Quick Run
+// ============================================================
+function renderQuickRunHTML() {
+  return `
+    <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start;">
+      <!-- Left: form -->
+      <div class="panel">
+        <div class="section-header">
+          <h3><i class="fas fa-play"></i> ${t('qr.title')}</h3>
+        </div>
+        <div class="form-body">
+          <div class="form-group">
+            <label class="form-label">Playbook</label>
+            <select class="form-input" id="qr-playbook">
+              <option value="">${t('qr.selectPlaybook')}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">${t('qr.targets')}</label>
+            <div id="qr-server-list" style="
+              border:1px solid var(--border);border-radius:var(--radius);
+              background:var(--bg-panel-alt);max-height:220px;overflow-y:auto;
+            ">
+              <label style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);cursor:pointer;">
+                <input type="checkbox" id="qr-all" value="all" checked style="accent-color:var(--accent);">
+                <span style="font-weight:500;">${t('pb.allServers')}</span>
+              </label>
+              ${state.servers.map(s => `
+                <label style="display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:1px solid var(--border);cursor:pointer;" class="qr-server-row">
+                  <input type="checkbox" class="qr-server-cb" value="${esc(s.name)}" style="accent-color:var(--accent);">
+                  <span style="flex:1;">${esc(s.name)}</span>
+                  <span class="badge badge-${s.status === 'online' ? 'online' : 'offline'}" style="font-size:10px;">${s.status === 'online' ? t('common.online') : t('common.offline')}</span>
+                </label>
+              `).join('')}
+              <label style="display:flex;align-items:center;gap:10px;padding:7px 12px;cursor:pointer;" class="qr-server-row">
+                <input type="checkbox" class="qr-server-cb" value="localhost" style="accent-color:var(--accent);">
+                <span>localhost</span>
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">${t('qr.extraVars')} <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+            <input class="form-input text-mono" type="text" id="qr-extra-vars" placeholder='{"key": "value"}'>
+          </div>
+          <button class="btn btn-primary" id="btn-qr-run" style="width:100%;">
+            <i class="fas fa-play"></i> ${t('qr.run')}
+          </button>
+        </div>
+      </div>
+
+      <!-- Right: output terminal -->
+      <div class="panel" id="qr-output-panel">
+        <div class="section-header">
+          <h3 id="qr-terminal-title" style="font-family:var(--font-mono);font-size:13px;font-weight:400;color:var(--text-muted);">${t('pb.output')}</h3>
+        </div>
+        <div id="qr-output-empty" style="padding:40px 24px;text-align:center;color:var(--text-muted);">
+          <i class="fas fa-play-circle" style="font-size:32px;margin-bottom:12px;opacity:.3;display:block;"></i>
+          Playbook auswählen und ausführen
+        </div>
+        <div class="terminal-body" id="qr-terminal-body" style="display:none;min-height:300px;border-top:1px solid var(--border);"></div>
+      </div>
+    </div>
+  `;
+}
+
+async function loadQuickRunPlaybooks() {
+  const sel = document.getElementById('qr-playbook');
+  if (!sel) return;
+  try {
+    const playbooks = await api.getPlaybooks();
+    const user = playbooks.filter(p => !p.isInternal);
+    const internal = playbooks.filter(p => p.isInternal);
+    let opts = `<option value="">${t('qr.selectPlaybook')}</option>`;
+    if (user.length) {
+      opts += `<optgroup label="${t('pb.custom')}">` +
+        user.map(p => `<option value="${esc(p.filename)}">${esc(p.description)}</option>`).join('') +
+        '</optgroup>';
+    }
+    if (internal.length) {
+      opts += `<optgroup label="${t('pb.internal')}">` +
+        internal.map(p => `<option value="${esc(p.filename)}">${esc(p.description)}</option>`).join('') +
+        '</optgroup>';
+    }
+    sel.innerHTML = opts;
+  } catch {}
+}
+
+let _qrWsCleanup = null;
+
+function setupQuickRunEvents() {
+  // "All servers" toggle: check/uncheck individual servers
+  const allCb = document.getElementById('qr-all');
+  const serverCbs = () => document.querySelectorAll('.qr-server-cb');
+
+  allCb?.addEventListener('change', () => {
+    serverCbs().forEach(cb => {
+      cb.checked = false;
+      cb.disabled = allCb.checked;
+    });
+  });
+
+  serverCbs().forEach(cb => {
+    cb.addEventListener('change', () => {
+      if (cb.checked && allCb) allCb.checked = false;
+      // Re-enable "all" if nothing individual is selected
+      const anyChecked = [...serverCbs()].some(c => c.checked);
+      if (!anyChecked && allCb) { allCb.checked = true; serverCbs().forEach(c => c.disabled = true); }
+    });
+    if (allCb?.checked) cb.disabled = true;
+  });
+
+  document.getElementById('btn-qr-run')?.addEventListener('click', async () => {
+    const playbook = document.getElementById('qr-playbook').value;
+    if (!playbook) { showToast(t('qr.selectPlaybook'), 'warning'); return; }
+
+    // Build targets string
+    const allChecked = document.getElementById('qr-all')?.checked;
+    let targets;
+    if (allChecked) {
+      targets = 'all';
+    } else {
+      const checked = [...document.querySelectorAll('.qr-server-cb:checked')].map(c => c.value);
+      if (!checked.length) { showToast(t('run.needTarget'), 'warning'); return; }
+      targets = checked.join(',');
+    }
+
+    const extraVarsRaw = document.getElementById('qr-extra-vars').value.trim();
+    let extraVars = {};
+    if (extraVarsRaw) {
+      try { extraVars = JSON.parse(extraVarsRaw); }
+      catch { showToast(t('run.invalidJson'), 'error'); return; }
+    }
+
+    const btn = document.getElementById('btn-qr-run');
+    btn.disabled = true; btn.innerHTML = `<span class="spinner-sm"></span> ${t('qr.running')}`;
+
+    const emptyEl = document.getElementById('qr-output-empty');
+    const bodyEl = document.getElementById('qr-terminal-body');
+    emptyEl.style.display = 'none';
+    bodyEl.style.display = 'block';
+    bodyEl.innerHTML = '';
+    document.getElementById('qr-terminal-title').textContent = `ansible-playbook ${playbook} → ${targets}`;
+
+    const addLine = (text, cls = 'line-stdout') => {
+      const span = document.createElement('span');
+      span.className = cls;
+      span.textContent = text;
+      bodyEl.appendChild(span);
+      bodyEl.scrollTop = bodyEl.scrollHeight;
+    };
+
+    if (_qrWsCleanup) { _qrWsCleanup(); _qrWsCleanup = null; }
+
+    try {
+      const { historyId } = await api.runPlaybook(playbook, targets, extraVars);
+
+      _qrWsCleanup = onWsMessage((msg) => {
+        if (msg.historyId !== historyId) return;
+        if (msg.type === 'ansible_output') {
+          addLine(msg.data, msg.stream === 'stderr' ? 'line-stderr' : 'line-stdout');
+        } else if (msg.type === 'ansible_complete') {
+          addLine(msg.success ? '✓ Completed successfully' : '✗ Completed with errors',
+            msg.success ? 'line-success' : 'line-stderr');
+          btn.disabled = false; btn.innerHTML = `<i class="fas fa-play"></i> ${t('qr.run')}`;
+          if (_qrWsCleanup) { _qrWsCleanup(); _qrWsCleanup = null; }
+        } else if (msg.type === 'ansible_error') {
+          addLine(`✗ ${msg.error}`, 'line-stderr');
+          btn.disabled = false; btn.innerHTML = `<i class="fas fa-play"></i> ${t('qr.run')}`;
+          if (_qrWsCleanup) { _qrWsCleanup(); _qrWsCleanup = null; }
+        }
+      });
+    } catch (e) {
+      addLine(t('common.errorPrefix', { msg: e.message }), 'line-stderr');
+      btn.disabled = false; btn.innerHTML = `<i class="fas fa-play"></i> ${t('qr.run')}`;
+    }
+  });
+}
+
+// ============================================================
+// Tab: Variables
+// ============================================================
+function renderVarsHTML() {
+  return `
+    <div class="panel">
+      <div class="section-header">
+        <h3><i class="fas fa-sliders-h"></i> ${t('vars.title')}</h3>
+        <button class="btn btn-primary btn-sm" id="btn-add-var">
+          <i class="fas fa-plus"></i> ${t('vars.add')}
+        </button>
+      </div>
+      <div id="vars-list">
+        <div class="loading-state"><div class="loader"></div> ${t('pb.loading')}</div>
+      </div>
+    </div>
+
+    <div id="var-form-panel" class="panel hidden" style="margin-top:16px;">
+      <div class="section-header">
+        <h3 id="var-form-title"><i class="fas fa-plus"></i> ${t('vars.add')}</h3>
+      </div>
+      <div class="form-body">
+        <div class="form-group">
+          <label class="form-label">${t('vars.key')}</label>
+          <input class="form-input text-mono" type="text" id="var-key" placeholder="my_variable">
+          <div class="form-hint">${t('vars.keyHint')}</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">${t('vars.value')}</label>
+          <input class="form-input" type="text" id="var-value">
+        </div>
+        <div class="form-group">
+          <label class="form-label">${t('vars.description')}</label>
+          <input class="form-input" type="text" id="var-description">
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-secondary" id="btn-var-cancel">${t('common.cancel')}</button>
+          <button class="btn btn-primary" id="btn-var-save">
+            <i class="fas fa-save"></i> ${t('common.save')}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+let editingVarId = null;
+
+async function loadVarsList() {
+  const el = document.getElementById('vars-list');
+  if (!el) return;
+  try {
+    const vars = await api.getAnsibleVars();
+    if (!vars || vars.length === 0) {
+      el.innerHTML = `<div class="empty-state" style="padding:20px;"><p style="color:var(--text-muted);">${t('vars.noVars')}</p></div>`;
+      return;
+    }
+    el.innerHTML = `
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>${t('vars.key')}</th>
+            <th>${t('vars.value')}</th>
+            <th>${t('vars.description')}</th>
+            <th style="width:80px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${vars.map(v => `
+            <tr>
+              <td class="text-mono" style="font-size:13px;font-weight:500;">${esc(v.key)}</td>
+              <td class="text-mono" style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(v.value)}</td>
+              <td style="color:var(--text-muted);font-size:13px;">${esc(v.description || '')}</td>
+              <td style="text-align:right;">
+                <button class="btn btn-secondary btn-icon btn-sm var-edit" data-id="${v.id}" title="${t('common.edit')}">
+                  <i class="fas fa-pen"></i>
+                </button>
+                <button class="btn btn-danger btn-icon btn-sm var-delete" data-id="${v.id}" data-key="${esc(v.key)}" title="${t('common.delete')}">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+
+    el.querySelectorAll('.var-edit').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const v = vars.find(x => x.id === btn.dataset.id);
+        if (!v) return;
+        editingVarId = v.id;
+        document.getElementById('var-form-title').innerHTML = `<i class="fas fa-edit"></i> ${t('vars.edit')}`;
+        document.getElementById('var-key').value = v.key;
+        document.getElementById('var-value').value = v.value;
+        document.getElementById('var-description').value = v.description || '';
+        document.getElementById('var-form-panel').classList.remove('hidden');
+        document.getElementById('var-key').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+    });
+
+    el.querySelectorAll('.var-delete').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!await showConfirm(t('vars.confirmDelete', { key: btn.dataset.key }), { title: t('common.delete'), confirmText: t('common.delete'), danger: true })) return;
+        try {
+          await api.deleteAnsibleVar(btn.dataset.id);
+          showToast(t('vars.deleted'), 'success');
+          await loadVarsList();
+        } catch (e) {
+          showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+        }
+      });
+    });
+  } catch (e) {
+    el.innerHTML = `<p style="padding:12px;color:var(--offline);">${e.message}</p>`;
+  }
+}
+
+function setupVarsEvents() {
+  document.getElementById('btn-add-var')?.addEventListener('click', () => {
+    editingVarId = null;
+    document.getElementById('var-form-title').innerHTML = `<i class="fas fa-plus"></i> ${t('vars.add')}`;
+    document.getElementById('var-key').value = '';
+    document.getElementById('var-value').value = '';
+    document.getElementById('var-description').value = '';
+    document.getElementById('var-form-panel').classList.remove('hidden');
+  });
+
+  document.getElementById('btn-var-cancel')?.addEventListener('click', () => {
+    document.getElementById('var-form-panel').classList.add('hidden');
+    editingVarId = null;
+  });
+
+  document.getElementById('btn-var-save')?.addEventListener('click', async () => {
+    const key = document.getElementById('var-key').value.trim();
+    const value = document.getElementById('var-value').value;
+    const description = document.getElementById('var-description').value.trim();
+    if (!key || !value) { showToast(t('common.error'), 'error'); return; }
+
+    const btn = document.getElementById('btn-var-save');
+    btn.disabled = true;
+    try {
+      if (editingVarId) {
+        await api.updateAnsibleVar(editingVarId, { key, value, description });
+      } else {
+        await api.createAnsibleVar({ key, value, description });
+      }
+      showToast(t('vars.saved'), 'success');
+      document.getElementById('var-form-panel').classList.add('hidden');
+      editingVarId = null;
+      await loadVarsList();
+    } catch (e) {
+      showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+// ============================================================
+// Tab: Schedules
 // ============================================================
 const INTERVALS = [
   { value: 'daily',    labelKey: 'sc.daily',    needsTime: true,  needsWeekday: false, needsMonthday: false },
@@ -479,11 +819,26 @@ function cronLabel(cron) {
   const timeStr = `${String(hour).padStart(2, '0')}:${String(minute ?? 0).padStart(2, '0')}`;
   if (interval === 'weekly') {
     const wd = WEEKDAYS.find(w => w.value === weekday);
-    const wdLabel = wd ? t(wd.labelKey) : weekday;
-    return `${ivLabel} (${wdLabel}), ${timeStr}`;
+    return `${ivLabel} (${wd ? t(wd.labelKey) : weekday}), ${timeStr}`;
   }
   if (interval === 'monthly') return `${ivLabel} (${monthday}.), ${timeStr}`;
   return `${ivLabel}, ${timeStr}`;
+}
+
+function renderSchedulesHTML() {
+  return `
+    <div class="panel">
+      <div class="section-header">
+        <h3><i class="fas fa-clock"></i> ${t('pb.schedules')}</h3>
+        <button class="btn btn-primary btn-sm" id="btn-new-schedule">
+          <i class="fas fa-plus"></i> ${t('pb.newSchedule')}
+        </button>
+      </div>
+      <div id="schedule-list">
+        <div class="loading-state"><div class="loader"></div> ${t('pb.loading')}</div>
+      </div>
+    </div>
+  `;
 }
 
 async function loadScheduleList() {
@@ -495,7 +850,6 @@ async function loadScheduleList() {
       el.innerHTML = `<div class="empty-state" style="padding:20px;"><p style="color:var(--text-muted);">${t('sc.noSchedules')}</p></div>`;
       return;
     }
-
     el.innerHTML = `
       <table class="data-table">
         <thead>
@@ -525,7 +879,7 @@ async function loadScheduleList() {
               <td>
                 ${s.last_run
                   ? `<span class="badge badge-${s.last_status === 'success' ? 'online' : 'offline'}">${s.last_status}</span>
-                     <span style="font-size:11px;color:var(--text-muted);margin-left:4px;">${formatScheduleDate(s.last_run)}</span>`
+                     <span style="font-size:11px;color:var(--text-muted);margin-left:4px;">${formatDateTimeShort(s.last_run)}</span>`
                   : '<span style="color:var(--text-muted);">—</span>'
                 }
               </td>
@@ -543,7 +897,6 @@ async function loadScheduleList() {
       </table>
     `;
 
-    // Toggle handlers
     el.querySelectorAll('.schedule-toggle').forEach(cb => {
       cb.addEventListener('change', async () => {
         try {
@@ -555,13 +908,9 @@ async function loadScheduleList() {
         }
       });
     });
-
-    // Edit handlers
     el.querySelectorAll('.schedule-edit').forEach(btn => {
       btn.addEventListener('click', () => openScheduleDialog(btn.dataset.id));
     });
-
-    // Delete handlers
     el.querySelectorAll('.schedule-delete').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (!await showConfirm(t('sc.confirmDelete'), { title: t('common.delete'), confirmText: t('common.delete'), danger: true })) return;
@@ -579,12 +928,556 @@ async function loadScheduleList() {
   }
 }
 
-function formatScheduleDate(dateStr) {
-  return formatDateTimeShort(dateStr);
-}
-
 function setupScheduleEvents() {
   document.getElementById('btn-new-schedule')?.addEventListener('click', () => openScheduleDialog(null));
+}
+
+// ============================================================
+// Tab: History
+// ============================================================
+function renderHistoryHTML() {
+  return `
+    <div class="panel">
+      <div class="section-header">
+        <h3><i class="fas fa-history"></i> ${t('hist.title')}</h3>
+        <select class="form-input" id="hist-filter" style="width:200px;">
+          <option value="">${t('hist.filterAll')}</option>
+        </select>
+      </div>
+      <div id="history-list">
+        <div class="loading-state"><div class="loader"></div> ${t('pb.loading')}</div>
+      </div>
+    </div>
+  `;
+}
+
+async function loadHistoryList(scheduleId = null) {
+  const el = document.getElementById('history-list');
+  if (!el) return;
+  try {
+    const [history, schedules] = await Promise.all([
+      api.getScheduleHistory(100, scheduleId || undefined),
+      api.getSchedules(),
+    ]);
+
+    // Populate filter
+    const filterSel = document.getElementById('hist-filter');
+    if (filterSel && schedules) {
+      const current = filterSel.value;
+      filterSel.innerHTML = `<option value="">${t('hist.filterAll')}</option>` +
+        schedules.map(s => `<option value="${s.id}" ${current === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
+      filterSel.onchange = () => loadHistoryList(filterSel.value || null);
+    }
+
+    if (!history || history.length === 0) {
+      el.innerHTML = `<div class="empty-state" style="padding:20px;"><p style="color:var(--text-muted);">${t('hist.noHistory')}</p></div>`;
+      return;
+    }
+
+    el.innerHTML = `
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>${t('hist.schedule')}</th>
+            <th>${t('hist.playbook')}</th>
+            <th>${t('hist.targets')}</th>
+            <th>${t('hist.started')}</th>
+            <th>${t('hist.status')}</th>
+            <th style="width:80px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${history.map(h => `
+            <tr>
+              <td style="font-weight:500;">${esc(h.schedule_name)}</td>
+              <td class="text-mono" style="font-size:12px;">${esc(h.playbook)}</td>
+              <td>${esc(h.targets || 'all')}</td>
+              <td style="font-size:12px;color:var(--text-muted);">${formatDateTimeShort(h.started_at)}</td>
+              <td>
+                <span class="badge badge-${h.status === 'success' ? 'online' : h.status === 'running' ? 'warning' : 'offline'}">
+                  ${h.status === 'success' ? t('hist.success') : h.status === 'running' ? t('hist.running') : t('hist.failed')}
+                </span>
+              </td>
+              <td style="text-align:right;">
+                <button class="btn btn-secondary btn-sm hist-show-output" data-id="${h.id}" title="${t('hist.output')}">
+                  <i class="fas fa-eye"></i>
+                </button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+
+    el.querySelectorAll('.hist-show-output').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          const entry = await api.getScheduleHistoryEntry(btn.dataset.id);
+          showOutputModal(entry);
+        } catch (e) {
+          showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+        }
+      });
+    });
+  } catch (e) {
+    el.innerHTML = `<p style="padding:12px;color:var(--offline);">${e.message}</p>`;
+  }
+}
+
+function showOutputModal(entry) {
+  const overlay = document.getElementById('modal-overlay');
+  overlay.classList.remove('hidden');
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:700px;width:95%;">
+      <h2><i class="fas fa-file-alt"></i> ${esc(entry.schedule_name)} — ${esc(entry.playbook)}</h2>
+      <div class="terminal" style="margin:8px 0;max-height:60vh;">
+        <div class="terminal-header">
+          <div class="terminal-dots">
+            <div class="terminal-dot red"></div>
+            <div class="terminal-dot yellow"></div>
+            <div class="terminal-dot green"></div>
+          </div>
+          <div class="terminal-title">${formatDateTimeShort(entry.started_at)}</div>
+        </div>
+        <div class="terminal-body" style="white-space:pre-wrap;">${esc(entry.output || t('adhoc.noOutput'))}</div>
+      </div>
+      <div class="form-actions" style="padding-top:8px;">
+        <button class="btn btn-secondary" id="hist-modal-close">${t('common.close')}</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('hist-modal-close').addEventListener('click', () => {
+    overlay.classList.add('hidden'); overlay.innerHTML = '';
+  });
+  overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.classList.add('hidden'); overlay.innerHTML = ''; } });
+}
+
+// ============================================================
+// Tab: Git
+// ============================================================
+function renderGitHTML() {
+  return `<div id="git-tab-root"><div class="loading-state"><div class="loader"></div> ${t('pb.loading')}</div></div>`;
+}
+
+async function loadGitTab() {
+  let cfg, status;
+  try {
+    [cfg, status] = await Promise.all([api.getGitConfig(), api.getGitStatus()]);
+  } catch (e) {
+    document.getElementById('git-tab-root').innerHTML = `<p style="color:var(--offline);">${e.message}</p>`;
+    return;
+  }
+  const root = document.getElementById('git-tab-root');
+  if (!cfg.configured) {
+    renderGitSetup(root, cfg, null);
+  } else {
+    renderGitDashboard(root, cfg, status);
+  }
+}
+
+function gitPreBlock(code) {
+  return `<pre style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius);
+    padding:10px 14px;font-family:var(--font-mono);font-size:12px;line-height:1.5;overflow-x:auto;
+    white-space:pre;margin:0;color:var(--text-primary);">${esc(code)}</pre>`;
+}
+
+function renderGitSetup(root, cfg, _publicKey) {
+  const isSSH = (url) => /^(git@|ssh:\/\/)/.test(url);
+  const pubKey = _publicKey || '';
+
+  root.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;">
+      <!-- Left: setup form -->
+      <div class="panel">
+        <div class="section-header">
+          <h3><i class="fab fa-git-alt"></i> ${t('git.setupTitle')}</h3>
+        </div>
+        <div class="form-body">
+          <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px;">${t('git.setupHint')}</p>
+
+          <div class="form-group">
+            <label class="form-label">${t('git.repoUrl')}</label>
+            <input class="form-input text-mono" type="text" id="git-setup-url"
+              value="${esc(cfg.repoUrl || '')}" placeholder="git@github.com:user/playbooks.git">
+            <div class="form-hint">${t('git.repoUrlHint')}</div>
+          </div>
+
+          <div id="git-auth-section"></div>
+
+          <div class="form-row">
+            <div class="form-group" style="margin-bottom:0;flex:1;">
+              <label class="form-label">${t('git.userName')}</label>
+              <input class="form-input" type="text" id="git-setup-name"
+                value="${esc(cfg.userName || 'Shipyard')}" placeholder="Shipyard">
+            </div>
+            <div class="form-group" style="margin-bottom:0;flex:1;">
+              <label class="form-label">${t('git.userEmail')}</label>
+              <input class="form-input" type="email" id="git-setup-email"
+                value="${esc(cfg.userEmail || '')}" placeholder="shipyard@example.com">
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;">
+              <input type="checkbox" id="git-auto-pull" style="accent-color:var(--accent);" checked>
+              ${t('git.autoPull')}
+            </label>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;">
+              <input type="checkbox" id="git-auto-push" style="accent-color:var(--accent);" checked>
+              ${t('git.autoPush')}
+            </label>
+          </div>
+
+          <div style="margin-top:16px;">
+            <button class="btn btn-primary" id="btn-git-setup">
+              <i class="fas fa-link"></i> ${t('git.save')}
+            </button>
+          </div>
+
+          <div id="git-setup-output" class="hidden" style="margin-top:12px;"></div>
+        </div>
+      </div>
+
+      <!-- Right: help guide -->
+      <div id="git-help-panel" class="panel">
+        <div class="section-header">
+          <h3><i class="fas fa-question-circle"></i> Setup Guide</h3>
+        </div>
+        <div id="git-help-content" style="padding:16px;">
+          <!-- filled dynamically -->
+        </div>
+      </div>
+    </div>
+  `;
+
+  const urlInput = document.getElementById('git-setup-url');
+  const authSection = document.getElementById('git-auth-section');
+  const helpContent = document.getElementById('git-help-content');
+
+  function renderHelp(url, sshKey) {
+    if (isSSH(url)) {
+      helpContent.innerHTML = `
+        <div style="font-size:13px;line-height:1.7;">
+          <p style="font-weight:600;margin-bottom:12px;"><i class="fas fa-key" style="color:var(--accent);margin-right:6px;"></i>SSH-Authentifizierung</p>
+          <p style="color:var(--text-muted);margin-bottom:12px;">Füge den Shipyard SSH Public Key als <strong>Deploy Key</strong> in dein Repository ein:</p>
+
+          <p style="font-weight:500;margin-bottom:6px;">1. Kopiere diesen Public Key:</p>
+          <div style="position:relative;margin-bottom:12px;">
+            ${gitPreBlock(sshKey || 'SSH-Key wird geladen…')}
+            ${sshKey ? `<button class="btn btn-secondary btn-sm" id="btn-copy-ssh-key"
+              style="position:absolute;top:6px;right:6px;"><i class="fas fa-copy"></i></button>` : ''}
+          </div>
+
+          <p style="font-weight:500;margin-bottom:4px;">2. GitHub:</p>
+          <p style="color:var(--text-muted);font-size:12px;margin-bottom:10px;">
+            Repository → Settings → Deploy keys → Add deploy key<br>
+            ✓ "Allow write access" aktivieren wenn Auto-Push gewünscht
+          </p>
+
+          <p style="font-weight:500;margin-bottom:4px;">GitLab:</p>
+          <p style="color:var(--text-muted);font-size:12px;margin-bottom:10px;">
+            Repository → Settings → Repository → Deploy keys → Add key
+          </p>
+
+          <p style="font-weight:500;margin-bottom:4px;">Gitea / Forgejo:</p>
+          <p style="color:var(--text-muted);font-size:12px;margin-bottom:10px;">
+            Repository → Settings → Deploy Keys → Add Key
+          </p>
+
+          <p style="font-weight:500;margin-bottom:4px;">3. URL-Format:</p>
+          ${gitPreBlock('git@github.com:username/playbooks.git\ngit@gitlab.com:username/playbooks.git')}
+        </div>
+      `;
+      document.getElementById('btn-copy-ssh-key')?.addEventListener('click', () => {
+        navigator.clipboard.writeText(sshKey).then(() => showToast(t('common.copied'), 'success'));
+      });
+    } else {
+      helpContent.innerHTML = `
+        <div style="font-size:13px;line-height:1.7;">
+          <p style="font-weight:600;margin-bottom:12px;"><i class="fas fa-lock" style="color:var(--accent);margin-right:6px;"></i>HTTPS + Token</p>
+
+          <p style="font-weight:500;margin-bottom:4px;">GitHub Personal Access Token:</p>
+          <ol style="color:var(--text-muted);font-size:12px;padding-left:18px;margin-bottom:12px;">
+            <li>github.com → Settings → Developer settings</li>
+            <li>Personal access tokens → Tokens (classic)</li>
+            <li>Generate new token → Scopes: <code style="background:var(--bg-secondary);padding:1px 4px;border-radius:3px;">repo</code></li>
+            <li>Token beginnt mit <code style="background:var(--bg-secondary);padding:1px 4px;border-radius:3px;">ghp_</code></li>
+          </ol>
+
+          <p style="font-weight:500;margin-bottom:4px;">GitLab Access Token:</p>
+          <ol style="color:var(--text-muted);font-size:12px;padding-left:18px;margin-bottom:12px;">
+            <li>Repository → Settings → Access tokens</li>
+            <li>Scopes: <code style="background:var(--bg-secondary);padding:1px 4px;border-radius:3px;">read_repository</code> + <code style="background:var(--bg-secondary);padding:1px 4px;border-radius:3px;">write_repository</code></li>
+          </ol>
+
+          <p style="font-weight:500;margin-bottom:4px;">URL-Format:</p>
+          ${gitPreBlock('https://github.com/username/playbooks.git\nhttps://gitlab.com/username/playbooks.git')}
+
+          <p style="color:var(--text-muted);font-size:12px;margin-top:8px;">
+            <i class="fas fa-shield-alt" style="color:var(--accent);margin-right:4px;"></i>
+            Das Token wird verschlüsselt in der Datenbank gespeichert und nie im Klartext zurückgegeben.
+          </p>
+        </div>
+      `;
+    }
+  }
+
+  function updateAuth(url) {
+    if (isSSH(url)) {
+      authSection.innerHTML = `
+        <div class="form-group" style="padding:10px 14px;background:var(--bg-secondary);border-radius:var(--radius);border:1px solid var(--border);">
+          <p style="font-size:13px;color:var(--text-muted);margin:0;">
+            <i class="fas fa-key" style="color:var(--accent);margin-right:6px;"></i>${t('git.authSshHint')}
+          </p>
+        </div>
+      `;
+    } else {
+      authSection.innerHTML = `
+        <div class="form-group">
+          <label class="form-label">${t('git.authToken')}</label>
+          <input class="form-input text-mono" type="password" id="git-setup-token"
+            placeholder="${cfg.hasToken ? '••••••••••••••••' : 'ghp_xxxxxxxxxxxx'}">
+          <div class="form-hint">${t('git.authTokenHint')}</div>
+        </div>
+      `;
+    }
+  }
+
+  // Load SSH key and render initial state
+  let sshKey = pubKey;
+  api.getSSHKey().then(r => {
+    sshKey = r.publicKey || '';
+    renderHelp(urlInput.value.trim(), sshKey);
+  }).catch(() => {});
+
+  updateAuth(urlInput.value.trim() || 'git@');
+  renderHelp(urlInput.value.trim() || 'git@', sshKey);
+
+  urlInput.addEventListener('input', () => {
+    const url = urlInput.value.trim();
+    updateAuth(url);
+    renderHelp(url, sshKey);
+  });
+
+  document.getElementById('btn-git-setup').addEventListener('click', async () => {
+    const url = urlInput.value.trim();
+    if (!url) { showToast(t('git.repoUrl'), 'warning'); return; }
+    const token = document.getElementById('git-setup-token')?.value || '';
+    const btn = document.getElementById('btn-git-setup');
+    btn.disabled = true; btn.innerHTML = `<span class="spinner-sm"></span> ${t('git.saving')}`;
+
+    const outEl = document.getElementById('git-setup-output');
+    outEl.classList.add('hidden'); outEl.innerHTML = '';
+
+    try {
+      const result = await api.gitSetup({
+        repoUrl:   url,
+        authToken: token || undefined,
+        autoPull:  document.getElementById('git-auto-pull').checked,
+        autoPush:  document.getElementById('git-auto-push').checked,
+        userName:  document.getElementById('git-setup-name').value.trim(),
+        userEmail: document.getElementById('git-setup-email').value.trim(),
+      });
+      showToast(t('git.saved'), 'success');
+      if (result.pullOutput) {
+        outEl.classList.remove('hidden');
+        outEl.innerHTML = gitPreBlock(result.pullOutput);
+      }
+      setTimeout(() => loadGitTab(), 1000);
+    } catch (e) {
+      showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+      outEl.classList.remove('hidden');
+      outEl.innerHTML = `<p style="color:var(--offline);font-size:13px;">${esc(e.message)}</p>`;
+      btn.disabled = false; btn.innerHTML = `<i class="fas fa-link"></i> ${t('git.save')}`;
+    }
+  });
+}
+
+function renderGitDashboard(root, cfg, status) {
+  const changed = status.initialized ? (status.changed || []) : [];
+  root.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;">
+      <!-- Left column -->
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <!-- Status -->
+        <div class="panel">
+          <div class="section-header">
+            <h3><i class="fab fa-git-alt"></i> ${t('git.status')}</h3>
+            <button class="btn btn-secondary btn-sm" id="btn-git-refresh" title="${t('common.refresh')}">
+              <i class="fas fa-sync"></i>
+            </button>
+          </div>
+          <div class="form-body">
+            ${status.initialized ? `
+              <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:14px;">
+                <div>
+                  <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">${t('git.branch')}</div>
+                  <span class="badge badge-online" style="font-family:var(--font-mono);">${esc(status.branch || 'main')}</span>
+                </div>
+                <div style="flex:1;min-width:0;">
+                  <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">${t('git.remote')}</div>
+                  <div style="font-size:12px;font-family:var(--font-mono);color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(status.remote || cfg.repoUrl)}</div>
+                </div>
+              </div>
+              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">${t('git.changedFiles')}</div>
+              ${changed.length === 0
+                ? `<p style="color:var(--text-muted);font-size:13px;">${t('git.noChanges')}</p>`
+                : changed.map(f => `
+                    <div style="display:flex;gap:8px;font-family:var(--font-mono);font-size:12px;line-height:1.9;">
+                      <span style="color:var(--accent);min-width:18px;">${esc(f.status)}</span>
+                      <span>${esc(f.file)}</span>
+                    </div>`).join('')
+              }
+            ` : `<p style="color:var(--text-muted);">Not a git repo yet</p>`}
+          </div>
+        </div>
+
+        <!-- Auto-sync -->
+        <div class="panel">
+          <div class="section-header">
+            <h3><i class="fas fa-sync-alt"></i> ${t('git.autoLabel')}</h3>
+          </div>
+          <div class="form-body">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;margin-bottom:10px;">
+              <input type="checkbox" id="git-cfg-auto-pull" style="accent-color:var(--accent);" ${cfg.autoPull ? 'checked' : ''}>
+              <span>${t('git.autoPull')}</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;">
+              <input type="checkbox" id="git-cfg-auto-push" style="accent-color:var(--accent);" ${cfg.autoPush ? 'checked' : ''}>
+              <span>${t('git.autoPush')}</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Manual actions -->
+        <div class="panel">
+          <div class="section-header">
+            <h3><i class="fas fa-code-branch"></i> Sync</h3>
+          </div>
+          <div class="form-body">
+            <div class="form-group">
+              <label class="form-label">${t('git.commitMsg')}</label>
+              <input class="form-input" type="text" id="git-commit-msg" placeholder="Update playbooks">
+            </div>
+            <div class="flex-gap">
+              <button class="btn btn-primary btn-sm" id="btn-git-commit">
+                <i class="fas fa-check"></i> ${t('git.commit')}
+              </button>
+              <button class="btn btn-secondary btn-sm" id="btn-git-pull">
+                <i class="fas fa-download"></i> ${t('git.pull')}
+              </button>
+              <button class="btn btn-secondary btn-sm" id="btn-git-push">
+                <i class="fas fa-upload"></i> ${t('git.push')}
+              </button>
+              <button class="btn btn-secondary btn-sm" id="btn-git-reconfigure" style="margin-left:auto;">
+                <i class="fas fa-cog"></i>
+              </button>
+            </div>
+            <div id="git-action-output" class="hidden" style="margin-top:12px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: commit log -->
+      <div class="panel">
+        <div class="section-header">
+          <h3><i class="fas fa-list-ul"></i> ${t('git.log')}</h3>
+        </div>
+        <div id="git-log-content">
+          <div class="loading-state"><div class="loader"></div></div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  loadGitLog();
+  setupGitDashboardEvents(cfg);
+}
+
+async function loadGitLog() {
+  const el = document.getElementById('git-log-content');
+  if (!el) return;
+  try {
+    const commits = await api.getGitLog();
+    if (!commits || commits.length === 0) {
+      el.innerHTML = `<div class="empty-state" style="padding:20px;"><p style="color:var(--text-muted);">${t('git.noCommits')}</p></div>`;
+      return;
+    }
+    el.innerHTML = commits.map(c => `
+      <div style="display:flex;gap:10px;align-items:flex-start;padding:8px 16px;border-bottom:1px solid var(--border);">
+        <span style="font-family:var(--font-mono);font-size:11px;color:var(--accent);flex-shrink:0;padding-top:2px;">${esc(c.hash)}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;">${esc(c.message)}</div>
+          <div style="font-size:11px;color:var(--text-muted);">${esc(c.author)} · ${esc(c.date)}</div>
+        </div>
+      </div>
+    `).join('');
+  } catch {}
+}
+
+function setupGitDashboardEvents(cfg) {
+  const showOutput = (text, isError = false) => {
+    const outEl = document.getElementById('git-action-output');
+    if (!outEl) return;
+    outEl.classList.remove('hidden');
+    outEl.innerHTML = isError
+      ? `<p style="color:var(--offline);font-size:13px;">${esc(text)}</p>`
+      : gitPreBlock(text);
+  };
+
+  document.getElementById('btn-git-refresh')?.addEventListener('click', () => loadGitTab());
+
+  document.getElementById('btn-git-reconfigure')?.addEventListener('click', async () => {
+    const root = document.getElementById('git-tab-root');
+    let sshKey = '';
+    try { const r = await api.getSSHKey(); sshKey = r.publicKey || ''; } catch {}
+    renderGitSetup(root, cfg, sshKey);
+  });
+
+  ['pull', 'push'].forEach(type => {
+    document.getElementById(`git-cfg-auto-${type}`)?.addEventListener('change', async (e) => {
+      try { await api.saveGitConfig({ [`auto${type[0].toUpperCase() + type.slice(1)}`]: e.target.checked }); }
+      catch {}
+    });
+  });
+
+  document.getElementById('btn-git-commit')?.addEventListener('click', async () => {
+    const msg = document.getElementById('git-commit-msg')?.value.trim();
+    if (!msg) { showToast(t('git.commitMsg'), 'warning'); return; }
+    const btn = document.getElementById('btn-git-commit');
+    btn.disabled = true;
+    try {
+      const r = await api.gitCommit(msg);
+      showToast(t('git.committed'), 'success');
+      showOutput(r.output || 'Committed');
+      loadGitTab();
+    } catch (e) { showOutput(e.message, true); showToast(t('common.errorPrefix', { msg: e.message }), 'error'); }
+    finally { btn.disabled = false; }
+  });
+
+  document.getElementById('btn-git-pull')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-git-pull');
+    btn.disabled = true;
+    try {
+      const r = await api.gitPull();
+      showToast(t('git.pulled'), 'success');
+      showOutput(r.output || 'Already up to date');
+      loadGitTab();
+    } catch (e) { showOutput(e.message, true); showToast(t('common.errorPrefix', { msg: e.message }), 'error'); }
+    finally { btn.disabled = false; }
+  });
+
+  document.getElementById('btn-git-push')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-git-push');
+    btn.disabled = true;
+    try {
+      const r = await api.gitPush();
+      showToast(t('git.pushed'), 'success');
+      showOutput(r.output || 'Pushed');
+      loadGitLog();
+    } catch (e) { showOutput(e.message, true); showToast(t('common.errorPrefix', { msg: e.message }), 'error'); }
+    finally { btn.disabled = false; }
+  });
 }
 
 // ============================================================
@@ -643,31 +1536,22 @@ function showHistoryModal(filename, versions, onRestored) {
     document.getElementById('pb-hist-close').addEventListener('click', close);
     overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
 
-    // Preview buttons
     overlay.querySelectorAll('.btn-preview-version').forEach(btn => {
       btn.addEventListener('click', async () => {
         const v = parseInt(btn.dataset.version);
-        // Toggle: close if already open
-        const currentOpen = overlay.querySelector('.pb-hist-preview') ? parseInt(overlay.querySelector('.pb-hist-row .btn-preview-version[style*="accent"]')?.dataset.version) || null : null;
+        const currentOpen = overlay.querySelector('.pb-hist-preview')
+          ? parseInt(overlay.querySelector('.btn-preview-version[style*="accent"]')?.dataset.version) || null
+          : null;
         if (currentOpen === v) { render(null); return; }
         render(v);
-        // Load content
         const previewEl = document.getElementById(`pb-hist-preview-${v}`);
         try {
           const data = await api.getPlaybookVersion(filename, v);
           if (previewEl) {
             previewEl.innerHTML = `<pre style="
-              background:var(--bg-secondary);
-              border:1px solid var(--border);
-              border-radius:var(--radius);
-              padding:12px 14px;
-              font-family:var(--font-mono);
-              font-size:12px;
-              line-height:1.5;
-              overflow-x:auto;
-              white-space:pre;
-              margin:0;
-              color:var(--text-primary);
+              background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius);
+              padding:12px 14px;font-family:var(--font-mono);font-size:12px;line-height:1.5;
+              overflow-x:auto;white-space:pre;margin:0;color:var(--text-primary);
             ">${esc(data.content)}</pre>`;
           }
         } catch (err) {
@@ -676,7 +1560,6 @@ function showHistoryModal(filename, versions, onRestored) {
       });
     });
 
-    // Restore buttons
     overlay.querySelectorAll('.btn-restore-version').forEach(btn => {
       btn.addEventListener('click', async () => {
         const v = parseInt(btn.dataset.version);
@@ -702,6 +1585,9 @@ function showHistoryModal(filename, versions, onRestored) {
   render();
 }
 
+// ============================================================
+// Schedule Dialog
+// ============================================================
 async function openScheduleDialog(editId) {
   let existing = null;
   if (editId) {
@@ -752,9 +1638,7 @@ async function openScheduleDialog(editId) {
           <div class="form-row">
             <div class="form-group" style="margin-bottom:0;">
               <label class="form-label">${t('sc.interval')}</label>
-              <select class="form-input" id="sched-interval">
-                ${intervalOptions}
-              </select>
+              <select class="form-input" id="sched-interval">${intervalOptions}</select>
             </div>
             <div class="form-group" id="sched-time-group" style="margin-bottom:0;">
               <label class="form-label">${t('sc.time')}</label>
@@ -763,9 +1647,7 @@ async function openScheduleDialog(editId) {
           </div>
           <div class="form-group hidden" id="sched-weekday-group">
             <label class="form-label">${t('sc.weekday')}</label>
-            <select class="form-input" id="sched-weekday">
-              ${weekdayOptions}
-            </select>
+            <select class="form-input" id="sched-weekday">${weekdayOptions}</select>
           </div>
           <div class="form-group hidden" id="sched-monthday-group">
             <label class="form-label">${t('sc.dayOfMonth')}</label>
@@ -799,8 +1681,7 @@ async function openScheduleDialog(editId) {
   intervalSel.addEventListener('change', updateVisibility);
 
   document.getElementById('sched-cancel').addEventListener('click', () => {
-    overlay.classList.add('hidden');
-    overlay.innerHTML = '';
+    overlay.classList.add('hidden'); overlay.innerHTML = '';
   });
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) { overlay.classList.add('hidden'); overlay.innerHTML = ''; }
@@ -819,10 +1700,7 @@ async function openScheduleDialog(editId) {
     const monthday = Math.min(28, Math.max(1, parseInt(document.getElementById('sched-monthday').value) || 1));
     const cronExpression = selectorsToCron(interval, hour, minute, weekday, monthday);
 
-    if (!name || !playbook) {
-      showToast(t('sc.required'), 'error');
-      return;
-    }
+    if (!name || !playbook) { showToast(t('sc.required'), 'error'); return; }
 
     const saveBtn = document.getElementById('sched-save');
     saveBtn.disabled = true;
@@ -836,8 +1714,7 @@ async function openScheduleDialog(editId) {
         await api.createSchedule({ name, playbook, targets, cronExpression });
         showToast(t('sc.created'), 'success');
       }
-      overlay.classList.add('hidden');
-      overlay.innerHTML = '';
+      overlay.classList.add('hidden'); overlay.innerHTML = '';
       await loadScheduleList();
     } catch (err) {
       showToast(t('common.errorPrefix', { msg: err.message }), 'error');

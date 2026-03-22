@@ -3,6 +3,7 @@ const router = express.Router();
 const ansibleRunner = require('../services/ansible-runner');
 const fs = require('fs');
 const path = require('path');
+const gitSync = require('../services/git-sync');
 
 const PLAYBOOKS_DIR = path.join(__dirname, '..', 'playbooks');
 const MAX_BACKUPS = 5;
@@ -65,6 +66,8 @@ router.post('/', (req, res) => {
     rotateBak(filepath);
     fs.writeFileSync(filepath, content, 'utf8');
     res.json({ success: true, filename: finalFilename });
+    // Auto-push to git in background (non-blocking)
+    gitSync.autoPush(`Update ${finalFilename}`).catch(() => {});
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
