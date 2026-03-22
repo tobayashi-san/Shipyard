@@ -34,7 +34,7 @@ export async function showProfileModal() {
   _popover = document.createElement('div');
   _popover.style.cssText = `
     position:fixed;
-    bottom:${rect ? (window.innerHeight - rect.top + 8) : 60}px;
+    bottom:${rect ? (window.innerHeight - rect.bottom) : 60}px;
     left:${rect ? rect.right + 8 : 232}px;
     z-index:1100;
     width:320px;
