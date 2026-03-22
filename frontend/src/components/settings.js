@@ -68,6 +68,9 @@ export async function renderSettings() {
 
   container.innerHTML = `
     <div class="page-header">
+      <button class="btn btn-icon sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('open');document.getElementById('sidebar-backdrop').classList.toggle('open');">
+        <i class="fas fa-bars"></i>
+      </button>
       <div>
         <h2>${t('set.title')}</h2>
         <p>${t('set.subtitle')}</p>

@@ -35,6 +35,9 @@ export async function renderServerDetail(serverId) {
   main.innerHTML = `
     <!-- Top strip -->
     <div class="page-header">
+      <button class="btn btn-icon sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('open');document.getElementById('sidebar-backdrop').classList.toggle('open');">
+        <i class="fas fa-bars"></i>
+      </button>
       <div style="display:flex;align-items:center;gap:12px;">
         <button class="btn btn-secondary btn-sm" id="btn-back" title="${t('common.back')}">
           <i class="fas fa-arrow-left"></i>

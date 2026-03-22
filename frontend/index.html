@@ -14,10 +14,12 @@
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="/src/style.css">
+  <style>.sidebar-toggle{display:none}@media(max-width:768px){.sidebar-toggle{display:inline-flex}}</style>
 </head>
 
 <body>
   <div id="app">
+    <div id="sidebar-backdrop" class="sidebar-backdrop" onclick="document.getElementById('sidebar').classList.remove('open');this.classList.remove('open');"></div>
     <aside id="sidebar" class="sidebar"></aside>
     <main id="main-content" class="main-content">
       <div class="loading-screen">

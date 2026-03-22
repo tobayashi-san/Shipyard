@@ -51,6 +51,9 @@ export async function renderServers() {
 
   main.innerHTML = `
     <div class="page-header">
+      <button class="btn btn-icon sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('open');document.getElementById('sidebar-backdrop').classList.toggle('open');">
+        <i class="fas fa-bars"></i>
+      </button>
       <div>
         <h2>${t('srv.title')}</h2>
         <p>${t('srv.count', { total: state.servers.length, online: onlineCount, offline: offlineCount })}${activeTag ? ` · ${t('srv.filtered', { tag: activeTag })}` : ''}</p>
