@@ -5,7 +5,7 @@
  *   playbooks/   ← synced from/to server/playbooks/
  *   tofu/        ← can be added later manually
  *
- * The local git workspace lives at server/git-workspace/.
+ * The local git workspace lives at server/data/git-workspace/ (inside the persistent volume).
  * The runtime playbook files stay in server/playbooks/ as before.
  */
 const { execFile } = require('child_process');
@@ -20,8 +20,8 @@ const db = require('../db');
 // Runtime playbooks (read/written by the server at runtime)
 const PLAYBOOKS_DIR = path.resolve(path.join(__dirname, '..', 'playbooks'));
 
-// Dedicated git workspace – NOT inside the lab_manager repo
-const GIT_WORKSPACE_DIR = path.resolve(path.join(__dirname, '..', 'git-workspace'));
+// Dedicated git workspace – inside the persistent data volume so the shipyard user can write to it
+const GIT_WORKSPACE_DIR = path.resolve(path.join(__dirname, '..', 'data', 'git-workspace'));
 
 // Subdirectory inside the workspace that contains the playbooks
 const PLAYBOOKS_SUBDIR = 'playbooks';
