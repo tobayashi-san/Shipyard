@@ -4,121 +4,125 @@ import { showToast } from './toast.js';
 
 function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+let _popover = null;
+let _backdrop = null;
+
+function closePopover() {
+  _popover?.remove();
+  _backdrop?.remove();
+  _popover = null;
+  _backdrop = null;
+}
+
 export async function showProfileModal() {
-  const overlay = document.getElementById('modal-overlay');
-  overlay.classList.remove('hidden');
+  if (_popover) { closePopover(); return; }
+
+  const trigger = document.getElementById('sidebar-profile-btn');
+  const rect = trigger?.getBoundingClientRect();
 
   const currentLang = getLang();
   let profile = { username: 'admin', email: '' };
   try { profile = await api.getProfile(); } catch {}
 
-  overlay.innerHTML = `
-    <div class="modal" style="max-width:480px;width:100%;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
-        <div style="display:flex;align-items:center;gap:14px;">
-          <div style="
-            width:48px;height:48px;border-radius:50%;
-            background:var(--accent);flex-shrink:0;
-            display:flex;align-items:center;justify-content:center;
-            font-size:20px;color:#fff;">
-            <i class="fas fa-user"></i>
-          </div>
-          <div>
-            <div style="font-size:16px;font-weight:600;" id="profile-display-name">${esc(profile.username)}</div>
-            <div style="font-size:12px;color:var(--text-muted);" id="profile-display-email">${esc(profile.email) || '<span style="opacity:.5">No email set</span>'}</div>
-          </div>
-        </div>
-        <button class="btn btn-secondary btn-sm" id="profile-close" style="padding:4px 10px;">
-          <i class="fas fa-times"></i>
-        </button>
+  // Backdrop
+  _backdrop = document.createElement('div');
+  _backdrop.style.cssText = 'position:fixed;inset:0;z-index:1099;';
+  _backdrop.addEventListener('click', closePopover);
+  document.body.appendChild(_backdrop);
+
+  // Popover
+  _popover = document.createElement('div');
+  _popover.style.cssText = `
+    position:fixed;
+    bottom:${rect ? (window.innerHeight - rect.top + 8) : 60}px;
+    left:${rect ? rect.right + 8 : 232}px;
+    z-index:1100;
+    width:320px;
+    background:var(--bg-card);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    box-shadow:0 8px 32px rgba(0,0,0,.35);
+    overflow:hidden;
+  `;
+
+  _popover.innerHTML = `
+    <div style="padding:16px 16px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;">
+      <div style="width:40px;height:40px;border-radius:50%;background:var(--accent);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:17px;color:#fff;">
+        <i class="fas fa-user"></i>
       </div>
-
-      <!-- Account -->
-      <div class="settings-group-title" style="margin-top:0;"><i class="fas fa-user"></i> Account</div>
-      <div class="settings-block" style="margin-bottom:16px;">
-        <div class="settings-row">
-          <div class="settings-row-label"><span>Username</span></div>
-          <div class="settings-row-control">
-            <input class="form-input" id="profile-username" value="${esc(profile.username)}" style="max-width:220px;">
-          </div>
-        </div>
-        <div class="settings-row">
-          <div class="settings-row-label"><span>Email</span><small>Optional</small></div>
-          <div class="settings-row-control">
-            <input class="form-input" id="profile-email" type="email" value="${esc(profile.email)}" placeholder="you@example.com" style="max-width:220px;">
-          </div>
-        </div>
-        <div class="settings-row">
-          <div class="settings-row-label"></div>
-          <div class="settings-row-control">
-            <button class="btn btn-primary btn-sm" id="profile-save-account"><i class="fas fa-check"></i> Save</button>
-          </div>
-        </div>
+      <div style="min-width:0;">
+        <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" id="profile-display-name">${esc(profile.username)}</div>
+        <div style="font-size:12px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" id="profile-display-email">${esc(profile.email) || '<span style="opacity:.5">No email set</span>'}</div>
       </div>
+    </div>
 
-      <!-- Security -->
-      <div class="settings-group-title"><i class="fas fa-lock"></i> Security</div>
-      <div class="settings-block" style="margin-bottom:16px;">
-        <div class="settings-row">
-          <div class="settings-row-label"><span>Password</span></div>
-          <div class="settings-row-control">
-            <button class="btn btn-secondary btn-sm" id="profile-pw-toggle"><i class="fas fa-key"></i> Change password</button>
-          </div>
-        </div>
-        <div id="profile-pw-form" style="display:none;border-top:1px solid var(--border);padding:12px 0 4px;flex-direction:column;gap:8px;">
-          <input class="form-input" type="password" id="profile-pw-current" placeholder="Current password" autocomplete="current-password">
-          <input class="form-input" type="password" id="profile-pw-new" placeholder="New password (min 12 chars)" autocomplete="new-password">
-          <input class="form-input" type="password" id="profile-pw-confirm" placeholder="Confirm new password" autocomplete="new-password">
-          <div style="display:flex;gap:8px;">
-            <button class="btn btn-primary btn-sm" id="profile-pw-save"><i class="fas fa-check"></i> Save</button>
-            <button class="btn btn-secondary btn-sm" id="profile-pw-cancel">Cancel</button>
-          </div>
-        </div>
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:8px;">
+      <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Account</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input class="form-input" id="profile-username" value="${esc(profile.username)}" placeholder="Username" style="flex:1;font-size:13px;">
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input class="form-input" id="profile-email" type="email" value="${esc(profile.email)}" placeholder="Email (optional)" style="flex:1;font-size:13px;">
+      </div>
+      <button class="btn btn-primary btn-sm" id="profile-save-account" style="align-self:flex-start;"><i class="fas fa-check"></i> Save</button>
+    </div>
 
-        <div class="settings-row" id="profile-2fa-row">
-          <div class="settings-row-label">
-            <span>Two-factor auth</span>
-            <small id="profile-2fa-status">Checking…</small>
-          </div>
-          <div class="settings-row-control" id="profile-2fa-control"></div>
-        </div>
-        <div id="totp-setup-panel" style="display:none;border-top:1px solid var(--border);padding:12px 0 4px;flex-direction:column;gap:10px;">
-          <p style="margin:0;color:var(--text-muted);font-size:13px;">${t('set.totpScanQR')}</p>
-          <img id="totp-qr" style="width:160px;height:160px;border-radius:8px;background:#fff;padding:8px;" alt="QR Code">
-          <p style="margin:0;color:var(--text-muted);font-size:12px;">${t('set.totpSecret')} <code id="totp-secret-text" style="font-family:var(--font-mono);word-break:break-all;"></code></p>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <input class="form-input" type="text" id="totp-confirm-code" inputmode="numeric"
-              pattern="[0-9 ]*" maxlength="7" placeholder="______"
-              style="font-size:1.2rem;letter-spacing:6px;text-align:center;max-width:120px;">
-            <button class="btn btn-primary btn-sm" id="btn-totp-verify"><i class="fas fa-check"></i> ${t('set.totpVerify')}</button>
-            <button class="btn btn-secondary btn-sm" id="btn-totp-cancel">Cancel</button>
-          </div>
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:6px;">
+      <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Security</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <span style="font-size:13px;">Password</span>
+        <button class="btn btn-secondary btn-sm" id="profile-pw-toggle"><i class="fas fa-key"></i> Change</button>
+      </div>
+      <div id="profile-pw-form" style="display:none;flex-direction:column;gap:6px;padding-top:6px;">
+        <input class="form-input" type="password" id="profile-pw-current" placeholder="Current password" autocomplete="current-password" style="font-size:13px;">
+        <input class="form-input" type="password" id="profile-pw-new" placeholder="New password (min 12 chars)" autocomplete="new-password" style="font-size:13px;">
+        <input class="form-input" type="password" id="profile-pw-confirm" placeholder="Confirm new password" autocomplete="new-password" style="font-size:13px;">
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-primary btn-sm" id="profile-pw-save"><i class="fas fa-check"></i> Save</button>
+          <button class="btn btn-secondary btn-sm" id="profile-pw-cancel">Cancel</button>
         </div>
       </div>
 
-      <!-- Language -->
-      <div class="settings-group-title"><i class="fas fa-globe"></i> Language</div>
-      <div class="settings-block" style="margin-bottom:16px;">
-        <div class="settings-row">
-          <div class="settings-row-label"><span>Interface language</span></div>
-          <div class="settings-row-control" style="display:flex;gap:6px;">
-            <button class="btn btn-sm ${currentLang === 'de' ? 'btn-primary' : 'btn-secondary'}" id="profile-lang-de">DE</button>
-            <button class="btn btn-sm ${currentLang === 'en' ? 'btn-primary' : 'btn-secondary'}" id="profile-lang-en">EN</button>
-          </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <div>
+          <span style="font-size:13px;">Two-factor auth</span>
+          <span style="font-size:11px;color:var(--text-muted);margin-left:6px;" id="profile-2fa-status">Checking…</span>
+        </div>
+        <div id="profile-2fa-control"></div>
+      </div>
+      <div id="totp-setup-panel" style="display:none;flex-direction:column;gap:8px;padding-top:6px;">
+        <p style="margin:0;color:var(--text-muted);font-size:12px;">${t('set.totpScanQR')}</p>
+        <img id="totp-qr" style="width:140px;height:140px;border-radius:6px;background:#fff;padding:6px;" alt="QR Code">
+        <p style="margin:0;color:var(--text-muted);font-size:11px;">${t('set.totpSecret')} <code id="totp-secret-text" style="font-family:var(--font-mono);word-break:break-all;"></code></p>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <input class="form-input" type="text" id="totp-confirm-code" inputmode="numeric"
+            pattern="[0-9 ]*" maxlength="7" placeholder="______"
+            style="font-size:1.1rem;letter-spacing:5px;text-align:center;max-width:110px;">
+          <button class="btn btn-primary btn-sm" id="btn-totp-verify"><i class="fas fa-check"></i> ${t('set.totpVerify')}</button>
+          <button class="btn btn-secondary btn-sm" id="btn-totp-cancel">Cancel</button>
         </div>
       </div>
+    </div>
 
-      <!-- Sign out -->
-      <button class="btn btn-danger" id="profile-signout" style="width:100%;">
+    <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-size:13px;">Language</span>
+      <div style="display:flex;gap:4px;">
+        <button class="btn btn-sm ${currentLang === 'de' ? 'btn-primary' : 'btn-secondary'}" id="profile-lang-de">DE</button>
+        <button class="btn btn-sm ${currentLang === 'en' ? 'btn-primary' : 'btn-secondary'}" id="profile-lang-en">EN</button>
+      </div>
+    </div>
+
+    <div style="padding:10px 16px;">
+      <button class="btn btn-danger btn-sm" id="profile-signout" style="width:100%;">
         <i class="fas fa-right-from-bracket"></i> Sign out
       </button>
     </div>
   `;
 
-  function close() { overlay.classList.add('hidden'); }
+  document.body.appendChild(_popover);
 
-  document.getElementById('profile-close').addEventListener('click', close);
-  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  // Prevent popover clicks from hitting the backdrop
+  _popover.addEventListener('click', e => e.stopPropagation());
 
   // Save account
   document.getElementById('profile-save-account').addEventListener('click', async () => {
@@ -157,8 +161,8 @@ export async function showProfileModal() {
   });
 
   // Language
-  document.getElementById('profile-lang-de').addEventListener('click', () => { setLang('de'); close(); showProfileModal(); });
-  document.getElementById('profile-lang-en').addEventListener('click', () => { setLang('en'); close(); showProfileModal(); });
+  document.getElementById('profile-lang-de').addEventListener('click', () => { setLang('de'); closePopover(); showProfileModal(); });
+  document.getElementById('profile-lang-en').addEventListener('click', () => { setLang('en'); closePopover(); showProfileModal(); });
 
   // Sign out
   document.getElementById('profile-signout').addEventListener('click', () => { api.setToken(null); location.reload(); });
@@ -168,8 +172,8 @@ export async function showProfileModal() {
 }
 
 async function _load2fa() {
-  const statusEl  = document.getElementById('profile-2fa-status');
-  const controlEl = document.getElementById('profile-2fa-control');
+  const statusEl   = document.getElementById('profile-2fa-status');
+  const controlEl  = document.getElementById('profile-2fa-control');
   const setupPanel = document.getElementById('totp-setup-panel');
   if (!statusEl) return;
   try {
@@ -187,7 +191,7 @@ async function _load2fa() {
     } else {
       statusEl.textContent = 'Disabled';
       statusEl.style.color = 'var(--text-muted)';
-      controlEl.innerHTML  = `<button class="btn btn-secondary btn-sm" id="profile-2fa-enable"><i class="fas fa-shield-halved"></i> Enable 2FA</button>`;
+      controlEl.innerHTML  = `<button class="btn btn-secondary btn-sm" id="profile-2fa-enable"><i class="fas fa-shield-halved"></i> Enable</button>`;
       document.getElementById('profile-2fa-enable').addEventListener('click', async () => {
         try {
           const { qrDataUrl, secret } = await api.totpSetup();
