@@ -660,44 +660,119 @@ async function executeAction(ws, action) {
 }
 
 // ── Sub-tab: Variables ────────────────────────────────────────────────────
-function loadVariablesTab(el, ws) {
-  const vars = ws.env_vars || {};
-  const lines = Object.entries(vars).map(([k, v]) => `${k}=${v}`).join('\n');
-  el.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <p style="font-size:13px;color:var(--text-muted);margin:0;">
-        Injected as env vars for every run.
-        Use <code>AWS_*</code> for cloud credentials, <code>TF_VAR_*</code> for tofu variables.
-      </p>
-      <button class="btn btn-primary btn-sm" id="tofu-btn-save-vars" style="flex-shrink:0;margin-left:16px;">
-        <i class="fas fa-save"></i> Save
-      </button>
-    </div>
-    <textarea class="form-input text-mono" id="tofu-vars-input"
-      style="min-height:260px;resize:vertical;line-height:1.6;width:100%;box-sizing:border-box;"
-      placeholder="AWS_ACCESS_KEY_ID=AKIA...\nAWS_SECRET_ACCESS_KEY=...\nTF_VAR_region=eu-central-1"
-    >${esc(lines)}</textarea>
-  `;
+const SECRET_KEY_RE = /secret|token|password|passwd|pass|pwd|key|private|credential|auth|api_?key/i;
 
-  document.getElementById('tofu-btn-save-vars').addEventListener('click', async () => {
-    const raw = document.getElementById('tofu-vars-input').value;
-    const env_vars = parseEnvBlock(raw);
-    const btn = document.getElementById('tofu-btn-save-vars');
-    btn.disabled = true;
-    try {
-      await _pluginApi.request(`/workspaces/${ws.id}`, {
-        method: 'PUT',
-        body: JSON.stringify({ name: ws.name, path: ws.path, description: ws.description, env_vars }),
+function isSecretKey(k) { return SECRET_KEY_RE.test(k); }
+
+function renderVarRows(vars) {
+  const entries = Object.entries(vars);
+  if (!entries.length) return '<p style="color:var(--text-muted);font-size:13px;margin:0;">No variables yet. Add one below.</p>';
+  return entries.map(([k, v]) => {
+    const secret = isSecretKey(k);
+    return `
+      <div class="tofu-var-row" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+        <input class="form-input text-mono var-key" value="${esc(k)}" placeholder="KEY"
+          style="flex:0 0 220px;font-size:12px;" spellcheck="false">
+        <div style="position:relative;flex:1;display:flex;align-items:center;">
+          <input class="form-input text-mono var-val" value="${esc(v)}"
+            type="${secret ? 'password' : 'text'}"
+            style="width:100%;font-size:12px;padding-right:${secret ? '32px' : '8px'};" spellcheck="false">
+          ${secret ? `<button class="var-toggle-vis" tabindex="-1" title="Show/hide"
+            style="position:absolute;right:6px;background:none;border:none;cursor:pointer;color:var(--text-muted);padding:0;line-height:1;">
+            <i class="fas fa-eye"></i></button>` : ''}
+        </div>
+        <button class="btn btn-danger btn-sm var-delete" title="Remove" style="flex-shrink:0;">
+          <i class="fas fa-trash"></i>
+        </button>
+      </div>`;
+  }).join('');
+}
+
+function loadVariablesTab(el, ws) {
+  let vars = { ...(ws.env_vars || {}) };
+
+  function render() {
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <p style="font-size:13px;color:var(--text-muted);margin:0;">
+          Injected as env vars for every run.
+          Use <code>AWS_*</code> / <code>TF_VAR_*</code> for credentials and tofu variables.
+          <span style="color:var(--warning);"><i class="fas fa-lock" style="font-size:11px;"></i> Secret values are masked.</span>
+        </p>
+        <button class="btn btn-primary btn-sm" id="tofu-btn-save-vars" style="flex-shrink:0;margin-left:16px;">
+          <i class="fas fa-save"></i> Save
+        </button>
+      </div>
+      <div id="tofu-var-list">${renderVarRows(vars)}</div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <input class="form-input text-mono" id="tofu-new-key" placeholder="NEW_VARIABLE" style="flex:0 0 220px;font-size:12px;" spellcheck="false">
+        <input class="form-input text-mono" id="tofu-new-val" placeholder="value" style="flex:1;font-size:12px;" spellcheck="false">
+        <button class="btn btn-secondary btn-sm" id="tofu-btn-add-var"><i class="fas fa-plus"></i> Add</button>
+      </div>
+    `;
+
+    // Show/hide toggles
+    el.querySelectorAll('.var-toggle-vis').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const input = btn.previousElementSibling;
+        const isHidden = input.type === 'password';
+        input.type = isHidden ? 'text' : 'password';
+        btn.querySelector('i').className = isHidden ? 'fas fa-eye-slash' : 'fas fa-eye';
       });
-      ws.env_vars = env_vars;
-      _workspaces = _workspaces.map(w => w.id === ws.id ? { ...w, env_vars } : w);
-      _showToast('Variables saved', 'success');
-    } catch (e) {
-      _showToast(e.message, 'error');
-    } finally {
-      btn.disabled = false;
-    }
-  });
+    });
+
+    // Delete row
+    el.querySelectorAll('.var-delete').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const row = btn.closest('.tofu-var-row');
+        const key = row.querySelector('.var-key').value;
+        delete vars[key];
+        render();
+      });
+    });
+
+    // Add new variable
+    document.getElementById('tofu-btn-add-var').addEventListener('click', () => {
+      const k = document.getElementById('tofu-new-key').value.trim();
+      const v = document.getElementById('tofu-new-val').value;
+      if (!k) return;
+      vars[k] = v;
+      render();
+    });
+    document.getElementById('tofu-new-key').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('tofu-btn-add-var').click();
+    });
+
+    // Save
+    document.getElementById('tofu-btn-save-vars').addEventListener('click', async () => {
+      // Collect current state from DOM (user may have edited values in-place)
+      const newVars = {};
+      el.querySelectorAll('.tofu-var-row').forEach(row => {
+        const k = row.querySelector('.var-key').value.trim();
+        const v = row.querySelector('.var-val').value;
+        if (k) newVars[k] = v;
+      });
+      vars = newVars;
+      const btn = document.getElementById('tofu-btn-save-vars');
+      btn.disabled = true;
+      try {
+        await _pluginApi.request(`/workspaces/${ws.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ name: ws.name, path: ws.path, description: ws.description, env_vars: vars }),
+        });
+        ws.env_vars = vars;
+        _workspaces = _workspaces.map(w => w.id === ws.id ? { ...w, env_vars: vars } : w);
+        _showToast('Variables saved', 'success');
+        render();
+      } catch (e) {
+        _showToast(e.message, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+
+  render();
 }
 
 function parseEnvBlock(text) {
