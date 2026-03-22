@@ -1274,11 +1274,11 @@ async function openScheduleDialog(editId) {
             </div>
           </div>
           <div class="form-row">
-            <div class="form-group" style="margin-bottom:0;">
+            <div class="form-group">
               <label class="form-label">${t('sc.interval')}</label>
               <select class="form-input" id="sched-interval">${intervalOptions}</select>
             </div>
-            <div class="form-group" id="sched-time-group" style="margin-bottom:0;">
+            <div class="form-group" id="sched-time-group">
               <label class="form-label">${t('sc.time')}</label>
               <div style="display:flex;align-items:center;gap:4px;">
                 <select class="form-input" id="sched-hour" style="width:72px;">${hourOptions}</select>
@@ -1308,15 +1308,15 @@ async function openScheduleDialog(editId) {
     </div>
   `;
 
-  // "All servers" toggles individual checkboxes
+  // Target checkbox logic: "All" and individual servers are mutually exclusive
   const allCb = document.getElementById('sched-target-all');
-  const serverCbs = () => document.querySelectorAll('.sched-target-cb:not(#sched-target-all)');
+  const serverCbs = () => [...document.querySelectorAll('.sched-target-cb:not(#sched-target-all)')];
   allCb?.addEventListener('change', () => {
-    if (allCb.checked) serverCbs().forEach(cb => { cb.checked = false; cb.closest('label').style.opacity = '.4'; cb.disabled = true; });
-    else serverCbs().forEach(cb => { cb.disabled = false; cb.closest('label').style.opacity = ''; });
+    if (allCb.checked) serverCbs().forEach(cb => { cb.checked = false; });
   });
-  // Initialize disabled state if "all" is pre-checked
-  if (allCb?.checked) serverCbs().forEach(cb => { cb.disabled = true; cb.closest('label').style.opacity = '.4'; });
+  serverCbs().forEach(cb => cb.addEventListener('change', () => {
+    if (cb.checked && allCb) allCb.checked = false;
+  }));
 
   const intervalSel = document.getElementById('sched-interval');
   const timeGroup = document.getElementById('sched-time-group');
