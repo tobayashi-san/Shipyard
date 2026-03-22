@@ -1018,11 +1018,11 @@ function openWorkspaceModal(ws) {
           <label class="form-label">Name</label>
           <input class="form-input" id="ws-name" value="${esc(ws?.name||'')}" placeholder="production" required>
         </div>
+        ${ws ? `
         <div class="form-group">
-          <label class="form-label">Path <span style="font-weight:400;color:var(--text-muted);font-size:12px;">(auto-filled, override if needed)</span></label>
-          <input class="form-input text-mono" id="ws-path" value="${esc(ws?.path||'')}" placeholder="/workspaces/production" required>
-          <div class="form-hint">Default volume: <code>/workspaces</code> — or bind-mount a host path in docker-compose.override.yml</div>
-        </div>
+          <label class="form-label">Path</label>
+          <input class="form-input text-mono" id="ws-path" value="${esc(ws.path)}" required>
+        </div>` : `<input type="hidden" id="ws-path" value="">`}
         <div class="form-group">
           <label class="form-label">Description (optional)</label>
           <input class="form-input" id="ws-desc" value="${esc(ws?.description||'')}" placeholder="Production infrastructure">
