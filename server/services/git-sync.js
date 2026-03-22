@@ -269,6 +269,11 @@ async function commit(message) {
 async function push() {
   const cfg = getConfig();
   if (!cfg.repoUrl) return { success: false, stderr: 'No repository configured' };
+
+  // Check that at least one commit exists before pushing
+  const headCheck = await runGit(['rev-parse', 'HEAD']);
+  if (!headCheck.success) return { success: false, stderr: 'Nothing to push — no commits yet. Commit your changes first.' };
+
   await applyGitIdentity();
   const authUrl = cfg.authToken ? buildAuthUrl(cfg.repoUrl, cfg.authToken) : cfg.repoUrl;
   await setRemote(authUrl);
