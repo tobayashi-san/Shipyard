@@ -1,5 +1,6 @@
 import { state, navigate } from '../main.js';
 import { showRunPlaybookModal } from './run-playbook-modal.js';
+import { showProfileModal } from './profile.js';
 import { t } from '../i18n.js';
 import { esc } from '../utils/format.js';
 
@@ -55,7 +56,7 @@ export function renderSidebar() {
         <span class="nav-item-icon"><i class="fas fa-cog"></i></span>
         <span>${t('nav.settings')}</span>
       </div>
-      <div class="nav-item ${state.currentView === 'profile' ? 'active' : ''}" data-view="profile">
+      <div class="nav-item" id="sidebar-profile-btn">
         <span class="nav-item-icon"><i class="fas fa-user-circle"></i></span>
         <span>Profile</span>
       </div>
@@ -76,5 +77,7 @@ export function renderSidebar() {
       if (view) navigate(view, { serverId: item.dataset.serverId, pluginId });
     });
   });
+
+  document.getElementById('sidebar-profile-btn')?.addEventListener('click', () => showProfileModal());
 
 }

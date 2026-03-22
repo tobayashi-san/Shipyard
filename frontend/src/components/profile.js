@@ -1,46 +1,51 @@
 import { api } from '../api.js';
 import { t, setLang, getLang } from '../i18n.js';
-import { navigate } from '../main.js';
 import { showToast } from './toast.js';
 
-export async function renderProfile() {
-  const content = document.getElementById('main-content');
-  const currentLang = getLang();
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+export async function showProfileModal() {
+  const overlay = document.getElementById('modal-overlay');
+  overlay.classList.remove('hidden');
+
+  const currentLang = getLang();
   let profile = { username: 'admin', email: '' };
   try { profile = await api.getProfile(); } catch {}
 
-  content.innerHTML = `
-    <div class="page-content" style="max-width:520px;padding-top:32px;">
-
-      <!-- Avatar header -->
-      <div style="display:flex;align-items:center;gap:20px;margin-bottom:32px;">
-        <div style="
-          width:64px;height:64px;border-radius:50%;
-          background:var(--accent);
-          display:flex;align-items:center;justify-content:center;
-          font-size:26px;color:#fff;flex-shrink:0;">
-          <i class="fas fa-user"></i>
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:480px;width:100%;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:14px;">
+          <div style="
+            width:48px;height:48px;border-radius:50%;
+            background:var(--accent);flex-shrink:0;
+            display:flex;align-items:center;justify-content:center;
+            font-size:20px;color:#fff;">
+            <i class="fas fa-user"></i>
+          </div>
+          <div>
+            <div style="font-size:16px;font-weight:600;" id="profile-display-name">${esc(profile.username)}</div>
+            <div style="font-size:12px;color:var(--text-muted);" id="profile-display-email">${esc(profile.email) || '<span style="opacity:.5">No email set</span>'}</div>
+          </div>
         </div>
-        <div>
-          <div style="font-size:20px;font-weight:600;" id="profile-display-name">${esc(profile.username)}</div>
-          <div style="font-size:13px;color:var(--text-muted);" id="profile-display-email">${esc(profile.email) || '<span style="opacity:.5">No email set</span>'}</div>
-        </div>
+        <button class="btn btn-secondary btn-sm" id="profile-close" style="padding:4px 10px;">
+          <i class="fas fa-times"></i>
+        </button>
       </div>
 
       <!-- Account -->
-      <div class="settings-group-title"><i class="fas fa-user"></i> Account</div>
-      <div class="settings-block" style="margin-bottom:24px;">
+      <div class="settings-group-title" style="margin-top:0;"><i class="fas fa-user"></i> Account</div>
+      <div class="settings-block" style="margin-bottom:16px;">
         <div class="settings-row">
           <div class="settings-row-label"><span>Username</span></div>
           <div class="settings-row-control">
-            <input class="form-input" id="profile-username" value="${esc(profile.username)}" style="max-width:240px;">
+            <input class="form-input" id="profile-username" value="${esc(profile.username)}" style="max-width:220px;">
           </div>
         </div>
         <div class="settings-row">
           <div class="settings-row-label"><span>Email</span><small>Optional</small></div>
           <div class="settings-row-control">
-            <input class="form-input" id="profile-email" type="email" value="${esc(profile.email)}" placeholder="you@example.com" style="max-width:240px;">
+            <input class="form-input" id="profile-email" type="email" value="${esc(profile.email)}" placeholder="you@example.com" style="max-width:220px;">
           </div>
         </div>
         <div class="settings-row">
@@ -53,16 +58,14 @@ export async function renderProfile() {
 
       <!-- Security -->
       <div class="settings-group-title"><i class="fas fa-lock"></i> Security</div>
-      <div class="settings-block" style="margin-bottom:24px;">
-
-        <!-- Change password -->
+      <div class="settings-block" style="margin-bottom:16px;">
         <div class="settings-row">
           <div class="settings-row-label"><span>Password</span></div>
           <div class="settings-row-control">
             <button class="btn btn-secondary btn-sm" id="profile-pw-toggle"><i class="fas fa-key"></i> Change password</button>
           </div>
         </div>
-        <div id="profile-pw-form" style="display:none;border-top:1px solid var(--border);padding:14px 0 6px;display:none;flex-direction:column;gap:8px;">
+        <div id="profile-pw-form" style="display:none;border-top:1px solid var(--border);padding:12px 0 4px;flex-direction:column;gap:8px;">
           <input class="form-input" type="password" id="profile-pw-current" placeholder="Current password" autocomplete="current-password">
           <input class="form-input" type="password" id="profile-pw-new" placeholder="New password (min 12 chars)" autocomplete="new-password">
           <input class="form-input" type="password" id="profile-pw-confirm" placeholder="Confirm new password" autocomplete="new-password">
@@ -72,32 +75,30 @@ export async function renderProfile() {
           </div>
         </div>
 
-        <!-- 2FA -->
         <div class="settings-row" id="profile-2fa-row">
           <div class="settings-row-label">
-            <span>Two-factor authentication</span>
+            <span>Two-factor auth</span>
             <small id="profile-2fa-status">Checking…</small>
           </div>
           <div class="settings-row-control" id="profile-2fa-control"></div>
         </div>
-        <div id="totp-setup-panel" style="display:none;border-top:1px solid var(--border);padding:14px 0 6px;flex-direction:column;gap:12px;">
+        <div id="totp-setup-panel" style="display:none;border-top:1px solid var(--border);padding:12px 0 4px;flex-direction:column;gap:10px;">
           <p style="margin:0;color:var(--text-muted);font-size:13px;">${t('set.totpScanQR')}</p>
-          <img id="totp-qr" style="width:180px;height:180px;border-radius:8px;background:#fff;padding:8px;" alt="QR Code">
+          <img id="totp-qr" style="width:160px;height:160px;border-radius:8px;background:#fff;padding:8px;" alt="QR Code">
           <p style="margin:0;color:var(--text-muted);font-size:12px;">${t('set.totpSecret')} <code id="totp-secret-text" style="font-family:var(--font-mono);word-break:break-all;"></code></p>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <input class="form-input" type="text" id="totp-confirm-code" inputmode="numeric"
               pattern="[0-9 ]*" maxlength="7" placeholder="______"
-              style="font-size:1.2rem;letter-spacing:6px;text-align:center;max-width:130px;">
+              style="font-size:1.2rem;letter-spacing:6px;text-align:center;max-width:120px;">
             <button class="btn btn-primary btn-sm" id="btn-totp-verify"><i class="fas fa-check"></i> ${t('set.totpVerify')}</button>
             <button class="btn btn-secondary btn-sm" id="btn-totp-cancel">Cancel</button>
           </div>
         </div>
-
       </div>
 
-      <!-- Preferences -->
+      <!-- Language -->
       <div class="settings-group-title"><i class="fas fa-globe"></i> Language</div>
-      <div class="settings-block" style="margin-bottom:32px;">
+      <div class="settings-block" style="margin-bottom:16px;">
         <div class="settings-row">
           <div class="settings-row-label"><span>Interface language</span></div>
           <div class="settings-row-control" style="display:flex;gap:6px;">
@@ -111,9 +112,13 @@ export async function renderProfile() {
       <button class="btn btn-danger" id="profile-signout" style="width:100%;">
         <i class="fas fa-right-from-bracket"></i> Sign out
       </button>
-
     </div>
   `;
+
+  function close() { overlay.classList.add('hidden'); }
+
+  document.getElementById('profile-close').addEventListener('click', close);
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
 
   // Save account
   document.getElementById('profile-save-account').addEventListener('click', async () => {
@@ -151,18 +156,16 @@ export async function renderProfile() {
     } catch (e) { showToast(e.message, 'error'); }
   });
 
-  // 2FA
-  _load2fa();
-
   // Language
-  document.getElementById('profile-lang-de').addEventListener('click', () => { setLang('de'); navigate('profile'); });
-  document.getElementById('profile-lang-en').addEventListener('click', () => { setLang('en'); navigate('profile'); });
+  document.getElementById('profile-lang-de').addEventListener('click', () => { setLang('de'); close(); showProfileModal(); });
+  document.getElementById('profile-lang-en').addEventListener('click', () => { setLang('en'); close(); showProfileModal(); });
 
   // Sign out
   document.getElementById('profile-signout').addEventListener('click', () => { api.setToken(null); location.reload(); });
-}
 
-function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  // 2FA
+  _load2fa();
+}
 
 async function _load2fa() {
   const statusEl  = document.getElementById('profile-2fa-status');
