@@ -222,12 +222,21 @@ app.get('/api/dashboard', (req, res) => {
       };
     });
 
-    const recentHistory = db.db.prepare(`
+    // Fetch more rows than needed so we can filter by accessible servers
+    const allRecentHistory = db.db.prepare(`
       SELECT h.*, s.name as server_name
       FROM update_history h
       LEFT JOIN servers s ON h.server_id = s.id
-      ORDER BY h.started_at DESC LIMIT 8
+      ORDER BY h.started_at DESC LIMIT 200
     `).all();
+
+    // Restrict to entries belonging to servers the user can access.
+    // For non-server entries (bulk_update, ansible runs with targets like 'all'),
+    // only show them to users with full access.
+    const allowedServerIds = new Set(servers.map(s => s.id));
+    const recentHistory = (perms && !perms.full)
+      ? allRecentHistory.filter(h => allowedServerIds.has(h.server_id)).slice(0, 8)
+      : allRecentHistory.slice(0, 8);
 
     res.json({
       summary: { total: servers.length, online, offline, unknown: servers.length - online - offline, rebootRequired, totalUpdates, criticalDisk, criticalRam },
