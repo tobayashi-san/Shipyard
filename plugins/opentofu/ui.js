@@ -975,6 +975,7 @@ function openWorkspaceModal(ws) {
               <option value="hcloud">Hetzner Cloud</option>
               <option value="digitalocean">DigitalOcean</option>
               <option value="kubernetes">Kubernetes</option>
+              <option value="proxmox">Proxmox (bpg/proxmox)</option>
             </select>
             <div class="form-hint">Creates main.tf, variables.tf, outputs.tf and (if provider selected) providers.tf</div>
           </div>

@@ -317,6 +317,41 @@ provider "kubernetes" {
 `,
       extra_variables: '',
     },
+    proxmox: {
+      providers_tf: `terraform {
+  required_providers {
+    proxmox = {
+      source  = "bpg/proxmox"
+      version = "~> 0.66"
+    }
+  }
+}
+
+provider "proxmox" {
+  endpoint  = var.proxmox_endpoint
+  api_token = var.proxmox_api_token
+  insecure  = var.proxmox_insecure
+}
+`,
+      extra_variables: `
+variable "proxmox_endpoint" {
+  type        = string
+  description = "Proxmox API endpoint, e.g. https://pve.example.com:8006/"
+}
+
+variable "proxmox_api_token" {
+  type        = string
+  description = "Proxmox API token, e.g. root@pam!terraform=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  sensitive   = true
+}
+
+variable "proxmox_insecure" {
+  type        = bool
+  description = "Skip TLS verification (self-signed certificates)"
+  default     = false
+}
+`,
+    },
   };
 
   function scaffoldWorkspace(wsPath, provider) {
