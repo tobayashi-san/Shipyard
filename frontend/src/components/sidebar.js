@@ -1,13 +1,11 @@
 import { state, navigate } from '../main.js';
 import { showRunPlaybookModal } from './run-playbook-modal.js';
-import { t, setLang, getLang } from '../i18n.js';
+import { t } from '../i18n.js';
 import { esc } from '../utils/format.js';
 
 export function renderSidebar() {
   const sidebar = document.getElementById('sidebar');
   const onlineCount = state.servers.filter(s => s.status === 'online').length;
-  const currentLang = getLang();
-
   // Plugins that are enabled and have a sidebar entry
   const sidebarPlugins = (state.plugins || []).filter(p => p.enabled && p.sidebar);
 
@@ -57,16 +55,16 @@ export function renderSidebar() {
         <span class="nav-item-icon"><i class="fas fa-cog"></i></span>
         <span>${t('nav.settings')}</span>
       </div>
+      <div class="nav-item ${state.currentView === 'profile' ? 'active' : ''}" data-view="profile">
+        <span class="nav-item-icon"><i class="fas fa-user-circle"></i></span>
+        <span>Profile</span>
+      </div>
     </div>
 
     <div class="sidebar-footer">
       <div class="sidebar-footer-info">
         <div class="sidebar-footer-dot"></div>
         <span>${t('nav.serverCount', { online: onlineCount })}</span>
-      </div>
-      <div class="sidebar-lang-toggle" style="display:flex;gap:4px;margin-top:8px;">
-        <button class="btn btn-sm ${currentLang === 'de' ? 'btn-primary' : 'btn-secondary'}" id="lang-de" style="min-width:36px;padding:2px 6px;font-size:11px;">DE</button>
-        <button class="btn btn-sm ${currentLang === 'en' ? 'btn-primary' : 'btn-secondary'}" id="lang-en" style="min-width:36px;padding:2px 6px;font-size:11px;">EN</button>
       </div>
     </div>
   `;
@@ -79,13 +77,4 @@ export function renderSidebar() {
     });
   });
 
-  document.getElementById('lang-de')?.addEventListener('click', () => {
-    setLang('de');
-    navigate(state.currentView, state.selectedServerId ? { serverId: state.selectedServerId } : {});
-  });
-
-  document.getElementById('lang-en')?.addEventListener('click', () => {
-    setLang('en');
-    navigate(state.currentView, state.selectedServerId ? { serverId: state.selectedServerId } : {});
-  });
 }

@@ -9,6 +9,7 @@ import { setupComposeModal } from './components/compose-modal.js';
 import { renderLogin } from './components/login.js';
 import { renderOnboarding } from './components/onboarding.js';
 import { renderPlugin, cleanupPlugin } from './plugins.js';
+import { renderProfile } from './components/profile.js';
 import { api } from './api.js';
 import { t } from './i18n.js';
 
@@ -58,6 +59,9 @@ function render() {
       break;
     case 'settings':
       renderSettings();
+      break;
+    case 'profile':
+      renderProfile();
       break;
     case 'plugin':
       renderPlugin(state.currentPluginId);
