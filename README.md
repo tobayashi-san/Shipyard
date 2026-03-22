@@ -8,8 +8,6 @@ Web dashboard for managing Linux servers — SSH, system monitoring, OS updates,
 
 ## Quick Start
 
-### Docker (recommended)
-
 ```bash
 git clone https://github.com/tobayashi-san/Shipyard.git
 cd Shipyard
@@ -17,16 +15,6 @@ docker compose up -d
 ```
 
 Open **`https://<host-ip>`** in your browser. HTTPS is enabled by default with a self-signed certificate — accept the browser warning once, or bring your own certificate (see [Configuration](docs/configuration.md)).
-
-### Bare metal
-
-```bash
-git clone https://github.com/tobayashi-san/Shipyard.git
-cd Shipyard
-bash install.sh
-```
-
-Detects your OS, installs dependencies (Node.js, Ansible), builds the frontend, and registers a systemd service.
 
 ## Screenshots
 
@@ -103,7 +91,7 @@ Detects your OS, installs dependencies (Node.js, Ansible), builds the frontend, 
 
 ## Documentation
 
-- [Deployment](docs/deployment.md) — Docker, bare metal, updating, uninstalling
+- [Deployment](docs/deployment.md) — Docker, updating, uninstalling
 - [Configuration](docs/configuration.md) — Environment variables, HTTPS, ports, project structure
 - [Security Hardening](docs/security.md) — Network isolation, secrets, SSH key encryption
 

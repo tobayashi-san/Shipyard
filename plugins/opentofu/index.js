@@ -3,8 +3,107 @@ const fs   = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
 
+let _gitSync = null;
+function getGitSync() {
+  if (!_gitSync) {
+    try { _gitSync = require('../../server/services/git-sync'); } catch {}
+  }
+  return _gitSync;
+}
+
 // Map of currently running processes: runId -> ChildProcess
 const _running = new Map();
+
+// ── Tofu <-> Git workspace sync ────────────────────────────────────────────
+const GIT_WORKSPACE_DIR = path.resolve(path.join(__dirname, '..', '..', 'server', 'git-workspace'));
+const TOFU_SUBDIR       = 'tofu';
+const TOFU_EXTENSIONS   = ['.tf', '.tfvars', '.tfvars.json', '.auto.tfvars'];
+
+function tofuGitDir(workspaceName) {
+  return path.join(GIT_WORKSPACE_DIR, TOFU_SUBDIR, workspaceName);
+}
+
+function syncOneToGit(name, wsPath) {
+  if (!fs.existsSync(wsPath)) return;
+  const destDir = tofuGitDir(name);
+  fs.mkdirSync(destDir, { recursive: true });
+  const srcFiles = new Set(
+    fs.readdirSync(wsPath).filter(f => TOFU_EXTENSIONS.some(e => f.endsWith(e)))
+  );
+  for (const f of srcFiles) fs.copyFileSync(path.join(wsPath, f), path.join(destDir, f));
+  // Remove from git dir what no longer exists locally
+  const destFiles = fs.readdirSync(destDir).filter(f => TOFU_EXTENSIONS.some(e => f.endsWith(e)));
+  for (const f of destFiles) if (!srcFiles.has(f)) fs.unlinkSync(path.join(destDir, f));
+}
+
+function syncOneFromGit(name, wsPath) {
+  const srcDir = tofuGitDir(name);
+  if (!fs.existsSync(srcDir)) return;
+  fs.mkdirSync(wsPath, { recursive: true });
+  const files = fs.readdirSync(srcDir).filter(f => TOFU_EXTENSIONS.some(e => f.endsWith(e)));
+  for (const f of files) fs.copyFileSync(path.join(srcDir, f), path.join(wsPath, f));
+}
+
+function syncAllToGit(workspaces) {
+  for (const ws of workspaces) syncOneToGit(ws.name, ws.path);
+}
+
+function syncAllFromGit(workspaces) {
+  for (const ws of workspaces) syncOneFromGit(ws.name, ws.path);
+}
+
+const https = require('https');
+const http  = require('http');
+const { promisify } = require('util');
+const execAsync = promisify(require('child_process').exec);
+
+function _downloadFile(url, dest, redirects = 0) {
+  if (redirects > 5) return Promise.reject(new Error('Too many redirects'));
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith('https') ? https : http;
+    client.get(url, { headers: { 'User-Agent': 'shipyard-lab-manager' } }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        _downloadFile(res.headers.location, dest, redirects + 1).then(resolve).catch(reject);
+        return;
+      }
+      if (res.statusCode !== 200) {
+        res.resume();
+        reject(new Error(`HTTP ${res.statusCode} for ${url}`));
+        return;
+      }
+      const file = require('fs').createWriteStream(dest);
+      res.pipe(file);
+      file.on('finish', () => file.close(resolve));
+      file.on('error', reject);
+    }).on('error', reject);
+  });
+}
+
+async function _fetchGitHubReleases() {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: 'api.github.com',
+      path: '/repos/opentofu/opentofu/releases?per_page=15',
+      headers: { 'User-Agent': 'shipyard-lab-manager' },
+    };
+    https.get(options, (res) => {
+      let data = '';
+      res.on('data', d => data += d);
+      res.on('end', () => {
+        try {
+          const list = JSON.parse(data);
+          if (!Array.isArray(list)) { reject(new Error(list.message || 'GitHub API error')); return; }
+          const versions = list
+            .filter(r => !r.prerelease && !r.draft)
+            .map(r => r.tag_name.replace(/^v/, ''))
+            .filter(v => /^\d+\.\d+\.\d+$/.test(v));
+          resolve(versions);
+        } catch (e) { reject(e); }
+      });
+    }).on('error', reject);
+  });
+}
 
 function register({ router, db, broadcast }) {
 
@@ -20,20 +119,36 @@ function register({ router, db, broadcast }) {
     )
   `).run();
 
-  // Write paths file immediately so the next container restart can chown them
+  db.db.prepare(`
+    CREATE TABLE IF NOT EXISTS tofu_runs (
+      id           TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      action       TEXT NOT NULL,
+      status       TEXT NOT NULL DEFAULT 'running',
+      output       TEXT NOT NULL DEFAULT '',
+      started_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TEXT
+    )
+  `).run();
+
   syncPathsFile();
 
   // ── Binary detection (cached) ────────────────────────────────────────────
-  let _cachedBinary = undefined;
+  let _cachedBinary  = undefined;
   let _cachedVersion = undefined;
+
+  const TOFU_INSTALL_PATH = '/app/server/data/bin/tofu';
 
   function findBinary() {
     if (_cachedBinary !== undefined) return _cachedBinary;
+    if (fs.existsSync(TOFU_INSTALL_PATH)) {
+      _cachedBinary = TOFU_INSTALL_PATH;
+      return TOFU_INSTALL_PATH;
+    }
     for (const bin of ['tofu', 'opentofu', 'terraform']) {
       try { execSync(`which ${bin}`, { stdio: 'ignore' }); _cachedBinary = bin; return bin; } catch {}
     }
-    _cachedBinary = null;
-    return null;
+    _cachedBinary = null; return null;
   }
 
   function getVersion(bin) {
@@ -43,9 +158,8 @@ function register({ router, db, broadcast }) {
       const parsed = JSON.parse(raw);
       _cachedVersion = parsed.terraform_version || parsed.tofu_version || null;
     } catch {
-      try {
-        _cachedVersion = execSync(`${bin} version`, { encoding: 'utf8', timeout: 5000 }).split('\n')[0].trim();
-      } catch { _cachedVersion = null; }
+      try { _cachedVersion = execSync(`${bin} version`, { encoding: 'utf8', timeout: 5000 }).split('\n')[0].trim(); }
+      catch { _cachedVersion = null; }
     }
     return _cachedVersion;
   }
@@ -59,21 +173,19 @@ function register({ router, db, broadcast }) {
     } catch {}
   }
 
-  // Env var names that must never be overridden by workspace config
   const BLOCKED_ENV_VARS = new Set([
-    'LD_PRELOAD', 'LD_LIBRARY_PATH', 'PATH', 'NODE_OPTIONS',
-    'HOME', 'USER', 'SHELL', 'HOSTNAME', 'PWD',
-    'JWT_SECRET', 'SHIPYARD_KEY_SECRET', 'GIT_SSH_COMMAND',
-    'BASH_ENV', 'ENV', 'CDPATH',
-    'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY',
-    'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS',
+    'LD_PRELOAD','LD_LIBRARY_PATH','PATH','NODE_OPTIONS',
+    'HOME','USER','SHELL','HOSTNAME','PWD',
+    'JWT_SECRET','SHIPYARD_KEY_SECRET','GIT_SSH_COMMAND',
+    'BASH_ENV','ENV','CDPATH',
+    'HTTP_PROXY','HTTPS_PROXY','NO_PROXY',
+    'SSL_CERT_FILE','SSL_CERT_DIR','NODE_EXTRA_CA_CERTS',
   ]);
 
-  // Allowed workspace paths must be under these prefixes
-  const ALLOWED_PATH_PREFIXES = ['/opt/', '/srv/', '/home/', '/var/lib/', '/app/'];
+  const ALLOWED_PATH_PREFIXES = ['/opt/','/srv/','/home/','/var/lib/','/app/'];
 
   function isAllowedPath(p) {
-    const resolved = require('path').resolve(p);
+    const resolved = path.resolve(p);
     if (resolved.includes('..')) return false;
     return ALLOWED_PATH_PREFIXES.some(prefix => resolved.startsWith(prefix));
   }
@@ -93,21 +205,22 @@ function register({ router, db, broadcast }) {
     return { ...row, env_vars: sanitizeEnvVars(JSON.parse(row.env_vars || '{}')) };
   }
 
-  // Ensure workspace directory exists; returns error string on failure or null on success
+  function getAllWorkspaces() {
+    return db.db.prepare('SELECT id, name, path FROM tofu_workspaces').all();
+  }
+
   function ensureWorkspacePath(workspace) {
     if (fs.existsSync(workspace.path)) return null;
     try { fs.mkdirSync(workspace.path, { recursive: true }); return null; }
     catch (e) { return e; }
   }
 
-  // Human-readable error for EACCES vs other fs errors
   function permissionError(e, wsPath) {
     return e.code === 'EACCES'
       ? `Permission denied. Fix with: chown -R 1001:1001 ${wsPath}`
       : e.message;
   }
 
-  // Resolve a relative path safely within a workspace (prevent traversal)
   function safePath(wsPath, relPath) {
     const resolved = path.resolve(wsPath, relPath);
     if (!resolved.startsWith(path.resolve(wsPath) + path.sep) &&
@@ -115,15 +228,13 @@ function register({ router, db, broadcast }) {
     return resolved;
   }
 
-  // Recursively list files/dirs, skipping .terraform provider cache
   function walkDir(dir, rel, depth) {
     if (depth > 5) return [];
     let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
-    catch { return []; }
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
     const result = [];
     for (const e of entries) {
-      if (e.name === '.terraform') continue; // auto-generated provider cache, skip entirely
+      if (e.name === '.terraform' || e.name === '.git') continue;
       const childRel = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
         result.push({ type: 'dir', name: e.name, path: childRel,
@@ -138,58 +249,80 @@ function register({ router, db, broadcast }) {
     });
   }
 
-  // ── Routes ────────────────────────────────────────────────────────────────
+  function getLastRun(workspaceId) {
+    return db.db.prepare(
+      'SELECT * FROM tofu_runs WHERE workspace_id = ? ORDER BY started_at DESC LIMIT 1'
+    ).get(workspaceId) || null;
+  }
 
-  // GET /api/plugin/opentofu/status
+  // ── Routes: Status & Workspaces ───────────────────────────────────────────
+
   router.get('/status', (req, res) => {
     const binary = findBinary();
-    res.json({
-      installed: !!binary,
-      binary,
-      version: binary ? getVersion(binary) : null,
-    });
+    res.json({ installed: !!binary, binary, version: binary ? getVersion(binary) : null });
   });
 
-  // GET /api/plugin/opentofu/workspaces
   router.get('/workspaces', (req, res) => {
-    const rows = db.db.prepare('SELECT * FROM tofu_workspaces ORDER BY created_at ASC').all();
-    res.json(rows.map(r => ({ ...r, env_vars: sanitizeEnvVars(JSON.parse(r.env_vars || '{}')) })));
+    const rows = db.db.prepare('SELECT * FROM tofu_workspaces ORDER BY name ASC').all();
+    const withStatus = rows.map(r => {
+      const lastRun = getLastRun(r.id);
+      return {
+        ...r,
+        env_vars: sanitizeEnvVars(JSON.parse(r.env_vars || '{}')),
+        last_run: lastRun,
+      };
+    });
+    res.json(withStatus);
   });
 
-  // POST /api/plugin/opentofu/workspaces
   router.post('/workspaces', (req, res) => {
     const { name, path: wPath, description, env_vars } = req.body;
     if (!name || !wPath) return res.status(400).json({ error: 'name and path are required' });
     if (!isAllowedPath(wPath)) return res.status(400).json({ error: 'Path must be under /opt/, /srv/, /home/, /var/lib/, or /app/' });
     const id = randomUUID();
-    db.db.prepare(
-      'INSERT INTO tofu_workspaces (id, name, path, description, env_vars) VALUES (?, ?, ?, ?, ?)'
-    ).run(id, name.trim(), wPath.trim(), (description || '').trim(), JSON.stringify(env_vars || {}));
+    db.db.prepare('INSERT INTO tofu_workspaces (id, name, path, description, env_vars) VALUES (?, ?, ?, ?, ?)')
+      .run(id, name.trim(), wPath.trim(), (description || '').trim(), JSON.stringify(env_vars || {}));
     syncPathsFile();
     res.json({ success: true, id });
   });
 
-  // PUT /api/plugin/opentofu/workspaces/:id
   router.put('/workspaces/:id', (req, res) => {
     const { name, path: wPath, description, env_vars } = req.body;
     if (!name || !wPath) return res.status(400).json({ error: 'name and path are required' });
     if (!isAllowedPath(wPath)) return res.status(400).json({ error: 'Path must be under /opt/, /srv/, /home/, /var/lib/, or /app/' });
-    const result = db.db.prepare(
-      'UPDATE tofu_workspaces SET name=?, path=?, description=?, env_vars=? WHERE id=?'
-    ).run(name.trim(), wPath.trim(), (description || '').trim(), JSON.stringify(env_vars || {}), req.params.id);
+    const result = db.db.prepare('UPDATE tofu_workspaces SET name=?, path=?, description=?, env_vars=? WHERE id=?')
+      .run(name.trim(), wPath.trim(), (description || '').trim(), JSON.stringify(env_vars || {}), req.params.id);
     if (result.changes === 0) return res.status(404).json({ error: 'Workspace not found' });
     syncPathsFile();
     res.json({ success: true });
   });
 
-  // DELETE /api/plugin/opentofu/workspaces/:id
   router.delete('/workspaces/:id', (req, res) => {
     db.db.prepare('DELETE FROM tofu_workspaces WHERE id = ?').run(req.params.id);
+    db.db.prepare('DELETE FROM tofu_runs WHERE workspace_id = ?').run(req.params.id);
     syncPathsFile();
     res.json({ success: true });
   });
 
-  // POST /api/plugin/opentofu/workspaces/:id/run
+  // ── Routes: Run history ───────────────────────────────────────────────────
+
+  router.get('/workspaces/:id/runs', (req, res) => {
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+    const runs = db.db.prepare(
+      'SELECT id, workspace_id, action, status, started_at, completed_at FROM tofu_runs WHERE workspace_id = ? ORDER BY started_at DESC LIMIT ?'
+    ).all(req.params.id, limit);
+    res.json(runs);
+  });
+
+  router.get('/workspaces/:id/runs/:runId', (req, res) => {
+    const run = db.db.prepare('SELECT * FROM tofu_runs WHERE id = ? AND workspace_id = ?')
+      .get(req.params.runId, req.params.id);
+    if (!run) return res.status(404).json({ error: 'Run not found' });
+    res.json(run);
+  });
+
+  // ── Routes: Execute ───────────────────────────────────────────────────────
+
   router.post('/workspaces/:id/run', (req, res) => {
     const VALID_ACTIONS = ['init', 'validate', 'plan', 'apply', 'destroy'];
     const { action } = req.body;
@@ -202,46 +335,70 @@ function register({ router, db, broadcast }) {
     if (!binary) return res.status(500).json({ error: 'OpenTofu/Terraform binary not found in PATH' });
 
     const mkdirErr = ensureWorkspacePath(workspace);
-    if (mkdirErr) {
-      return res.status(400).json({
-        error: `Path "${workspace.path}" does not exist and could not be created: ${mkdirErr.message}.\n` +
-               `Make sure the parent directory is mounted in docker-compose.override.yml.`
-      });
-    }
+    if (mkdirErr) return res.status(400).json({ error: `Path "${workspace.path}" could not be created: ${mkdirErr.message}` });
 
-    const runId = randomUUID();
-    const args  = [action, '-no-color'];
+    const runId  = randomUUID();
+    const dbRunId = randomUUID();
+
+    // Save run to DB
+    db.db.prepare('INSERT INTO tofu_runs (id, workspace_id, action) VALUES (?, ?, ?)')
+      .run(dbRunId, workspace.id, action);
+
+    const args = [action, '-no-color'];
     if (action === 'apply' || action === 'destroy') args.push('-auto-approve');
-    if (action === 'plan' || action === 'apply' || action === 'destroy') args.push('-input=false');
+    if (['plan','apply','destroy'].includes(action)) args.push('-input=false');
 
     const env = { ...process.env, ...workspace.env_vars };
 
-    res.json({ runId, status: 'started' });
+    res.json({ runId, dbRunId, status: 'started' });
 
-    broadcast({ type: 'tofu_start', runId, workspaceId: workspace.id, action });
-    broadcast({ type: 'tofu_output', runId, workspaceId: workspace.id, stream: 'meta',
-      data: `▶  ${binary} ${args.join(' ')}\n   cwd: ${workspace.path}\n\n` });
+    // Auto-pull from git before run
+    const gs = getGitSync();
+    const pullAndRun = async () => {
+      if (gs && gs.isConfigured()) {
+        try {
+          await gs.pull();
+          syncAllFromGit(getAllWorkspaces());
+        } catch {}
+      }
 
-    const proc = spawn(binary, args, { cwd: workspace.path, env });
-    _running.set(runId, proc);
+      broadcast({ type: 'tofu_start', runId, workspaceId: workspace.id, action });
+      broadcast({ type: 'tofu_output', runId, workspaceId: workspace.id, stream: 'meta',
+        data: `▶  ${binary} ${args.join(' ')}\n   cwd: ${workspace.path}\n\n` });
 
-    proc.stdout.on('data', d => {
-      broadcast({ type: 'tofu_output', runId, workspaceId: workspace.id, stream: 'stdout', data: d.toString() });
-    });
-    proc.stderr.on('data', d => {
-      broadcast({ type: 'tofu_output', runId, workspaceId: workspace.id, stream: 'stderr', data: d.toString() });
-    });
-    proc.on('close', code => {
-      _running.delete(runId);
-      broadcast({ type: 'tofu_done', runId, workspaceId: workspace.id, success: code === 0, exitCode: code });
-    });
-    proc.on('error', err => {
-      _running.delete(runId);
-      broadcast({ type: 'tofu_done', runId, workspaceId: workspace.id, success: false, exitCode: -1, error: err.message });
-    });
+      const proc = spawn(binary, args, { cwd: workspace.path, env });
+      _running.set(runId, proc);
+
+      let output = '';
+      proc.stdout.on('data', d => {
+        const s = d.toString();
+        output += s;
+        broadcast({ type: 'tofu_output', runId, workspaceId: workspace.id, stream: 'stdout', data: s });
+      });
+      proc.stderr.on('data', d => {
+        const s = d.toString();
+        output += s;
+        broadcast({ type: 'tofu_output', runId, workspaceId: workspace.id, stream: 'stderr', data: s });
+      });
+      proc.on('close', code => {
+        _running.delete(runId);
+        const success = code === 0;
+        const status  = success ? 'success' : 'failed';
+        db.db.prepare("UPDATE tofu_runs SET status=?, output=?, completed_at=datetime('now') WHERE id=?")
+          .run(status, output, dbRunId);
+        broadcast({ type: 'tofu_done', runId, workspaceId: workspace.id, success, exitCode: code, dbRunId });
+      });
+      proc.on('error', err => {
+        _running.delete(runId);
+        db.db.prepare("UPDATE tofu_runs SET status='failed', output=?, completed_at=datetime('now') WHERE id=?")
+          .run(err.message, dbRunId);
+        broadcast({ type: 'tofu_done', runId, workspaceId: workspace.id, success: false, exitCode: -1, error: err.message, dbRunId });
+      });
+    };
+
+    pullAndRun().catch(() => {});
   });
 
-  // POST /api/plugin/opentofu/workspaces/:id/cancel/:runId
   router.post('/workspaces/:id/cancel/:runId', (req, res) => {
     const proc = _running.get(req.params.runId);
     if (!proc) return res.status(404).json({ error: 'No running process found' });
@@ -249,7 +406,8 @@ function register({ router, db, broadcast }) {
     res.json({ success: true });
   });
 
-  // GET /api/plugin/opentofu/workspaces/:id/check
+  // ── Routes: Files ─────────────────────────────────────────────────────────
+
   router.get('/workspaces/:id/check', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
@@ -257,7 +415,6 @@ function register({ router, db, broadcast }) {
     res.json({ pathExists: fs.existsSync(workspace.path) });
   });
 
-  // GET /api/plugin/opentofu/workspaces/:id/files  — directory tree
   router.get('/workspaces/:id/files', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
@@ -266,19 +423,15 @@ function register({ router, db, broadcast }) {
     res.json({ tree: walkDir(workspace.path, '', 0) });
   });
 
-  // GET /api/plugin/opentofu/workspaces/:id/file?path=rel/path  — read file
   router.get('/workspaces/:id/file', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
     const fp = safePath(workspace.path, req.query.path || '');
     if (!fp) return res.status(400).json({ error: 'Invalid path' });
-    try {
-      const content = fs.readFileSync(fp, 'utf8');
-      res.json({ content });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    try { res.json({ content: fs.readFileSync(fp, 'utf8') }); }
+    catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // PUT /api/plugin/opentofu/workspaces/:id/file?path=rel/path  — save file
   router.put('/workspaces/:id/file', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
@@ -287,12 +440,17 @@ function register({ router, db, broadcast }) {
     try {
       fs.writeFileSync(fp, req.body.content ?? '', 'utf8');
       res.json({ success: true });
+      // Auto-push to git after file save
+      const gs = getGitSync();
+      if (gs && gs.isConfigured()) {
+        syncOneToGit(workspace.name, workspace.path);
+        gs.autoPush(`Update tofu/${workspace.name}`).catch(() => {});
+      }
     } catch (e) {
       res.status(500).json({ error: permissionError(e, workspace.path), code: e.code });
     }
   });
 
-  // POST /api/plugin/opentofu/workspaces/:id/file  body: { path }  — create new file
   router.post('/workspaces/:id/file', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
@@ -300,8 +458,7 @@ function register({ router, db, broadcast }) {
     if (!fp) return res.status(400).json({ error: 'Invalid path' });
     if (fs.existsSync(fp)) return res.status(409).json({ error: 'File already exists' });
     try {
-      const dir = path.dirname(fp);
-      fs.mkdirSync(dir, { recursive: true });
+      fs.mkdirSync(path.dirname(fp), { recursive: true });
       fs.writeFileSync(fp, '', 'utf8');
       res.json({ success: true });
     } catch (e) {
@@ -309,7 +466,6 @@ function register({ router, db, broadcast }) {
     }
   });
 
-  // DELETE /api/plugin/opentofu/workspaces/:id/file?path=rel/path  — delete file
   router.delete('/workspaces/:id/file', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
@@ -318,12 +474,18 @@ function register({ router, db, broadcast }) {
     try {
       fs.unlinkSync(fp);
       res.json({ success: true });
+      const gs = getGitSync();
+      if (gs && gs.isConfigured()) {
+        syncOneToGit(workspace.name, workspace.path);
+        gs.autoPush(`Delete tofu/${workspace.name}/${req.query.path}`).catch(() => {});
+      }
     } catch (e) {
       res.status(500).json({ error: permissionError(e, workspace.path), code: e.code });
     }
   });
 
-  // GET /api/plugin/opentofu/workspaces/:id/state
+  // ── Routes: State ─────────────────────────────────────────────────────────
+
   router.get('/workspaces/:id/state', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
@@ -331,20 +493,66 @@ function register({ router, db, broadcast }) {
     if (!binary) return res.status(500).json({ error: 'Binary not found' });
     ensureWorkspacePath(workspace);
     if (!fs.existsSync(workspace.path)) {
-      return res.json({ output: `Error: path "${workspace.path}" does not exist inside the container.\nMount the parent directory via docker-compose.override.yml first.` });
+      return res.json({ resources: [], error: `Path "${workspace.path}" does not exist inside the container.` });
     }
     try {
-      const output = execSync(`${binary} state list -no-color`, {
+      const raw = execSync(`${binary} state list -no-color`, {
         cwd: workspace.path,
         env: { ...process.env, ...workspace.env_vars },
         encoding: 'utf8',
         timeout: 15000,
       });
-      res.json({ output: output.trim() });
+      const resources = raw.trim().split('\n').filter(Boolean).map(line => {
+        const parts = line.split('.');
+        return { address: line.trim(), type: parts[0] || '', name: parts.slice(1).join('.') || '' };
+      });
+      res.json({ resources });
     } catch (e) {
-      res.json({ output: (e.stdout || e.stderr || e.message || '').trim() });
+      const stderr = (e.stdout || e.stderr || e.message || '').trim();
+      res.json({ resources: [], error: stderr });
     }
   });
+
+  // ── Routes: Install ───────────────────────────────────────────────────────
+
+  router.get('/releases', async (req, res) => {
+    try {
+      const releases = await _fetchGitHubReleases();
+      res.json({ releases });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  router.post('/install', async (req, res) => {
+    const { version } = req.body;
+    if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
+      return res.status(400).json({ error: 'Invalid version' });
+    }
+    const arch     = process.arch === 'arm64' ? 'arm64' : 'amd64';
+    const filename = `tofu_${version}_linux_${arch}.zip`;
+    const url      = `https://github.com/opentofu/opentofu/releases/download/v${version}/${filename}`;
+    const tmpZip   = `/tmp/tofu_install_${version}.zip`;
+    const installDir  = '/app/server/data/bin';
+    const installPath = `${installDir}/tofu`;
+
+    try {
+      fs.mkdirSync(installDir, { recursive: true });
+      await _downloadFile(url, tmpZip);
+      await execAsync(`unzip -o "${tmpZip}" tofu -d "${installDir}" && chmod +x "${installPath}"`);
+      try { fs.unlinkSync(tmpZip); } catch {}
+      // Invalidate binary cache so next call picks up new binary
+      _cachedBinary  = undefined;
+      _cachedVersion = undefined;
+      const bin = findBinary();
+      const ver = bin ? getVersion(bin) : null;
+      res.json({ success: true, binary: bin, version: ver });
+    } catch (e) {
+      try { fs.unlinkSync(tmpZip); } catch {}
+      res.status(500).json({ error: e.message });
+    }
+  });
+
 }
 
 module.exports = { register };

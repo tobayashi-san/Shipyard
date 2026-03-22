@@ -149,6 +149,7 @@ router.delete('/:filename', (req, res) => {
     if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'Playbook not found' });
     fs.unlinkSync(filepath);
     res.json({ success: true });
+    gitSync.autoPush(`Delete ${filename}`).catch(() => {});
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

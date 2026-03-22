@@ -273,6 +273,7 @@ app.post('/api/ansible/run', async (req, res) => {
     targets || 'all',
     `ansible:${playbook}`
   );
+  const schedHistId = db.scheduleHistory.create(null, 'Quick Run', playbook, targets || 'all');
 
   res.json({ historyId, status: 'started' });
 
@@ -291,11 +292,14 @@ app.post('/api/ansible/run', async (req, res) => {
     );
 
     const status = result.success ? 'success' : 'failed';
-    db.updateHistory.updateStatus(historyId, status, result.stdout + result.stderr);
+    const output = result.stdout + result.stderr;
+    db.updateHistory.updateStatus(historyId, status, output);
+    db.scheduleHistory.complete(schedHistId, status, output);
     db.auditLog.write('ansible.run', `playbook=${playbook} targets=${targets || 'all'} status=${status}`, req.ip, result.success);
     broadcast({ type: 'ansible_complete', historyId, success: result.success });
   } catch (error) {
     db.updateHistory.updateStatus(historyId, 'failed', error.message);
+    db.scheduleHistory.complete(schedHistId, 'failed', error.message);
     db.auditLog.write('ansible.run', `playbook=${playbook} targets=${targets || 'all'} error=${error.message}`, req.ip, false);
     broadcast({ type: 'ansible_error', historyId, error: error.message });
     notify(`Playbook failed: ${playbook}`, error.message, false).catch(() => {});

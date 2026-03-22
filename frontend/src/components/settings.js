@@ -84,8 +84,14 @@ export async function renderSettings() {
       <button class="tab-btn" data-tab="system">
         <i class="fas fa-wrench"></i> ${t('set.tabSystem')}
       </button>
+      <button class="tab-btn" data-tab="notifications">
+        <i class="fas fa-bell"></i> Notifications
+      </button>
       <button class="tab-btn" data-tab="security">
         <i class="fas fa-shield-alt"></i> ${t('set.tabSecurity')}
+      </button>
+      <button class="tab-btn" data-tab="git">
+        <i class="fab fa-git-alt"></i> Git
       </button>
       <button class="tab-btn" data-tab="plugins">
         <i class="fas fa-puzzle-piece"></i> ${t('set.tabPlugins')}
@@ -230,6 +236,15 @@ export async function renderSettings() {
           <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
         </div>
 
+        <div class="settings-group-title">${t('set.polling')}</div>
+        <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px 0;padding:0 4px;">${t('set.pollingHint')}</p>
+        <div class="settings-block" id="polling-config-content">
+          <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
+        </div>
+      </div>
+
+      <!-- Tab: Notifications -->
+      <div class="tab-panel" id="tab-notifications">
         <div class="settings-group-title">${t('set.webhooks')}</div>
         <div class="settings-block">
           <div class="settings-row">
@@ -310,12 +325,6 @@ export async function renderSettings() {
               </button>
             </div>
           </div>
-        </div>
-
-        <div class="settings-group-title">${t('set.polling')}</div>
-        <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px 0;padding:0 4px;">${t('set.pollingHint')}</p>
-        <div class="settings-block" id="polling-config-content">
-          <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
         </div>
       </div>
 
@@ -431,7 +440,7 @@ export async function renderSettings() {
 
       <!-- Tab: Danger Zone -->
       <div class="tab-panel" id="tab-danger">
-        <div class="settings-group-title" style="color:var(--offline);">
+        <div class="settings-group-title">
           <i class="fas fa-triangle-exclamation"></i> ${t('set.danger')}
         </div>
         <p style="font-size:13px;color:var(--text-secondary);margin:0 0 16px;">
@@ -490,7 +499,7 @@ export async function renderSettings() {
 
           <div class="settings-row" style="border-bottom:none;">
             <div class="settings-row-label">
-              <span style="color:var(--offline);font-weight:600;">${t('set.resetAll')}</span>
+              <span>${t('set.resetAll')}</span>
               <small>${t('set.resetAllHint')}</small>
             </div>
             <div class="settings-row-control" id="dz-ctrl-all">
@@ -503,6 +512,13 @@ export async function renderSettings() {
         </div>
       </div>
 
+      <!-- Tab: Git -->
+      <div class="tab-panel" id="tab-git">
+        <div id="git-settings-content">
+          <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
+        </div>
+      </div>
+
     </div>
   `;
 
@@ -511,9 +527,17 @@ export async function renderSettings() {
   loadAnsibleStatus();
   loadPollingConfig();
   setupSettingsEvents(wl);
+  setupNotificationsEvents();
   setupSecurityEvents().catch(() => {});
   setupDangerZone();
   loadPluginsList();
+
+  // Git tab loads lazily when first clicked
+  document.querySelector('.tab-btn[data-tab="git"]')?.addEventListener('click', () => {
+    if (!document.getElementById('git-settings-content')?.dataset.loaded) {
+      loadGitSettingsTab();
+    }
+  });
 }
 
 function setupTabSwitching() {
@@ -551,73 +575,6 @@ function setupSettingsEvents(wl) {
       try { await saveWhiteLabel({ timeFormat: btn.dataset.value }); }
       catch { showToast(t('set.toastErrorSave'), 'error'); }
     });
-  });
-
-  // Webhook save
-  document.getElementById('btn-save-webhook')?.addEventListener('click', async () => {
-    const btn = document.getElementById('btn-save-webhook');
-    btn.disabled = true;
-    try {
-      await api.saveSettings({
-        webhookUrl:    document.getElementById('webhook-url').value.trim(),
-        webhookSecret: document.getElementById('webhook-secret').value,
-      });
-      state.whiteLabel.webhookUrl    = document.getElementById('webhook-url').value.trim();
-      state.whiteLabel.webhookSecret = document.getElementById('webhook-secret').value;
-      showToast(t('set.webhookSaved'), 'success');
-    } catch { showToast(t('set.toastErrorSave'), 'error'); }
-    finally { btn.disabled = false; }
-  });
-
-  // Webhook test
-  document.getElementById('btn-test-webhook')?.addEventListener('click', async () => {
-    const btn = document.getElementById('btn-test-webhook');
-    btn.disabled = true;
-    btn.innerHTML = `<span class="spinner-sm"></span>`;
-    try {
-      await api.testWebhook();
-      showToast(t('set.webhookTestOk'), 'success');
-    } catch (e) {
-      showToast(t('set.webhookTestFail') + (e.message ? ': ' + e.message : ''), 'error');
-    } finally {
-      btn.disabled = false;
-      btn.innerHTML = `<i class="fas fa-paper-plane"></i> ${t('set.webhookTest')}`;
-    }
-  });
-
-  // SMTP save
-  document.getElementById('btn-save-smtp')?.addEventListener('click', async () => {
-    const btn = document.getElementById('btn-save-smtp');
-    btn.disabled = true;
-    try {
-      const pass = document.getElementById('smtp-pass').value;
-      await api.saveSettings({
-        smtpHost: document.getElementById('smtp-host').value.trim(),
-        smtpPort: document.getElementById('smtp-port').value.trim(),
-        smtpUser: document.getElementById('smtp-user').value.trim(),
-        smtpFrom: document.getElementById('smtp-from').value.trim(),
-        smtpTo:   document.getElementById('smtp-to').value.trim(),
-        ...(pass ? { smtpPass: pass } : {}),
-      });
-      showToast(t('set.smtpSaved'), 'success');
-    } catch { showToast(t('set.toastErrorSave'), 'error'); }
-    finally { btn.disabled = false; }
-  });
-
-  // SMTP test
-  document.getElementById('btn-test-smtp')?.addEventListener('click', async () => {
-    const btn = document.getElementById('btn-test-smtp');
-    btn.disabled = true;
-    btn.innerHTML = `<span class="spinner-sm"></span>`;
-    try {
-      await api.testSmtp();
-      showToast(t('set.smtpTestOk'), 'success');
-    } catch (e) {
-      showToast(t('set.smtpTestFail') + (e.message ? ': ' + e.message : ''), 'error');
-    } finally {
-      btn.disabled = false;
-      btn.innerHTML = `<i class="fas fa-paper-plane"></i> ${t('set.webhookTest')}`;
-    }
   });
 
   // Sync color picker <-> hex input
@@ -692,6 +649,74 @@ function setupSettingsEvents(wl) {
     } finally {
       btn.disabled = false;
       btn.innerHTML = `<i class="fas fa-key"></i> ${t('set.sshDistributeBtn')}`;
+    }
+  });
+}
+
+// ============================================================
+// Notifications Tab
+// ============================================================
+function setupNotificationsEvents() {
+  document.getElementById('btn-save-webhook')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-save-webhook');
+    btn.disabled = true;
+    try {
+      await api.saveSettings({
+        webhookUrl:    document.getElementById('webhook-url').value.trim(),
+        webhookSecret: document.getElementById('webhook-secret').value,
+      });
+      state.whiteLabel.webhookUrl    = document.getElementById('webhook-url').value.trim();
+      state.whiteLabel.webhookSecret = document.getElementById('webhook-secret').value;
+      showToast(t('set.webhookSaved'), 'success');
+    } catch { showToast(t('set.toastErrorSave'), 'error'); }
+    finally { btn.disabled = false; }
+  });
+
+  document.getElementById('btn-test-webhook')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-test-webhook');
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-sm"></span>`;
+    try {
+      await api.testWebhook();
+      showToast(t('set.webhookTestOk'), 'success');
+    } catch (e) {
+      showToast(t('set.webhookTestFail') + (e.message ? ': ' + e.message : ''), 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<i class="fas fa-paper-plane"></i> ${t('set.webhookTest')}`;
+    }
+  });
+
+  document.getElementById('btn-save-smtp')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-save-smtp');
+    btn.disabled = true;
+    try {
+      const pass = document.getElementById('smtp-pass').value;
+      await api.saveSettings({
+        smtpHost: document.getElementById('smtp-host').value.trim(),
+        smtpPort: document.getElementById('smtp-port').value.trim(),
+        smtpUser: document.getElementById('smtp-user').value.trim(),
+        smtpFrom: document.getElementById('smtp-from').value.trim(),
+        smtpTo:   document.getElementById('smtp-to').value.trim(),
+        ...(pass ? { smtpPass: pass } : {}),
+      });
+      showToast(t('set.smtpSaved'), 'success');
+    } catch { showToast(t('set.toastErrorSave'), 'error'); }
+    finally { btn.disabled = false; }
+  });
+
+  document.getElementById('btn-test-smtp')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-test-smtp');
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-sm"></span>`;
+    try {
+      await api.testSmtp();
+      showToast(t('set.smtpTestOk'), 'success');
+    } catch (e) {
+      showToast(t('set.smtpTestFail') + (e.message ? ': ' + e.message : ''), 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<i class="fas fa-paper-plane"></i> ${t('set.webhookTest')}`;
     }
   });
 }
@@ -1159,5 +1184,340 @@ async function loadPluginsList() {
       btn.disabled = false;
       btn.innerHTML = `<i class="fas fa-rotate"></i> ${t('set.pluginsReload')}`;
     }
+  });
+}
+
+// ============================================================
+// Git Settings Tab
+// ============================================================
+export async function loadGitSettingsTab() {
+  const content = document.getElementById('git-settings-content');
+  if (!content) return;
+  content.dataset.loaded = '1';
+
+  let cfg = {};
+  try { cfg = await api.request('/playbooks-git/config'); } catch (e) { cfg = {}; }
+
+  const configured = cfg && cfg.repoUrl;
+  const panel = content.parentElement; // tab-git
+  content.innerHTML = configured ? renderGitDashboardPanel(cfg) : renderGitSetupPanel();
+
+  if (configured) {
+    _setupGitDashboardEvents(content);
+    _loadGitLog(content);
+    _loadGitBranches(content, cfg.branch);
+  } else {
+    _setupGitSetupEvents(content);
+  }
+}
+
+function renderGitSetupPanel() {
+  return `
+    <div class="settings-group-title"><i class="fab fa-git-alt"></i> Git Sync</div>
+    <p style="font-size:13px;color:var(--text-muted);margin:0 0 16px 0;">
+      Connect a remote Git repository to sync playbooks and OpenTofu workspaces automatically.
+    </p>
+
+    <form id="git-setup-form">
+      <div class="settings-block">
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <span>Repository URL</span>
+            <small>HTTPS or SSH remote URL</small>
+          </div>
+          <div class="settings-row-control">
+            <input class="form-input" type="text" id="git-repo-url"
+              style="max-width:420px;width:100%;"
+              placeholder="https://github.com/user/repo.git">
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <span>Auth Token</span>
+            <small>HTTPS only — personal access token</small>
+          </div>
+          <div class="settings-row-control">
+            <input class="form-input" type="password" id="git-auth-token"
+              style="max-width:420px;width:100%;"
+              placeholder="ghp_xxxxxxxxxxxx" autocomplete="off">
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <span>SSH Private Key</span>
+            <small>SSH only — paste private key</small>
+          </div>
+          <div class="settings-row-control">
+            <textarea class="form-input" id="git-ssh-key" rows="5"
+              style="max-width:420px;width:100%;font-family:var(--font-mono);font-size:11px;resize:vertical;"
+              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"></textarea>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <span>Git User Name</span>
+            <small>Used for commits</small>
+          </div>
+          <div class="settings-row-control">
+            <input class="form-input" type="text" id="git-user-name"
+              style="max-width:220px;width:100%;" placeholder="Shipyard Bot">
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <span>Git User Email</span>
+            <small>Used for commits</small>
+          </div>
+          <div class="settings-row-control">
+            <input class="form-input" type="email" id="git-user-email"
+              style="max-width:280px;width:100%;" placeholder="bot@example.com">
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <span>Auto-pull</span>
+            <small>Pull before each run</small>
+          </div>
+          <div class="settings-row-control">
+            <label class="toggle-switch">
+              <input type="checkbox" id="git-auto-pull" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <span>Auto-push</span>
+            <small>Push after every save</small>
+          </div>
+          <div class="settings-row-control">
+            <label class="toggle-switch">
+              <input type="checkbox" id="git-auto-push" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label"></div>
+          <div class="settings-row-control">
+            <button type="submit" class="btn btn-primary btn-sm">
+              <i class="fas fa-plug"></i> Connect Repository
+            </button>
+          </div>
+        </div>
+      </div>
+    </form>`;
+}
+
+function renderGitDashboardPanel(cfg) {
+  return `
+    <div class="settings-group-title"><i class="fab fa-git-alt"></i> Git Sync</div>
+
+    <div class="settings-block">
+      <div class="settings-row">
+        <div class="settings-row-label">
+          <span>Repository</span>
+          <small>Connected remote</small>
+        </div>
+        <div class="settings-row-control" style="gap:12px;">
+          <code style="font-size:12px;color:var(--text-muted);word-break:break-all;">${esc(cfg.repoUrl || '')}</code>
+          <button id="btn-git-disconnect" class="btn btn-danger btn-sm" style="flex-shrink:0;margin-left:auto;">
+            <i class="fas fa-unlink"></i> Disconnect
+          </button>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-label">
+          <span>Branch</span>
+          <small>Active branch</small>
+        </div>
+        <div class="settings-row-control" style="gap:8px;">
+          <select id="git-branch-select" class="form-input" style="max-width:200px;width:100%;"></select>
+          <button id="btn-git-checkout" class="btn btn-secondary btn-sm">Switch</button>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-label">
+          <span>Sync</span>
+          <small>Manual operations</small>
+        </div>
+        <div class="settings-row-control" style="gap:8px;flex-wrap:wrap;">
+          <button id="btn-git-pull" class="btn btn-secondary btn-sm">
+            <i class="fas fa-arrow-down"></i> Pull
+          </button>
+          <button id="btn-git-push" class="btn btn-secondary btn-sm">
+            <i class="fas fa-arrow-up"></i> Push
+          </button>
+          <button id="btn-git-commit" class="btn btn-secondary btn-sm">
+            <i class="fas fa-circle-dot"></i> Commit
+          </button>
+          <span id="git-status-msg" style="font-size:12px;color:var(--text-muted);margin-left:4px;"></span>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-label">
+          <span>Auto-pull</span>
+          <small>Pull before each run</small>
+        </div>
+        <div class="settings-row-control">
+          <label class="toggle-switch">
+            <input type="checkbox" id="git-auto-pull" ${cfg.autoPull !== false ? 'checked' : ''}>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-label">
+          <span>Auto-push</span>
+          <small>Push after every save</small>
+        </div>
+        <div class="settings-row-control">
+          <label class="toggle-switch">
+            <input type="checkbox" id="git-auto-push" ${cfg.autoPush !== false ? 'checked' : ''}>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-label"></div>
+        <div class="settings-row-control">
+          <button id="btn-git-save-settings" class="btn btn-primary btn-sm">
+            <i class="fas fa-save"></i> Save Settings
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-group-title" style="margin-top:24px;">Recent Commits</div>
+    <div class="settings-block">
+      <div class="settings-row" style="justify-content:flex-end;padding:8px 16px;">
+        <button id="btn-git-refresh-log" class="btn btn-secondary btn-sm">
+          <i class="fas fa-rotate"></i> Refresh
+        </button>
+      </div>
+      <div id="git-log-list" style="padding:0 20px 12px;font-family:var(--font-mono);font-size:12px;color:var(--text-muted);line-height:1.8;">
+        <div class="loading-state" style="padding:16px;"><div class="loader"></div></div>
+      </div>
+    </div>`;
+}
+
+async function _loadGitLog(panel) {
+  const el = panel.querySelector('#git-log-list');
+  if (!el) return;
+  try {
+    const data = await api.request('/playbooks-git/log');
+    const lines = (data.log || '').trim().split('\n').filter(Boolean);
+    if (!lines.length) { el.textContent = 'No commits yet.'; return; }
+    el.innerHTML = lines.slice(0, 20).map(l => `<div style="padding:3px 0;border-bottom:1px solid var(--border);">${esc(l)}</div>`).join('');
+  } catch (e) {
+    el.textContent = 'Could not load log: ' + e.message;
+  }
+}
+
+async function _loadGitBranches(panel, currentBranch) {
+  const sel = panel.querySelector('#git-branch-select');
+  if (!sel) return;
+  try {
+    const data = await api.getGitBranches();
+    const all = [...new Set([...(data.local || []), ...(data.remote || []).map(b => b.replace(/^origin\//, ''))])];
+    sel.innerHTML = all.map(b => `<option value="${esc(b)}" ${b === currentBranch ? 'selected' : ''}>${esc(b)}</option>`).join('');
+  } catch (e) {
+    sel.innerHTML = `<option>main</option>`;
+  }
+}
+
+function _setupGitSetupEvents(panel) {
+  panel.querySelector('#git-setup-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = panel.querySelector('[type=submit]');
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-sm"></span> Connecting…`;
+    try {
+      await api.request('/playbooks-git/setup', {
+        method: 'POST',
+        body: {
+          repoUrl:   panel.querySelector('#git-repo-url').value.trim(),
+          authToken: panel.querySelector('#git-auth-token').value.trim(),
+          sshKey:    panel.querySelector('#git-ssh-key').value.trim(),
+          userName:  panel.querySelector('#git-user-name').value.trim(),
+          userEmail: panel.querySelector('#git-user-email').value.trim(),
+          autoPull:  panel.querySelector('#git-auto-pull').checked,
+          autoPush:  panel.querySelector('#git-auto-push').checked,
+        },
+      });
+      showToast('Git repository connected!', 'success');
+      await loadGitSettingsTab();
+    } catch (e) {
+      showToast('Error: ' + e.message, 'error');
+      btn.disabled = false;
+      btn.innerHTML = `<i class="fas fa-plug"></i> Connect Repository`;
+    }
+  });
+}
+
+function _setupGitDashboardEvents(panel) {
+  panel.querySelector('#btn-git-disconnect')?.addEventListener('click', async () => {
+    if (!await showConfirm('Disconnect Git? This will not delete your remote repository.')) return;
+    await api.request('/playbooks-git/disconnect', { method: 'POST' });
+    showToast('Git disconnected.', 'success');
+    await loadGitSettingsTab();
+  });
+
+  panel.querySelector('#btn-git-pull')?.addEventListener('click', async () => {
+    const msg = panel.querySelector('#git-status-msg');
+    msg.textContent = 'Pulling…';
+    try {
+      await api.request('/playbooks-git/pull', { method: 'POST' });
+      msg.textContent = 'Pull successful.';
+      await _loadGitLog(panel);
+    } catch (e) { msg.textContent = 'Pull failed: ' + e.message; }
+  });
+
+  panel.querySelector('#btn-git-push')?.addEventListener('click', async () => {
+    const msg = panel.querySelector('#git-status-msg');
+    msg.textContent = 'Pushing…';
+    try {
+      await api.request('/playbooks-git/push', { method: 'POST' });
+      msg.textContent = 'Push successful.';
+    } catch (e) { msg.textContent = 'Push failed: ' + e.message; }
+  });
+
+  panel.querySelector('#btn-git-commit')?.addEventListener('click', async () => {
+    const msg = panel.querySelector('#git-status-msg');
+    const message = prompt('Commit message:');
+    if (!message) return;
+    msg.textContent = 'Committing…';
+    try {
+      await api.request('/playbooks-git/commit', { method: 'POST', body: { message } });
+      msg.textContent = 'Committed.';
+      _loadGitLog(panel);
+    } catch (e) { msg.textContent = 'Commit failed: ' + e.message; }
+  });
+
+  panel.querySelector('#btn-git-checkout')?.addEventListener('click', async () => {
+    const sel = panel.querySelector('#git-branch-select');
+    const branch = sel?.value;
+    if (!branch) return;
+    const msg = panel.querySelector('#git-status-msg');
+    msg.textContent = `Switching to ${branch}…`;
+    try {
+      await api.gitCheckout(branch);
+      msg.textContent = `Switched to ${branch}.`;
+    } catch (e) { msg.textContent = 'Checkout failed: ' + e.message; }
+  });
+
+  panel.querySelector('#btn-git-refresh-log')?.addEventListener('click', () => _loadGitLog(panel));
+
+  panel.querySelector('#btn-git-save-settings')?.addEventListener('click', async () => {
+    try {
+      await api.request('/playbooks-git/settings', {
+        method: 'POST',
+        body: {
+          autoPull: panel.querySelector('#git-auto-pull').checked,
+          autoPush: panel.querySelector('#git-auto-push').checked,
+        },
+      });
+      showToast('Git settings saved.', 'success');
+    } catch (e) { showToast('Error: ' + e.message, 'error'); }
   });
 }

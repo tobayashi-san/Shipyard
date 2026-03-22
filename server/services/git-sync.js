@@ -1,7 +1,12 @@
 /**
  * Git synchronization service for the playbooks directory.
- * Handles auth (SSH via existing key, HTTPS via stored token),
- * auto-pull before runs, and auto-push after saves.
+ *
+ * Layout in the remote repo:
+ *   playbooks/   ← synced from/to server/playbooks/
+ *   tofu/        ← can be added later manually
+ *
+ * The local git workspace lives at server/git-workspace/.
+ * The runtime playbook files stay in server/playbooks/ as before.
  */
 const { execFile } = require('child_process');
 const path = require('path');
@@ -11,10 +16,20 @@ const util = require('util');
 const execFileAsync = util.promisify(execFile);
 
 const db = require('../db');
-const PLAYBOOKS_DIR = path.join(__dirname, '..', 'playbooks');
+
+// Runtime playbooks (read/written by the server at runtime)
+const PLAYBOOKS_DIR = path.resolve(path.join(__dirname, '..', 'playbooks'));
+
+// Dedicated git workspace – NOT inside the lab_manager repo
+const GIT_WORKSPACE_DIR = path.resolve(path.join(__dirname, '..', 'git-workspace'));
+
+// Subdirectory inside the workspace that contains the playbooks
+const PLAYBOOKS_SUBDIR = 'playbooks';
 
 // Path to temp SSH key file – written once, reused, cleaned on exit
 let _tmpKeyPath = null;
+
+// ── Config ────────────────────────────────────────────────────
 
 function getConfig() {
   const g = (k) => db.settings.get(k) || '';
@@ -25,12 +40,15 @@ function getConfig() {
     autoPush:  db.settings.get('git_auto_push') !== '0',
     userName:  g('git_user_name')  || 'Shipyard',
     userEmail: g('git_user_email') || 'shipyard@localhost',
+    branch:    g('git_branch')     || 'main',
   };
 }
 
 function isConfigured() {
   return !!db.settings.get('git_repo_url');
 }
+
+// ── Helpers ───────────────────────────────────────────────────
 
 function buildAuthUrl(url, token) {
   if (!token) return url;
@@ -79,7 +97,7 @@ async function runGit(args) {
   const env = await buildEnv(cfg.repoUrl);
   try {
     const { stdout, stderr } = await execFileAsync('git', args, {
-      cwd: PLAYBOOKS_DIR,
+      cwd: GIT_WORKSPACE_DIR,
       env,
       timeout: 30000,
     });
@@ -89,9 +107,19 @@ async function runGit(args) {
   }
 }
 
+// The workspace is a git repo if it has its own .git directory
 async function isGitRepo() {
-  // Must be a git root directly in PLAYBOOKS_DIR, not inherited from a parent repo
-  return fs.existsSync(path.join(PLAYBOOKS_DIR, '.git'));
+  return fs.existsSync(path.join(GIT_WORKSPACE_DIR, '.git'));
+}
+
+function ensureWorkspaceDirs() {
+  if (!fs.existsSync(GIT_WORKSPACE_DIR)) {
+    fs.mkdirSync(GIT_WORKSPACE_DIR, { recursive: true });
+  }
+  const pbDir = path.join(GIT_WORKSPACE_DIR, PLAYBOOKS_SUBDIR);
+  if (!fs.existsSync(pbDir)) {
+    fs.mkdirSync(pbDir, { recursive: true });
+  }
 }
 
 async function applyGitIdentity() {
@@ -106,14 +134,53 @@ async function setRemote(url) {
   return r;
 }
 
+// ── Sync between server/playbooks/ and git-workspace/playbooks/ ──
+
+/**
+ * Copy *.yml / *.yaml from server/playbooks/ into git-workspace/playbooks/.
+ * Called before commit/push.
+ */
+function syncToWorkspace() {
+  ensureWorkspaceDirs();
+  const destDir = path.join(GIT_WORKSPACE_DIR, PLAYBOOKS_SUBDIR);
+  const sourceFiles = new Set(
+    fs.readdirSync(PLAYBOOKS_DIR)
+      .filter(f => (f.endsWith('.yml') || f.endsWith('.yaml')) && !f.includes('.bak.'))
+  );
+  // Copy new/updated files
+  for (const f of sourceFiles) {
+    fs.copyFileSync(path.join(PLAYBOOKS_DIR, f), path.join(destDir, f));
+  }
+  // Remove files from workspace that no longer exist in server/playbooks/
+  const destFiles = fs.readdirSync(destDir)
+    .filter(f => f.endsWith('.yml') || f.endsWith('.yaml'));
+  for (const f of destFiles) {
+    if (!sourceFiles.has(f)) fs.unlinkSync(path.join(destDir, f));
+  }
+}
+
+/**
+ * Copy *.yml / *.yaml from git-workspace/playbooks/ into server/playbooks/.
+ * Called after pull.
+ */
+function syncFromWorkspace() {
+  const srcDir = path.join(GIT_WORKSPACE_DIR, PLAYBOOKS_SUBDIR);
+  if (!fs.existsSync(srcDir)) return;
+  const files = fs.readdirSync(srcDir)
+    .filter(f => f.endsWith('.yml') || f.endsWith('.yaml'));
+  for (const f of files) {
+    fs.copyFileSync(path.join(srcDir, f), path.join(PLAYBOOKS_DIR, f));
+  }
+}
+
 // ── Public API ────────────────────────────────────────────────
 
 async function getStatus() {
   if (!await isGitRepo()) return { initialized: false };
 
-  const [branchRes, remoteRes, statusRes] = await Promise.all([
+  const cfg = getConfig();
+  const [branchRes, statusRes] = await Promise.all([
     runGit(['branch', '--show-current']),
-    runGit(['remote', 'get-url', 'origin']),
     runGit(['status', '--porcelain']),
   ]);
 
@@ -122,12 +189,11 @@ async function getStatus() {
     file: line.slice(3),
   }));
 
-  const cfg = getConfig();
   return {
     initialized: true,
     configured: isConfigured(),
     branch: branchRes.stdout || 'main',
-    remote: remoteRes.success ? remoteRes.stdout : '',
+    remote: cfg.repoUrl, // never expose token
     changed,
     autoPull: cfg.autoPull,
     autoPush: cfg.autoPush,
@@ -144,21 +210,57 @@ async function getLog() {
   });
 }
 
+async function getBranches() {
+  if (!await isGitRepo()) return { local: [], remote: [] };
+  const [localR, remoteR] = await Promise.all([
+    runGit(['branch', '--format=%(refname:short)']),
+    runGit(['branch', '-r', '--format=%(refname:short)']),
+  ]);
+  const local = localR.stdout.split('\n').filter(Boolean);
+  const remote = remoteR.stdout.split('\n').filter(Boolean)
+    .map(b => b.replace(/^origin\//, ''))
+    .filter(b => b !== 'HEAD');
+  return { local, remote };
+}
+
+async function checkout(branch) {
+  if (!branch || typeof branch !== 'string') return { success: false, stderr: 'Branch name required' };
+  if (!/^[a-zA-Z0-9._\-/]+$/.test(branch)) return { success: false, stderr: 'Invalid branch name' };
+
+  // Try existing local branch first
+  let r = await runGit(['checkout', branch]);
+  if (!r.success) {
+    // Try to create tracking branch from remote
+    r = await runGit(['checkout', '-b', branch, `origin/${branch}`]);
+    if (!r.success) {
+      // Create new local branch
+      r = await runGit(['checkout', '-b', branch]);
+    }
+  }
+  if (r.success) {
+    db.settings.set('git_branch', branch);
+    syncFromWorkspace();
+  }
+  return r;
+}
+
 async function pull() {
   const cfg = getConfig();
   if (!cfg.repoUrl) return { success: false, stderr: 'No repository configured' };
-  if (!await isGitRepo()) return { success: false, stderr: 'Playbooks directory is not a git repository' };
+  if (!await isGitRepo()) return { success: false, stderr: 'Git workspace not initialized – run setup first' };
 
   await applyGitIdentity();
   const authUrl = cfg.authToken ? buildAuthUrl(cfg.repoUrl, cfg.authToken) : cfg.repoUrl;
   await setRemote(authUrl);
 
-  const r = await runGit(['pull', '--rebase', 'origin', 'HEAD']);
+  const r = await runGit(['pull', '--rebase', 'origin', cfg.branch]);
+  if (r.success) syncFromWorkspace();
   return r;
 }
 
 async function commit(message) {
   if (!message || typeof message !== 'string') return { success: false, stderr: 'Commit message required' };
+  syncToWorkspace();
   await applyGitIdentity();
   await runGit(['add', '-A']);
   return runGit(['commit', '-m', message]);
@@ -170,7 +272,7 @@ async function push() {
   await applyGitIdentity();
   const authUrl = cfg.authToken ? buildAuthUrl(cfg.repoUrl, cfg.authToken) : cfg.repoUrl;
   await setRemote(authUrl);
-  return runGit(['push', 'origin', 'HEAD']);
+  return runGit(['push', 'origin', `HEAD:${cfg.branch}`]);
 }
 
 /**
@@ -197,6 +299,8 @@ async function autoPush(message = 'Update playbooks') {
   if (!await isGitRepo()) return;
 
   try {
+    syncToWorkspace();
+
     const status = await runGit(['status', '--porcelain']);
     if (!status.stdout) return; // nothing changed
 
@@ -210,7 +314,7 @@ async function autoPush(message = 'Update playbooks') {
 
     const authUrl = cfg.authToken ? buildAuthUrl(cfg.repoUrl, cfg.authToken) : cfg.repoUrl;
     await setRemote(authUrl);
-    const pr = await runGit(['push', 'origin', 'HEAD']);
+    const pr = await runGit(['push', 'origin', `HEAD:${cfg.branch}`]);
     if (!pr.success) console.warn('[Git] Auto-push failed:', pr.stderr);
     else console.log('[Git] Auto-push complete');
   } catch (e) {
@@ -219,24 +323,35 @@ async function autoPush(message = 'Update playbooks') {
 }
 
 /**
- * First-time setup: save config, init repo, set remote, initial pull.
+ * First-time setup: save config, init workspace, set remote, initial pull.
  */
-async function setup({ repoUrl, authToken, autoPull: ap, autoPush: ap2, userName, userEmail }) {
+async function setup({ repoUrl, authToken, autoPull: ap, autoPush: ap2, userName, userEmail, branch }) {
   if (!repoUrl) return { success: false, error: 'repoUrl required' };
+  const targetBranch = (branch || 'main').trim();
 
   db.settings.set('git_repo_url',   repoUrl);
   db.settings.set('git_auth_token', authToken || '');
-  db.settings.set('git_auto_pull',  ap !== false ? '1' : '0');
+  db.settings.set('git_auto_pull',  ap  !== false ? '1' : '0');
   db.settings.set('git_auto_push',  ap2 !== false ? '1' : '0');
   db.settings.set('git_user_name',  userName  || 'Shipyard');
   db.settings.set('git_user_email', userEmail || 'shipyard@localhost');
+  db.settings.set('git_branch',     targetBranch);
+
+  ensureWorkspaceDirs();
 
   if (!await isGitRepo()) {
-    const r = await runGit(['init']);
-    if (!r.success) return { success: false, error: r.stderr };
+    // Try modern -b flag first, fall back for git < 2.28
+    let r = await runGit(['init', '-b', targetBranch]);
+    if (!r.success) {
+      r = await runGit(['init']);
+      if (!r.success) return { success: false, error: r.stderr };
+      await runGit(['symbolic-ref', 'HEAD', `refs/heads/${targetBranch}`]);
+    }
 
-    const gitignore = path.join(PLAYBOOKS_DIR, '.gitignore');
-    if (!fs.existsSync(gitignore)) fs.writeFileSync(gitignore, '*.bak.*\n');
+    const gitignore = path.join(GIT_WORKSPACE_DIR, '.gitignore');
+    if (!fs.existsSync(gitignore)) {
+      fs.writeFileSync(gitignore, '*.bak.*\n');
+    }
   }
 
   await applyGitIdentity();
@@ -245,8 +360,19 @@ async function setup({ repoUrl, authToken, autoPull: ap, autoPush: ap2, userName
   const remoteR = await setRemote(authUrl);
   if (!remoteR.success) return { success: false, error: remoteR.stderr };
 
-  // Initial pull — OK to fail (empty repo, new branch, etc.)
-  const pullR = await runGit(['pull', '--rebase', 'origin', 'HEAD']);
+  // Copy existing playbooks into the workspace before pulling
+  syncToWorkspace();
+
+  // Fetch remote branches so we can switch to the right one
+  await runGit(['fetch', 'origin']);
+
+  // Checkout the target branch (creates tracking branch if remote exists)
+  await checkout(targetBranch);
+
+  // Initial pull – OK to fail (empty repo, etc.)
+  const pullR = await runGit(['pull', '--rebase', 'origin', targetBranch]);
+  if (pullR.success) syncFromWorkspace();
+
   return {
     success: true,
     pullOutput: pullR.stdout || (pullR.success ? 'up to date' : pullR.stderr),
@@ -260,4 +386,4 @@ process.on('exit', () => {
   }
 });
 
-module.exports = { getConfig, isConfigured, getStatus, getLog, pull, commit, push, autoPull, autoPush, setup };
+module.exports = { getConfig, isConfigured, getStatus, getLog, getBranches, checkout, pull, commit, push, autoPull, autoPush, setup };

@@ -46,7 +46,7 @@ export async function renderPlugin(pluginId) {
 
   try {
     // Cache-bust with Date.now() so reload works immediately after plugin update
-    const mod = await import(`/plugins/${pluginId}/ui.js?v=${Date.now()}`);
+    const mod = await import(/* @vite-ignore */ `/plugins/${pluginId}/ui.js?v=${Date.now()}`);
     _activePlugin = { id: pluginId, mod };
 
     container.innerHTML = '';

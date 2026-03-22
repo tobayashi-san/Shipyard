@@ -8,6 +8,7 @@ frontend/dist/
 
 # Runtime data — never commit
 server/data/
+server/git-workspace/
 
 # Environment & local secrets
 .env

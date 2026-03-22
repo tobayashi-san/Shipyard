@@ -80,6 +80,21 @@ export async function renderPlaybooks() {
         <h2>${t('pb.title')}</h2>
         <p>${t('pb.subtitle')}</p>
       </div>
+      <div id="pb-git-widget" style="display:flex;align-items:center;gap:6px;">
+        <div style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-secondary);font-size:12px;color:var(--text-muted);">
+          <i class="fab fa-git-alt"></i>
+          <span id="pb-git-branch">–</span>
+        </div>
+        <button id="pb-git-pull-btn" class="btn btn-secondary btn-sm" title="Pull from remote">
+          <i class="fas fa-arrow-down"></i>
+        </button>
+        <button id="pb-git-push-btn" class="btn btn-secondary btn-sm" title="Push to remote">
+          <i class="fas fa-arrow-up"></i>
+        </button>
+        <button id="pb-git-settings-link" class="btn btn-secondary btn-sm" title="Git Settings">
+          <i class="fas fa-gear"></i>
+        </button>
+      </div>
     </div>
 
     <div class="tab-bar" id="pb-tab-bar">
@@ -97,9 +112,6 @@ export async function renderPlaybooks() {
       </button>
       <button class="tab-btn${activeTab === 'history' ? ' active' : ''}" data-tab="history">
         <i class="fas fa-history"></i> ${t('pb.tabHistory')}
-      </button>
-      <button class="tab-btn${activeTab === 'git' ? ' active' : ''}" data-tab="git">
-        <i class="fab fa-git-alt"></i> ${t('pb.tabGit')}
       </button>
     </div>
 
@@ -121,6 +133,44 @@ export async function renderPlaybooks() {
   });
 
   await initTab(activeTab);
+  initGitWidget();
+}
+
+async function initGitWidget() {
+  try {
+    const cfg = await api.request('/playbooks-git/config');
+    const branch = document.getElementById('pb-git-branch');
+    if (branch) branch.textContent = cfg.repoUrl ? (cfg.branch || 'main') : 'not configured';
+  } catch {}
+
+  document.getElementById('pb-git-pull-btn')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      await api.request('/playbooks-git/pull', { method: 'POST' });
+      showToast('Pulled from git.', 'success');
+      // Reload the current tab so new/changed playbooks appear immediately
+      const content = document.getElementById('pb-tab-content');
+      if (content) {
+        content.innerHTML = renderTabContent(activeTab);
+        await initTab(activeTab);
+      }
+    } catch (e) { showToast('Pull failed: ' + e.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
+
+  document.getElementById('pb-git-push-btn')?.addEventListener('click', async (e) => {
+    e.currentTarget.disabled = true;
+    try {
+      await api.request('/playbooks-git/push', { method: 'POST' });
+      showToast('Pushed to git.', 'success');
+    } catch (e) { showToast('Push failed: ' + e.message, 'error'); }
+    finally { document.getElementById('pb-git-push-btn')&&(document.getElementById('pb-git-push-btn').disabled=false); }
+  });
+
+  document.getElementById('pb-git-settings-link')?.addEventListener('click', () => {
+    import('../main.js').then(m => m.navigate('settings'));
+  });
 }
 
 function renderTabContent(tab) {
@@ -130,7 +180,6 @@ function renderTabContent(tab) {
     case 'vars':      return renderVarsHTML();
     case 'schedules': return renderSchedulesHTML();
     case 'history':   return renderHistoryHTML();
-    case 'git':       return renderGitHTML();
     default: return '';
   }
 }
@@ -142,7 +191,6 @@ async function initTab(tab) {
     case 'vars':      await loadVarsList(); setupVarsEvents(); break;
     case 'schedules': await loadScheduleList(); setupScheduleEvents(); break;
     case 'history':   await loadHistoryList(); break;
-    case 'git':       await loadGitTab(); break;
   }
 }
 
@@ -989,7 +1037,12 @@ async function loadHistoryList(scheduleId = null) {
         <tbody>
           ${history.map(h => `
             <tr>
-              <td style="font-weight:500;">${esc(h.schedule_name)}</td>
+              <td style="font-weight:500;">
+                ${h.schedule_id === null
+                  ? `<span class="badge" style="background:var(--accent-light);color:var(--accent);font-size:11px;">${esc(h.schedule_name)}</span>`
+                  : esc(h.schedule_name)
+                }
+              </td>
               <td class="text-mono" style="font-size:12px;">${esc(h.playbook)}</td>
               <td>${esc(h.targets || 'all')}</td>
               <td style="font-size:12px;color:var(--text-muted);">${formatDateTimeShort(h.started_at)}</td>
@@ -1050,434 +1103,6 @@ function showOutputModal(entry) {
     overlay.classList.add('hidden'); overlay.innerHTML = '';
   });
   overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.classList.add('hidden'); overlay.innerHTML = ''; } });
-}
-
-// ============================================================
-// Tab: Git
-// ============================================================
-function renderGitHTML() {
-  return `<div id="git-tab-root"><div class="loading-state"><div class="loader"></div> ${t('pb.loading')}</div></div>`;
-}
-
-async function loadGitTab() {
-  let cfg, status;
-  try {
-    [cfg, status] = await Promise.all([api.getGitConfig(), api.getGitStatus()]);
-  } catch (e) {
-    document.getElementById('git-tab-root').innerHTML = `<p style="color:var(--offline);">${e.message}</p>`;
-    return;
-  }
-  const root = document.getElementById('git-tab-root');
-  if (!cfg.configured) {
-    renderGitSetup(root, cfg, null);
-  } else {
-    renderGitDashboard(root, cfg, status);
-  }
-}
-
-function gitPreBlock(code) {
-  return `<pre style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius);
-    padding:10px 14px;font-family:var(--font-mono);font-size:12px;line-height:1.5;overflow-x:auto;
-    white-space:pre;margin:0;color:var(--text-primary);">${esc(code)}</pre>`;
-}
-
-function renderGitSetup(root, cfg, _publicKey) {
-  const isSSH = (url) => /^(git@|ssh:\/\/)/.test(url);
-  const pubKey = _publicKey || '';
-
-  root.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;">
-      <!-- Left: setup form -->
-      <div class="panel">
-        <div class="section-header">
-          <h3><i class="fab fa-git-alt"></i> ${t('git.setupTitle')}</h3>
-        </div>
-        <div class="form-body">
-          <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px;">${t('git.setupHint')}</p>
-
-          <div class="form-group">
-            <label class="form-label">${t('git.repoUrl')}</label>
-            <input class="form-input text-mono" type="text" id="git-setup-url"
-              value="${esc(cfg.repoUrl || '')}" placeholder="git@github.com:user/playbooks.git">
-            <div class="form-hint">${t('git.repoUrlHint')}</div>
-          </div>
-
-          <div id="git-auth-section"></div>
-
-          <div class="form-row">
-            <div class="form-group" style="margin-bottom:0;flex:1;">
-              <label class="form-label">${t('git.userName')}</label>
-              <input class="form-input" type="text" id="git-setup-name"
-                value="${esc(cfg.userName || 'Shipyard')}" placeholder="Shipyard">
-            </div>
-            <div class="form-group" style="margin-bottom:0;flex:1;">
-              <label class="form-label">${t('git.userEmail')}</label>
-              <input class="form-input" type="email" id="git-setup-email"
-                value="${esc(cfg.userEmail || '')}" placeholder="shipyard@example.com">
-            </div>
-          </div>
-
-          <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
-            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;">
-              <input type="checkbox" id="git-auto-pull" style="accent-color:var(--accent);" checked>
-              ${t('git.autoPull')}
-            </label>
-            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;">
-              <input type="checkbox" id="git-auto-push" style="accent-color:var(--accent);" checked>
-              ${t('git.autoPush')}
-            </label>
-          </div>
-
-          <div style="margin-top:16px;">
-            <button class="btn btn-primary" id="btn-git-setup">
-              <i class="fas fa-link"></i> ${t('git.save')}
-            </button>
-          </div>
-
-          <div id="git-setup-output" class="hidden" style="margin-top:12px;"></div>
-        </div>
-      </div>
-
-      <!-- Right: help guide -->
-      <div id="git-help-panel" class="panel">
-        <div class="section-header">
-          <h3><i class="fas fa-question-circle"></i> Setup Guide</h3>
-        </div>
-        <div id="git-help-content" style="padding:16px;">
-          <!-- filled dynamically -->
-        </div>
-      </div>
-    </div>
-  `;
-
-  const urlInput = document.getElementById('git-setup-url');
-  const authSection = document.getElementById('git-auth-section');
-  const helpContent = document.getElementById('git-help-content');
-
-  function renderHelp(url, sshKey) {
-    if (isSSH(url)) {
-      helpContent.innerHTML = `
-        <div style="font-size:13px;line-height:1.7;">
-          <p style="font-weight:600;margin-bottom:12px;"><i class="fas fa-key" style="color:var(--accent);margin-right:6px;"></i>SSH-Authentifizierung</p>
-          <p style="color:var(--text-muted);margin-bottom:12px;">Füge den Shipyard SSH Public Key als <strong>Deploy Key</strong> in dein Repository ein:</p>
-
-          <p style="font-weight:500;margin-bottom:6px;">1. Kopiere diesen Public Key:</p>
-          <div style="position:relative;margin-bottom:12px;">
-            ${gitPreBlock(sshKey || 'SSH-Key wird geladen…')}
-            ${sshKey ? `<button class="btn btn-secondary btn-sm" id="btn-copy-ssh-key"
-              style="position:absolute;top:6px;right:6px;"><i class="fas fa-copy"></i></button>` : ''}
-          </div>
-
-          <p style="font-weight:500;margin-bottom:4px;">2. GitHub:</p>
-          <p style="color:var(--text-muted);font-size:12px;margin-bottom:10px;">
-            Repository → Settings → Deploy keys → Add deploy key<br>
-            ✓ "Allow write access" aktivieren wenn Auto-Push gewünscht
-          </p>
-
-          <p style="font-weight:500;margin-bottom:4px;">GitLab:</p>
-          <p style="color:var(--text-muted);font-size:12px;margin-bottom:10px;">
-            Repository → Settings → Repository → Deploy keys → Add key
-          </p>
-
-          <p style="font-weight:500;margin-bottom:4px;">Gitea / Forgejo:</p>
-          <p style="color:var(--text-muted);font-size:12px;margin-bottom:10px;">
-            Repository → Settings → Deploy Keys → Add Key
-          </p>
-
-          <p style="font-weight:500;margin-bottom:4px;">3. URL-Format:</p>
-          ${gitPreBlock('git@github.com:username/playbooks.git\ngit@gitlab.com:username/playbooks.git')}
-        </div>
-      `;
-      document.getElementById('btn-copy-ssh-key')?.addEventListener('click', () => {
-        navigator.clipboard.writeText(sshKey).then(() => showToast(t('common.copied'), 'success'));
-      });
-    } else {
-      helpContent.innerHTML = `
-        <div style="font-size:13px;line-height:1.7;">
-          <p style="font-weight:600;margin-bottom:12px;"><i class="fas fa-lock" style="color:var(--accent);margin-right:6px;"></i>HTTPS + Token</p>
-
-          <p style="font-weight:500;margin-bottom:4px;">GitHub Personal Access Token:</p>
-          <ol style="color:var(--text-muted);font-size:12px;padding-left:18px;margin-bottom:12px;">
-            <li>github.com → Settings → Developer settings</li>
-            <li>Personal access tokens → Tokens (classic)</li>
-            <li>Generate new token → Scopes: <code style="background:var(--bg-secondary);padding:1px 4px;border-radius:3px;">repo</code></li>
-            <li>Token beginnt mit <code style="background:var(--bg-secondary);padding:1px 4px;border-radius:3px;">ghp_</code></li>
-          </ol>
-
-          <p style="font-weight:500;margin-bottom:4px;">GitLab Access Token:</p>
-          <ol style="color:var(--text-muted);font-size:12px;padding-left:18px;margin-bottom:12px;">
-            <li>Repository → Settings → Access tokens</li>
-            <li>Scopes: <code style="background:var(--bg-secondary);padding:1px 4px;border-radius:3px;">read_repository</code> + <code style="background:var(--bg-secondary);padding:1px 4px;border-radius:3px;">write_repository</code></li>
-          </ol>
-
-          <p style="font-weight:500;margin-bottom:4px;">URL-Format:</p>
-          ${gitPreBlock('https://github.com/username/playbooks.git\nhttps://gitlab.com/username/playbooks.git')}
-
-          <p style="color:var(--text-muted);font-size:12px;margin-top:8px;">
-            <i class="fas fa-shield-alt" style="color:var(--accent);margin-right:4px;"></i>
-            Das Token wird verschlüsselt in der Datenbank gespeichert und nie im Klartext zurückgegeben.
-          </p>
-        </div>
-      `;
-    }
-  }
-
-  function updateAuth(url) {
-    if (isSSH(url)) {
-      authSection.innerHTML = `
-        <div class="form-group" style="padding:10px 14px;background:var(--bg-secondary);border-radius:var(--radius);border:1px solid var(--border);">
-          <p style="font-size:13px;color:var(--text-muted);margin:0;">
-            <i class="fas fa-key" style="color:var(--accent);margin-right:6px;"></i>${t('git.authSshHint')}
-          </p>
-        </div>
-      `;
-    } else {
-      authSection.innerHTML = `
-        <div class="form-group">
-          <label class="form-label">${t('git.authToken')}</label>
-          <input class="form-input text-mono" type="password" id="git-setup-token"
-            placeholder="${cfg.hasToken ? '••••••••••••••••' : 'ghp_xxxxxxxxxxxx'}">
-          <div class="form-hint">${t('git.authTokenHint')}</div>
-        </div>
-      `;
-    }
-  }
-
-  // Load SSH key and render initial state
-  let sshKey = pubKey;
-  api.getSSHKey().then(r => {
-    sshKey = r.publicKey || '';
-    renderHelp(urlInput.value.trim(), sshKey);
-  }).catch(() => {});
-
-  updateAuth(urlInput.value.trim() || 'git@');
-  renderHelp(urlInput.value.trim() || 'git@', sshKey);
-
-  urlInput.addEventListener('input', () => {
-    const url = urlInput.value.trim();
-    updateAuth(url);
-    renderHelp(url, sshKey);
-  });
-
-  document.getElementById('btn-git-setup').addEventListener('click', async () => {
-    const url = urlInput.value.trim();
-    if (!url) { showToast(t('git.repoUrl'), 'warning'); return; }
-    const token = document.getElementById('git-setup-token')?.value || '';
-    const btn = document.getElementById('btn-git-setup');
-    btn.disabled = true; btn.innerHTML = `<span class="spinner-sm"></span> ${t('git.saving')}`;
-
-    const outEl = document.getElementById('git-setup-output');
-    outEl.classList.add('hidden'); outEl.innerHTML = '';
-
-    try {
-      const result = await api.gitSetup({
-        repoUrl:   url,
-        authToken: token || undefined,
-        autoPull:  document.getElementById('git-auto-pull').checked,
-        autoPush:  document.getElementById('git-auto-push').checked,
-        userName:  document.getElementById('git-setup-name').value.trim(),
-        userEmail: document.getElementById('git-setup-email').value.trim(),
-      });
-      showToast(t('git.saved'), 'success');
-      if (result.pullOutput) {
-        outEl.classList.remove('hidden');
-        outEl.innerHTML = gitPreBlock(result.pullOutput);
-      }
-      setTimeout(() => loadGitTab(), 1000);
-    } catch (e) {
-      showToast(t('common.errorPrefix', { msg: e.message }), 'error');
-      outEl.classList.remove('hidden');
-      outEl.innerHTML = `<p style="color:var(--offline);font-size:13px;">${esc(e.message)}</p>`;
-      btn.disabled = false; btn.innerHTML = `<i class="fas fa-link"></i> ${t('git.save')}`;
-    }
-  });
-}
-
-function renderGitDashboard(root, cfg, status) {
-  const changed = status.initialized ? (status.changed || []) : [];
-  root.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;">
-      <!-- Left column -->
-      <div style="display:flex;flex-direction:column;gap:16px;">
-        <!-- Status -->
-        <div class="panel">
-          <div class="section-header">
-            <h3><i class="fab fa-git-alt"></i> ${t('git.status')}</h3>
-            <button class="btn btn-secondary btn-sm" id="btn-git-refresh" title="${t('common.refresh')}">
-              <i class="fas fa-sync"></i>
-            </button>
-          </div>
-          <div class="form-body">
-            ${status.initialized ? `
-              <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:14px;">
-                <div>
-                  <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">${t('git.branch')}</div>
-                  <span class="badge badge-online" style="font-family:var(--font-mono);">${esc(status.branch || 'main')}</span>
-                </div>
-                <div style="flex:1;min-width:0;">
-                  <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">${t('git.remote')}</div>
-                  <div style="font-size:12px;font-family:var(--font-mono);color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(status.remote || cfg.repoUrl)}</div>
-                </div>
-              </div>
-              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">${t('git.changedFiles')}</div>
-              ${changed.length === 0
-                ? `<p style="color:var(--text-muted);font-size:13px;">${t('git.noChanges')}</p>`
-                : changed.map(f => `
-                    <div style="display:flex;gap:8px;font-family:var(--font-mono);font-size:12px;line-height:1.9;">
-                      <span style="color:var(--accent);min-width:18px;">${esc(f.status)}</span>
-                      <span>${esc(f.file)}</span>
-                    </div>`).join('')
-              }
-            ` : `<p style="color:var(--text-muted);">Not a git repo yet</p>`}
-          </div>
-        </div>
-
-        <!-- Auto-sync -->
-        <div class="panel">
-          <div class="section-header">
-            <h3><i class="fas fa-sync-alt"></i> ${t('git.autoLabel')}</h3>
-          </div>
-          <div class="form-body">
-            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;margin-bottom:10px;">
-              <input type="checkbox" id="git-cfg-auto-pull" style="accent-color:var(--accent);" ${cfg.autoPull ? 'checked' : ''}>
-              <span>${t('git.autoPull')}</span>
-            </label>
-            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;">
-              <input type="checkbox" id="git-cfg-auto-push" style="accent-color:var(--accent);" ${cfg.autoPush ? 'checked' : ''}>
-              <span>${t('git.autoPush')}</span>
-            </label>
-          </div>
-        </div>
-
-        <!-- Manual actions -->
-        <div class="panel">
-          <div class="section-header">
-            <h3><i class="fas fa-code-branch"></i> Sync</h3>
-          </div>
-          <div class="form-body">
-            <div class="form-group">
-              <label class="form-label">${t('git.commitMsg')}</label>
-              <input class="form-input" type="text" id="git-commit-msg" placeholder="Update playbooks">
-            </div>
-            <div class="flex-gap">
-              <button class="btn btn-primary btn-sm" id="btn-git-commit">
-                <i class="fas fa-check"></i> ${t('git.commit')}
-              </button>
-              <button class="btn btn-secondary btn-sm" id="btn-git-pull">
-                <i class="fas fa-download"></i> ${t('git.pull')}
-              </button>
-              <button class="btn btn-secondary btn-sm" id="btn-git-push">
-                <i class="fas fa-upload"></i> ${t('git.push')}
-              </button>
-              <button class="btn btn-secondary btn-sm" id="btn-git-reconfigure" style="margin-left:auto;">
-                <i class="fas fa-cog"></i>
-              </button>
-            </div>
-            <div id="git-action-output" class="hidden" style="margin-top:12px;"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Right: commit log -->
-      <div class="panel">
-        <div class="section-header">
-          <h3><i class="fas fa-list-ul"></i> ${t('git.log')}</h3>
-        </div>
-        <div id="git-log-content">
-          <div class="loading-state"><div class="loader"></div></div>
-        </div>
-      </div>
-    </div>
-  `;
-
-  loadGitLog();
-  setupGitDashboardEvents(cfg);
-}
-
-async function loadGitLog() {
-  const el = document.getElementById('git-log-content');
-  if (!el) return;
-  try {
-    const commits = await api.getGitLog();
-    if (!commits || commits.length === 0) {
-      el.innerHTML = `<div class="empty-state" style="padding:20px;"><p style="color:var(--text-muted);">${t('git.noCommits')}</p></div>`;
-      return;
-    }
-    el.innerHTML = commits.map(c => `
-      <div style="display:flex;gap:10px;align-items:flex-start;padding:8px 16px;border-bottom:1px solid var(--border);">
-        <span style="font-family:var(--font-mono);font-size:11px;color:var(--accent);flex-shrink:0;padding-top:2px;">${esc(c.hash)}</span>
-        <div style="flex:1;min-width:0;">
-          <div style="font-size:13px;">${esc(c.message)}</div>
-          <div style="font-size:11px;color:var(--text-muted);">${esc(c.author)} · ${esc(c.date)}</div>
-        </div>
-      </div>
-    `).join('');
-  } catch {}
-}
-
-function setupGitDashboardEvents(cfg) {
-  const showOutput = (text, isError = false) => {
-    const outEl = document.getElementById('git-action-output');
-    if (!outEl) return;
-    outEl.classList.remove('hidden');
-    outEl.innerHTML = isError
-      ? `<p style="color:var(--offline);font-size:13px;">${esc(text)}</p>`
-      : gitPreBlock(text);
-  };
-
-  document.getElementById('btn-git-refresh')?.addEventListener('click', () => loadGitTab());
-
-  document.getElementById('btn-git-reconfigure')?.addEventListener('click', async () => {
-    const root = document.getElementById('git-tab-root');
-    let sshKey = '';
-    try { const r = await api.getSSHKey(); sshKey = r.publicKey || ''; } catch {}
-    renderGitSetup(root, cfg, sshKey);
-  });
-
-  ['pull', 'push'].forEach(type => {
-    document.getElementById(`git-cfg-auto-${type}`)?.addEventListener('change', async (e) => {
-      try { await api.saveGitConfig({ [`auto${type[0].toUpperCase() + type.slice(1)}`]: e.target.checked }); }
-      catch {}
-    });
-  });
-
-  document.getElementById('btn-git-commit')?.addEventListener('click', async () => {
-    const msg = document.getElementById('git-commit-msg')?.value.trim();
-    if (!msg) { showToast(t('git.commitMsg'), 'warning'); return; }
-    const btn = document.getElementById('btn-git-commit');
-    btn.disabled = true;
-    try {
-      const r = await api.gitCommit(msg);
-      showToast(t('git.committed'), 'success');
-      showOutput(r.output || 'Committed');
-      loadGitTab();
-    } catch (e) { showOutput(e.message, true); showToast(t('common.errorPrefix', { msg: e.message }), 'error'); }
-    finally { btn.disabled = false; }
-  });
-
-  document.getElementById('btn-git-pull')?.addEventListener('click', async () => {
-    const btn = document.getElementById('btn-git-pull');
-    btn.disabled = true;
-    try {
-      const r = await api.gitPull();
-      showToast(t('git.pulled'), 'success');
-      showOutput(r.output || 'Already up to date');
-      loadGitTab();
-    } catch (e) { showOutput(e.message, true); showToast(t('common.errorPrefix', { msg: e.message }), 'error'); }
-    finally { btn.disabled = false; }
-  });
-
-  document.getElementById('btn-git-push')?.addEventListener('click', async () => {
-    const btn = document.getElementById('btn-git-push');
-    btn.disabled = true;
-    try {
-      const r = await api.gitPush();
-      showToast(t('git.pushed'), 'success');
-      showOutput(r.output || 'Pushed');
-      loadGitLog();
-    } catch (e) { showOutput(e.message, true); showToast(t('common.errorPrefix', { msg: e.message }), 'error'); }
-    finally { btn.disabled = false; }
-  });
 }
 
 // ============================================================

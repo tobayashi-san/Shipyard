@@ -12,7 +12,7 @@ RUN cd frontend && npm run build
 FROM node:20-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ansible openssh-client openssl gosu curl \
+      ansible openssh-client openssl gosu curl unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a dedicated non-root user for runtime

@@ -13,8 +13,26 @@ router.get('/config', (req, res) => {
     autoPush:  cfg.autoPush,
     userName:  cfg.userName,
     userEmail: cfg.userEmail,
+    branch:    cfg.branch,
     configured: gitSync.isConfigured(),
   });
+});
+
+// POST /api/playbooks-git/disconnect
+router.post('/disconnect', (req, res) => {
+  const db = require('../db');
+  ['git_repo_url','git_auth_token','git_ssh_key','git_auto_pull','git_auto_push',
+   'git_user_name','git_user_email','git_branch'].forEach(k => db.settings.set(k, ''));
+  res.json({ success: true });
+});
+
+// POST /api/playbooks-git/settings
+router.post('/settings', (req, res) => {
+  const db = require('../db');
+  const { autoPull, autoPush } = req.body;
+  if (autoPull !== undefined) db.settings.set('git_auto_pull', autoPull ? '1' : '0');
+  if (autoPush !== undefined) db.settings.set('git_auto_push', autoPush ? '1' : '0');
+  res.json({ success: true });
 });
 
 // POST /api/playbooks-git/setup  (initial config + clone/init)
@@ -41,6 +59,21 @@ router.put('/config', (req, res) => {
   if (userEmail !== undefined) db.settings.set('git_user_email', userEmail);
   if (authToken !== undefined) db.settings.set('git_auth_token', authToken);
   res.json({ success: true });
+});
+
+// GET /api/playbooks-git/branches
+router.get('/branches', async (req, res) => {
+  res.json(await gitSync.getBranches());
+});
+
+// POST /api/playbooks-git/checkout
+router.post('/checkout', async (req, res) => {
+  const { branch } = req.body;
+  if (!branch || typeof branch !== 'string') return res.status(400).json({ error: 'branch required' });
+  if (!/^[a-zA-Z0-9._\-/]+$/.test(branch)) return res.status(400).json({ error: 'Invalid branch name' });
+  const r = await gitSync.checkout(branch);
+  if (!r.success) return res.status(500).json({ error: r.stderr });
+  res.json({ success: true, output: r.stdout });
 });
 
 // GET /api/playbooks-git/status

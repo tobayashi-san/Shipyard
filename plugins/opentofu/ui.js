@@ -3,30 +3,60 @@ let _container   = null;
 let _wsUnsub     = null;
 let _workspaces  = [];
 let _selected    = null;   // workspace id
-let _runId       = null;   // active run id
+let _wsTab       = 'runs'; // sub-tab within workspace
+let _mainTab     = 'dashboard'; // 'dashboard' | 'workspaces'
+let _runId       = null;   // active WebSocket run id
 let _pluginApi   = null;
+let _api         = null;
+let _navigate    = null;
 let _showToast   = null;
 let _showConfirm = null;
-let _activeTab   = 'terminal';  // 'terminal' | 'files'
-let _openFile    = null;        // { path, content, dirty }
+let _openFile    = null;   // { path, content, dirty }
 let _fileTree    = null;
+let _status      = null;
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 function esc(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-
 function stripAnsi(s) {
   return s.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g,'').replace(/\r/g,'');
 }
+function fmt(dt) {
+  if (!dt) return '—';
+  const d = new Date(dt.endsWith('Z') ? dt : dt + 'Z');
+  return d.toLocaleString();
+}
+function preBlock(code) {
+  return `<pre style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius);
+    padding:10px 14px;font-family:var(--font-mono);font-size:12px;line-height:1.5;overflow-x:auto;
+    white-space:pre;margin:0;color:var(--text-primary);">${esc(code)}</pre>`;
+}
+function statusBadge(run) {
+  if (!run) return `<span class="badge" style="background:var(--bg-secondary);color:var(--text-muted);">No runs</span>`;
+  const colors = { success:'online', failed:'offline', running:'warning' };
+  return `<span class="badge badge-${colors[run.status] || 'warning'}">${esc(run.status)}</span>`;
+}
+function actionBadge(action) {
+  const icons = { plan:'fa-eye', apply:'fa-check-double', destroy:'fa-bomb', init:'fa-download', validate:'fa-spell-check' };
+  return `<i class="fas ${icons[action] || 'fa-play'}" style="margin-right:4px;"></i>${esc(action)}`;
+}
+function fileIcon(name) {
+  if (name.endsWith('.tf'))           return 'fas fa-cube';
+  if (name.endsWith('.tfvars') || name.endsWith('.tfvars.json')) return 'fas fa-sliders-h';
+  if (name.endsWith('.json'))         return 'fas fa-file-code';
+  if (name.endsWith('.md'))           return 'fas fa-file-alt';
+  return 'fas fa-file';
+}
 
 // ── Mount / Unmount ───────────────────────────────────────────────────────
-export async function mount(container, { pluginApi, showToast, showConfirm, onWsMessage }) {
+export async function mount(container, { api, pluginApi, navigate, showToast, showConfirm, onWsMessage }) {
   _container   = container;
   _pluginApi   = pluginApi;
+  _api         = api;
+  _navigate    = navigate || (() => {});
   _showToast   = showToast;
   _showConfirm = showConfirm;
-
   _wsUnsub = onWsMessage(handleWsMessage);
 
   container.innerHTML = `<div class="loading-state" style="padding:48px;"><div class="loader"></div></div>`;
@@ -36,8 +66,9 @@ export async function mount(container, { pluginApi, showToast, showConfirm, onWs
       pluginApi.request('/status'),
       pluginApi.request('/workspaces'),
     ]);
+    _status     = status;
     _workspaces = workspaces;
-    renderApp(container, status);
+    renderApp();
   } catch (e) {
     container.innerHTML = `<div class="empty-state"><p>Error: ${esc(e.message)}</p></div>`;
   }
@@ -48,792 +79,925 @@ export function unmount() {
   _container = _selected = _runId = _fileTree = _openFile = null;
 }
 
-// ── WebSocket handler ─────────────────────────────────────────────────────
+// ── WebSocket ─────────────────────────────────────────────────────────────
 function handleWsMessage(msg) {
   if (msg.type === 'tofu_start') {
     _runId = msg.runId;
-    setRunning(true);
-    return;
-  }
-  if (msg.type === 'tofu_output') {
+    updateRunButtons(true);
+  } else if (msg.type === 'tofu_output') {
     appendTerminal(msg.data, msg.stream);
-    return;
-  }
-  if (msg.type === 'tofu_done') {
+  } else if (msg.type === 'tofu_done') {
     _runId = null;
-    setRunning(false);
+    updateRunButtons(false);
     const line = msg.success
       ? `\n✓  Finished successfully (exit 0)\n`
-      : `\n✗  Failed (exit ${msg.exitCode ?? '?'}${msg.error ? ': ' + msg.error : ''})\n`;
+      : `\n✗  Failed (exit ${msg.exitCode ?? '?'}${msg.error ? ': '+msg.error : ''})\n`;
     appendTerminal(line, msg.success ? 'success' : 'error');
+    // Refresh run list in background
+    refreshRunList();
+    // Update dashboard cards
+    refreshDashboardCard(msg.workspaceId);
   }
 }
 
-// ── App shell ─────────────────────────────────────────────────────────────
-function renderApp(container, status) {
-  if (!status.installed) {
-    container.innerHTML = `
-      <div style="display:flex;flex-direction:column;height:100%;overflow:hidden;">
-        <div class="page-header" style="flex-shrink:0;">
-          <div>
-            <h2 style="display:flex;align-items:center;gap:10px;">
-              <i class="fas fa-cube"></i> OpenTofu
-            </h2>
-            <p>${statusBadge(status)}</p>
+function updateRunButtons(running) {
+  document.querySelectorAll('.tofu-action').forEach(b => { b.disabled = running; });
+  const cancel = document.getElementById('tofu-btn-cancel');
+  if (cancel) cancel.classList.toggle('hidden', !running);
+  const clear  = document.getElementById('tofu-btn-clear');
+  if (clear)  clear.classList.toggle('hidden',  running);
+}
+
+function appendTerminal(data, stream) {
+  const body = document.getElementById('tofu-terminal-body');
+  if (!body) return;
+  const span = document.createElement('span');
+  const colors = { stderr: 'var(--offline)', success: 'var(--online)', error: 'var(--offline)', meta: 'var(--text-muted)' };
+  span.style.color = colors[stream] || 'inherit';
+  span.style.whiteSpace = 'pre-wrap';
+  span.textContent = stripAnsi(data);
+  body.appendChild(span);
+  body.scrollTop = body.scrollHeight;
+}
+
+async function refreshRunList() {
+  if (!_selected) return;
+  const el = document.getElementById('tofu-runs-list');
+  if (!el) return;
+  try {
+    const runs = await _pluginApi.request(`/workspaces/${_selected}/runs`);
+    _workspaces = _workspaces.map(w => {
+      if (w.id !== _selected) return w;
+      return { ...w, last_run: runs[0] || null };
+    });
+    el.innerHTML = renderRunsTable(runs);
+    bindRunsEvents(runs);
+  } catch {}
+}
+
+async function refreshDashboardCard(workspaceId) {
+  const card = document.querySelector(`.tofu-dash-card[data-id="${workspaceId}"]`);
+  if (!card) return;
+  try {
+    const ws = await _pluginApi.request('/workspaces');
+    _workspaces = ws;
+    const found = ws.find(w => w.id === workspaceId);
+    if (found) card.querySelector('.tofu-card-status').innerHTML = statusBadge(found.last_run);
+  } catch {}
+}
+
+// ── App Shell ─────────────────────────────────────────────────────────────
+function renderApp() {
+  if (!_container) return;
+  _container.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h2><i class="fas fa-cube"></i> OpenTofu</h2>
+        <p>${_status.installed
+          ? `<span class="badge badge-online"><i class="fas fa-check"></i> ${esc(_status.binary)} ${esc(_status.version||'')}</span>`
+          : `<span class="badge badge-offline"><i class="fas fa-times"></i> Binary not found in PATH</span>`
+        }</p>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-secondary);font-size:12px;color:var(--text-muted);">
+          <i class="fab fa-git-alt"></i>
+          <span id="tofu-git-branch">–</span>
+        </div>
+        <button id="tofu-git-pull-btn" class="btn btn-secondary btn-sm" title="Pull from remote">
+          <i class="fas fa-arrow-down"></i>
+        </button>
+        <button id="tofu-git-push-btn" class="btn btn-secondary btn-sm" title="Push to remote">
+          <i class="fas fa-arrow-up"></i>
+        </button>
+        <button id="tofu-git-settings-link" class="btn btn-secondary btn-sm" title="Git Settings">
+          <i class="fas fa-gear"></i>
+        </button>
+        <button class="btn btn-primary btn-sm" id="tofu-btn-new">
+          <i class="fas fa-plus"></i> Workspace
+        </button>
+      </div>
+    </div>
+
+    <div class="tab-bar" id="tofu-main-tabs">
+      <button class="tab-btn${_mainTab==='dashboard'?' active':''}" data-tab="dashboard">
+        <i class="fas fa-tachometer-alt"></i> Dashboard
+      </button>
+      <button class="tab-btn${_mainTab==='workspaces'?' active':''}" data-tab="workspaces">
+        <i class="fas fa-layer-group"></i> Workspaces
+      </button>
+    </div>
+
+    <div id="tofu-tab-content" class="page-content"></div>
+  `;
+
+  document.getElementById('tofu-btn-new').addEventListener('click', () => openWorkspaceModal(null));
+
+  document.getElementById('tofu-main-tabs').addEventListener('click', e => {
+    const btn = e.target.closest('.tab-btn');
+    if (!btn) return;
+    const tab = btn.dataset.tab;
+    if (tab === _mainTab) return;
+    _mainTab = tab;
+    document.querySelectorAll('#tofu-main-tabs .tab-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.tab === tab));
+    initMainTab(tab);
+  });
+
+  initMainTab(_mainTab);
+  initTofuGitWidget();
+}
+
+async function initTofuGitWidget() {
+  try {
+    const cfg = await _api.request('/playbooks-git/config');
+    const b = document.getElementById('tofu-git-branch');
+    if (b) b.textContent = cfg.repoUrl ? (cfg.branch || 'main') : 'not configured';
+  } catch {}
+
+  document.getElementById('tofu-git-pull-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('tofu-git-pull-btn');
+    btn.disabled = true;
+    try {
+      await _api.request('/playbooks-git/pull', { method: 'POST' });
+      _showToast('Pulled from git.', 'success');
+      // Reload workspaces from server so new/changed files appear immediately
+      const ws = await _pluginApi.request('/workspaces');
+      _workspaces = Array.isArray(ws) ? ws : (ws.workspaces || []);
+      const content = document.getElementById('tofu-tab-content');
+      if (content) initMainTab(_mainTab);
+    } catch (e) { _showToast('Pull failed: ' + e.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
+
+  document.getElementById('tofu-git-push-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('tofu-git-push-btn');
+    btn.disabled = true;
+    try {
+      await _api.request('/playbooks-git/push', { method: 'POST' });
+      _showToast('Pushed to git.', 'success');
+    } catch (e) { _showToast('Push failed: ' + e.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
+
+  document.getElementById('tofu-git-settings-link')?.addEventListener('click', () => {
+    _navigate('settings');
+  });
+}
+
+async function initMainTab(tab) {
+  const content = document.getElementById('tofu-tab-content');
+  if (!content) return;
+  if (tab === 'dashboard')   renderDashboard(content);
+  if (tab === 'workspaces')  renderWorkspacesTab(content);
+}
+
+// ── Tab: Dashboard ────────────────────────────────────────────────────────
+function renderDashboard(content) {
+  if (_workspaces.length === 0) {
+    content.innerHTML = `
+      <div class="panel">
+        <div class="empty-state" style="padding:48px;">
+          <div class="empty-state-icon"><i class="fas fa-cube"></i></div>
+          <h3>No workspaces yet</h3>
+          <p>Create a workspace to manage your OpenTofu infrastructure.</p>
+          <button class="btn btn-primary" id="dash-btn-new">
+            <i class="fas fa-plus"></i> Create Workspace
+          </button>
+        </div>
+      </div>
+      ${!_status.installed ? setupGuidePanel() : ''}
+    `;
+    document.getElementById('dash-btn-new')?.addEventListener('click', () => openWorkspaceModal(null));
+    initInstallPanel();
+    return;
+  }
+
+  content.innerHTML = `
+    ${!_status.installed ? setupGuidePanel() : ''}
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;">
+      ${_workspaces.map(ws => `
+        <div class="panel tofu-dash-card" data-id="${esc(ws.id)}" style="cursor:pointer;transition:box-shadow 150ms;">
+          <div class="section-header">
+            <h3><i class="fas fa-layer-group"></i> ${esc(ws.name)}</h3>
+            <div class="tofu-card-status">${statusBadge(ws.last_run)}</div>
           </div>
-          <div>
-            <button class="btn btn-primary btn-sm" id="tofu-btn-new">
-              <i class="fas fa-plus"></i> Workspace
+          <div style="padding:12px 16px;">
+            <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-bottom:8px;
+                        overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(ws.path)}</div>
+            ${ws.description ? `<p style="font-size:13px;color:var(--text-secondary);margin:0 0 8px;">${esc(ws.description)}</p>` : ''}
+            ${ws.last_run ? `
+              <div style="font-size:12px;color:var(--text-muted);">
+                Last: ${actionBadge(ws.last_run.action)} &nbsp;·&nbsp; ${esc(fmt(ws.last_run.started_at))}
+              </div>` : '<div style="font-size:12px;color:var(--text-muted);">No runs yet</div>'}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  content.querySelectorAll('.tofu-dash-card').forEach(card => {
+    card.addEventListener('click', () => {
+      _selected = card.dataset.id;
+      _mainTab  = 'workspaces';
+      _wsTab    = 'runs';
+      renderApp();
+    });
+  });
+
+  if (!_status.installed) initInstallPanel();
+}
+
+function setupGuidePanel() {
+  return `
+    <div class="panel" id="tofu-install-panel" style="margin-bottom:16px;">
+      <div class="section-header">
+        <h3><i class="fas fa-download"></i> Install OpenTofu</h3>
+      </div>
+      <div style="padding:16px;">
+        <p style="font-size:13px;color:var(--text-muted);margin:0 0 14px;">
+          OpenTofu is not installed. Select a version to install it directly into this container —
+          no host setup or Docker restart needed.
+        </p>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select id="tofu-version-select" class="form-input" style="max-width:200px;" disabled>
+            <option>Loading versions…</option>
+          </select>
+          <button id="tofu-btn-install" class="btn btn-primary btn-sm" disabled>
+            <i class="fas fa-download"></i> Install
+          </button>
+          <span id="tofu-install-msg" style="font-size:12px;color:var(--text-muted);"></span>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin:12px 0 0;">
+          Your workspace directories still need to be mounted via
+          <code>docker-compose.override.yml</code>:
+          ${preBlock('services:\n  shipyard:\n    volumes:\n      - /host/path/to/infra:/opt/infra:rw')}
+        </p>
+      </div>
+    </div>`;
+}
+
+async function initInstallPanel() {
+  const sel = document.getElementById('tofu-version-select');
+  const btn = document.getElementById('tofu-btn-install');
+  const msg = document.getElementById('tofu-install-msg');
+  if (!sel || !btn) return;
+
+  try {
+    const { releases } = await _pluginApi.request('/releases');
+    if (!releases || releases.length === 0) {
+      sel.innerHTML = '<option value="">No releases found</option>';
+      return;
+    }
+    sel.innerHTML = releases.map((v, i) =>
+      `<option value="${esc(v)}"${i === 0 ? ' selected' : ''}>${esc(v)}${i === 0 ? ' (latest)' : ''}</option>`
+    ).join('');
+    sel.disabled = false;
+    btn.disabled = false;
+  } catch (e) {
+    sel.innerHTML = `<option value="">Could not load versions</option>`;
+    if (msg) msg.textContent = e.message;
+    return;
+  }
+
+  btn.addEventListener('click', async () => {
+    const version = sel.value;
+    if (!version) return;
+    btn.disabled = true;
+    sel.disabled = true;
+    btn.innerHTML = '<span class="spinner-sm"></span> Installing…';
+    if (msg) msg.textContent = `Downloading OpenTofu v${version}, this may take a minute…`;
+
+    try {
+      const result = await _pluginApi.request('/install', {
+        method: 'POST',
+        body: JSON.stringify({ version }),
+      });
+      if (msg) msg.textContent = `✓ Installed v${result.version || version}`;
+      _status = { installed: true, binary: result.binary, version: result.version };
+      _showToast(`OpenTofu v${result.version || version} installed`, 'success');
+      setTimeout(() => renderApp(), 800);
+    } catch (e) {
+      if (msg) msg.textContent = `✗ ${e.message}`;
+      btn.disabled = false;
+      sel.disabled = false;
+      btn.innerHTML = '<i class="fas fa-download"></i> Install';
+      _showToast('Install failed: ' + e.message, 'error');
+    }
+  });
+}
+
+// ── Tab: Workspaces ───────────────────────────────────────────────────────
+function renderWorkspacesTab(content) {
+  if (_workspaces.length === 0) {
+    content.innerHTML = `<div class="panel"><div class="empty-state" style="padding:40px;">
+      <p>No workspaces. <button class="btn btn-primary btn-sm" id="ws-btn-new"><i class="fas fa-plus"></i> Create</button></p>
+    </div></div>`;
+    document.getElementById('ws-btn-new')?.addEventListener('click', () => openWorkspaceModal(null));
+    return;
+  }
+
+  const ws = _workspaces.find(w => w.id === _selected) || _workspaces[0];
+  if (!_selected) _selected = ws.id;
+
+  content.innerHTML = `
+    <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:start;">
+      <!-- Sidebar -->
+      <div class="panel" style="padding:8px 0;">
+        ${_workspaces.map(w => `
+          <div class="tofu-ws-item" data-id="${esc(w.id)}" style="
+            padding:10px 14px;cursor:pointer;border-radius:6px;margin:2px 6px;
+            ${_selected === w.id ? 'background:var(--accent-light);' : ''}">
+            <div style="font-size:13px;font-weight:500;">${esc(w.name)}</div>
+            <div style="font-size:11px;font-family:var(--font-mono);color:var(--text-muted);
+                        overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(w.path)}</div>
+          </div>`).join('')}
+      </div>
+
+      <!-- Detail -->
+      <div id="tofu-ws-detail"></div>
+    </div>
+  `;
+
+  content.querySelectorAll('.tofu-ws-item').forEach(item => {
+    item.addEventListener('click', () => {
+      _selected = item.dataset.id;
+      _fileTree = null; _openFile = null;
+      renderWorkspacesTab(content);
+    });
+  });
+
+  renderWorkspaceDetail(ws);
+}
+
+async function renderWorkspaceDetail(ws) {
+  const detail = document.getElementById('tofu-ws-detail');
+  if (!detail || !ws) return;
+
+  const subTabs = ['runs','variables','files','resources'];
+  const subIcons = { runs:'fa-history', variables:'fa-sliders-h', files:'fa-folder-open', resources:'fa-sitemap' };
+
+  detail.innerHTML = `
+    <div class="panel" style="margin-bottom:12px;">
+      <div class="section-header">
+        <h3><i class="fas fa-layer-group"></i> ${esc(ws.name)}</h3>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-secondary btn-sm" id="tofu-btn-edit"><i class="fas fa-pen"></i></button>
+          <button class="btn btn-danger btn-sm" id="tofu-btn-delete"><i class="fas fa-trash"></i></button>
+        </div>
+      </div>
+      <div style="padding:8px 16px;font-size:12px;font-family:var(--font-mono);color:var(--text-muted);">${esc(ws.path)}</div>
+    </div>
+
+    <div class="panel" style="overflow:hidden;">
+      <div class="tab-bar" id="tofu-ws-tabs" style="padding:0 16px;">
+        ${subTabs.map(t => `
+          <button class="tab-btn${_wsTab===t?' active':''}" data-tab="${t}">
+            <i class="fas ${subIcons[t]}"></i> ${t.charAt(0).toUpperCase()+t.slice(1)}
+          </button>`).join('')}
+      </div>
+      <div id="tofu-ws-tab-content" style="padding:16px;"></div>
+    </div>
+  `;
+
+  document.getElementById('tofu-btn-edit').addEventListener('click', () => openWorkspaceModal(ws));
+  document.getElementById('tofu-btn-delete').addEventListener('click', async () => {
+    if (!await _showConfirm(`Delete workspace "${ws.name}"?`, { title:'Delete', confirmText:'Delete', danger:true })) return;
+    await _pluginApi.request(`/workspaces/${ws.id}`, { method:'DELETE' });
+    _workspaces = _workspaces.filter(w => w.id !== ws.id);
+    _selected   = _workspaces[0]?.id || null;
+    const content = document.getElementById('tofu-tab-content');
+    if (content) renderWorkspacesTab(content);
+  });
+
+  document.getElementById('tofu-ws-tabs').addEventListener('click', e => {
+    const btn = e.target.closest('.tab-btn');
+    if (!btn) return;
+    _wsTab = btn.dataset.tab;
+    _fileTree = null; _openFile = null;
+    document.querySelectorAll('#tofu-ws-tabs .tab-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.tab === _wsTab));
+    loadWsTab(ws);
+  });
+
+  loadWsTab(ws);
+}
+
+async function loadWsTab(ws) {
+  const el = document.getElementById('tofu-ws-tab-content');
+  if (!el) return;
+  if (_wsTab === 'runs')      await loadRunsTab(el, ws);
+  if (_wsTab === 'variables') loadVariablesTab(el, ws);
+  if (_wsTab === 'files')     await loadFilesTab(el, ws);
+  if (_wsTab === 'resources') await loadResourcesTab(el, ws);
+}
+
+// ── Sub-tab: Runs ─────────────────────────────────────────────────────────
+async function loadRunsTab(el, ws) {
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;">
+      <!-- Actions + Terminal -->
+      <div class="panel">
+        <div class="section-header">
+          <h3><i class="fas fa-play"></i> Run</h3>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-secondary btn-sm hidden" id="tofu-btn-cancel">
+              <i class="fas fa-stop"></i> Cancel
+            </button>
+            <button class="btn btn-secondary btn-sm" id="tofu-btn-clear" title="Clear terminal">
+              <i class="fas fa-eraser"></i>
             </button>
           </div>
         </div>
-        ${setupGuide()}
-      </div>`;
-    document.getElementById('tofu-btn-new')?.addEventListener('click', () => openWorkspaceModal(null));
-    return;
-  }
-
-  container.innerHTML = `
-    <div style="display:flex;flex-direction:column;height:100%;overflow:hidden;">
-
-      <!-- Header -->
-      <div class="page-header" style="flex-shrink:0;">
-        <div>
-          <h2 style="display:flex;align-items:center;gap:10px;">
-            <i class="fas fa-cube"></i> OpenTofu
-          </h2>
-          <p>${statusBadge(status)}</p>
-        </div>
-        <div>
-          <button class="btn btn-primary btn-sm" id="tofu-btn-new">
-            <i class="fas fa-plus"></i> Workspace
+        <div style="padding:10px 14px;display:flex;flex-wrap:wrap;gap:6px;border-bottom:1px solid var(--border);">
+          <button class="btn btn-secondary btn-sm tofu-action" data-action="init">
+            <i class="fas fa-download"></i> init
+          </button>
+          <button class="btn btn-secondary btn-sm tofu-action" data-action="validate">
+            <i class="fas fa-spell-check"></i> validate
+          </button>
+          <button class="btn btn-secondary btn-sm tofu-action" data-action="plan">
+            <i class="fas fa-eye"></i> plan
+          </button>
+          <button class="btn btn-primary btn-sm tofu-action" data-action="apply">
+            <i class="fas fa-check-double"></i> apply
+          </button>
+          <button class="btn btn-danger btn-sm tofu-action" data-action="destroy">
+            <i class="fas fa-bomb"></i> destroy
           </button>
         </div>
-      </div>
-
-      <!-- Body: sidebar + detail -->
-      <div style="display:flex;flex:1;min-height:0;gap:0;overflow:hidden;">
-
-        <!-- Workspace list -->
-        <div style="width:220px;flex-shrink:0;border-right:1px solid var(--border);overflow-y:auto;padding:8px 0;" id="tofu-ws-list">
-          ${renderWorkspaceList()}
-        </div>
-
-        <!-- Detail panel -->
-        <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;" id="tofu-detail">
-          ${_selected ? '' : emptyDetail()}
-        </div>
-
-      </div>
-    </div>`;
-
-  bindAppEvents();
-
-  if (_selected) renderDetail();
-}
-
-function statusBadge(status) {
-  if (!status.installed) return `
-    <span class="badge badge-offline">
-      <i class="fas fa-times"></i> Binary not found in PATH
-    </span>`;
-  return `<span class="badge badge-online"><i class="fas fa-check"></i> ${esc(status.binary)} ${esc(status.version || '')}</span>`;
-}
-
-function setupGuide() {
-  return `
-    <div style="flex:1;overflow-y:auto;padding:32px 40px;">
-      <div style="max-width:640px;">
-        <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:24px 28px;margin-bottom:24px;">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
-            <i class="fas fa-info-circle" style="color:var(--accent);font-size:1.1rem;"></i>
-            <strong style="font-size:14px;">Setup required — OpenTofu/Terraform binary not found</strong>
+        <div class="terminal" style="border:none;border-radius:0 0 var(--radius) var(--radius);">
+          <div class="terminal-header">
+            <div class="terminal-dots">
+              <div class="terminal-dot red"></div>
+              <div class="terminal-dot yellow"></div>
+              <div class="terminal-dot green"></div>
+            </div>
+            <span class="terminal-title">${esc(ws.name)}</span>
           </div>
-          <p style="font-size:13px;color:var(--text-secondary);margin:0 0 20px 0;line-height:1.6;">
-            Shipyard runs in Docker and cannot access binaries installed on your host directly.
-            Create a <code style="font-family:var(--font-mono);background:var(--bg-tertiary,var(--bg));padding:1px 5px;border-radius:3px;">docker-compose.override.yml</code>
-            next to your <code style="font-family:var(--font-mono);background:var(--bg-tertiary,var(--bg));padding:1px 5px;border-radius:3px;">docker-compose.yml</code>
-            and add the following:
-          </p>
-
-          <div style="font-family:var(--font-mono);font-size:12.5px;background:var(--bg-tertiary,#111);
-                      border:1px solid var(--border);border-radius:6px;padding:14px 16px;line-height:1.8;">
-            <span style="color:var(--text-muted);">services:</span><br>
-            <span style="color:var(--text-muted);">&nbsp;&nbsp;shipyard:</span><br>
-            <span style="color:var(--text-muted);">&nbsp;&nbsp;&nbsp;&nbsp;volumes:</span><br>
-            <span style="color:#4ade80;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- /usr/bin/tofu:/usr/bin/tofu:ro&nbsp;&nbsp;&nbsp;<span style="color:var(--text-muted);"># or /usr/bin/terraform</span></span><br>
-            <span style="color:var(--text-muted);">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--text-muted);"># also mount your .tf directories:</span></span><br>
-            <span style="color:#60a5fa;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- /path/to/your/infra:/infra:rw</span>
-          </div>
-
-          <p style="font-size:12px;color:var(--text-muted);margin:14px 0 0 0;">
-            Docker Compose merges override files automatically. After saving, restart:
-            <code style="font-family:var(--font-mono);background:var(--bg-tertiary,var(--bg));padding:1px 5px;border-radius:3px;">docker compose up -d</code>
-          </p>
-        </div>
-
-        <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:24px 28px;">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
-            <i class="fas fa-folder-open" style="color:var(--accent);font-size:1.1rem;"></i>
-            <strong style="font-size:14px;">How workspaces work</strong>
-          </div>
-          <ul style="font-size:13px;color:var(--text-secondary);margin:0;padding-left:20px;line-height:2;">
-            <li>Each workspace points to a <strong>path inside the container</strong> — not a path on your host.</li>
-            <li>Mount your <code>.tf</code> directory via <code>docker-compose.override.yml</code>, e.g.<br>
-                <code style="font-family:var(--font-mono);font-size:12px;">- /home/user/infra:/infra:rw</code> → then set the workspace path to <code>/infra</code>.</li>
-            <li>Add cloud credentials (e.g. <code>AWS_ACCESS_KEY_ID</code>, <code>TF_VAR_*</code>) as environment variables inside the workspace settings.</li>
-            <li>You can create workspaces now — they will work once the binary is mounted.</li>
-          </ul>
+          <div class="terminal-body" id="tofu-terminal-body" style="min-height:220px;"></div>
         </div>
       </div>
-    </div>`;
-}
 
-function renderWorkspaceList() {
-  if (_workspaces.length === 0) {
-    return `<div style="padding:16px 12px;font-size:12px;color:var(--text-muted);">No workspaces yet.</div>`;
-  }
-  return _workspaces.map(w => `
-    <div class="tofu-ws-item ${_selected === w.id ? 'active' : ''}"
-         data-id="${w.id}"
-         style="padding:10px 14px;cursor:pointer;border-radius:6px;margin:1px 6px;
-                ${_selected === w.id ? 'background:var(--accent-light);' : ''}">
-      <div style="font-size:13px;font-weight:500;color:var(--text-primary);">${esc(w.name)}</div>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:2px;
-                  font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-        ${esc(w.path)}
+      <!-- Run history -->
+      <div class="panel">
+        <div class="section-header">
+          <h3><i class="fas fa-history"></i> History</h3>
+          <button class="btn btn-secondary btn-sm" id="tofu-btn-refresh-runs">
+            <i class="fas fa-rotate"></i>
+          </button>
+        </div>
+        <div id="tofu-runs-list">
+          <div class="loading-state" style="padding:20px;"><div class="loader"></div></div>
+        </div>
       </div>
-    </div>`).join('');
-}
+    </div>
+  `;
 
-function emptyDetail() {
-  return `<div class="empty-state" style="margin:auto;">
-    <i class="fas fa-cube" style="font-size:2rem;opacity:.3;margin-bottom:12px;"></i>
-    <p>Select a workspace</p>
-  </div>`;
-}
+  if (_runId) updateRunButtons(true);
 
-function bindAppEvents() {
-  document.getElementById('tofu-btn-new')?.addEventListener('click', () => openWorkspaceModal(null));
-
-  document.getElementById('tofu-ws-list')?.addEventListener('click', e => {
-    const item = e.target.closest('.tofu-ws-item');
-    if (!item) return;
-    _selected = item.dataset.id;
-    _fileTree = null;
-    _openFile = null;
-    refreshList();
-    renderDetail();
+  document.querySelectorAll('.tofu-action').forEach(btn => {
+    btn.addEventListener('click', () => executeAction(ws, btn.dataset.action));
   });
-}
+  document.getElementById('tofu-btn-cancel')?.addEventListener('click', () => {
+    if (_runId) _pluginApi.request(`/workspaces/${ws.id}/cancel/${_runId}`, { method:'POST' }).catch(() => {});
+  });
+  document.getElementById('tofu-btn-clear')?.addEventListener('click', () => {
+    const body = document.getElementById('tofu-terminal-body');
+    if (body) body.innerHTML = '';
+  });
+  document.getElementById('tofu-btn-refresh-runs')?.addEventListener('click', () => refreshRunList());
 
-function refreshList() {
-  const el = document.getElementById('tofu-ws-list');
-  if (el) el.innerHTML = renderWorkspaceList();
-  // Re-attach click (delegation keeps working since el is replaced by innerHTML)
-}
-
-// ── Detail panel ──────────────────────────────────────────────────────────
-async function renderDetail() {
-  const detail = document.getElementById('tofu-detail');
-  if (!detail) return;
-  const ws = _workspaces.find(w => w.id === _selected);
-  if (!ws) { detail.innerHTML = emptyDetail(); return; }
-
-  let pathExists = true;
   try {
-    const check = await _pluginApi.request(`/workspaces/${ws.id}/check`);
-    pathExists = check.pathExists;
+    const runs = await _pluginApi.request(`/workspaces/${ws.id}/runs`);
+    const listEl = document.getElementById('tofu-runs-list');
+    if (listEl) { listEl.innerHTML = renderRunsTable(runs); bindRunsEvents(runs); }
   } catch {}
-
-  const pathWarning = pathExists ? '' : `
-    <div style="background:#7f1d1d22;border:1px solid #ef444466;border-radius:6px;
-                padding:10px 14px;margin:12px 24px 0;font-size:12.5px;line-height:1.7;flex-shrink:0;">
-      <i class="fas fa-exclamation-triangle" style="color:#ef4444;margin-right:6px;"></i>
-      <strong style="color:#ef4444;">Path not found or not writable:</strong>
-      <code style="font-family:var(--font-mono);margin:0 4px;">${esc(ws.path)}</code><br>
-      Make sure the parent directory is mounted in <code>docker-compose.override.yml</code>:
-      <code style="font-family:var(--font-mono);display:block;margin-top:4px;padding:4px 8px;
-                   background:var(--bg-secondary);border-radius:4px;">
-        - /your/host/path:${esc(ws.path)}:rw
-      </code>
-      Then restart — Shipyard will fix file ownership automatically:
-      <code style="font-family:var(--font-mono);">docker compose restart</code>
-    </div>`;
-
-  const tabStyle = (t) => `cursor:pointer;padding:8px 16px;font-size:13px;border:none;background:none;
-    border-bottom:2px solid ${_activeTab === t ? 'var(--accent)' : 'transparent'};
-    color:${_activeTab === t ? 'var(--text-primary)' : 'var(--text-muted)'};`;
-
-  detail.innerHTML = `
-    <!-- Workspace header -->
-    <div style="padding:16px 24px;border-bottom:1px solid var(--border);flex-shrink:0;
-                display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
-      <div>
-        <div style="font-size:15px;font-weight:600;">${esc(ws.name)}</div>
-        <div style="font-size:12px;font-family:var(--font-mono);color:var(--text-muted);margin-top:3px;">${esc(ws.path)}</div>
-        ${ws.description ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">${esc(ws.description)}</div>` : ''}
-      </div>
-      <div style="display:flex;gap:6px;flex-shrink:0;">
-        <button class="btn btn-secondary btn-sm" id="tofu-btn-edit"><i class="fas fa-pen"></i></button>
-        <button class="btn btn-danger btn-sm" id="tofu-btn-delete"><i class="fas fa-trash"></i></button>
-      </div>
-    </div>
-
-    ${pathWarning}
-
-    <!-- Tabs -->
-    <div style="display:flex;border-bottom:1px solid var(--border);flex-shrink:0;padding:0 16px;">
-      <button id="tofu-tab-terminal" style="${tabStyle('terminal')}">
-        <i class="fas fa-terminal" style="margin-right:6px;"></i>Terminal
-      </button>
-      <button id="tofu-tab-files" style="${tabStyle('files')}">
-        <i class="fas fa-folder-open" style="margin-right:6px;"></i>Files
-      </button>
-    </div>
-
-    <!-- Terminal tab -->
-    <div id="tofu-tab-terminal-body" style="flex:1;overflow:hidden;display:${_activeTab==='terminal'?'flex':'none'};flex-direction:column;">
-      <!-- Action buttons -->
-      <div style="padding:10px 20px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-        <button class="btn btn-secondary btn-sm tofu-action" data-action="init"><i class="fas fa-download"></i> init</button>
-        <button class="btn btn-secondary btn-sm tofu-action" data-action="validate"><i class="fas fa-check-circle"></i> validate</button>
-        <button class="btn btn-secondary btn-sm tofu-action" data-action="plan"><i class="fas fa-file-alt"></i> plan</button>
-        <button class="btn btn-primary btn-sm tofu-action" data-action="apply"><i class="fas fa-play"></i> apply</button>
-        <button class="btn btn-danger btn-sm tofu-action" data-action="destroy"><i class="fas fa-fire"></i> destroy</button>
-        <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
-          <button class="btn btn-secondary btn-sm" id="tofu-btn-state" title="State list">
-            <i class="fas fa-list"></i> State
-          </button>
-          <button class="btn btn-secondary btn-sm hidden" id="tofu-btn-cancel"><i class="fas fa-stop"></i> Cancel</button>
-          <button class="btn btn-secondary btn-sm" id="tofu-btn-clear"><i class="fas fa-eraser"></i></button>
-        </div>
-      </div>
-      <div style="flex:1;overflow:hidden;background:var(--bg-secondary);">
-        <pre id="tofu-terminal"
-          style="height:100%;overflow-y:auto;margin:0;padding:16px 20px;
-                 font-family:var(--font-mono);font-size:12.5px;line-height:1.6;
-                 white-space:pre-wrap;word-break:break-all;
-                 color:var(--text-primary);background:transparent;border:none;"></pre>
-      </div>
-    </div>
-
-    <!-- Files tab -->
-    <div id="tofu-tab-files-body" style="flex:1;overflow:hidden;display:${_activeTab==='files'?'flex':'none'};">
-      <div style="width:200px;flex-shrink:0;border-right:1px solid var(--border);
-                  display:flex;flex-direction:column;background:var(--bg-secondary);">
-        <div style="padding:6px 8px;border-bottom:1px solid var(--border);display:flex;align-items:center;
-                    justify-content:space-between;flex-shrink:0;">
-          <span style="font-size:11px;color:var(--text-muted);font-weight:500;text-transform:uppercase;
-                       letter-spacing:.05em;">Files</span>
-          <button class="btn btn-secondary btn-sm" id="tofu-btn-newfile" title="New file"
-            style="padding:2px 7px;font-size:11px;">
-            <i class="fas fa-plus"></i>
-          </button>
-        </div>
-        <div id="tofu-file-tree" style="flex:1;overflow-y:auto;padding:4px 0;">
-          <div style="padding:8px 12px;color:var(--text-muted);"><i class="fas fa-spinner fa-spin"></i></div>
-        </div>
-      </div>
-      <div id="tofu-file-editor" style="flex:1;overflow:hidden;display:flex;flex-direction:column;">
-        <div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:13px;">
-          <span>Select a file to edit</span>
-        </div>
-      </div>
-    </div>`;
-
-  bindDetailEvents(ws);
-  if (_activeTab === 'files' && pathExists) loadFileTree(ws);
 }
 
-function bindDetailEvents(ws) {
-  document.getElementById('tofu-btn-edit')?.addEventListener('click', () => openWorkspaceModal(ws));
-  document.getElementById('tofu-btn-delete')?.addEventListener('click', () => deleteWorkspace(ws));
-  document.getElementById('tofu-btn-clear')?.addEventListener('click', clearTerminal);
-  document.getElementById('tofu-btn-cancel')?.addEventListener('click', () => cancelRun(ws));
+function renderRunsTable(runs) {
+  if (!runs || runs.length === 0) {
+    return `<div class="empty-state" style="padding:20px;"><p style="color:var(--text-muted);">No runs yet</p></div>`;
+  }
+  return `
+    <table class="data-table">
+      <thead><tr>
+        <th>Action</th><th>Status</th><th>Started</th><th style="width:40px;"></th>
+      </tr></thead>
+      <tbody>
+        ${runs.map(r => `
+          <tr>
+            <td>${actionBadge(r.action)}</td>
+            <td>${statusBadge(r)}</td>
+            <td style="font-size:11px;color:var(--text-muted);">${esc(fmt(r.started_at))}</td>
+            <td>
+              <button class="btn btn-secondary btn-icon btn-sm tofu-run-log" data-id="${esc(r.id)}" title="Show output">
+                <i class="fas fa-eye"></i>
+              </button>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
 
-  document.getElementById('tofu-tab-terminal')?.addEventListener('click', () => {
-    _activeTab = 'terminal';
-    document.getElementById('tofu-tab-terminal-body').style.display = 'flex';
-    document.getElementById('tofu-tab-files-body').style.display = 'none';
-    document.getElementById('tofu-tab-terminal').style.cssText +=
-      ';border-bottom:2px solid var(--accent);color:var(--text-primary)';
-    document.getElementById('tofu-tab-files').style.cssText +=
-      ';border-bottom:2px solid transparent;color:var(--text-muted)';
+function bindRunsEvents(runs) {
+  document.querySelectorAll('.tofu-run-log').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const run = runs.find(r => r.id === btn.dataset.id);
+      if (!run) return;
+      try {
+        const full = await _pluginApi.request(`/workspaces/${_selected}/runs/${run.id}`);
+        showRunOutputModal(full);
+      } catch (e) { _showToast(e.message, 'error'); }
+    });
   });
+}
 
-  document.getElementById('tofu-tab-files')?.addEventListener('click', () => {
-    _activeTab = 'files';
-    document.getElementById('tofu-tab-terminal-body').style.display = 'none';
-    document.getElementById('tofu-tab-files-body').style.display = 'flex';
-    document.getElementById('tofu-tab-terminal').style.cssText +=
-      ';border-bottom:2px solid transparent;color:var(--text-muted)';
-    document.getElementById('tofu-tab-files').style.cssText +=
-      ';border-bottom:2px solid var(--accent);color:var(--text-primary)';
-    if (!_fileTree) loadFileTree(ws);
+function showRunOutputModal(run) {
+  const overlay = document.getElementById('modal-overlay');
+  if (!overlay) return;
+  overlay.classList.remove('hidden');
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:700px;width:95%;">
+      <h2>${actionBadge(run.action)} — ${esc(run.status)}</h2>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">${esc(fmt(run.started_at))}</div>
+      <div class="terminal" style="max-height:60vh;">
+        <div class="terminal-header">
+          <div class="terminal-dots">
+            <div class="terminal-dot red"></div><div class="terminal-dot yellow"></div><div class="terminal-dot green"></div>
+          </div>
+        </div>
+        <div class="terminal-body" style="white-space:pre-wrap;">${esc(run.output || '(no output)')}</div>
+      </div>
+      <div class="form-actions" style="padding-top:8px;">
+        <button class="btn btn-secondary" id="run-modal-close">Close</button>
+      </div>
+    </div>`;
+  document.getElementById('run-modal-close').addEventListener('click', () => {
+    overlay.classList.add('hidden'); overlay.innerHTML = '';
   });
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) { overlay.classList.add('hidden'); overlay.innerHTML = ''; }
+  });
+}
 
-  document.getElementById('tofu-btn-state')?.addEventListener('click', async () => {
-    const btn = document.getElementById('tofu-btn-state');
+async function executeAction(ws, action) {
+  if (_runId) return;
+  if (action === 'destroy') {
+    if (!await _showConfirm(`Destroy all resources in "${ws.name}"? This cannot be undone.`,
+      { title:'Destroy', confirmText:'Destroy', danger:true })) return;
+  }
+  if (action === 'apply') {
+    if (!await _showConfirm(`Apply changes in "${ws.name}"?`,
+      { title:'Apply', confirmText:'Apply', danger:false })) return;
+  }
+  const body = document.getElementById('tofu-terminal-body');
+  if (body) body.innerHTML = '';
+  try {
+    await _pluginApi.request(`/workspaces/${ws.id}/run`, { method:'POST', body: JSON.stringify({ action }) });
+  } catch (e) {
+    appendTerminal(`Error: ${e.message}`, 'error');
+  }
+}
+
+// ── Sub-tab: Variables ────────────────────────────────────────────────────
+function loadVariablesTab(el, ws) {
+  const vars = ws.env_vars || {};
+  const lines = Object.entries(vars).map(([k, v]) => `${k}=${v}`).join('\n');
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <p style="font-size:13px;color:var(--text-muted);margin:0;">
+        Injected as env vars for every run.
+        Use <code>AWS_*</code> for cloud credentials, <code>TF_VAR_*</code> for tofu variables.
+      </p>
+      <button class="btn btn-primary btn-sm" id="tofu-btn-save-vars" style="flex-shrink:0;margin-left:16px;">
+        <i class="fas fa-save"></i> Save
+      </button>
+    </div>
+    <textarea class="form-input text-mono" id="tofu-vars-input"
+      style="min-height:260px;resize:vertical;line-height:1.6;width:100%;box-sizing:border-box;"
+      placeholder="AWS_ACCESS_KEY_ID=AKIA...\nAWS_SECRET_ACCESS_KEY=...\nTF_VAR_region=eu-central-1"
+    >${esc(lines)}</textarea>
+  `;
+
+  document.getElementById('tofu-btn-save-vars').addEventListener('click', async () => {
+    const raw = document.getElementById('tofu-vars-input').value;
+    const env_vars = parseEnvBlock(raw);
+    const btn = document.getElementById('tofu-btn-save-vars');
     btn.disabled = true;
-    clearTerminal();
-    appendTerminal('▶  tofu state list\n\n', 'meta');
     try {
-      const data = await _pluginApi.request(`/workspaces/${ws.id}/state`);
-      appendTerminal(data.output || '(no resources in state)', 'stdout');
+      await _pluginApi.request(`/workspaces/${ws.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ name: ws.name, path: ws.path, description: ws.description, env_vars }),
+      });
+      ws.env_vars = env_vars;
+      _workspaces = _workspaces.map(w => w.id === ws.id ? { ...w, env_vars } : w);
+      _showToast('Variables saved', 'success');
     } catch (e) {
-      appendTerminal(e.message, 'error');
+      _showToast(e.message, 'error');
     } finally {
       btn.disabled = false;
     }
   });
-
-  document.querySelectorAll('.tofu-action').forEach(btn => {
-    btn.addEventListener('click', () => runAction(ws, btn.dataset.action));
-  });
 }
 
-// ── File browser ───────────────────────────────────────────────────────────
-async function loadFileTree(ws) {
-  _fileTree = null;
-  const treeEl = document.getElementById('tofu-file-tree');
-  if (!treeEl) return;
-  try {
-    const data = await _pluginApi.request(`/workspaces/${ws.id}/files`);
-    _fileTree = data.tree;
-    treeEl.innerHTML = renderTree(_fileTree, ws);
-    bindTreeEvents(ws);
-  } catch (e) {
-    treeEl.innerHTML = `<div style="padding:8px 12px;color:var(--offline);font-size:12px;">${esc(e.message)}</div>`;
-  }
-}
-
-function renderTree(nodes, ws, depth = 0) {
-  if (!nodes || nodes.length === 0) return `<div style="padding:8px 12px;color:var(--text-muted);font-size:12px;">Empty directory</div>`;
-  return nodes.map(node => {
-    const indent = depth * 12;
-    if (node.type === 'dir') {
-      const children = node.children?.length
-        ? `<div id="tofu-dir-${CSS.escape(node.path)}">${renderTree(node.children, ws, depth + 1)}</div>`
-        : '';
-      return `
-        <div class="tofu-tree-dir" data-path="${esc(node.path)}"
-          style="padding:4px 8px 4px ${10 + indent}px;cursor:pointer;display:flex;align-items:center;gap:5px;
-                 color:var(--text-secondary);user-select:none;">
-          <i class="fas fa-folder" style="font-size:11px;color:#60a5fa;width:12px;flex-shrink:0;"></i>
-          <span style="font-size:12px;">${esc(node.name)}</span>
-        </div>
-        ${children}`;
-    }
-    const icon = fileIcon(node.name);
-    const isOpen = _openFile?.path === node.path;
-    return `
-      <div class="tofu-tree-file" data-path="${esc(node.path)}"
-        style="padding:3px 6px 3px ${10 + indent}px;cursor:pointer;display:flex;align-items:center;gap:5px;
-               border-radius:4px;margin:1px 4px;
-               ${isOpen ? 'background:var(--accent-light);' : ''}">
-        <i class="${icon}" style="font-size:11px;color:var(--text-muted);width:12px;flex-shrink:0;"></i>
-        <span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${esc(node.name)}</span>
-        <button class="tofu-file-delete" data-path="${esc(node.path)}"
-          title="Delete file"
-          style="opacity:0;border:none;background:none;color:var(--offline);cursor:pointer;
-                 padding:1px 3px;font-size:10px;flex-shrink:0;border-radius:3px;"
-          onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity=0">
-          <i class="fas fa-trash"></i>
-        </button>
-      </div>`;
-  }).join('');
-}
-
-function fileIcon(name) {
-  if (name.endsWith('.tf'))       return 'fas fa-cube';
-  if (name.endsWith('.tfvars'))   return 'fas fa-sliders-h';
-  if (name.endsWith('.json'))     return 'fas fa-brackets-curly';
-  if (name.endsWith('.yaml') || name.endsWith('.yml')) return 'fas fa-file-code';
-  if (name.endsWith('.md'))       return 'fas fa-file-alt';
-  if (name.endsWith('.sh'))       return 'fas fa-terminal';
-  return 'fas fa-file';
-}
-
-function bindTreeEvents(ws) {
-  document.getElementById('tofu-btn-newfile')?.addEventListener('click', () => promptNewFile(ws));
-
-  document.getElementById('tofu-file-tree')?.addEventListener('click', async e => {
-    const delBtn = e.target.closest('.tofu-file-delete');
-    if (delBtn) {
-      e.stopPropagation();
-      deleteFile(ws, delBtn.dataset.path);
-      return;
-    }
-    const fileEl = e.target.closest('.tofu-tree-file');
-    if (fileEl) { openFileEditor(ws, fileEl.dataset.path); return; }
-    const dirEl = e.target.closest('.tofu-tree-dir');
-    if (dirEl) {
-      const children = document.getElementById(`tofu-dir-${CSS.escape(dirEl.dataset.path)}`);
-      if (children) children.style.display = children.style.display === 'none' ? '' : 'none';
-    }
-  });
-
-  // Show delete button on row hover
-  document.getElementById('tofu-file-tree')?.addEventListener('mouseover', e => {
-    const row = e.target.closest('.tofu-tree-file');
-    if (row) row.querySelector('.tofu-file-delete')?.style && (row.querySelector('.tofu-file-delete').style.opacity = '1');
-  });
-  document.getElementById('tofu-file-tree')?.addEventListener('mouseout', e => {
-    const row = e.target.closest('.tofu-tree-file');
-    if (row) row.querySelector('.tofu-file-delete')?.style && (row.querySelector('.tofu-file-delete').style.opacity = '0');
-  });
-}
-
-function promptNewFile(ws) {
-  const overlay = document.getElementById('modal-overlay');
-  overlay.classList.remove('hidden');
-  overlay.innerHTML = `
-    <div class="modal" style="max-width:380px;width:95%;">
-      <h2><i class="fas fa-file-plus"></i> New File</h2>
-      <div class="form-body">
-        <form id="tofu-newfile-form">
-          <div class="form-group">
-            <label class="form-label">Filename</label>
-            <input class="form-input" id="tofu-newfile-name" type="text"
-              placeholder="main.tf" autofocus style="font-family:var(--font-mono);">
-            <div class="form-hint">Relative to workspace root. Use slashes for subdirectories: <code>modules/vpc/main.tf</code></div>
-          </div>
-          <div class="form-actions">
-            <button type="button" class="btn btn-secondary" id="tofu-newfile-cancel">Cancel</button>
-            <button type="submit" class="btn btn-primary">Create</button>
-          </div>
-        </form>
-      </div>
-    </div>`;
-  const close = () => { overlay.classList.add('hidden'); overlay.innerHTML = ''; };
-  document.getElementById('tofu-newfile-cancel').addEventListener('click', close);
-  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
-  document.getElementById('tofu-newfile-form').addEventListener('submit', async e => {
-    e.preventDefault();
-    const name = document.getElementById('tofu-newfile-name').value.trim();
-    if (!name) return;
-    try {
-      await _pluginApi.request(`/workspaces/${ws.id}/file`, { method: 'POST', body: { path: name } });
-      close();
-      _fileTree = null;
-      await loadFileTree(ws);
-      openFileEditor(ws, name);
-      _showToast('File created', 'success');
-    } catch (err) {
-      _showToast('Error: ' + err.message, 'error');
-    }
-  });
-  setTimeout(() => document.getElementById('tofu-newfile-name')?.focus(), 50);
-}
-
-async function deleteFile(ws, filePath) {
-  const ok = await _showConfirm(`Delete <code>${esc(filePath)}</code>? This cannot be undone.`,
-    { title: 'Delete File', confirmText: 'Delete', danger: true });
-  if (!ok) return;
-  try {
-    await _pluginApi.request(`/workspaces/${ws.id}/file?path=${encodeURIComponent(filePath)}`, { method: 'DELETE' });
-    if (_openFile?.path === filePath) {
-      _openFile = null;
-      const editorEl = document.getElementById('tofu-file-editor');
-      if (editorEl) editorEl.innerHTML = `<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:13px;"><span>Select a file to edit</span></div>`;
-    }
-    _fileTree = null;
-    await loadFileTree(ws);
-    _showToast('File deleted', 'success');
-  } catch (err) {
-    _showToast('Error: ' + err.message, 'error');
-  }
-}
-
-async function openFileEditor(ws, filePath) {
-  const editorEl = document.getElementById('tofu-file-editor');
-  if (!editorEl) return;
-
-  editorEl.innerHTML = `<div style="padding:12px 16px;flex-shrink:0;border-bottom:1px solid var(--border);
-    display:flex;align-items:center;gap:8px;">
-    <i class="fas fa-spinner fa-spin" style="color:var(--text-muted);"></i>
-    <span style="font-size:12px;font-family:var(--font-mono);color:var(--text-muted);">${esc(filePath)}</span>
-  </div>`;
-
-  let content;
-  try {
-    const data = await _pluginApi.request(`/workspaces/${ws.id}/file?path=${encodeURIComponent(filePath)}`);
-    content = data.content;
-  } catch (e) {
-    editorEl.innerHTML = `<div style="padding:16px;color:var(--offline);">Error: ${esc(e.message)}</div>`;
-    return;
-  }
-
-  _openFile = { path: filePath, content, dirty: false };
-
-  // Highlight active file in tree
-  document.querySelectorAll('.tofu-tree-file').forEach(el => {
-    el.style.background = el.dataset.path === filePath ? 'var(--accent-light)' : '';
-  });
-
-  editorEl.innerHTML = `
-    <div style="padding:8px 16px;flex-shrink:0;border-bottom:1px solid var(--border);
-                display:flex;align-items:center;justify-content:space-between;gap:8px;">
-      <div style="font-size:12px;font-family:var(--font-mono);color:var(--text-muted);
-                  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="tofu-editor-path">
-        ${esc(filePath)}
-      </div>
-      <div style="display:flex;gap:6px;flex-shrink:0;">
-        <button class="btn btn-secondary btn-sm" id="tofu-editor-reload" title="Reload from disk">
-          <i class="fas fa-sync-alt"></i>
-        </button>
-        <button class="btn btn-primary btn-sm" id="tofu-editor-save" disabled>
-          <i class="fas fa-save"></i> Save
-        </button>
-      </div>
-    </div>
-    <textarea id="tofu-editor-ta"
-      style="flex:1;width:100%;box-sizing:border-box;resize:none;border:none;outline:none;
-             font-family:var(--font-mono);font-size:12.5px;line-height:1.6;
-             padding:16px 20px;background:var(--bg-secondary);color:var(--text-primary);
-             tab-size:2;"
-      spellcheck="false">${esc(content)}</textarea>`;
-
-  const ta   = document.getElementById('tofu-editor-ta');
-  const save = document.getElementById('tofu-editor-save');
-
-  ta.addEventListener('input', () => {
-    _openFile.dirty = true;
-    save.disabled = false;
-    save.innerHTML = '<i class="fas fa-save"></i> Save*';
-  });
-
-  // Tab key inserts spaces instead of leaving the field
-  ta.addEventListener('keydown', e => {
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const s = ta.selectionStart, end = ta.selectionEnd;
-      ta.value = ta.value.slice(0, s) + '  ' + ta.value.slice(end);
-      ta.selectionStart = ta.selectionEnd = s + 2;
-      _openFile.dirty = true;
-      save.disabled = false;
-    }
-  });
-
-  save.addEventListener('click', async () => {
-    save.disabled = true;
-    save.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-    try {
-      await _pluginApi.request(`/workspaces/${ws.id}/file?path=${encodeURIComponent(filePath)}`, {
-        method: 'PUT', body: { content: ta.value },
-      });
-      _openFile.content = ta.value;
-      _openFile.dirty = false;
-      save.innerHTML = '<i class="fas fa-save"></i> Save';
-      _showToast('File saved', 'success');
-    } catch (err) {
-      const msg = err.message.includes('Permission denied') || err.message.includes('EACCES')
-        ? 'Permission denied — run on host: chown -R 1001:1001 ' + ws.path
-        : 'Save failed: ' + err.message;
-      _showToast(msg, 'error');
-      save.disabled = false;
-      save.innerHTML = '<i class="fas fa-save"></i> Save*';
-    }
-  });
-
-  document.getElementById('tofu-editor-reload')?.addEventListener('click', () => {
-    openFileEditor(ws, filePath);
-  });
-}
-
-async function runAction(ws, action) {
-  if (_runId) { _showToast('A command is already running', 'warning'); return; }
-
-  if (action === 'destroy') {
-    const ok = await _showConfirm(
-      `<strong>Destroy all infrastructure in workspace <em>${esc(ws.name)}</em>?</strong><br><br>
-       This runs <code>tofu destroy -auto-approve</code> and <strong>cannot be undone</strong>.`,
-      { title: 'Confirm Destroy', confirmText: 'Destroy', danger: true }
-    );
-    if (!ok) return;
-  }
-  if (action === 'apply') {
-    const ok = await _showConfirm(
-      `Apply changes in workspace <strong>${esc(ws.name)}</strong>? This runs <code>tofu apply -auto-approve</code>.`,
-      { title: 'Confirm Apply', confirmText: 'Apply', danger: false }
-    );
-    if (!ok) return;
-  }
-
-  clearTerminal();
-  setRunning(true);
-
-  try {
-    await _pluginApi.request(`/workspaces/${ws.id}/run`, { method: 'POST', body: { action } });
-  } catch (e) {
-    appendTerminal(`Error: ${e.message}`, 'error');
-    setRunning(false);
-  }
-}
-
-async function cancelRun(ws) {
-  if (!_runId) return;
-  try {
-    await _pluginApi.request(`/workspaces/${ws.id}/cancel/${_runId}`, { method: 'POST', body: {} });
-  } catch {}
-}
-
-async function deleteWorkspace(ws) {
-  const ok = await _showConfirm(`Delete workspace <strong>${esc(ws.name)}</strong>? The files on disk are not affected.`,
-    { title: 'Delete Workspace', confirmText: 'Delete', danger: true });
-  if (!ok) return;
-  try {
-    await _pluginApi.request(`/workspaces/${ws.id}`, { method: 'DELETE' });
-    _workspaces = _workspaces.filter(w => w.id !== ws.id);
-    _selected   = _workspaces[0]?.id || null;
-    refreshList();
-    renderDetail();
-    _showToast('Workspace deleted', 'success');
-  } catch (e) {
-    _showToast('Error: ' + e.message, 'error');
-  }
-}
-
-// ── Terminal helpers ──────────────────────────────────────────────────────
-function clearTerminal() {
-  const el = document.getElementById('tofu-terminal');
-  if (el) el.textContent = '';
-}
-
-function appendTerminal(text, stream) {
-  const el = document.getElementById('tofu-terminal');
-  if (!el) return;
-  const clean = stripAnsi(text);
-  const span  = document.createElement('span');
-  span.style.color =
-    stream === 'stderr'  ? 'var(--offline)'  :
-    stream === 'error'   ? 'var(--offline)'  :
-    stream === 'success' ? '#4ade80'         :
-    stream === 'meta'    ? 'var(--text-muted)' :
-    'inherit';
-  span.textContent = clean;
-  el.appendChild(span);
-  el.scrollTop = el.scrollHeight;
-}
-
-function setRunning(running) {
-  document.querySelectorAll('.tofu-action').forEach(b => { b.disabled = running; });
-  document.getElementById('tofu-btn-cancel')?.classList.toggle('hidden', !running);
-}
-
-// ── Workspace modal ───────────────────────────────────────────────────────
-function openWorkspaceModal(existing) {
-  const envText = existing
-    ? Object.entries(existing.env_vars || {}).map(([k, v]) => `${k}=${v}`).join('\n')
-    : '';
-
-  const overlay = document.getElementById('modal-overlay');
-  overlay.classList.remove('hidden');
-  overlay.innerHTML = `
-    <div class="modal" style="max-width:500px;width:95%;">
-      <h2>
-        <i class="fas fa-cube"></i>
-        ${existing ? 'Edit Workspace' : 'New Workspace'}
-      </h2>
-      <div class="form-body">
-        <form id="tofu-ws-form">
-          <div class="form-group">
-            <label class="form-label">Name</label>
-            <input class="form-input" id="tofu-ws-name" type="text"
-              placeholder="e.g. Production" value="${esc(existing?.name || '')}" required>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Path on server</label>
-            <input class="form-input" id="tofu-ws-path" type="text"
-              placeholder="/infra/production" value="${esc(existing?.path || '')}" required
-              style="font-family:var(--font-mono);">
-            <div class="form-hint">
-              Path <strong>inside the container</strong> to the directory containing your <code>.tf</code> files.
-              Mount your host directory first via <code>docker-compose.override.yml</code>, e.g.
-              <code>- /home/user/infra:/infra:rw</code> → use <code>/infra</code> here.
-              On a bare-metal install any host path works directly.
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Description <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
-            <input class="form-input" id="tofu-ws-desc" type="text"
-              placeholder="Short description" value="${esc(existing?.description || '')}">
-          </div>
-          <div class="form-group">
-            <label class="form-label">
-              Environment variables
-              <span style="color:var(--text-muted);font-weight:400;">(optional)</span>
-            </label>
-            <textarea class="form-input" id="tofu-ws-env" rows="5"
-              placeholder="AWS_ACCESS_KEY_ID=AKIA…&#10;AWS_SECRET_ACCESS_KEY=…&#10;TF_VAR_region=eu-central-1"
-              style="font-family:var(--font-mono);font-size:12px;resize:vertical;">${esc(envText)}</textarea>
-            <div class="form-hint">One KEY=VALUE per line. Used for cloud credentials and TF_VAR_* variables.</div>
-          </div>
-          <div class="form-actions">
-            <button type="button" class="btn btn-secondary" id="tofu-ws-cancel">Cancel</button>
-            <button type="submit" class="btn btn-primary" id="tofu-ws-save">
-              ${existing ? 'Save' : 'Create'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>`;
-
-  const close = () => { overlay.classList.add('hidden'); overlay.innerHTML = ''; };
-  document.getElementById('tofu-ws-cancel').addEventListener('click', close);
-  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
-
-  document.getElementById('tofu-ws-form').addEventListener('submit', async e => {
-    e.preventDefault();
-    const name        = document.getElementById('tofu-ws-name').value.trim();
-    const path        = document.getElementById('tofu-ws-path').value.trim();
-    const description = document.getElementById('tofu-ws-desc').value.trim();
-    const envRaw      = document.getElementById('tofu-ws-env').value.trim();
-    const env_vars    = parseEnvBlock(envRaw);
-
-    const btn = document.getElementById('tofu-ws-save');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-sm"></span>';
-
-    try {
-      if (existing) {
-        await _pluginApi.request(`/workspaces/${existing.id}`, {
-          method: 'PUT', body: { name, path, description, env_vars },
-        });
-        const idx = _workspaces.findIndex(w => w.id === existing.id);
-        if (idx >= 0) _workspaces[idx] = { ..._workspaces[idx], name, path, description, env_vars };
-        _showToast('Workspace saved', 'success');
-      } else {
-        const res = await _pluginApi.request('/workspaces', {
-          method: 'POST', body: { name, path, description, env_vars },
-        });
-        _workspaces.push({ id: res.id, name, path, description, env_vars, created_at: new Date().toISOString() });
-        _selected = res.id;
-        _showToast('Workspace created', 'success');
-      }
-      close();
-      refreshList();
-      renderDetail();
-    } catch (err) {
-      _showToast('Error: ' + err.message, 'error');
-      btn.disabled = false;
-      btn.textContent = existing ? 'Save' : 'Create';
-    }
-  });
-}
-
-// ── Env var parser ────────────────────────────────────────────────────────
 function parseEnvBlock(text) {
   const result = {};
   for (const line of text.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
-    if (eq === -1) continue;
-    const key = trimmed.slice(0, eq).trim();
-    const val = trimmed.slice(eq + 1);
+    const idx = trimmed.indexOf('=');
+    if (idx < 1) continue;
+    const key = trimmed.slice(0, idx).trim();
+    const val = trimmed.slice(idx + 1).trim();
     if (key) result[key] = val;
   }
   return result;
+}
+
+// ── Sub-tab: Files ────────────────────────────────────────────────────────
+async function loadFilesTab(el, ws) {
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:start;">
+      <div class="panel" id="tofu-file-tree-panel">
+        <div class="section-header">
+          <h3><i class="fas fa-folder-open"></i> Files</h3>
+          <div style="display:flex;gap:4px;">
+            <button class="btn btn-secondary btn-sm" id="tofu-btn-new-file" title="New file"><i class="fas fa-plus"></i></button>
+            <button class="btn btn-secondary btn-sm" id="tofu-btn-reload-tree" title="Reload"><i class="fas fa-rotate"></i></button>
+          </div>
+        </div>
+        <div id="tofu-tree-content" style="padding:6px 0;">
+          <div class="loading-state" style="padding:16px;"><div class="loader"></div></div>
+        </div>
+      </div>
+      <div class="panel" id="tofu-file-editor-panel">
+        <div class="empty-state" style="padding:48px;">
+          <i class="fas fa-file-code" style="font-size:2rem;opacity:.3;margin-bottom:12px;display:block;"></i>
+          <p>Select a file to edit</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('tofu-btn-reload-tree').addEventListener('click', () => loadFileTree(ws));
+  document.getElementById('tofu-btn-new-file').addEventListener('click', () => newFileDialog(ws));
+
+  await loadFileTree(ws);
+}
+
+async function loadFileTree(ws) {
+  const el = document.getElementById('tofu-tree-content');
+  if (!el) return;
+  try {
+    const { tree } = await _pluginApi.request(`/workspaces/${ws.id}/files`);
+    _fileTree = tree;
+    el.innerHTML = renderTree(tree, ws);
+    bindTreeEvents(ws);
+  } catch (e) {
+    el.innerHTML = `<p style="padding:12px;color:var(--offline);font-size:12px;">${esc(e.message)}</p>`;
+  }
+}
+
+function renderTree(nodes, ws, depth = 0) {
+  if (!nodes || nodes.length === 0) return `<div style="padding:8px 14px;font-size:12px;color:var(--text-muted);">Empty directory</div>`;
+  return nodes.map(node => {
+    const indent = depth * 14;
+    if (node.type === 'dir') {
+      return `
+        <div class="tofu-tree-dir" data-path="${esc(node.path)}"
+          style="padding:5px 14px 5px ${14+indent}px;cursor:pointer;font-size:12px;
+                 display:flex;align-items:center;gap:6px;color:var(--text-muted);">
+          <i class="fas fa-folder" style="color:var(--accent);"></i> ${esc(node.name)}
+        </div>
+        <div class="tofu-dir-children" data-dir="${esc(node.path)}">
+          ${renderTree(node.children, ws, depth + 1)}
+        </div>`;
+    }
+    const isActive = _openFile?.path === node.path;
+    return `
+      <div class="tofu-tree-file" data-path="${esc(node.path)}"
+        style="padding:5px 14px 5px ${14+indent}px;cursor:pointer;font-size:12px;
+               display:flex;align-items:center;justify-content:space-between;gap:6px;
+               ${isActive ? 'background:var(--accent-light);color:var(--accent);border-radius:4px;' : ''}">
+        <span style="display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden;">
+          <i class="${fileIcon(node.name)}" style="flex-shrink:0;"></i>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(node.name)}</span>
+        </span>
+        <button class="btn btn-danger btn-icon" style="width:20px;height:20px;font-size:10px;flex-shrink:0;"
+          data-delete="${esc(node.path)}" title="Delete">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>`;
+  }).join('');
+}
+
+function bindTreeEvents(ws) {
+  document.querySelectorAll('.tofu-tree-file').forEach(item => {
+    item.addEventListener('click', e => {
+      if (e.target.closest('[data-delete]')) return;
+      openFileEditor(ws, item.dataset.path);
+    });
+  });
+  document.querySelectorAll('[data-delete]').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      if (!await _showConfirm(`Delete "${btn.dataset.delete}"?`, { title:'Delete', confirmText:'Delete', danger:true })) return;
+      try {
+        await _pluginApi.request(`/workspaces/${ws.id}/file?path=${encodeURIComponent(btn.dataset.delete)}`, { method:'DELETE' });
+        if (_openFile?.path === btn.dataset.delete) { _openFile = null; }
+        await loadFileTree(ws);
+      } catch (e2) { _showToast(e2.message, 'error'); }
+    });
+  });
+}
+
+async function openFileEditor(ws, relPath) {
+  if (_openFile?.dirty) {
+    if (!await _showConfirm('Discard unsaved changes?', { title:'Discard', confirmText:'Discard', danger:true })) return;
+  }
+  const editorPanel = document.getElementById('tofu-file-editor-panel');
+  if (!editorPanel) return;
+  editorPanel.innerHTML = `<div class="loading-state" style="padding:24px;"><div class="loader"></div></div>`;
+  try {
+    const { content } = await _pluginApi.request(`/workspaces/${ws.id}/file?path=${encodeURIComponent(relPath)}`);
+    _openFile = { path: relPath, content, dirty: false };
+    editorPanel.innerHTML = `
+      <div class="section-header">
+        <h3><i class="${fileIcon(relPath)}"></i> ${esc(relPath.split('/').pop())}</h3>
+        <button class="btn btn-primary btn-sm" id="tofu-btn-save-file" disabled>
+          <i class="fas fa-save"></i> Save
+        </button>
+      </div>
+      <textarea id="tofu-file-content" class="form-input text-mono"
+        style="min-height:420px;resize:vertical;border:none;border-top:1px solid var(--border);
+               border-radius:0 0 var(--radius) var(--radius);font-size:12px;line-height:1.6;
+               display:block;width:100%;box-sizing:border-box;"
+      >${esc(content)}</textarea>
+    `;
+    const textarea = document.getElementById('tofu-file-content');
+    const saveBtn  = document.getElementById('tofu-btn-save-file');
+    textarea.addEventListener('input', () => {
+      _openFile.dirty = textarea.value !== _openFile.content;
+      saveBtn.disabled = !_openFile.dirty;
+    });
+    textarea.addEventListener('keydown', e => {
+      if (e.key === 'Tab') { e.preventDefault(); const s=textarea.selectionStart; textarea.value=textarea.value.slice(0,s)+'  '+textarea.value.slice(textarea.selectionEnd); textarea.selectionStart=textarea.selectionEnd=s+2; textarea.dispatchEvent(new Event('input')); }
+    });
+    saveBtn.addEventListener('click', async () => {
+      saveBtn.disabled = true;
+      try {
+        await _pluginApi.request(`/workspaces/${ws.id}/file?path=${encodeURIComponent(relPath)}`, {
+          method: 'PUT', body: JSON.stringify({ content: textarea.value }),
+        });
+        _openFile.content = textarea.value;
+        _openFile.dirty = false;
+        _showToast('Saved', 'success');
+      } catch (e3) { _showToast(e3.message, 'error'); saveBtn.disabled = false; }
+    });
+    // Highlight active file
+    document.querySelectorAll('.tofu-tree-file').forEach(item => {
+      item.style.background = item.dataset.path === relPath ? 'var(--accent-light)' : '';
+      item.style.color      = item.dataset.path === relPath ? 'var(--accent)' : '';
+    });
+  } catch (e) {
+    editorPanel.innerHTML = `<p style="padding:16px;color:var(--offline);">${esc(e.message)}</p>`;
+  }
+}
+
+function newFileDialog(ws) {
+  const overlay = document.getElementById('modal-overlay');
+  if (!overlay) return;
+  overlay.classList.remove('hidden');
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:400px;">
+      <h2><i class="fas fa-plus"></i> New File</h2>
+      <div class="form-body">
+        <div class="form-group">
+          <label class="form-label">Filename</label>
+          <input class="form-input text-mono" id="new-file-name" placeholder="main.tf" autofocus>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-secondary" id="new-file-cancel">Cancel</button>
+          <button class="btn btn-primary" id="new-file-create">Create</button>
+        </div>
+      </div>
+    </div>`;
+  const close = () => { overlay.classList.add('hidden'); overlay.innerHTML = ''; };
+  document.getElementById('new-file-cancel').addEventListener('click', close);
+  document.getElementById('new-file-create').addEventListener('click', async () => {
+    const name = document.getElementById('new-file-name').value.trim();
+    if (!name) return;
+    try {
+      await _pluginApi.request(`/workspaces/${ws.id}/file`, { method:'POST', body: JSON.stringify({ path: name }) });
+      close();
+      await loadFileTree(ws);
+      await openFileEditor(ws, name);
+    } catch (e) { _showToast(e.message, 'error'); }
+  });
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+}
+
+// ── Sub-tab: Resources ────────────────────────────────────────────────────
+async function loadResourcesTab(el, ws) {
+  el.innerHTML = `<div class="loading-state" style="padding:32px;"><div class="loader"></div></div>`;
+  try {
+    const { resources, error } = await _pluginApi.request(`/workspaces/${ws.id}/state`);
+    if (error && (!resources || resources.length === 0)) {
+      el.innerHTML = `
+        <p style="color:var(--text-muted);font-size:13px;margin:0 0 8px;">No state found or state is empty.</p>
+        ${error ? `<details><summary style="font-size:12px;cursor:pointer;color:var(--text-muted);">Details</summary>${preBlock(error)}</details>` : ''}`;
+      return;
+    }
+    el.innerHTML = `
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+        ${resources.length} resource${resources.length !== 1 ? 's' : ''}
+      </div>
+      <table class="data-table">
+        <thead><tr><th>Type</th><th>Name</th><th>Address</th></tr></thead>
+        <tbody>
+          ${resources.map(r => `
+            <tr>
+              <td class="text-mono" style="font-size:12px;color:var(--accent);">${esc(r.type)}</td>
+              <td style="font-size:13px;">${esc(r.name)}</td>
+              <td class="text-mono" style="font-size:11px;color:var(--text-muted);">${esc(r.address)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch (e) {
+    el.innerHTML = `<p style="color:var(--offline);font-size:13px;">${esc(e.message)}</p>`;
+  }
+}
+
+// ── Workspace Modal ───────────────────────────────────────────────────────
+function openWorkspaceModal(ws) {
+  const overlay = document.getElementById('modal-overlay');
+  if (!overlay) return;
+  overlay.classList.remove('hidden');
+  const vars = ws?.env_vars || {};
+  const envLines = Object.entries(vars).map(([k,v]) => `${k}=${v}`).join('\n');
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:520px;width:95%;">
+      <h2>${ws ? '<i class="fas fa-edit"></i> Edit Workspace' : '<i class="fas fa-plus"></i> New Workspace'}</h2>
+      <div class="form-body">
+        <div class="form-group">
+          <label class="form-label">Name</label>
+          <input class="form-input" id="ws-name" value="${esc(ws?.name||'')}" placeholder="production" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Path (inside container)</label>
+          <input class="form-input text-mono" id="ws-path" value="${esc(ws?.path||'')}" placeholder="/opt/infra/production" required>
+          <div class="form-hint">Mount via docker-compose.override.yml: <code>- /host/path:/opt/infra:rw</code></div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description (optional)</label>
+          <input class="form-input" id="ws-desc" value="${esc(ws?.description||'')}" placeholder="Production infrastructure">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Environment Variables</label>
+          <textarea class="form-input text-mono" id="ws-env"
+            style="min-height:100px;resize:vertical;font-size:12px;"
+            placeholder="AWS_ACCESS_KEY_ID=AKIA...\nTF_VAR_region=eu-central-1"
+          >${esc(envLines)}</textarea>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-secondary" id="ws-cancel">Cancel</button>
+          <button class="btn btn-primary" id="ws-save">${ws ? 'Save' : 'Create'}</button>
+        </div>
+      </div>
+    </div>`;
+
+  const close = () => { overlay.classList.add('hidden'); overlay.innerHTML = ''; };
+
+  document.getElementById('ws-cancel').addEventListener('click', close);
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+  document.getElementById('ws-save').addEventListener('click', async () => {
+    const name    = document.getElementById('ws-name').value.trim();
+    const wPath   = document.getElementById('ws-path').value.trim();
+    const desc    = document.getElementById('ws-desc').value.trim();
+    const env_vars = parseEnvBlock(document.getElementById('ws-env').value);
+    if (!name || !wPath) { _showToast('Name and path are required', 'error'); return; }
+    const btn = document.getElementById('ws-save');
+    btn.disabled = true;
+    try {
+      if (ws) {
+        await _pluginApi.request(`/workspaces/${ws.id}`, {
+          method: 'PUT', body: JSON.stringify({ name, path: wPath, description: desc, env_vars }),
+        });
+      } else {
+        const { id } = await _pluginApi.request('/workspaces', {
+          method: 'POST', body: JSON.stringify({ name, path: wPath, description: desc, env_vars }),
+        });
+        _selected = id;
+        _mainTab  = 'workspaces';
+        _wsTab    = 'runs';
+      }
+      _workspaces = await _pluginApi.request('/workspaces');
+      close();
+      renderApp();
+    } catch (e) {
+      _showToast(e.message, 'error');
+      btn.disabled = false;
+    }
+  });
 }

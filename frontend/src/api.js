@@ -209,14 +209,16 @@ class ApiClient {
   runAdhoc(targets, module, args) { return this.request('/adhoc/run', { method: 'POST', body: { targets, module, args } }); }
 
   // Playbooks Git
-  getGitConfig()      { return this.request('/playbooks-git/config'); }
-  saveGitConfig(data) { return this.request('/playbooks-git/config', { method: 'PUT', body: data }); }
-  gitSetup(data)      { return this.request('/playbooks-git/setup', { method: 'POST', body: data }); }
-  getGitStatus()      { return this.request('/playbooks-git/status'); }
-  getGitLog()         { return this.request('/playbooks-git/log'); }
-  gitCommit(message)  { return this.request('/playbooks-git/commit', { method: 'POST', body: { message } }); }
-  gitPull()           { return this.request('/playbooks-git/pull',  { method: 'POST' }); }
-  gitPush()           { return this.request('/playbooks-git/push',  { method: 'POST' }); }
+  getGitConfig()        { return this.request('/playbooks-git/config'); }
+  saveGitConfig(data)   { return this.request('/playbooks-git/config', { method: 'PUT', body: data }); }
+  gitSetup(data)        { return this.request('/playbooks-git/setup', { method: 'POST', body: data }); }
+  getGitStatus()        { return this.request('/playbooks-git/status'); }
+  getGitLog()           { return this.request('/playbooks-git/log'); }
+  getGitBranches()      { return this.request('/playbooks-git/branches'); }
+  gitCheckout(branch)   { return this.request('/playbooks-git/checkout', { method: 'POST', body: { branch } }); }
+  gitCommit(message)    { return this.request('/playbooks-git/commit', { method: 'POST', body: { message } }); }
+  gitPull()             { return this.request('/playbooks-git/pull',  { method: 'POST' }); }
+  gitPush()             { return this.request('/playbooks-git/push',  { method: 'POST' }); }
 }
 
 export const api = new ApiClient();

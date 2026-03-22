@@ -1090,14 +1090,19 @@ button:focus-visible, .btn:focus-visible, .form-input:focus-visible, .tab-btn:fo
 
 /* Color picker – fill the full input area */
 input[type="color"].form-input {
-  padding: 2px;
+  padding: 0;
   -webkit-appearance: none;
   appearance: none;
+  cursor: pointer;
 }
 input[type="color"].form-input::-webkit-color-swatch-wrapper { padding: 0; }
 input[type="color"].form-input::-webkit-color-swatch {
   border: none;
-  border-radius: calc(var(--radius) - 3px);
+  border-radius: var(--radius);
+}
+input[type="color"].form-input::-moz-color-swatch {
+  border: none;
+  border-radius: var(--radius);
 }
 
 /* ============================================
@@ -1982,13 +1987,13 @@ input[type="color"].form-input::-webkit-color-swatch {
    Danger Zone
    ============================================================ */
 .danger-zone-block {
-  border: 1px solid var(--offline);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
 }
 
 .danger-zone-block .settings-row {
-  border-bottom: 1px solid color-mix(in srgb, var(--offline) 25%, transparent);
+  border-bottom: 1px solid var(--border);
 }
 
 .dz-confirm {
