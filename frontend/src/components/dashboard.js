@@ -94,9 +94,9 @@ function renderDashboardData(data) {
               <thead><tr>
                 <th style="width:28px;"></th>
                 <th>${t('common.name')}</th>
-                <th style="width:140px;">${t('dash.colRam')}</th>
-                <th style="width:140px;">${t('dash.colDisk')}</th>
-                <th style="width:130px;">${t('dash.colCpu')}</th>
+                <th style="width:175px;">${t('dash.colRam')}</th>
+                <th style="width:175px;">${t('dash.colDisk')}</th>
+                <th style="width:160px;">${t('dash.colCpu')}</th>
                 <th style="width:90px;">${t('dash.colUptime')}</th>
                 <th style="width:130px;">${t('dash.colUpdates')}</th>
               </tr></thead>
@@ -216,7 +216,7 @@ function miniBar(pct) {
   const cls = pct > 90 ? ' critical' : pct > 70 ? ' high' : '';
   return `
     <div style="display:flex;align-items:center;gap:6px;">
-      <div class="progress-track" style="height:5px;width:90px;flex-shrink:0;">
+      <div class="progress-track" style="height:5px;width:120px;flex-shrink:0;">
         <div class="progress-fill${cls}" style="width:${pct}%;"></div>
       </div>
       <span style="font-family:var(--font-mono);font-size:11px;width:30px;">${pct}%</span>
