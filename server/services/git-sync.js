@@ -252,22 +252,21 @@ async function pull() {
   if (!cfg.repoUrl) return { success: false, stderr: 'No repository configured' };
   if (!await isGitRepo()) return { success: false, stderr: 'Git workspace not initialized – run setup first' };
 
-  // Clean up any stuck rebase/merge/conflict state before pulling
-  await runGit(['rebase', '--abort']).catch(() => {});
-  await runGit(['merge', '--abort']).catch(() => {});
-  await runGit(['reset', '--hard', 'HEAD']).catch(() => {});
-  await runGit(['clean', '-fd']).catch(() => {});
-
   await applyGitIdentity();
   const authUrl = cfg.authToken ? buildAuthUrl(cfg.repoUrl, cfg.authToken) : cfg.repoUrl;
   await setRemote(authUrl);
 
-  let r = await runGit(['pull', '--no-rebase', '--no-edit', 'origin', cfg.branch]);
-  if (!r.success && r.stderr.includes('unrelated histories')) {
-    r = await runGit(['pull', '--no-rebase', '--no-edit', '--allow-unrelated-histories', 'origin', cfg.branch]);
-  }
-  if (r.success) syncFromWorkspace();
-  return r;
+  // Fetch from remote
+  const fetchR = await runGit(['fetch', 'origin', cfg.branch]);
+  if (!fetchR.success) return fetchR;
+
+  // Reset local branch to exactly match remote — avoids all merge/rebase conflicts
+  const resetR = await runGit(['reset', '--hard', `origin/${cfg.branch}`]);
+  if (!resetR.success) return resetR;
+
+  await runGit(['clean', '-fd']);
+  syncFromWorkspace();
+  return { success: true, stdout: resetR.stdout };
 }
 
 async function commit(message) {
