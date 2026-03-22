@@ -5,7 +5,7 @@ import { state } from '../main.js';
 
 function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-// ── Small context menu above the profile button ───────────────
+// ── Small context menu – appears directly above the profile button ─────────
 
 let _menu = null;
 let _menuBackdrop = null;
@@ -31,45 +31,51 @@ export function showProfileMenu() {
 
   _menu = document.createElement('div');
   _menu.style.cssText = `
-    position:fixed;
-    bottom:${rect ? (window.innerHeight - rect.bottom) : 60}px;
-    left:${rect ? rect.right + 8 : 232}px;
-    z-index:1100;
-    width:220px;
-    background:var(--bg-panel);
-    border:1px solid var(--border);
-    border-radius:var(--radius);
-    box-shadow:0 8px 24px rgba(0,0,0,.25);
-    overflow:hidden;
+    position: fixed;
+    bottom: ${rect ? window.innerHeight - rect.top + 6 : 70}px;
+    left: ${rect ? rect.left : 0}px;
+    width: ${rect ? rect.width : 220}px;
+    z-index: 1100;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 -4px 20px rgba(0,0,0,.18);
+    overflow: hidden;
   `;
 
+  const email = state.user?.email;
+  const isAdmin = state.user?.role === 'admin';
+
   _menu.innerHTML = `
-    <div style="padding:10px 14px 8px;border-bottom:1px solid var(--border);">
-      <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-        ${esc(state.user?.username || 'Profile')}
+    <div style="padding:12px 16px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+      <div style="width:34px;height:34px;border-radius:50%;background:var(--accent);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;">
+        <i class="fas fa-user"></i>
       </div>
-      <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-        ${esc(state.user?.email || '')}
-        ${state.user?.role === 'admin' ? '<span style="margin-left:4px;font-size:10px;background:var(--accent);color:#fff;padding:1px 5px;border-radius:3px;">admin</span>' : ''}
+      <div style="min-width:0;">
+        <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+          ${esc(state.user?.username || 'Profile')}
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+          ${email ? esc(email) : isAdmin ? '<span style="opacity:.5">No email set</span>' : ''}
+          ${isAdmin ? '<span style="margin-left:4px;font-size:9px;background:var(--accent);color:#fff;padding:1px 6px;border-radius:3px;vertical-align:middle;">admin</span>' : ''}
+        </div>
       </div>
     </div>
 
     <div style="padding:4px 0;">
       <div class="profile-menu-item" id="pmenu-settings">
-        <i class="fas fa-user-pen" style="width:16px;"></i>
+        <i class="fas fa-user-pen" style="width:16px;opacity:.7;"></i>
         <span>Profile settings</span>
       </div>
 
-      <div class="profile-menu-item" id="pmenu-lang-toggle" style="justify-content:space-between;">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <i class="fas fa-globe" style="width:16px;"></i>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;">
+        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-primary);">
+          <i class="fas fa-globe" style="width:16px;opacity:.7;"></i>
           <span>Language</span>
         </div>
         <div style="display:flex;gap:3px;">
-          <button class="btn btn-sm ${currentLang === 'de' ? 'btn-primary' : 'btn-secondary'}" id="pmenu-lang-de"
-            style="padding:2px 7px;font-size:11px;" onclick="event.stopPropagation()">DE</button>
-          <button class="btn btn-sm ${currentLang === 'en' ? 'btn-primary' : 'btn-secondary'}" id="pmenu-lang-en"
-            style="padding:2px 7px;font-size:11px;" onclick="event.stopPropagation()">EN</button>
+          <button class="btn btn-sm ${currentLang === 'de' ? 'btn-primary' : 'btn-secondary'}" id="pmenu-lang-de" style="padding:2px 8px;font-size:11px;">DE</button>
+          <button class="btn btn-sm ${currentLang === 'en' ? 'btn-primary' : 'btn-secondary'}" id="pmenu-lang-en" style="padding:2px 8px;font-size:11px;">EN</button>
         </div>
       </div>
     </div>
@@ -85,24 +91,13 @@ export function showProfileMenu() {
   document.body.appendChild(_menu);
   _menu.addEventListener('click', e => e.stopPropagation());
 
-  document.getElementById('pmenu-settings').addEventListener('click', () => {
-    closeMenu();
-    showProfileModal();
-  });
-
-  document.getElementById('pmenu-lang-de').addEventListener('click', () => {
-    setLang('de'); closeMenu(); showProfileMenu();
-  });
-  document.getElementById('pmenu-lang-en').addEventListener('click', () => {
-    setLang('en'); closeMenu(); showProfileMenu();
-  });
-
-  document.getElementById('pmenu-signout').addEventListener('click', () => {
-    api.setToken(null); location.reload();
-  });
+  document.getElementById('pmenu-settings').addEventListener('click', () => { closeMenu(); showProfileModal(); });
+  document.getElementById('pmenu-lang-de').addEventListener('click', e => { e.stopPropagation(); setLang('de'); closeMenu(); showProfileMenu(); });
+  document.getElementById('pmenu-lang-en').addEventListener('click', e => { e.stopPropagation(); setLang('en'); closeMenu(); showProfileMenu(); });
+  document.getElementById('pmenu-signout').addEventListener('click', () => { api.setToken(null); location.reload(); });
 }
 
-// ── Full profile settings modal ───────────────────────────────
+// ── Profile settings modal ─────────────────────────────────────────────────
 
 let _modal = null;
 let _modalBackdrop = null;
@@ -117,95 +112,111 @@ function closeModal() {
 export async function showProfileModal() {
   if (_modal) { closeModal(); return; }
 
-  let profile = { username: state.user?.username || 'admin', email: state.user?.email || '' };
+  let profile = { username: state.user?.username || 'admin', email: state.user?.email || '', role: state.user?.role || 'user' };
   try { profile = await api.getProfile(); } catch {}
 
   _modalBackdrop = document.createElement('div');
-  _modalBackdrop.style.cssText = 'position:fixed;inset:0;z-index:1199;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;';
+  _modalBackdrop.style.cssText = 'position:fixed;inset:0;z-index:1199;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;';
   _modalBackdrop.addEventListener('click', closeModal);
   document.body.appendChild(_modalBackdrop);
 
   _modal = document.createElement('div');
-  _modal.style.cssText = 'width:100%;max-width:440px;background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 32px rgba(0,0,0,.35);overflow:hidden;';
+  _modal.style.cssText = 'width:100%;max-width:460px;background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 16px 48px rgba(0,0,0,.35);overflow:hidden;';
   _modal.addEventListener('click', e => e.stopPropagation());
 
   _modal.innerHTML = `
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
-      <div style="display:flex;align-items:center;gap:12px;">
-        <div style="width:40px;height:40px;border-radius:50%;background:var(--accent);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:17px;color:#fff;">
+    <!-- Header -->
+    <div style="padding:20px 24px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg-panel-alt);">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="width:48px;height:48px;border-radius:50%;background:var(--accent);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff;">
           <i class="fas fa-user"></i>
         </div>
         <div>
-          <div style="font-size:14px;font-weight:600;" id="profile-display-name">${esc(profile.username)}</div>
-          <div style="font-size:12px;color:var(--text-muted);" id="profile-display-email">${esc(profile.email) || '<span style="opacity:.5">No email set</span>'}</div>
-        </div>
-      </div>
-      <button class="btn btn-secondary btn-sm" id="profile-modal-close" style="padding:4px 10px;"><i class="fas fa-times"></i></button>
-    </div>
-
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border);">
-      <div class="settings-group-title" style="margin-top:0;"><i class="fas fa-user"></i> Account</div>
-      <div class="settings-block" style="margin-bottom:0;">
-        <div class="settings-row">
-          <div class="settings-row-label"><span>Username</span></div>
-          <div class="settings-row-control">
-            <input class="form-input" id="profile-username" value="${esc(profile.username)}" style="max-width:200px;">
-          </div>
-        </div>
-        <div class="settings-row">
-          <div class="settings-row-label"><span>Email</span><small>Optional</small></div>
-          <div class="settings-row-control">
-            <input class="form-input" id="profile-email" type="email" value="${esc(profile.email)}" placeholder="you@example.com" style="max-width:200px;">
-          </div>
-        </div>
-        <div class="settings-row">
-          <div class="settings-row-label"></div>
-          <div class="settings-row-control">
-            <button class="btn btn-primary btn-sm" id="profile-save-account"><i class="fas fa-check"></i> Save</button>
+          <div style="font-size:16px;font-weight:700;line-height:1.2;" id="profile-display-name">${esc(profile.username)}</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;" id="profile-display-email">${esc(profile.email) || '<span style="opacity:.5">No email set</span>'}</div>
+          <div style="margin-top:4px;">
+            <span style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:4px;
+              ${profile.role === 'admin' ? 'background:var(--accent);color:#fff;' : 'background:var(--bg-row-alt);color:var(--text-muted);border:1px solid var(--border);'}">
+              ${profile.role}
+            </span>
           </div>
         </div>
       </div>
+      <button class="btn btn-secondary btn-sm" id="profile-modal-close" style="padding:6px 10px;">
+        <i class="fas fa-times"></i>
+      </button>
     </div>
 
-    <div style="padding:16px 20px;">
-      <div class="settings-group-title" style="margin-top:0;"><i class="fas fa-lock"></i> Security</div>
-      <div class="settings-block" style="margin-bottom:0;">
-        <div class="settings-row">
-          <div class="settings-row-label"><span>Password</span></div>
-          <div class="settings-row-control">
-            <button class="btn btn-secondary btn-sm" id="profile-pw-toggle"><i class="fas fa-key"></i> Change</button>
+    <!-- Body -->
+    <div style="max-height:70vh;overflow-y:auto;">
+
+      <!-- Account -->
+      <div style="padding:20px 24px;border-bottom:1px solid var(--border);">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:14px;">
+          Account
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <label style="font-size:13px;color:var(--text-secondary);width:80px;flex-shrink:0;">Username</label>
+            <input class="form-input" id="profile-username" value="${esc(profile.username)}" style="flex:1;">
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <label style="font-size:13px;color:var(--text-secondary);width:80px;flex-shrink:0;">Email</label>
+            <input class="form-input" id="profile-email" type="email" value="${esc(profile.email)}" placeholder="you@example.com" style="flex:1;">
+          </div>
+          <div style="display:flex;justify-content:flex-end;">
+            <button class="btn btn-primary btn-sm" id="profile-save-account">
+              <i class="fas fa-check"></i> Save changes
+            </button>
           </div>
         </div>
-        <div id="profile-pw-form" style="display:none;flex-direction:column;gap:6px;padding:8px 0 4px;">
+      </div>
+
+      <!-- Password -->
+      <div style="padding:20px 24px;border-bottom:1px solid var(--border);">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0;" id="pw-row">
+          <div>
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:2px;">Password</div>
+            <div style="font-size:12px;color:var(--text-muted);">••••••••••••</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="profile-pw-toggle">
+            <i class="fas fa-key"></i> Change
+          </button>
+        </div>
+        <div id="profile-pw-form" style="display:none;flex-direction:column;gap:10px;margin-top:14px;">
           <input class="form-input" type="password" id="profile-pw-current" placeholder="Current password" autocomplete="current-password">
-          <input class="form-input" type="password" id="profile-pw-new" placeholder="New password (min 12 chars)" autocomplete="new-password">
+          <input class="form-input" type="password" id="profile-pw-new" placeholder="New password (min 12 characters)" autocomplete="new-password">
           <input class="form-input" type="password" id="profile-pw-confirm" placeholder="Confirm new password" autocomplete="new-password">
-          <div style="display:flex;gap:6px;">
-            <button class="btn btn-primary btn-sm" id="profile-pw-save"><i class="fas fa-check"></i> Save</button>
+          <div style="display:flex;gap:8px;justify-content:flex-end;">
             <button class="btn btn-secondary btn-sm" id="profile-pw-cancel">Cancel</button>
+            <button class="btn btn-primary btn-sm" id="profile-pw-save"><i class="fas fa-check"></i> Update password</button>
           </div>
         </div>
+      </div>
 
-        <div class="settings-row">
-          <div class="settings-row-label">
-            <span>Two-factor auth</span>
-            <small id="profile-2fa-status">Checking…</small>
+      <!-- 2FA -->
+      <div style="padding:20px 24px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div>
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:2px;">Two-factor authentication</div>
+            <div style="font-size:12px;" id="profile-2fa-status">Checking…</div>
           </div>
-          <div class="settings-row-control" id="profile-2fa-control"></div>
+          <div id="profile-2fa-control"></div>
         </div>
-        <div id="totp-setup-panel" style="display:none;flex-direction:column;gap:8px;padding:8px 0 4px;">
+        <div id="totp-setup-panel" style="display:none;flex-direction:column;gap:10px;margin-top:16px;padding:16px;background:var(--bg-row-alt);border-radius:var(--radius-sm);border:1px solid var(--border);">
           <p style="margin:0;color:var(--text-muted);font-size:13px;">${t('set.totpScanQR')}</p>
-          <img id="totp-qr" style="width:150px;height:150px;border-radius:6px;background:#fff;padding:6px;" alt="QR Code">
-          <p style="margin:0;color:var(--text-muted);font-size:12px;">${t('set.totpSecret')} <code id="totp-secret-text" style="font-family:var(--font-mono);word-break:break-all;"></code></p>
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <img id="totp-qr" style="width:160px;height:160px;border-radius:8px;background:#fff;padding:8px;border:1px solid var(--border);" alt="QR Code">
+          <p style="margin:0;color:var(--text-muted);font-size:12px;">${t('set.totpSecret')}<br><code id="totp-secret-text" style="font-family:var(--font-mono);word-break:break-all;font-size:11px;"></code></p>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <input class="form-input" type="text" id="totp-confirm-code" inputmode="numeric"
               pattern="[0-9 ]*" maxlength="7" placeholder="______"
-              style="font-size:1.1rem;letter-spacing:5px;text-align:center;max-width:120px;">
+              style="font-size:1.4rem;letter-spacing:8px;text-align:center;width:140px;">
             <button class="btn btn-primary btn-sm" id="btn-totp-verify"><i class="fas fa-check"></i> ${t('set.totpVerify')}</button>
             <button class="btn btn-secondary btn-sm" id="btn-totp-cancel">Cancel</button>
           </div>
         </div>
       </div>
+
     </div>
   `;
 
@@ -213,6 +224,7 @@ export async function showProfileModal() {
 
   document.getElementById('profile-modal-close').addEventListener('click', closeModal);
 
+  // Save account
   document.getElementById('profile-save-account').addEventListener('click', async () => {
     const username = document.getElementById('profile-username').value.trim();
     const email    = document.getElementById('profile-email').value.trim();
@@ -226,6 +238,7 @@ export async function showProfileModal() {
     } catch (e) { showToast(e.message, 'error'); }
   });
 
+  // Password
   const pwForm = document.getElementById('profile-pw-form');
   document.getElementById('profile-pw-toggle').addEventListener('click', () => {
     const open = pwForm.style.display !== 'flex';
@@ -257,9 +270,8 @@ async function _load2fa() {
   try {
     const { enabled } = await api.totpStatus();
     if (enabled) {
-      statusEl.textContent = 'Enabled';
-      statusEl.style.color = 'var(--online)';
-      controlEl.innerHTML  = `<button class="btn btn-danger btn-sm" id="profile-2fa-disable"><i class="fas fa-shield-xmark"></i> Disable</button>`;
+      statusEl.innerHTML = '<span style="color:var(--online);"><i class="fas fa-shield-halved" style="margin-right:4px;"></i>Enabled</span>';
+      controlEl.innerHTML = `<button class="btn btn-danger btn-sm" id="profile-2fa-disable"><i class="fas fa-shield-xmark"></i> Disable</button>`;
       document.getElementById('profile-2fa-disable').addEventListener('click', async () => {
         if (!confirm('Disable two-factor authentication?')) return;
         await api.totpDisable();
@@ -267,9 +279,8 @@ async function _load2fa() {
         _load2fa();
       });
     } else {
-      statusEl.textContent = 'Disabled';
-      statusEl.style.color = 'var(--text-muted)';
-      controlEl.innerHTML  = `<button class="btn btn-secondary btn-sm" id="profile-2fa-enable"><i class="fas fa-shield-halved"></i> Enable</button>`;
+      statusEl.innerHTML = '<span style="color:var(--text-muted);">Not enabled</span>';
+      controlEl.innerHTML = `<button class="btn btn-secondary btn-sm" id="profile-2fa-enable"><i class="fas fa-shield-halved"></i> Enable</button>`;
       document.getElementById('profile-2fa-enable').addEventListener('click', async () => {
         try {
           const { qrDataUrl, secret } = await api.totpSetup();
