@@ -1224,7 +1224,10 @@ async function openScheduleDialog(editId) {
   try { playbooks = await api.getPlaybooks(); } catch {}
 
   const parsed = existing ? cronToSelectors(existing.cron_expression) : { interval: 'daily', hour: 3, minute: 0, weekday: 1, monthday: 1 };
-  const parsedTimeVal = `${String(parsed.hour).padStart(2,'0')}:${String(parsed.minute ?? 0).padStart(2,'0')}`;
+  const parsedHour   = parsed.hour ?? 3;
+  const parsedMinute = parsed.minute ?? 0;
+  const hourOptions   = Array.from({length:24},(_,i)=>`<option value="${i}"${i===parsedHour?' selected':''}>${String(i).padStart(2,'0')}</option>`).join('');
+  const minuteOptions = Array.from({length:12},(_,i)=>i*5).map(m=>`<option value="${m}"${m===parsedMinute?' selected':''}>${String(m).padStart(2,'0')}</option>`).join('');
 
   const intervalOptions = INTERVALS.map(i =>
     `<option value="${i.value}" ${parsed.interval === i.value ? 'selected' : ''}>${t(i.labelKey)}</option>`
@@ -1267,7 +1270,11 @@ async function openScheduleDialog(editId) {
             </div>
             <div class="form-group" id="sched-time-group" style="margin-bottom:0;">
               <label class="form-label">${t('sc.time')}</label>
-              <input class="form-input" type="time" id="sched-time" value="${parsedTimeVal}">
+              <div style="display:flex;align-items:center;gap:4px;">
+                <select class="form-input" id="sched-hour" style="width:72px;">${hourOptions}</select>
+                <span style="color:var(--text-muted);font-weight:600;">:</span>
+                <select class="form-input" id="sched-minute" style="width:72px;">${minuteOptions}</select>
+              </div>
             </div>
           </div>
           <div class="form-group hidden" id="sched-weekday-group">
@@ -1318,9 +1325,8 @@ async function openScheduleDialog(editId) {
     const playbook = document.getElementById('sched-playbook').value;
     const targets = document.getElementById('sched-targets').value;
     const interval = intervalSel.value;
-    const timeVal = (document.getElementById('sched-time').value || '03:00').split(':');
-    const hour = parseInt(timeVal[0]) || 0;
-    const minute = parseInt(timeVal[1]) || 0;
+    const hour   = parseInt(document.getElementById('sched-hour').value)   || 0;
+    const minute = parseInt(document.getElementById('sched-minute').value) || 0;
     const weekday = parseInt(document.getElementById('sched-weekday').value);
     const monthday = Math.min(28, Math.max(1, parseInt(document.getElementById('sched-monthday').value) || 1));
     const cronExpression = selectorsToCron(interval, hour, minute, weekday, monthday);
