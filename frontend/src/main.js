@@ -58,6 +58,14 @@ function render() {
       renderPlaybooks();
       break;
     case 'settings':
+      if (state.user?.role !== 'admin') {
+        const c = document.getElementById('main-content');
+        if (c) c.innerHTML = `<div class="page-content" style="display:flex;align-items:center;justify-content:center;height:60vh;flex-direction:column;gap:12px;color:var(--text-muted);">
+          <i class="fas fa-lock" style="font-size:2rem;"></i>
+          <span style="font-size:15px;">Admin access required</span>
+        </div>`;
+        return;
+      }
       renderSettings();
       break;
     case 'plugin':
@@ -185,14 +193,16 @@ async function boot() {
 
   // Load settings, servers, and plugins in parallel
   try {
-    const [settings, servers, plugins, profile] = await Promise.all([
-      api.getSettings(),
+    const [servers, plugins, profile] = await Promise.all([
       api.getServers(),
       api.getPlugins().catch(() => []),
       api.getProfile().catch(() => null),
     ]);
-    state.whiteLabel = settings;
     state.user = profile;
+    // Settings (white label) only available to admins
+    if (profile?.role === 'admin') {
+      try { state.whiteLabel = await api.getSettings(); } catch {}
+    }
     state.servers = servers.map(s => ({
       ...s,
       services: typeof s.services === 'string' ? JSON.parse(s.services) : s.services || [],

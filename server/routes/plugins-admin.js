@@ -1,6 +1,7 @@
 const express      = require('express');
 const router       = express.Router();
 const pluginLoader = require('../services/plugin-loader');
+const { adminOnly } = require('../middleware/auth');
 
 // GET /api/plugins — list all plugins
 router.get('/', (req, res) => {
@@ -12,7 +13,7 @@ router.get('/', (req, res) => {
 });
 
 // POST /api/plugins/:id/enable  and  POST /api/plugins/:id/disable
-router.post('/:id/:action(enable|disable)', (req, res) => {
+router.post('/:id/:action(enable|disable)', adminOnly, (req, res) => {
   try {
     pluginLoader.setEnabled(req.params.id, req.params.action === 'enable');
     res.json({ success: true });
@@ -22,7 +23,7 @@ router.post('/:id/:action(enable|disable)', (req, res) => {
 });
 
 // POST /api/plugins/reload — rescan /app/plugins and hot-reload all plugins
-router.post('/reload', (req, res) => {
+router.post('/reload', adminOnly, (req, res) => {
   try {
     pluginLoader.reloadAll();
     res.json({ success: true, plugins: pluginLoader.list() });
