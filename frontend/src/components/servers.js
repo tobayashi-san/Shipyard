@@ -59,7 +59,7 @@ export async function renderServers() {
         <button class="btn btn-secondary btn-sm" id="btn-refresh-all">
           <i class="fas fa-sync-alt"></i> ${t('common.refresh')}
         </button>
-        <div class="btn-group" id="btn-export-wrap">
+        ${hasCap('canExportImportServers') ? `<div class="btn-group" id="btn-export-wrap">
           <button class="btn btn-secondary btn-sm" id="btn-export-json" title="${t('srv.export')} JSON">
             <i class="fas fa-file-export"></i> JSON
           </button>
@@ -70,7 +70,7 @@ export async function renderServers() {
         <label class="btn btn-secondary btn-sm" title="${t('srv.import')}" style="cursor:pointer;margin:0;">
           <i class="fas fa-file-import"></i> ${t('srv.import')}
           <input type="file" id="btn-import-file" accept=".json,.csv" style="display:none;">
-        </label>
+        </label>` : ''}
         ${hasCap('canAddServers') ? `<button class="btn btn-secondary btn-sm" id="btn-create-group">
           <i class="fas fa-folder-plus"></i> ${t('srv.folder')}
         </button>
@@ -84,12 +84,12 @@ export async function renderServers() {
     <div id="bulk-bar" class="bulk-bar ${selectedIds.size === 0 ? 'hidden' : ''}">
       <span id="bulk-count" class="bulk-count">${t('srv.selected', { count: selectedIds.size })}</span>
       <div class="bulk-actions">
-        <button class="btn btn-secondary btn-sm" id="btn-bulk-update">
+        ${hasCap('canUpdateServers') ? `<button class="btn btn-secondary btn-sm" id="btn-bulk-update">
           <i class="fas fa-download"></i> ${t('srv.startUpdates')}
-        </button>
-        <button class="btn btn-secondary btn-sm" id="btn-bulk-playbook">
+        </button>` : ''}
+        ${hasCap('canRunPlaybooks') ? `<button class="btn btn-secondary btn-sm" id="btn-bulk-playbook">
           <i class="fas fa-play"></i> ${t('srv.runPlaybook')}
-        </button>
+        </button>` : ''}
       </div>
       <button class="btn-link bulk-deselect" id="btn-deselect-all">
         <i class="fas fa-times"></i> ${t('srv.deselect')}

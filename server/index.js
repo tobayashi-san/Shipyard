@@ -169,7 +169,7 @@ app.get('/plugins/:pluginId/ui.js', (req, res) => {
   res.sendFile(uiPath);
 });
 
-const { getPermissions, filterServers, filterPlugins } = require('./utils/permissions');
+const { getPermissions, filterServers, filterPlugins, can } = require('./utils/permissions');
 
 // GET /api/dashboard – aggregated stats from DB cache (no SSH, instant)
 app.get('/api/dashboard', (req, res) => {
@@ -316,7 +316,10 @@ app.post('/api/ansible/run', async (req, res) => {
 });
 
 // POST /api/servers/:id/update - Run system update on a server
-app.post('/api/servers/:id/update', async (req, res) => {
+app.post('/api/servers/:id/update', (req, res, next) => {
+  if (!can(getPermissions(req.user), 'canUpdateServers')) return res.status(403).json({ error: 'Permission denied' });
+  next();
+}, async (req, res) => {
   const serverId = req.params.id;
   const server = db.servers.getById(serverId);
   if (!server) return res.status(404).json({ error: 'Server not found' });
@@ -348,7 +351,10 @@ app.post('/api/servers/:id/update', async (req, res) => {
 });
 
 // POST /api/servers/update-all - Run system update on all servers
-app.post('/api/servers/update-all', async (req, res) => {
+app.post('/api/servers/update-all', (req, res, next) => {
+  if (!can(getPermissions(req.user), 'canUpdateServers')) return res.status(403).json({ error: 'Permission denied' });
+  next();
+}, async (req, res) => {
   const historyId = db.updateHistory.create('bulk_update', 'system_update_all');
   res.json({ historyId, status: 'started' });
 
@@ -375,7 +381,10 @@ app.post('/api/servers/update-all', async (req, res) => {
 });
 
 // POST /api/servers/:id/reboot - Reboot a server using ansible ad-hoc
-app.post('/api/servers/:id/reboot', rebootLimiter, async (req, res) => {
+app.post('/api/servers/:id/reboot', rebootLimiter, (req, res, next) => {
+  if (!can(getPermissions(req.user), 'canUpdateServers')) return res.status(403).json({ error: 'Permission denied' });
+  next();
+}, async (req, res) => {
   const serverId = req.params.id;
   const server = db.servers.getById(serverId);
   if (!server) return res.status(404).json({ error: 'Server not found' });
@@ -414,7 +423,10 @@ app.post('/api/servers/:id/reboot', rebootLimiter, async (req, res) => {
 });
 
 // POST /api/servers/:id/docker/:container/restart - Restart a docker container
-app.post('/api/servers/:id/docker/:container/restart', containerRestartLimiter, async (req, res) => {
+app.post('/api/servers/:id/docker/:container/restart', containerRestartLimiter, (req, res, next) => {
+  if (!can(getPermissions(req.user), 'canManageDocker')) return res.status(403).json({ error: 'Permission denied' });
+  next();
+}, async (req, res) => {
   const { id: serverId, container } = req.params;
   if (!/^[a-zA-Z0-9_.-]+$/.test(container)) return res.status(400).json({ error: 'Invalid container name' });
   const server = db.servers.getById(serverId);
@@ -446,7 +458,10 @@ app.post('/api/servers/:id/docker/:container/restart', containerRestartLimiter, 
 
 
 // POST /api/servers/:id/custom-updates/:taskId/run
-app.post('/api/servers/:id/custom-updates/:taskId/run', customUpdateRunLimiter, async (req, res) => {
+app.post('/api/servers/:id/custom-updates/:taskId/run', customUpdateRunLimiter, (req, res, next) => {
+  if (!can(getPermissions(req.user), 'canUpdateServers')) return res.status(403).json({ error: 'Permission denied' });
+  next();
+}, async (req, res) => {
   const server = db.servers.getById(req.params.id);
   if (!server) return res.status(404).json({ error: 'Server not found' });
   const task = db.customUpdateTasks.getById(req.params.taskId);
@@ -491,7 +506,10 @@ function isBlockedRemotePath(p) {
 }
 
 // POST /api/servers/:id/docker/compose/write
-app.post('/api/servers/:id/docker/compose/write', async (req, res) => {
+app.post('/api/servers/:id/docker/compose/write', (req, res, next) => {
+  if (!can(getPermissions(req.user), 'canManageDocker')) return res.status(403).json({ error: 'Permission denied' });
+  next();
+}, async (req, res) => {
   const { id: serverId } = req.params;
   const { path, content } = req.body;
   const server = db.servers.getById(serverId);
@@ -529,7 +547,10 @@ app.post('/api/servers/:id/docker/compose/write', async (req, res) => {
 });
 
 // POST /api/servers/:id/docker/compose/action
-app.post('/api/servers/:id/docker/compose/action', async (req, res) => {
+app.post('/api/servers/:id/docker/compose/action', (req, res, next) => {
+  if (!can(getPermissions(req.user), 'canManageDocker')) return res.status(403).json({ error: 'Permission denied' });
+  next();
+}, async (req, res) => {
   const { id: serverId } = req.params;
   const { path, action } = req.body;
   const server = db.servers.getById(serverId);
@@ -574,6 +595,13 @@ app.post('/api/servers/:id/docker/compose/action', async (req, res) => {
 wssSsh.on('connection', (ws, req) => {
   const url = new URL(req.url, 'http://localhost');
   if (!verifyWsAuth(ws, url)) return;
+
+  // Check terminal capability
+  const wsUser = getWsUser(url);
+  if (!can(getPermissions(wsUser), 'canUseTerminal')) {
+    ws.close(4003, 'Permission denied');
+    return;
+  }
 
   const serverId = url.searchParams.get('serverId');
   const server   = db.servers.getById(serverId);
@@ -655,6 +683,19 @@ function verifyWsAuth(ws, url) {
   const secret = getJwtSecret();
   try { jwt.verify(url.searchParams.get('token'), secret); return true; }
   catch { ws.close(4001, 'Unauthorized'); return false; }
+}
+
+function getWsUser(url) {
+  const secret = getJwtSecret();
+  try {
+    const payload = jwt.verify(url.searchParams.get('token'), secret);
+    if (payload.userId) return db.users.getById(payload.userId) || null;
+    if (payload.ok === true) {
+      const admins = db.users.getAll().filter(u => u.role === 'admin');
+      return admins[0] || { role: 'admin' };
+    }
+    return null;
+  } catch { return null; }
 }
 
 wss.on('connection', (ws, req) => {

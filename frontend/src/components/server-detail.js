@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { state, navigate, openGlobalTerminal } from '../main.js';
+import { state, navigate, openGlobalTerminal, hasCap } from '../main.js';
 import { showToast, showConfirm } from './toast.js';
 import { showAddServerModal } from './add-server-modal.js';
 import { openSshTerminal } from './ssh-terminal.js';
@@ -50,10 +50,10 @@ export async function renderServerDetail(serverId) {
         </div>
       </div>
       <div class="page-header-actions">
-        <button class="btn btn-secondary btn-sm" id="btn-edit-server"><i class="fas fa-edit"></i> ${t('common.edit')}</button>
-        <button class="btn btn-secondary btn-sm" id="btn-terminal"><i class="fas fa-terminal"></i> ${t('common.terminal')}</button>
-        <button class="btn btn-secondary btn-sm" id="btn-update-server"><i class="fas fa-arrow-up"></i> ${t('det.updates')}</button>
-        <button class="btn btn-danger btn-sm" id="btn-reboot-server"><i class="fas fa-power-off"></i> ${t('det.reboot')}</button>
+        ${hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm" id="btn-edit-server"><i class="fas fa-edit"></i> ${t('common.edit')}</button>` : ''}
+        ${hasCap('canUseTerminal') ? `<button class="btn btn-secondary btn-sm" id="btn-terminal"><i class="fas fa-terminal"></i> ${t('common.terminal')}</button>` : ''}
+        ${hasCap('canUpdateServers') ? `<button class="btn btn-secondary btn-sm" id="btn-update-server"><i class="fas fa-arrow-up"></i> ${t('det.updates')}</button>` : ''}
+        ${hasCap('canUpdateServers') ? `<button class="btn btn-danger btn-sm" id="btn-reboot-server"><i class="fas fa-power-off"></i> ${t('det.reboot')}</button>` : ''}
       </div>
     </div>
 
@@ -126,12 +126,12 @@ export async function renderServerDetail(serverId) {
               <button class="btn btn-secondary btn-sm" id="btn-refresh-docker" title="${t('common.refresh')}">
                 <i class="fas fa-sync-alt"></i>
               </button>
-              <button class="btn btn-secondary btn-sm" id="btn-check-image-updates">
+              ${hasCap('canManageDocker') ? `<button class="btn btn-secondary btn-sm" id="btn-check-image-updates">
                 <i class="fas fa-cloud-download-alt"></i> ${t('det.checkUpdates')}
-              </button>
-              <button class="btn btn-primary btn-sm" id="btn-add-compose-stack">
+              </button>` : ''}
+              ${hasCap('canManageDocker') ? `<button class="btn btn-primary btn-sm" id="btn-add-compose-stack">
                 <i class="fas fa-plus"></i> ${t('det.newStack')}
-              </button>
+              </button>` : ''}
             </div>
           </div>
           <div id="docker-content">
@@ -154,7 +154,7 @@ export async function renderServerDetail(serverId) {
         <div class="panel" style="margin-top:16px;">
           <div class="section-header">
             <h3><i class="fas fa-cog"></i> ${t('det.customUpdates')}</h3>
-            <button class="btn btn-primary btn-sm" id="btn-add-custom-task"><i class="fas fa-plus"></i> ${t('det.addTask')}</button>
+            ${hasCap('canUpdateServers') ? `<button class="btn btn-primary btn-sm" id="btn-add-custom-task"><i class="fas fa-plus"></i> ${t('det.addTask')}</button>` : ''}
           </div>
           <div id="custom-updates-content">
             <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
@@ -404,10 +404,10 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
           </span>
         </td>
         <td style="white-space:nowrap;">
-          <button class="btn btn-secondary btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="edit" title="${t('common.edit')}"><i class="fas fa-edit"></i></button>
-          <button class="btn btn-secondary btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="pull" title="pull"><i class="fas fa-cloud-download-alt"></i></button>
-          <button class="btn btn-primary btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="up" title="up -d"><i class="fas fa-play"></i></button>
-          <button class="btn btn-danger btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="down" title="down"><i class="fas fa-stop"></i></button>
+          ${hasCap('canManageDocker') ? `<button class="btn btn-secondary btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="edit" title="${t('common.edit')}"><i class="fas fa-edit"></i></button>` : ''}
+          ${hasCap('canManageDocker') ? `<button class="btn btn-secondary btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="pull" title="pull"><i class="fas fa-cloud-download-alt"></i></button>` : ''}
+          ${hasCap('canManageDocker') ? `<button class="btn btn-primary btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="up" title="up -d"><i class="fas fa-play"></i></button>` : ''}
+          ${hasCap('canManageDocker') ? `<button class="btn btn-danger btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="down" title="down"><i class="fas fa-stop"></i></button>` : ''}
         </td>
       </tr>`;
     data.containers.forEach(c => {
@@ -552,8 +552,8 @@ function renderContainerRow(c, imageUpdateMap = {}) {
       <td><span style="font-size:12px;color:${isUp ? 'var(--online)' : 'var(--offline)'};">${esc(c.status || c.state)}</span></td>
       <td>${updateCell}</td>
       <td style="white-space:nowrap;">
-        <button class="btn btn-secondary btn-sm logs-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.showLogs')}"><i class="fas fa-file-alt"></i></button>
-        <button class="btn btn-secondary btn-sm restart-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.containerRestarted')}"><i class="fas fa-sync-alt"></i></button>
+        ${hasCap('canManageDocker') ? `<button class="btn btn-secondary btn-sm logs-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.showLogs')}"><i class="fas fa-file-alt"></i></button>` : ''}
+        ${hasCap('canManageDocker') ? `<button class="btn btn-secondary btn-sm restart-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.containerRestarted')}"><i class="fas fa-sync-alt"></i></button>` : ''}
       </td>
     </tr>
   `;

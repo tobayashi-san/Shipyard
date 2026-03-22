@@ -13,6 +13,13 @@ function parseServer(s) {
 
 const { getPermissions, filterServers, can } = require('../utils/permissions');
 
+function guard(cap) {
+  return (req, res, next) => {
+    if (!can(getPermissions(req.user), cap)) return res.status(403).json({ error: 'Permission denied' });
+    next();
+  };
+}
+
 // GET /api/servers - List all servers
 router.get('/', (req, res) => {
   try {
@@ -24,7 +31,7 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/servers/export?format=json|csv
-router.get('/export', (req, res) => {
+router.get('/export', guard('canExportImportServers'), (req, res) => {
   try {
     const servers = db.servers.getAll().map(s => ({
       name:        s.name,
@@ -64,7 +71,7 @@ router.get('/export', (req, res) => {
 });
 
 // POST /api/servers/import
-router.post('/import', (req, res) => {
+router.post('/import', guard('canExportImportServers'), (req, res) => {
   try {
     const { servers } = req.body;
     if (!Array.isArray(servers) || servers.length === 0) {
@@ -447,7 +454,7 @@ router.get('/:id/docker', async (req, res) => {
 });
 
 // GET /api/servers/:id/docker/:container/logs
-router.get('/:id/docker/:container/logs', async (req, res) => {
+router.get('/:id/docker/:container/logs', guard('canManageDocker'), async (req, res) => {
   const server = db.servers.getById(req.params.id);
   if (!server) return res.status(404).json({ error: 'Server not found' });
 

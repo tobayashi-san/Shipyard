@@ -1153,10 +1153,14 @@ async function loadRolesTab() {
 
     const capGroups = [
       { label: 'Servers', caps: [
-        { key: 'canViewServers',   label: 'View servers' },
-        { key: 'canAddServers',    label: 'Add servers' },
-        { key: 'canEditServers',   label: 'Edit servers' },
-        { key: 'canDeleteServers', label: 'Delete servers' },
+        { key: 'canViewServers',          label: 'View servers' },
+        { key: 'canAddServers',           label: 'Add servers' },
+        { key: 'canEditServers',          label: 'Edit servers' },
+        { key: 'canDeleteServers',        label: 'Delete servers' },
+        { key: 'canUpdateServers',        label: 'Run updates & reboot' },
+        { key: 'canUseTerminal',          label: 'SSH terminal' },
+        { key: 'canManageDocker',         label: 'Docker (logs, restart, compose)' },
+        { key: 'canExportImportServers',  label: 'Export / Import servers' },
       ]},
       { label: 'Playbooks', caps: [
         { key: 'canViewPlaybooks',   label: 'View playbooks' },

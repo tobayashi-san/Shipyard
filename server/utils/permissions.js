@@ -27,6 +27,11 @@ const USER_DEFAULTS = {
   canAddVars:    true,
   canEditVars:   true,
   canDeleteVars: true,
+  // Server actions
+  canUpdateServers:       true,
+  canUseTerminal:         true,
+  canManageDocker:        true,
+  canExportImportServers: true,
   // Misc
   canViewAudit: true,
 };
