@@ -112,9 +112,36 @@ router.post('/import', (req, res) => {
 });
 
 // ── Server Groups ─────────────────────────────────────────────
-// GET /api/servers/groups
+// GET /api/servers/groups — only return groups the user can see
 router.get('/groups', (req, res) => {
-  res.json(db.serverGroups.getAll());
+  const perms = getPermissions(req.user);
+  const allGroups = db.serverGroups.getAll();
+  if (!perms || perms.full || perms.servers === 'all') return res.json(allGroups);
+
+  // Collect the group IDs the user has explicit access to
+  const { groups: allowedGroups = [], servers: allowedServers = [] } = perms.servers || {};
+
+  // Also include groups that contain at least one allowed server
+  const groupsWithAccessibleServer = new Set(
+    db.servers.getAll()
+      .filter(s => allowedServers.includes(s.id) || (s.group_id && allowedGroups.includes(s.group_id)))
+      .map(s => s.group_id)
+      .filter(Boolean)
+  );
+
+  const visibleGroupIds = new Set([...allowedGroups, ...groupsWithAccessibleServer]);
+
+  // Include ancestor groups so the folder tree renders correctly
+  function addAncestors(groupId) {
+    const g = allGroups.find(x => x.id === groupId);
+    if (g?.parent_id && !visibleGroupIds.has(g.parent_id)) {
+      visibleGroupIds.add(g.parent_id);
+      addAncestors(g.parent_id);
+    }
+  }
+  [...visibleGroupIds].forEach(addAncestors);
+
+  res.json(allGroups.filter(g => visibleGroupIds.has(g.id)));
 });
 
 // POST /api/servers/groups
