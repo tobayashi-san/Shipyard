@@ -28,6 +28,7 @@ fi
 # (Docker volumes are created as root on first use)
 mkdir -p /app/server/data/bin
 chown -R shipyard:shipyard /app/server/data /app/server/playbooks /app/plugins
+[ -d /workspaces ] && chown shipyard:shipyard /workspaces
 
 # Seed bundled plugins into the volume; update if the bundled version changed
 if [ -d /app/bundled-plugins ]; then
