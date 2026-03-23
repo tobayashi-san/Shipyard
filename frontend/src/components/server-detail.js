@@ -98,10 +98,10 @@ export async function renderServerDetail(serverId) {
             </div>
           </div>
           <div class="stat-card">
-            <div class="stat-card-icon"><i class="fas fa-microchip"></i></div>
+            <div class="stat-card-icon" id="stat-ping-icon"><i class="fas fa-satellite-dish"></i></div>
             <div>
-              <div class="stat-card-value" id="stat-cpu">—</div>
-              <div class="stat-card-label">${t('det.cpu')}</div>
+              <div class="stat-card-value" id="stat-ping">—</div>
+              <div class="stat-card-label">Latency</div>
             </div>
           </div>
         </div>
@@ -137,13 +137,29 @@ export async function renderServerDetail(serverId) {
             </div>
           </div>
 
-          <!-- Resources -->
-          <div class="panel">
-            <div class="section-header">
-              <h3><i class="fas fa-chart-bar"></i> ${t('det.resources')}</h3>
+          <!-- Resources + Network -->
+          <div style="display:flex;flex-direction:column;gap:16px;">
+            <div class="panel">
+              <div class="section-header">
+                <h3><i class="fas fa-chart-bar"></i> ${t('det.resources')}</h3>
+              </div>
+              <div id="res-content">
+                <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
+              </div>
             </div>
-            <div id="res-content">
-              <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
+
+            <!-- Network Panel -->
+            <div class="panel">
+              <div class="section-header">
+                <h3><i class="fas fa-network-wired"></i> Network</h3>
+              </div>
+              <table class="info-table" id="network-table">
+                <tr><td>IP Address</td><td class="mono">${esc(server.ip_address)}</td></tr>
+                ${server.hostname ? `<tr><td>Hostname</td><td class="mono">${esc(server.hostname)}</td></tr>` : ''}
+                <tr><td>SSH Port</td><td id="net-port" class="mono">${server.ssh_port || 22}</td></tr>
+                <tr><td>SSH User</td><td class="mono">${esc(server.ssh_user || 'root')}</td></tr>
+                <tr><td>Latency</td><td id="net-latency">—</td></tr>
+              </table>
             </div>
           </div>
         </div>
@@ -352,15 +368,6 @@ function renderServerInfo(info) {
   set('inf-load', info.load_avg || '—');
 
   // ── Stat cards ──────────────────────────────────────────────
-  const cpuStatEl = document.getElementById('stat-cpu');
-  const uptimeStatEl = document.getElementById('stat-uptime');
-  if (cpuStatEl && info.cpu_usage_pct != null) {
-    cpuStatEl.textContent = info.cpu_usage_pct + '%';
-    cpuStatEl.style.color = info.cpu_usage_pct > 90 ? 'var(--offline)' : info.cpu_usage_pct > 70 ? 'var(--warning)' : 'var(--online)';
-  }
-  if (uptimeStatEl && info.uptime_seconds) {
-    uptimeStatEl.textContent = formatUptime(info.uptime_seconds);
-  }
 
   const resEl = document.getElementById('res-content');
   if (!resEl) return;
@@ -414,33 +421,63 @@ function renderServerInfo(info) {
 
 async function loadServerInfo(serverId) {
   try {
+    // Measure ping via API round-trip time
+    const pingStart = Date.now();
     const info = await api.getServerInfo(serverId);
+    const pingMs = Date.now() - pingStart;
     if (!info) return;
     renderServerInfo(info);
     loadRecentActivity(serverId);
-    // Also populate docker stat card
+
+    // Ping stat card
+    const pingEl = document.getElementById('stat-ping');
+    const pingIconEl = document.getElementById('stat-ping-icon');
+    const netLatEl = document.getElementById('net-latency');
+    if (pingEl) {
+      pingEl.textContent = pingMs + ' ms';
+      const col = pingMs < 100 ? 'var(--online)' : pingMs < 400 ? 'var(--warning)' : 'var(--offline)';
+      pingEl.style.color = col;
+      if (pingIconEl) pingIconEl.style.color = col;
+    }
+    if (netLatEl) netLatEl.textContent = pingMs + ' ms';
+
+    // Docker stat card
     if (hasCap('canViewDocker')) {
       api.getServerDocker(serverId).then(containers => {
         const el = document.getElementById('stat-docker');
-        if (el && containers) el.textContent = containers.length;
-      }).catch(() => {});
+        if (el) {
+          const list = Array.isArray(containers) ? containers : [];
+          el.textContent = list.length;
+        }
+      }).catch(() => {
+        const el = document.getElementById('stat-docker');
+        if (el) el.textContent = 'N/A';
+      });
     } else {
       const el = document.getElementById('stat-docker');
       if (el) el.textContent = 'N/A';
     }
-    // Populate updates stat card
+
+    // Updates stat card
     if (hasCap('canViewUpdates')) {
       api.getServerUpdates(serverId).then(updates => {
         const el = document.getElementById('stat-updates');
         const iconEl = document.getElementById('stat-updates-icon');
-        if (el && updates) {
-          el.textContent = updates.length;
-          if (updates.length > 0) {
+        if (el) {
+          // API may return array directly or { updates: [] }
+          const list = Array.isArray(updates) ? updates : (updates?.updates ?? []);
+          el.textContent = list.length;
+          if (list.length > 0) {
             el.style.color = 'var(--warning)';
-            if(iconEl) iconEl.style.color = 'var(--warning)';
+            if (iconEl) iconEl.style.color = 'var(--warning)';
+          } else {
+            el.style.color = 'var(--online)';
           }
         }
-      }).catch(() => {});
+      }).catch(() => {
+        const el = document.getElementById('stat-updates');
+        if (el) el.textContent = 'N/A';
+      });
     } else {
       const el = document.getElementById('stat-updates');
       if (el) el.textContent = 'N/A';
