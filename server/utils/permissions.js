@@ -29,8 +29,12 @@ const USER_DEFAULTS = {
   canDeleteVars: true,
   // Server actions
   canUseTerminal:          true,
-  canManageDocker:         true,
   canExportImportServers:  true,
+  // Docker
+  canViewDocker:           true,
+  canPullDocker:           true,
+  canRestartDocker:        true,
+  canManageDockerCompose:  true,
   // Updates
   canViewUpdates:          true,
   canRunUpdates:           true,
@@ -43,6 +47,9 @@ const USER_DEFAULTS = {
   // Misc
   canViewAudit: true,
 };
+
+// Set of valid boolean permission keys (used by roles.js to reject unknown keys like 'full')
+const ALLOWED_PERMISSION_KEYS = new Set(Object.keys(USER_DEFAULTS).filter(k => k !== 'servers' && k !== 'playbooks' && k !== 'plugins'));
 
 function getPermissions(user) {
   if (!user) return null;
@@ -85,4 +92,20 @@ function can(permissions, capability) {
   return permissions[capability] !== false;
 }
 
-module.exports = { getPermissions, filterServers, filterPlaybooks, filterPlugins, can };
+/**
+ * Express middleware: verify the user has access to the server in req.params.id.
+ * On success, attaches req.server so downstream handlers don't need to re-fetch.
+ */
+function guardServerAccess(req, res, next) {
+  const server = db.servers.getById(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Server not found' });
+  const perms = getPermissions(req.user);
+  if (perms && !perms.full) {
+    const allowed = filterServers([server], perms);
+    if (allowed.length === 0) return res.status(403).json({ error: 'Server access denied' });
+  }
+  req.server = server;
+  next();
+}
+
+module.exports = { getPermissions, filterServers, filterPlaybooks, filterPlugins, can, guardServerAccess, ALLOWED_PERMISSION_KEYS };

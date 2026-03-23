@@ -41,7 +41,7 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/playbooks/:filename - Read a playbook's content
-router.get('/:filename', (req, res) => {
+router.get('/:filename', (req, res, next) => { if (!can(getPermissions(req.user), 'canViewPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
     const resolved = resolvePlaybookPath(req.params.filename);
     if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
@@ -58,8 +58,11 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canEd
   try {
     const { filename, content } = req.body;
     if (!filename || !content) return res.status(400).json({ error: 'filename and content are required' });
-    const safeFilename = path.basename(filename).replace(/[^a-zA-Z0-9_\-\.]/g, '_');
-    const finalFilename = safeFilename.endsWith('.yml') || safeFilename.endsWith('.yaml') ? safeFilename : safeFilename + '.yml';
+    const safeFilename = path.basename(filename);
+    if (!/^[a-zA-Z0-9_\-]+\.ya?ml$/.test(safeFilename)) {
+      return res.status(400).json({ error: 'Invalid filename. Only letters, digits, _ and - are allowed.' });
+    }
+    const finalFilename = safeFilename;
     const filepath = path.join(PLAYBOOKS_DIR, finalFilename);
     if (!filepath.startsWith(path.resolve(PLAYBOOKS_DIR) + path.sep)) {
       return res.status(400).json({ error: 'Invalid path' });
@@ -76,7 +79,7 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canEd
 });
 
 // GET /api/playbooks/:filename/history - List backup versions
-router.get('/:filename/history', (req, res) => {
+router.get('/:filename/history', (req, res, next) => { if (!can(getPermissions(req.user), 'canViewPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
     const resolved = resolvePlaybookPath(req.params.filename);
     if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
@@ -96,7 +99,7 @@ router.get('/:filename/history', (req, res) => {
 });
 
 // GET /api/playbooks/:filename/history/:version - Preview a backup version
-router.get('/:filename/history/:version', (req, res) => {
+router.get('/:filename/history/:version', (req, res, next) => { if (!can(getPermissions(req.user), 'canViewPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
     const resolved = resolvePlaybookPath(req.params.filename);
     if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
@@ -114,7 +117,7 @@ router.get('/:filename/history/:version', (req, res) => {
 });
 
 // POST /api/playbooks/:filename/restore/:version - Restore a backup version
-router.post('/:filename/restore/:version', (req, res) => {
+router.post('/:filename/restore/:version', (req, res, next) => { if (!can(getPermissions(req.user), 'canEditPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
     const resolved = resolvePlaybookPath(req.params.filename);
     if (!resolved) return res.status(400).json({ error: 'Invalid filename' });

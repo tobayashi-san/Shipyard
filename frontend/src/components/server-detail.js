@@ -60,7 +60,7 @@ export async function renderServerDetail(serverId) {
     <!-- Tab bar -->
     <div class="tab-bar">
       <button class="tab-btn active" data-tab="overview">${t('det.tabOverview')}</button>
-      <button class="tab-btn" data-tab="docker">${t('det.tabDocker')}</button>
+      ${hasCap('canViewDocker') ? `<button class="tab-btn" data-tab="docker">${t('det.tabDocker')}</button>` : ''}
       ${(hasCap('canViewUpdates') || hasCap('canRunUpdates') || hasCap('canRebootServers') || hasCap('canViewCustomUpdates') || hasCap('canRunCustomUpdates') || hasCap('canEditCustomUpdates') || hasCap('canDeleteCustomUpdates')) ? `<button class="tab-btn" data-tab="updates">${t('det.tabUpdates')}</button>` : ''}
       <button class="tab-btn" data-tab="history">${t('det.tabHistory')}</button>
       <button class="tab-btn" data-tab="notes">
@@ -126,10 +126,10 @@ export async function renderServerDetail(serverId) {
               <button class="btn btn-secondary btn-sm" id="btn-refresh-docker" title="${t('common.refresh')}">
                 <i class="fas fa-sync-alt"></i>
               </button>
-              ${hasCap('canManageDocker') ? `<button class="btn btn-secondary btn-sm" id="btn-check-image-updates">
+              ${hasCap('canPullDocker') ? `<button class="btn btn-secondary btn-sm" id="btn-check-image-updates">
                 <i class="fas fa-cloud-download-alt"></i> ${t('det.checkUpdates')}
               </button>` : ''}
-              ${hasCap('canManageDocker') ? `<button class="btn btn-primary btn-sm" id="btn-add-compose-stack">
+              ${hasCap('canManageDockerCompose') ? `<button class="btn btn-primary btn-sm" id="btn-add-compose-stack">
                 <i class="fas fa-plus"></i> ${t('det.newStack')}
               </button>` : ''}
             </div>
@@ -404,10 +404,10 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
           </span>
         </td>
         <td style="white-space:nowrap;">
-          ${hasCap('canManageDocker') ? `<button class="btn btn-secondary btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="edit" title="${t('common.edit')}"><i class="fas fa-edit"></i></button>` : ''}
-          ${hasCap('canManageDocker') ? `<button class="btn btn-secondary btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="pull" title="pull"><i class="fas fa-cloud-download-alt"></i></button>` : ''}
-          ${hasCap('canManageDocker') ? `<button class="btn btn-primary btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="up" title="up -d"><i class="fas fa-play"></i></button>` : ''}
-          ${hasCap('canManageDocker') ? `<button class="btn btn-danger btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="down" title="down"><i class="fas fa-stop"></i></button>` : ''}
+          ${hasCap('canManageDockerCompose') ? `<button class="btn btn-secondary btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="edit" title="${t('common.edit')}"><i class="fas fa-edit"></i></button>` : ''}
+          ${hasCap('canPullDocker') ? `<button class="btn btn-secondary btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="pull" title="pull"><i class="fas fa-cloud-download-alt"></i></button>` : ''}
+          ${hasCap('canManageDockerCompose') ? `<button class="btn btn-primary btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="up" title="up -d"><i class="fas fa-play"></i></button>` : ''}
+          ${hasCap('canManageDockerCompose') ? `<button class="btn btn-danger btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="down" title="down"><i class="fas fa-stop"></i></button>` : ''}
         </td>
       </tr>`;
     data.containers.forEach(c => {
@@ -552,8 +552,8 @@ function renderContainerRow(c, imageUpdateMap = {}) {
       <td><span style="font-size:12px;color:${isUp ? 'var(--online)' : 'var(--offline)'};">${esc(c.status || c.state)}</span></td>
       <td>${updateCell}</td>
       <td style="white-space:nowrap;">
-        ${hasCap('canManageDocker') ? `<button class="btn btn-secondary btn-sm logs-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.showLogs')}"><i class="fas fa-file-alt"></i></button>` : ''}
-        ${hasCap('canManageDocker') ? `<button class="btn btn-secondary btn-sm restart-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.containerRestarted')}"><i class="fas fa-sync-alt"></i></button>` : ''}
+        ${hasCap('canViewDocker') ? `<button class="btn btn-secondary btn-sm logs-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.showLogs')}"><i class="fas fa-file-alt"></i></button>` : ''}
+        ${hasCap('canRestartDocker') ? `<button class="btn btn-secondary btn-sm restart-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.containerRestarted')}"><i class="fas fa-sync-alt"></i></button>` : ''}
       </td>
     </tr>
   `;

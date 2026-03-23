@@ -11,7 +11,7 @@ function parseServer(s) {
   return { ...s, tags: JSON.parse(s.tags || '[]'), services: JSON.parse(s.services || '[]') };
 }
 
-const { getPermissions, filterServers, can } = require('../utils/permissions');
+const { getPermissions, filterServers, can, guardServerAccess } = require('../utils/permissions');
 
 function guard(cap) {
   return (req, res, next) => {
@@ -33,7 +33,8 @@ router.get('/', (req, res) => {
 // GET /api/servers/export?format=json|csv
 router.get('/export', guard('canExportImportServers'), (req, res) => {
   try {
-    const servers = db.servers.getAll().map(s => ({
+    const perms = getPermissions(req.user);
+    const servers = filterServers(db.servers.getAll(), perms).map(s => ({
       name:        s.name,
       hostname:    s.hostname,
       ip_address:  s.ip_address,
@@ -152,14 +153,14 @@ router.get('/groups', (req, res) => {
 });
 
 // POST /api/servers/groups
-router.post('/groups', (req, res) => {
+router.post('/groups', guard('canEditServers'), (req, res) => {
   const { name, color, parent_id } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Name required' });
   res.json(db.serverGroups.create(name.trim(), color, parent_id || null));
 });
 
 // PUT /api/servers/groups/:groupId
-router.put('/groups/:groupId', (req, res) => {
+router.put('/groups/:groupId', guard('canEditServers'), (req, res) => {
   const { name, color } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Name required' });
   db.serverGroups.update(req.params.groupId, name.trim(), color);
@@ -167,31 +168,27 @@ router.put('/groups/:groupId', (req, res) => {
 });
 
 // DELETE /api/servers/groups/:groupId
-router.delete('/groups/:groupId', (req, res) => {
+router.delete('/groups/:groupId', guard('canDeleteServers'), (req, res) => {
   db.serverGroups.delete(req.params.groupId);
   res.json({ success: true });
 });
 
 // PUT /api/servers/groups/:groupId/parent
-router.put('/groups/:groupId/parent', (req, res) => {
+router.put('/groups/:groupId/parent', guard('canEditServers'), (req, res) => {
   db.serverGroups.setGroupParent(req.params.groupId, req.body.parent_id || null);
   res.json({ success: true });
 });
 
 // PUT /api/servers/:id/group
-router.put('/:id/group', (req, res) => {
-  const server = db.servers.getById(req.params.id);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
+router.put('/:id/group', guardServerAccess, guard('canEditServers'), (req, res) => {
   db.serverGroups.setServerGroup(req.params.id, req.body.group_id || null);
   res.json({ success: true });
 });
 
 // GET /api/servers/:id - Get single server
-router.get('/:id', (req, res) => {
+router.get('/:id', guardServerAccess, (req, res) => {
   try {
-    const server = db.servers.getById(req.params.id);
-    if (!server) return res.status(404).json({ error: 'Server not found' });
-    res.json(parseServer(server));
+    res.json(parseServer(req.server));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -201,17 +198,21 @@ router.get('/:id', (req, res) => {
 router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAddServers')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
     const { name, hostname, ip_address, ssh_port, ssh_user, tags, services } = req.body;
-    if (!name || !ip_address) {
+    if (!name || typeof name !== 'string' || !ip_address || typeof ip_address !== 'string') {
       return res.status(400).json({ error: 'Name and IP address are required' });
     }
+    if (name.length > 100) return res.status(400).json({ error: 'Name too long (max 100)' });
+    if (ip_address.length > 45) return res.status(400).json({ error: 'IP address too long (max 45)' });
+    if (hostname && (typeof hostname !== 'string' || hostname.length > 255)) return res.status(400).json({ error: 'Hostname too long (max 255)' });
+    if (ssh_user && (typeof ssh_user !== 'string' || ssh_user.length > 100)) return res.status(400).json({ error: 'SSH user too long (max 100)' });
     const server = db.servers.create({
-      name,
-      hostname: hostname || ip_address,
-      ip_address,
-      ssh_port: ssh_port || 22,
-      ssh_user: ssh_user || 'root',
-      tags: tags || [],
-      services: services || [],
+      name: name.slice(0, 100),
+      hostname: (hostname || ip_address).slice(0, 255),
+      ip_address: ip_address.slice(0, 45),
+      ssh_port: parseInt(ssh_port) || 22,
+      ssh_user: (ssh_user || 'root').slice(0, 100),
+      tags: Array.isArray(tags) ? tags : [],
+      services: Array.isArray(services) ? services : [],
     });
     db.auditLog.write('server.create', `Server "${name}" (${ip_address}) created`, req.ip);
     res.status(201).json(parseServer(server));
@@ -221,32 +222,33 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
 });
 
 // PUT /api/servers/:id - Update server
-router.put('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'canEditServers')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
+router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
   try {
-    const existing = db.servers.getById(req.params.id);
-    if (!existing) return res.status(404).json({ error: 'Server not found' });
+    const existing = req.server;
 
     const { name, hostname, ip_address, ssh_port, ssh_user, tags, services } = req.body;
+    const sName   = name !== undefined ? String(name).slice(0, 100) : existing.name;
+    const sHost   = hostname !== undefined ? String(hostname).slice(0, 255) : existing.hostname;
+    const sIp     = ip_address !== undefined ? String(ip_address).slice(0, 45) : existing.ip_address;
+    const sPort   = ssh_port !== undefined ? (parseInt(ssh_port) || 22) : existing.ssh_port;
+    const sUser   = ssh_user !== undefined ? String(ssh_user).slice(0, 100) : existing.ssh_user;
+    const sTags   = Array.isArray(tags) ? tags : JSON.parse(existing.tags || '[]');
+    const sSvcs   = Array.isArray(services) ? services : JSON.parse(existing.services || '[]');
     const server = db.servers.update(req.params.id, {
-      name: name ?? existing.name,
-      hostname: hostname ?? existing.hostname,
-      ip_address: ip_address ?? existing.ip_address,
-      ssh_port: ssh_port ?? existing.ssh_port,
-      ssh_user: ssh_user ?? existing.ssh_user,
-      tags: tags ?? JSON.parse(existing.tags || '[]'),
-      services: services ?? JSON.parse(existing.services || '[]'),
+      name: sName, hostname: sHost, ip_address: sIp,
+      ssh_port: sPort, ssh_user: sUser, tags: sTags, services: sSvcs,
     });
     res.json(parseServer(server));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Server update error:', error);
+    res.status(500).json({ error: 'Failed to update server' });
   }
 });
 
 // DELETE /api/servers/:id - Delete server
-router.delete('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'canDeleteServers')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
+router.delete('/:id', guardServerAccess, guard('canDeleteServers'), (req, res) => {
   try {
-    const server = db.servers.getById(req.params.id);
-    if (!server) return res.status(404).json({ error: 'Server not found' });
+    const server = req.server;
     db.servers.delete(req.params.id);
     db.auditLog.write('server.delete', `Server "${server.name}" (${server.ip_address}) deleted`, req.ip);
     res.json({ message: 'Server deleted' });
@@ -256,11 +258,9 @@ router.delete('/:id', (req, res, next) => { if (!can(getPermissions(req.user), '
 });
 
 // POST /api/servers/:id/test - Test SSH connection
-router.post('/:id/test', async (req, res) => {
+router.post('/:id/test', guardServerAccess, async (req, res) => {
   try {
-    const server = db.servers.getById(req.params.id);
-    if (!server) return res.status(404).json({ error: 'Server not found' });
-
+    const server = req.server;
     const connected = await sshManager.testConnection(server);
     db.servers.updateStatus(server.id, connected ? 'online' : 'offline');
 
@@ -272,21 +272,17 @@ router.post('/:id/test', async (req, res) => {
 });
 
 // GET /api/servers/:id/notes
-router.get('/:id/notes', (req, res) => {
+router.get('/:id/notes', guardServerAccess, (req, res) => {
   try {
-    const server = db.servers.getById(req.params.id);
-    if (!server) return res.status(404).json({ error: 'Server not found' });
-    res.json({ notes: server.notes || '' });
+    res.json({ notes: req.server.notes || '' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
 // PUT /api/servers/:id/notes
-router.put('/:id/notes', (req, res) => {
+router.put('/:id/notes', guardServerAccess, guard('canEditServers'), (req, res) => {
   try {
-    const server = db.servers.getById(req.params.id);
-    if (!server) return res.status(404).json({ error: 'Server not found' });
     const notes = typeof req.body.notes === 'string' ? req.body.notes.slice(0, 50000) : '';
     db.servers.setNotes(req.params.id, notes);
     res.json({ success: true });
@@ -296,9 +292,8 @@ router.put('/:id/notes', (req, res) => {
 });
 
 // GET /api/servers/:id/info - Get system info (stale-while-revalidate)
-router.get('/:id/info', async (req, res) => {
-  const server = db.servers.getById(req.params.id);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
+router.get('/:id/info', guardServerAccess, async (req, res) => {
+  const server = req.server;
 
   const cached = db.serverInfo.get(req.params.id);
   const force = req.query.force === '1';
@@ -328,11 +323,9 @@ router.get('/:id/info', async (req, res) => {
 });
 
 // GET /api/servers/:id/services - Get running services
-router.get('/:id/services', async (req, res) => {
+router.get('/:id/services', guardServerAccess, async (req, res) => {
   try {
-    const server = db.servers.getById(req.params.id);
-    if (!server) return res.status(404).json({ error: 'Server not found' });
-
+    const server = req.server;
     const services = await systemInfo.getServices(server);
     res.json(services);
   } catch (error) {
@@ -341,9 +334,8 @@ router.get('/:id/services', async (req, res) => {
 });
 
 // GET /api/servers/:id/updates - Get available updates (stale-while-revalidate)
-router.get('/:id/updates', async (req, res) => {
-  const server = db.servers.getById(req.params.id);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
+router.get('/:id/updates', guardServerAccess, async (req, res) => {
+  const server = req.server;
 
   const cached = db.updatesCache.get(req.params.id);
   const force = req.query.force === '1';
@@ -367,7 +359,7 @@ router.get('/:id/updates', async (req, res) => {
 });
 
 // GET /api/servers/:id/history - Get update history
-router.get('/:id/history', (req, res) => {
+router.get('/:id/history', guardServerAccess, (req, res) => {
   try {
     const history = db.updateHistory.getByServer(req.params.id);
     res.json(history);
@@ -431,9 +423,8 @@ async function refreshDockerCache(server) {
 }
 
 // GET /api/servers/:id/docker - Get docker containers (stale-while-revalidate)
-router.get('/:id/docker', async (req, res) => {
-  const server = db.servers.getById(req.params.id);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
+router.get('/:id/docker', guardServerAccess, guard('canViewDocker'), async (req, res) => {
+  const server = req.server;
 
   const cached = buildDockerResponse(req.params.id);
   const force = req.query.force === '1';
@@ -454,12 +445,11 @@ router.get('/:id/docker', async (req, res) => {
 });
 
 // GET /api/servers/:id/docker/:container/logs
-router.get('/:id/docker/:container/logs', guard('canManageDocker'), async (req, res) => {
-  const server = db.servers.getById(req.params.id);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
+router.get('/:id/docker/:container/logs', guardServerAccess, guard('canViewDocker'), async (req, res) => {
+  const server = req.server;
 
   const container = req.params.container;
-  if (container.length > 128 || !/^[a-zA-Z0-9_.\-]+$/.test(container)) {
+  if (container.length > 128 || !/^[a-zA-Z0-9_\-]+$/.test(container)) {
     return res.status(400).json({ error: 'Invalid container name' });
   }
 
@@ -478,9 +468,8 @@ router.get('/:id/docker/:container/logs', guard('canManageDocker'), async (req, 
 });
 
 // GET /api/servers/:id/docker/image-updates - Check for image updates
-router.get('/:id/docker/image-updates', async (req, res) => {
-  const server = db.servers.getById(req.params.id);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
+router.get('/:id/docker/image-updates', guardServerAccess, guard('canPullDocker'), async (req, res) => {
+  const server = req.server;
   try {
     const result = await ansibleRunner.runPlaybook('check-image-updates.yml', server.name);
     const updates = parseImageUpdateOutput(result.stdout);
@@ -493,9 +482,8 @@ router.get('/:id/docker/image-updates', async (req, res) => {
 
 
 // GET /api/servers/:id/docker/compose - Read docker-compose.yml
-router.get('/:id/docker/compose', async (req, res) => {
+router.get('/:id/docker/compose', guardServerAccess, guard('canManageDockerCompose'), async (req, res) => {
   try {
-    const { id } = req.params;
     const { path } = req.query;
 
     if (!path) return res.status(400).json({ error: 'path query parameter is required' });
@@ -503,8 +491,7 @@ router.get('/:id/docker/compose', async (req, res) => {
       return res.status(400).json({ error: 'Invalid path format' });
     }
 
-    const server = db.servers.getById(id);
-    if (!server) return res.status(404).json({ error: 'Server not found' });
+    const server = req.server;
 
     const result = await ansibleRunner.runAdHoc(
       server.name,
@@ -522,7 +509,7 @@ router.get('/:id/docker/compose', async (req, res) => {
       }
       res.json({ content });
     } else {
-      res.status(500).json({ error: 'Failed to read docker-compose.yml. It might not exist in this directory.', details: result.stderr || result.stdout });
+      res.status(500).json({ error: 'Failed to read docker-compose.yml. It might not exist in this directory.' });
     }
   } catch (error) {
     res.status(500).json({ error: error.message });

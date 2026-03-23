@@ -16,6 +16,7 @@ const util = require('util');
 const execFileAsync = util.promisify(execFile);
 
 const db = require('../db');
+const { getSecret, setSecret } = require('../utils/crypto');
 
 // Runtime playbooks (read/written by the server at runtime)
 const PLAYBOOKS_DIR = path.resolve(path.join(__dirname, '..', 'playbooks'));
@@ -40,7 +41,7 @@ function getConfig() {
   const g = (k) => db.settings.get(k) || '';
   return {
     repoUrl:   g('git_repo_url'),
-    authToken: g('git_auth_token'),
+    authToken: getSecret(db, 'git_auth_token') || '',
     autoPull:  db.settings.get('git_auto_pull') !== '0',
     autoPush:  db.settings.get('git_auto_push') !== '0',
     userName:  g('git_user_name')  || 'Shipyard',
@@ -91,7 +92,7 @@ async function buildEnv(repoUrl) {
   if (/^(git@|ssh:\/\/)/.test(repoUrl)) {
     const keyPath = await getTmpKeyPath();
     if (keyPath) {
-      env.GIT_SSH_COMMAND = `ssh -i ${keyPath} -o StrictHostKeyChecking=no -o BatchMode=yes`;
+      env.GIT_SSH_COMMAND = `ssh -i "${keyPath}" -o StrictHostKeyChecking=accept-new -o BatchMode=yes`;
     }
   }
   return env;
@@ -363,7 +364,7 @@ async function setup({ repoUrl, authToken, autoPull: ap, autoPush: ap2, userName
   const targetBranch = (branch || 'main').trim();
 
   db.settings.set('git_repo_url',   repoUrl);
-  db.settings.set('git_auth_token', authToken || '');
+  setSecret(db, 'git_auth_token', authToken || '');
   db.settings.set('git_auto_pull',  ap  !== false ? '1' : '0');
   db.settings.set('git_auto_push',  ap2 !== false ? '1' : '0');
   db.settings.set('git_user_name',  userName  || 'Shipyard');

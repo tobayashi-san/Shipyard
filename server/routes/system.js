@@ -7,6 +7,7 @@ const db = require('../db');
 const scheduler = require('../services/scheduler');
 const { sendWebhook, sendEmail } = require('../services/notifier');
 const { adminOnly } = require('../middleware/auth');
+const { setSecret } = require('../utils/crypto');
 
 const deployLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -32,7 +33,7 @@ router.get('/key', (req, res) => {
 });
 
 // POST /api/system/generate - Generate new SSH key
-router.post('/generate', (req, res) => {
+router.post('/generate', adminOnly, (req, res) => {
   try {
     const rawName = req.body.name || 'shipyard';
     if (!/^[a-zA-Z0-9_-]+$/.test(rawName)) {
@@ -46,7 +47,7 @@ router.post('/generate', (req, res) => {
 });
 
 // POST /api/system/deploy - Deploy SSH key to a server
-router.post('/deploy', deployLimiter, async (req, res) => {
+router.post('/deploy', adminOnly, deployLimiter, async (req, res) => {
   try {
     const { ip_address, ssh_user, password, ssh_port } = req.body;
     if (!ip_address || !password) {
@@ -90,19 +91,20 @@ router.put('/settings', adminOnly, (req, res) => {
     const { appName, appTagline, accentColor, theme, timeFormat,
             webhookUrl, webhookSecret,
             smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom, smtpTo } = req.body;
-    if (appName       !== undefined) db.settings.set('wl_app_name',     appName);
-    if (appTagline    !== undefined) db.settings.set('wl_app_tagline',  appTagline);
-    if (accentColor   !== undefined) db.settings.set('wl_accent_color', accentColor);
-    if (theme         !== undefined) db.settings.set('ui_theme',        theme);
-    if (timeFormat    !== undefined) db.settings.set('ui_time_format',  timeFormat);
-    if (webhookUrl    !== undefined) db.settings.set('webhook_url',     webhookUrl);
-    if (webhookSecret !== undefined) db.settings.set('webhook_secret',  webhookSecret);
-    if (smtpHost      !== undefined) db.settings.set('smtp_host',       smtpHost);
-    if (smtpPort      !== undefined) db.settings.set('smtp_port',       String(smtpPort));
-    if (smtpUser      !== undefined) db.settings.set('smtp_user',       smtpUser);
-    if (smtpPass      !== undefined) db.settings.set('smtp_pass',       smtpPass);
-    if (smtpFrom      !== undefined) db.settings.set('smtp_from',       smtpFrom);
-    if (smtpTo        !== undefined) db.settings.set('smtp_to',         smtpTo);
+    const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+    if (appName       !== undefined) db.settings.set('wl_app_name',     str(appName, 100));
+    if (appTagline    !== undefined) db.settings.set('wl_app_tagline',  str(appTagline, 500));
+    if (accentColor   !== undefined) db.settings.set('wl_accent_color', str(accentColor, 20));
+    if (theme         !== undefined) db.settings.set('ui_theme',        str(theme, 20));
+    if (timeFormat    !== undefined) db.settings.set('ui_time_format',  str(timeFormat, 10));
+    if (webhookUrl    !== undefined) db.settings.set('webhook_url',     str(webhookUrl, 1000));
+    if (webhookSecret !== undefined) setSecret(db, 'webhook_secret',  str(webhookSecret, 500));
+    if (smtpHost      !== undefined) db.settings.set('smtp_host',       str(smtpHost, 255));
+    if (smtpPort      !== undefined) db.settings.set('smtp_port',       String(parseInt(smtpPort) || 587));
+    if (smtpUser      !== undefined) db.settings.set('smtp_user',       str(smtpUser, 256));
+    if (smtpPass      !== undefined) setSecret(db, 'smtp_pass',       str(smtpPass, 500));
+    if (smtpFrom      !== undefined) db.settings.set('smtp_from',       str(smtpFrom, 256));
+    if (smtpTo        !== undefined) db.settings.set('smtp_to',         str(smtpTo, 256));
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -110,7 +112,7 @@ router.put('/settings', adminOnly, (req, res) => {
 });
 
 // POST /api/system/webhook-test - Send a test webhook notification
-router.post('/webhook-test', async (req, res) => {
+router.post('/webhook-test', adminOnly, async (req, res) => {
   try {
     const result = await sendWebhook('Shipyard Test', 'This is a test notification from Shipyard.', true);
     if (result && result.ok === false) {
@@ -123,7 +125,7 @@ router.post('/webhook-test', async (req, res) => {
 });
 
 // POST /api/system/smtp-test - Send a test email
-router.post('/smtp-test', async (req, res) => {
+router.post('/smtp-test', adminOnly, async (req, res) => {
   try {
     await sendEmail('Shipyard Test', 'This is a test email from Shipyard.', true);
     res.json({ success: true });
@@ -144,7 +146,7 @@ router.get('/polling-config', (req, res) => {
 });
 
 // PUT /api/system/polling-config
-router.put('/polling-config', (req, res) => {
+router.put('/polling-config', adminOnly, (req, res) => {
   const { info, updates, imageUpdates, customUpdates } = req.body;
   const save = (key, val) => { if (val !== undefined) db.settings.set(key, String(val)); };
   if (info)          { save('poll_info_enabled', info.enabled ? '1' : '0');                   save('poll_info_interval_min', Math.max(1, parseInt(info.intervalMin) || 5)); }
@@ -156,13 +158,13 @@ router.put('/polling-config', (req, res) => {
 });
 
 // POST /api/system/onboarding-complete – mark first-run wizard as done
-router.post('/onboarding-complete', (req, res) => {
+router.post('/onboarding-complete', adminOnly, (req, res) => {
   db.settings.set('onboarding_done', '1');
   res.json({ success: true });
 });
 
 // GET /api/system/audit - Recent audit log entries
-router.get('/audit', (req, res) => {
+router.get('/audit', adminOnly, (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 100, 500);
     res.json(db.auditLog.getRecent(limit));

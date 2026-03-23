@@ -1,4 +1,4 @@
-const { spawn, execSync } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const fs   = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
@@ -62,7 +62,7 @@ function syncAllFromGit(workspaces) {
 const https = require('https');
 const http  = require('http');
 const { promisify } = require('util');
-const execAsync = promisify(require('child_process').exec);
+const execFileAsync = promisify(require('child_process').execFile);
 
 function _downloadFile(url, dest, redirects = 0) {
   if (redirects > 5) return Promise.reject(new Error('Too many redirects'));
@@ -159,7 +159,7 @@ function register({ router, db, broadcast }) {
       return TOFU_INSTALL_PATH;
     }
     for (const bin of ['tofu', 'opentofu', 'terraform']) {
-      try { execSync(`which ${bin}`, { stdio: 'ignore' }); _cachedBinary = bin; return bin; } catch {}
+      try { execFileSync('which', [bin], { stdio: 'ignore' }); _cachedBinary = bin; return bin; } catch {}
     }
     _cachedBinary = null; return null;
   }
@@ -167,11 +167,11 @@ function register({ router, db, broadcast }) {
   function getVersion(bin) {
     if (_cachedVersion !== undefined) return _cachedVersion;
     try {
-      const raw = execSync(`${bin} version -json`, { encoding: 'utf8', timeout: 5000 });
+      const raw = execFileSync(bin, ['version', '-json'], { encoding: 'utf8', timeout: 5000 });
       const parsed = JSON.parse(raw);
       _cachedVersion = parsed.terraform_version || parsed.tofu_version || null;
     } catch {
-      try { _cachedVersion = execSync(`${bin} version`, { encoding: 'utf8', timeout: 5000 }).split('\n')[0].trim(); }
+      try { _cachedVersion = execFileSync(bin, ['version'], { encoding: 'utf8', timeout: 5000 }).split('\n')[0].trim(); }
       catch { _cachedVersion = null; }
     }
     return _cachedVersion;
@@ -186,14 +186,16 @@ function register({ router, db, broadcast }) {
     } catch {}
   }
 
-  const BLOCKED_ENV_VARS = new Set([
-    'LD_PRELOAD','LD_LIBRARY_PATH','PATH','NODE_OPTIONS',
-    'HOME','USER','SHELL','HOSTNAME','PWD',
-    'JWT_SECRET','SHIPYARD_KEY_SECRET','GIT_SSH_COMMAND',
-    'BASH_ENV','ENV','CDPATH',
-    'HTTP_PROXY','HTTPS_PROXY','NO_PROXY',
-    'SSL_CERT_FILE','SSL_CERT_DIR','NODE_EXTRA_CA_CERTS',
-  ]);
+  // Allowlist prefixes for environment variables passed to OpenTofu/Terraform
+  const ALLOWED_ENV_PREFIXES = [
+    'TF_VAR_', 'TF_CLI_', 'TF_LOG', 'TF_INPUT', 'TF_IN_AUTOMATION',
+    'AWS_', 'ARM_', 'AZURE_', 'GOOGLE_', 'GCLOUD_', 'GCP_', 'CLOUDSDK_',
+    'HCLOUD_', 'DO_', 'DIGITALOCEAN_', 'PROXMOX_',
+    'VAULT_', 'CONSUL_', 'NOMAD_',
+    'ALICLOUD_', 'OCI_', 'IBM_',
+    'SCW_', 'LINODE_', 'VULTR_',
+    'CLOUDFLARE_', 'GITHUB_TOKEN',
+  ];
 
   const ALLOWED_PATH_PREFIXES = ['/opt/','/srv/','/home/','/var/lib/','/app/','/workspaces/'];
 
@@ -418,7 +420,11 @@ override.tf.json
     if (!vars || typeof vars !== 'object') return {};
     const clean = {};
     for (const [k, v] of Object.entries(vars)) {
-      if (!BLOCKED_ENV_VARS.has(k.toUpperCase()) && typeof v === 'string') clean[k] = v;
+      if (typeof v !== 'string') continue;
+      const upper = k.toUpperCase();
+      if (ALLOWED_ENV_PREFIXES.some(prefix => upper.startsWith(prefix) || upper === prefix.replace(/_$/, ''))) {
+        clean[k] = v;
+      }
     }
     return clean;
   }
@@ -723,7 +729,7 @@ override.tf.json
       return res.json({ resources: [], error: `Path "${workspace.path}" does not exist inside the container.` });
     }
     try {
-      const raw = execSync(`${binary} state list -no-color`, {
+      const raw = execFileSync(binary, ['state', 'list', '-no-color'], {
         cwd: workspace.path,
         env: { ...process.env, ...workspace.env_vars },
         encoding: 'utf8',
@@ -759,14 +765,15 @@ override.tf.json
     const arch     = process.arch === 'arm64' ? 'arm64' : 'amd64';
     const filename = `tofu_${version}_linux_${arch}.zip`;
     const url      = `https://github.com/opentofu/opentofu/releases/download/v${version}/${filename}`;
-    const tmpZip   = `/tmp/tofu_install_${version}.zip`;
+    const tmpZip   = `/tmp/tofu_install_${version}_${randomUUID().slice(0, 8)}.zip`;
     const installDir  = '/app/server/data/bin';
     const installPath = `${installDir}/tofu`;
 
     try {
       fs.mkdirSync(installDir, { recursive: true });
       await _downloadFile(url, tmpZip);
-      await execAsync(`unzip -o "${tmpZip}" tofu -d "${installDir}" && chmod +x "${installPath}"`);
+      await execFileAsync('unzip', ['-o', tmpZip, 'tofu', '-d', installDir]);
+      fs.chmodSync(installPath, 0o755);
       try { fs.unlinkSync(tmpZip); } catch {}
       // Invalidate binary cache so next call picks up new binary
       _cachedBinary  = undefined;

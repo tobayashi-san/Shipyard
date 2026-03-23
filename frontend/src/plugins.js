@@ -2,6 +2,7 @@ import { api }       from './api.js';
 import { state }     from './main.js';
 import { onWsMessage } from './websocket.js';
 import { showToast, showConfirm } from './components/toast.js';
+import { esc }       from './utils/format.js';
 
 let _activePlugin = null; // { id, mod }
 
@@ -62,15 +63,15 @@ export async function renderPlugin(pluginId) {
         onWsMessage,
       });
     } else {
-      container.innerHTML = `<div class="empty-state"><p>Plugin <strong>${pluginId}</strong> has no UI (missing <code>mount()</code> export).</p></div>`;
+      container.innerHTML = `<div class="empty-state"><p>Plugin <strong>${esc(pluginId)}</strong> has no UI (missing <code>mount()</code> export).</p></div>`;
     }
   } catch (e) {
     console.error(`[plugins] Failed to load plugin "${pluginId}":`, e);
     container.innerHTML = `
       <div class="empty-state">
         <i class="fas fa-puzzle-piece" style="font-size:2rem;margin-bottom:12px;opacity:.4;"></i>
-        <p>Failed to load plugin <strong>${pluginId}</strong>.</p>
-        <p style="font-size:12px;color:var(--text-muted);margin-top:4px;">${e.message}</p>
+        <p>Failed to load plugin <strong>${esc(pluginId)}</strong>.</p>
+        <p style="font-size:12px;color:var(--text-muted);margin-top:4px;">${esc(e.message)}</p>
       </div>`;
   }
 }

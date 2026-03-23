@@ -5,6 +5,7 @@
 const https = require('https');
 const http = require('http');
 const db = require('../db');
+const { getSecret } = require('../utils/crypto');
 
 // ── Webhook ────────────────────────────────────────────────────────────────
 
@@ -12,7 +13,7 @@ async function sendWebhook(title, message, success) {
   const url = db.settings.get('webhook_url');
   if (!url) return;
 
-  const secret = db.settings.get('webhook_secret') || '';
+  const secret = getSecret(db, 'webhook_secret') || '';
   let payload;
 
   try {
@@ -79,7 +80,7 @@ async function sendEmail(title, message, success) {
 
   const port     = parseInt(db.settings.get('smtp_port') || '587');
   const user     = db.settings.get('smtp_user') || '';
-  const pass     = db.settings.get('smtp_pass') || '';
+  const pass     = getSecret(db, 'smtp_pass') || '';
   const from     = db.settings.get('smtp_from') || user;
   const secure   = port === 465;
 
@@ -89,6 +90,9 @@ async function sendEmail(title, message, success) {
     secure,
     auth: user ? { user, pass } : undefined,
     tls: { rejectUnauthorized: !secure },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
   });
 
   function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }

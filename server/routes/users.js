@@ -2,13 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const db = require('../db');
-
-function adminOnly(req, res, next) {
-  if (req.user?.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
-  next();
-}
+const { adminOnly } = require('../middleware/auth');
 
 // GET /api/users – list all users (no password_hash)
 router.get('/', adminOnly, (req, res) => {
@@ -85,6 +79,7 @@ router.put('/:id/password', adminOnly, async (req, res) => {
   try {
     const hash = await bcrypt.hash(password, 12);
     db.users.setPasswordHash(id, hash);
+    db.users.incrementTokenVersion(id);
     // Keep legacy settings in sync if resetting admin
     if (user.role === 'admin') {
       db.settings.set('auth_password_hash', hash);

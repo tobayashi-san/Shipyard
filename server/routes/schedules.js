@@ -6,13 +6,13 @@ const scheduler = require('../services/scheduler');
 const { getPermissions, can } = require('../utils/permissions');
 
 // GET /api/schedules — list all
-router.get('/', (req, res) => {
+router.get('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canViewSchedules')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   const schedules = db.schedules.getAll();
   res.json(schedules);
 });
 
 // GET /api/schedules/:id — single
-router.get('/:id', (req, res) => {
+router.get('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'canViewSchedules')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   const schedule = db.schedules.getById(req.params.id);
   if (!schedule) return res.status(404).json({ error: 'Schedule not found' });
   res.json(schedule);
@@ -45,9 +45,18 @@ router.put('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'can
 
   const { name, playbook, targets, cronExpression, enabled } = req.body;
   const fields = {};
-  if (name !== undefined) fields.name = name;
-  if (playbook !== undefined) fields.playbook = playbook;
-  if (targets !== undefined) fields.targets = targets;
+  if (name !== undefined) {
+    if (typeof name !== 'string' || name.length > 100) return res.status(400).json({ error: 'Invalid name' });
+    fields.name = name;
+  }
+  if (playbook !== undefined) {
+    if (typeof playbook !== 'string' || playbook.length > 200) return res.status(400).json({ error: 'Invalid playbook' });
+    fields.playbook = playbook;
+  }
+  if (targets !== undefined) {
+    if (typeof targets !== 'string' || targets.length > 500) return res.status(400).json({ error: 'Invalid targets' });
+    fields.targets = targets;
+  }
   if (cronExpression !== undefined) {
     if (!cron.validate(cronExpression)) {
       return res.status(400).json({ error: 'Invalid cron expression' });

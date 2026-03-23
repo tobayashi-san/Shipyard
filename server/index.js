@@ -169,7 +169,7 @@ app.get('/plugins/:pluginId/ui.js', (req, res) => {
   res.sendFile(uiPath);
 });
 
-const { getPermissions, filterServers, filterPlugins, can } = require('./utils/permissions');
+const { getPermissions, filterServers, filterPlugins, can, guardServerAccess } = require('./utils/permissions');
 
 // GET /api/dashboard – aggregated stats from DB cache (no SSH, instant)
 app.get('/api/dashboard', (req, res) => {
@@ -231,11 +231,15 @@ app.get('/api/dashboard', (req, res) => {
     `).all();
 
     // Restrict to entries belonging to servers the user can access.
-    // For non-server entries (bulk_update, ansible runs with targets like 'all'),
-    // only show them to users with full access.
+    // Only apply filter when the user has a specific server restriction (not 'all').
+    // Match both by server UUID and by server name (ansible runs store name as server_id).
+    const isServerRestricted = perms && !perms.full && perms.servers !== 'all' && perms.servers != null;
     const allowedServerIds = new Set(servers.map(s => s.id));
-    const recentHistory = (perms && !perms.full)
-      ? allRecentHistory.filter(h => allowedServerIds.has(h.server_id)).slice(0, 8)
+    const allowedServerNames = new Set(servers.map(s => s.name));
+    const recentHistory = isServerRestricted
+      ? allRecentHistory.filter(h =>
+          allowedServerIds.has(h.server_id) || allowedServerNames.has(h.server_id)
+        ).slice(0, 8)
       : allRecentHistory.slice(0, 8);
 
     res.json({
@@ -269,6 +273,14 @@ const customUpdateRunLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
   message: { error: 'Too many update executions. Please wait.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const composeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 15,
+  message: { error: 'Too many compose requests. Please wait.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -325,13 +337,12 @@ app.post('/api/ansible/run', async (req, res) => {
 });
 
 // POST /api/servers/:id/update - Run system update on a server
-app.post('/api/servers/:id/update', (req, res, next) => {
+app.post('/api/servers/:id/update', guardServerAccess, (req, res, next) => {
   if (!can(getPermissions(req.user), 'canRunUpdates')) return res.status(403).json({ error: 'Permission denied' });
   next();
 }, async (req, res) => {
   const serverId = req.params.id;
-  const server = db.servers.getById(serverId);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
+  const server = req.server;
 
   const historyId = db.updateHistory.create(serverId, 'system_update');
 
@@ -390,13 +401,12 @@ app.post('/api/servers/update-all', (req, res, next) => {
 });
 
 // POST /api/servers/:id/reboot - Reboot a server using ansible ad-hoc
-app.post('/api/servers/:id/reboot', rebootLimiter, (req, res, next) => {
+app.post('/api/servers/:id/reboot', guardServerAccess, rebootLimiter, (req, res, next) => {
   if (!can(getPermissions(req.user), 'canRebootServers')) return res.status(403).json({ error: 'Permission denied' });
   next();
 }, async (req, res) => {
   const serverId = req.params.id;
-  const server = db.servers.getById(serverId);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
+  const server = req.server;
 
   const historyId = db.updateHistory.create(serverId, 'reboot');
   res.json({ historyId, status: 'started' });
@@ -432,14 +442,13 @@ app.post('/api/servers/:id/reboot', rebootLimiter, (req, res, next) => {
 });
 
 // POST /api/servers/:id/docker/:container/restart - Restart a docker container
-app.post('/api/servers/:id/docker/:container/restart', containerRestartLimiter, (req, res, next) => {
-  if (!can(getPermissions(req.user), 'canManageDocker')) return res.status(403).json({ error: 'Permission denied' });
+app.post('/api/servers/:id/docker/:container/restart', guardServerAccess, containerRestartLimiter, (req, res, next) => {
+  if (!can(getPermissions(req.user), 'canRestartDocker')) return res.status(403).json({ error: 'Permission denied' });
   next();
 }, async (req, res) => {
   const { id: serverId, container } = req.params;
   if (!/^[a-zA-Z0-9_.-]+$/.test(container)) return res.status(400).json({ error: 'Invalid container name' });
-  const server = db.servers.getById(serverId);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
+  const server = req.server;
 
   const historyId = db.updateHistory.create(serverId, `restart_docker_${container}`);
   res.json({ historyId, status: 'started' });
@@ -467,12 +476,11 @@ app.post('/api/servers/:id/docker/:container/restart', containerRestartLimiter, 
 
 
 // POST /api/servers/:id/custom-updates/:taskId/run
-app.post('/api/servers/:id/custom-updates/:taskId/run', customUpdateRunLimiter, (req, res, next) => {
+app.post('/api/servers/:id/custom-updates/:taskId/run', guardServerAccess, customUpdateRunLimiter, (req, res, next) => {
   if (!can(getPermissions(req.user), 'canRunCustomUpdates')) return res.status(403).json({ error: 'Permission denied' });
   next();
 }, async (req, res) => {
-  const server = db.servers.getById(req.params.id);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
+  const server = req.server;
   const task = db.customUpdateTasks.getById(req.params.taskId);
   if (!task || task.server_id !== server.id) return res.status(404).json({ error: 'Task not found' });
 
@@ -515,14 +523,13 @@ function isBlockedRemotePath(p) {
 }
 
 // POST /api/servers/:id/docker/compose/write
-app.post('/api/servers/:id/docker/compose/write', (req, res, next) => {
-  if (!can(getPermissions(req.user), 'canManageDocker')) return res.status(403).json({ error: 'Permission denied' });
+app.post('/api/servers/:id/docker/compose/write', composeLimiter, guardServerAccess, (req, res, next) => {
+  if (!can(getPermissions(req.user), 'canManageDockerCompose')) return res.status(403).json({ error: 'Permission denied' });
   next();
 }, async (req, res) => {
   const { id: serverId } = req.params;
   const { path, content } = req.body;
-  const server = db.servers.getById(serverId);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
+  const server = req.server;
   if (!path || !content) return res.status(400).json({ error: 'path and content required' });
   if (!/^[a-zA-Z0-9/_.-]+$/.test(path) || path.includes('..')) return res.status(400).json({ error: 'Invalid path format' });
   if (isBlockedRemotePath(path)) return res.status(400).json({ error: 'Path not allowed: system directories are protected' });
@@ -556,15 +563,14 @@ app.post('/api/servers/:id/docker/compose/write', (req, res, next) => {
 });
 
 // POST /api/servers/:id/docker/compose/action
-app.post('/api/servers/:id/docker/compose/action', (req, res, next) => {
-  if (!can(getPermissions(req.user), 'canManageDocker')) return res.status(403).json({ error: 'Permission denied' });
-  next();
-}, async (req, res) => {
+app.post('/api/servers/:id/docker/compose/action', composeLimiter, guardServerAccess, async (req, res) => {
   const { id: serverId } = req.params;
   const { path, action } = req.body;
-  const server = db.servers.getById(serverId);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
+  const perms = getPermissions(req.user);
   if (!path || !['up', 'down', 'pull'].includes(action)) return res.status(400).json({ error: 'Invalid path or action' });
+  const requiredCap = action === 'pull' ? 'canPullDocker' : 'canManageDockerCompose';
+  if (!can(perms, requiredCap)) return res.status(403).json({ error: 'Permission denied' });
+  const server = req.server;
   if (!/^[a-zA-Z0-9/_.-]+$/.test(path) || path.includes('..')) return res.status(400).json({ error: 'Invalid path format' });
   if (isBlockedRemotePath(path)) return res.status(400).json({ error: 'Path not allowed: system directories are protected' });
 
@@ -615,6 +621,13 @@ wssSsh.on('connection', (ws, req) => {
   const serverId = url.searchParams.get('serverId');
   const server   = db.servers.getById(serverId);
   if (!server) { ws.close(4004, 'Server not found'); return; }
+
+  // Check server access
+  const perms = getPermissions(wsUser);
+  if (perms && !perms.full) {
+    const allowed = filterServers([server], perms);
+    if (allowed.length === 0) { ws.close(4003, 'Server access denied'); return; }
+  }
 
   let privateKey;
   try { privateKey = sshManager.getPrivateKey(); }
@@ -684,13 +697,23 @@ wssSsh.on('connection', (ws, req) => {
 });
 
 // WebSocket handling
-const clients = new Set();
+const clients = new Map(); // ws -> { user, perms }
 
 function verifyWsAuth(ws, url) {
-  const passwordHash = db.settings.get('auth_password_hash');
-  if (!passwordHash) return true;
+  if (db.users.count() === 0) return true;
   const secret = getJwtSecret();
-  try { jwt.verify(url.searchParams.get('token'), secret); return true; }
+  try {
+    const payload = jwt.verify(url.searchParams.get('token'), secret);
+    // Validate token_version if present
+    if (payload.userId) {
+      const user = db.users.getById(payload.userId);
+      if (!user) { ws.close(4001, 'Unauthorized'); return false; }
+      if (payload.tv !== undefined && payload.tv !== (user.token_version || 0)) {
+        ws.close(4001, 'Token revoked'); return false;
+      }
+    }
+    return true;
+  }
   catch { ws.close(4001, 'Unauthorized'); return false; }
 }
 
@@ -711,7 +734,9 @@ wss.on('connection', (ws, req) => {
   const url = new URL(req.url, 'http://localhost');
   if (!verifyWsAuth(ws, url)) return;
 
-  clients.add(ws);
+  const wsUser = getWsUser(url);
+  const perms = getPermissions(wsUser);
+  clients.set(ws, { user: wsUser, perms });
   ws.on('close', () => clients.delete(ws));
   ws.on('error', () => clients.delete(ws));
 
@@ -725,10 +750,19 @@ wss.on('connection', (ws, req) => {
 
 function broadcast(data) {
   const msg = JSON.stringify(data);
-  for (const client of clients) {
-    if (client.readyState === 1) { // WebSocket.OPEN
-      client.send(msg);
+  for (const [client, meta] of clients) {
+    if (client.readyState !== 1) continue; // WebSocket.OPEN
+
+    // Filter server-specific messages for restricted users
+    if (data.serverId && meta.perms && !meta.perms.full) {
+      const server = db.servers.getById(data.serverId);
+      if (server) {
+        const allowed = filterServers([server], meta.perms);
+        if (allowed.length === 0) continue;
+      }
     }
+
+    client.send(msg);
   }
 }
 
@@ -769,6 +803,7 @@ process.on('SIGINT', () => {
   console.log('\nShutting down...');
   require('./services/scheduler').stopPolling();
   sshManager.closeAll();
+  try { db.db.close(); } catch {}
   server.close();
   process.exit(0);
 });

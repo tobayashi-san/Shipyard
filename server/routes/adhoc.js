@@ -1,6 +1,16 @@
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const ansibleRunner = require('../services/ansible-runner');
+const { getPermissions, can } = require('../utils/permissions');
+
+const adhocLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: { error: 'Too many ad-hoc requests. Please wait.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const ALLOWED_MODULES = new Set([
   'ping', 'setup',
@@ -13,7 +23,10 @@ const ALLOWED_MODULES = new Set([
 ]);
 
 // POST /api/adhoc/run
-router.post('/run', async (req, res) => {
+router.post('/run', adhocLimiter, (req, res, next) => {
+  if (!can(getPermissions(req.user), 'canRunPlaybooks')) return res.status(403).json({ error: 'Permission denied' });
+  next();
+}, async (req, res) => {
   const { targets, module: mod, args } = req.body;
 
   if (!mod || typeof mod !== 'string') return res.status(400).json({ error: 'module required' });

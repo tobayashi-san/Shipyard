@@ -1158,8 +1158,11 @@ async function loadRolesTab() {
         { key: 'canEditServers',          label: 'Edit servers' },
         { key: 'canDeleteServers',        label: 'Delete servers' },
         { key: 'canUseTerminal',          label: 'SSH terminal' },
-        { key: 'canManageDocker',         label: 'Docker (logs, restart, compose)' },
         { key: 'canExportImportServers',  label: 'Export / Import servers' },
+        { key: 'canViewDocker',           label: 'Docker: view containers & logs' },
+        { key: 'canPullDocker',           label: 'Docker: pull images & check updates' },
+        { key: 'canRestartDocker',        label: 'Docker: restart containers' },
+        { key: 'canManageDockerCompose',  label: 'Docker: manage compose stacks (up/down/edit)' },
       ]},
       { label: 'Playbooks', caps: [
         { key: 'canViewPlaybooks',   label: 'View playbooks' },

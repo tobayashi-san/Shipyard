@@ -2,10 +2,27 @@ const express    = require('express');
 const router     = express.Router();
 const db         = require('../db');
 const { adminOnly } = require('../middleware/auth');
+const { ALLOWED_PERMISSION_KEYS } = require('../utils/permissions');
 
 function parse(role) {
   try { return { ...role, permissions: JSON.parse(role.permissions || '{}') }; }
   catch { return { ...role, permissions: {} }; }
+}
+
+// Strip unknown keys and enforce correct types to prevent privilege escalation
+function sanitizePermissions(perms) {
+  if (!perms || typeof perms !== 'object' || Array.isArray(perms)) return {};
+  const clean = {};
+  for (const [k, v] of Object.entries(perms)) {
+    if (k === 'servers' || k === 'playbooks' || k === 'plugins') {
+      // These accept 'all' or structured objects — pass through
+      clean[k] = v;
+    } else if (ALLOWED_PERMISSION_KEYS.has(k)) {
+      clean[k] = !!v; // boolean only
+    }
+    // Unknown keys like 'full' are silently dropped
+  }
+  return clean;
 }
 
 // GET /api/roles
@@ -19,7 +36,7 @@ router.post('/', adminOnly, (req, res) => {
   const { name, permissions } = req.body;
   if (!name || !String(name).trim()) return res.status(400).json({ error: 'name required' });
   try {
-    const role = db.roles.create(name.trim(), permissions || {});
+    const role = db.roles.create(name.trim(), sanitizePermissions(permissions));
     db.auditLog.write('roles.create', `Created role: ${name}`, req.ip);
     res.status(201).json(parse(role));
   } catch (e) {
@@ -36,7 +53,7 @@ router.put('/:id', adminOnly, (req, res) => {
   const { name, permissions } = req.body;
   if (!name || !String(name).trim()) return res.status(400).json({ error: 'name required' });
   try {
-    const updated = db.roles.update(req.params.id, name.trim(), permissions || {});
+    const updated = db.roles.update(req.params.id, name.trim(), sanitizePermissions(permissions));
     db.auditLog.write('roles.update', `Updated role: ${req.params.id}`, req.ip);
     res.json(parse(updated));
   } catch (e) {

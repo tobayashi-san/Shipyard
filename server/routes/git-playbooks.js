@@ -2,6 +2,11 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const gitSync = require('../services/git-sync');
+const { adminOnly } = require('../middleware/auth');
+const { setSecret } = require('../utils/crypto');
+
+// All git-playbooks routes are admin-only
+router.use(adminOnly);
 
 // GET /api/playbooks-git/config
 router.get('/config', (req, res) => {
@@ -57,7 +62,7 @@ router.put('/config', (req, res) => {
   if (autoPush  !== undefined) db.settings.set('git_auto_push',  autoPush  ? '1' : '0');
   if (userName  !== undefined) db.settings.set('git_user_name',  userName);
   if (userEmail !== undefined) db.settings.set('git_user_email', userEmail);
-  if (authToken !== undefined) db.settings.set('git_auth_token', authToken);
+  if (authToken !== undefined) setSecret(db, 'git_auth_token', authToken);
   res.json({ success: true });
 });
 

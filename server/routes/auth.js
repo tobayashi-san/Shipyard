@@ -12,6 +12,9 @@ const { getJwtSecret } = require('../utils/jwt-secret');
 
 const isTest = process.env.NODE_ENV === 'test';
 
+// Dummy hash for constant-time comparison when user not found (prevents timing attacks)
+const DUMMY_HASH = '$2a$12$LJ3m4ys3Rl4Eqb4oNaeyxOV2OVXjoAiGxvuoQDcxXnQmYVG.gu0Vu';
+
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
@@ -37,7 +40,7 @@ function verifyTotp(code, secret) {
 
 function makeToken(user) {
   return jwt.sign(
-    { userId: user.id, username: user.username, role: user.role },
+    { userId: user.id, username: user.username, role: user.role, tv: user.token_version || 0 },
     getJwtSecret(),
     { expiresIn: '8h' }
   );
@@ -137,11 +140,14 @@ router.post('/login', loginLimiter, async (req, res) => {
   if (!user) {
     // Fallback to legacy settings-based auth
     const hash = db.settings.get('auth_password_hash');
-    if (!hash) return res.status(400).json({ error: 'No password configured' });
+    if (!hash) {
+      // Still do a dummy compare to prevent timing leaks
+      await bcrypt.compare(password, DUMMY_HASH);
+      return res.status(401).json({ error: 'Incorrect credentials' });
+    }
     const valid = await bcrypt.compare(password, hash);
     if (!valid) {
       db.auditLog.write('auth.login', 'Failed login attempt', req.ip, false);
-      await new Promise(r => setTimeout(r, 500));
       return res.status(401).json({ error: 'Incorrect credentials' });
     }
     // Legacy 2FA check
@@ -155,10 +161,9 @@ router.post('/login', loginLimiter, async (req, res) => {
     return res.json({ token });
   }
 
-  const valid = await bcrypt.compare(password, user.password_hash);
+  const valid = await bcrypt.compare(password, user.password_hash || DUMMY_HASH);
   if (!valid) {
     db.auditLog.write('auth.login', `Failed login attempt for ${user.username}`, req.ip, false);
-    await new Promise(r => setTimeout(r, 500));
     return res.status(401).json({ error: 'Incorrect credentials' });
   }
 
@@ -208,11 +213,12 @@ router.post('/change', changeLimiter, authMiddleware, async (req, res) => {
   if (req.user.role === 'admin') {
     db.settings.set('auth_password_hash', newHash);
   }
-  // Rotate JWT secret so all existing tokens are invalidated immediately
-  const newSecret = crypto.randomBytes(64).toString('hex');
-  db.settings.set('auth_jwt_secret', newSecret);
-  db.auditLog.write('auth.change', `Password changed for ${req.user.username}, all tokens invalidated`, req.ip);
-  res.json({ success: true });
+  // Increment per-user token version to invalidate only this user's tokens
+  db.users.incrementTokenVersion(userId);
+  db.auditLog.write('auth.change', `Password changed for ${req.user.username}, user tokens invalidated`, req.ip);
+  // Issue a fresh token so the user isn't logged out
+  const updatedUser = db.users.getById(userId);
+  res.json({ success: true, token: makeToken(updatedUser) });
 });
 
 // ── TOTP / 2FA ───────────────────────────────────────────────

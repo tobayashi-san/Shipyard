@@ -15,7 +15,7 @@ function validateKey(key) {
 }
 
 // GET /api/ansible-vars
-router.get('/', (req, res) => {
+router.get('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canViewVars')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   res.json(db.ansibleVars.getAll());
 });
 
