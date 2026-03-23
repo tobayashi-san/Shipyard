@@ -23,7 +23,7 @@ function toUtcDate(s) {
 }
 
 function h12() {
-  return state.whiteLabel?.timeFormat === '12h';
+  return (localStorage.getItem('timeFormat') || '24h') === '12h';
 }
 
 /** dd.mm.yyyy hh:mm  (with year) */

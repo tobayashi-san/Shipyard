@@ -36,7 +36,7 @@ export function applyWhiteLabel() {
     document.documentElement.style.setProperty('--accent-hover', shadeColor(wl.accentColor, -15));
     document.documentElement.style.setProperty('--accent-light', hexToLight(wl.accentColor));
   }
-  document.documentElement.dataset.theme = wl.theme || 'auto';
+  document.documentElement.dataset.theme = localStorage.getItem('theme') || 'auto';
 }
 
 function shadeColor(hex, pct) {

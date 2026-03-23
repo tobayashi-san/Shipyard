@@ -23,6 +23,8 @@ export function showProfileMenu() {
   const trigger = document.getElementById('sidebar-profile-btn');
   const rect = trigger?.getBoundingClientRect();
   const currentLang = getLang();
+  const currentTheme = localStorage.getItem('theme') || 'auto';
+  const currentTimeFormat = localStorage.getItem('timeFormat') || '24h';
 
   _menuBackdrop = document.createElement('div');
   _menuBackdrop.style.cssText = 'position:fixed;inset:0;z-index:3099;';
@@ -78,6 +80,29 @@ export function showProfileMenu() {
           <button class="btn btn-sm ${currentLang === 'en' ? 'btn-primary' : 'btn-secondary'}" id="pmenu-lang-en" style="padding:2px 8px;font-size:11px;">EN</button>
         </div>
       </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;">
+        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-primary);">
+          <i class="fas fa-moon" style="width:16px;opacity:.7;"></i>
+          <span>Theme</span>
+        </div>
+        <div style="display:flex;gap:3px;" id="pmenu-theme-toggles">
+          <button class="btn btn-sm ${currentTheme === 'light' ? 'btn-primary' : 'btn-secondary'}" data-theme="light" style="padding:2px 8px;font-size:11px;"><i class="fas fa-sun"></i></button>
+          <button class="btn btn-sm ${currentTheme === 'dark' ? 'btn-primary' : 'btn-secondary'}" data-theme="dark" style="padding:2px 8px;font-size:11px;"><i class="fas fa-moon"></i></button>
+          <button class="btn btn-sm ${currentTheme === 'auto' ? 'btn-primary' : 'btn-secondary'}" data-theme="auto" style="padding:2px 8px;font-size:11px;">Auto</button>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;">
+        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-primary);">
+          <i class="fas fa-clock" style="width:16px;opacity:.7;"></i>
+          <span>Time Format</span>
+        </div>
+        <div style="display:flex;gap:3px;" id="pmenu-time-toggles">
+          <button class="btn btn-sm ${currentTimeFormat === '24h' ? 'btn-primary' : 'btn-secondary'}" data-time="24h" style="padding:2px 8px;font-size:11px;">24h</button>
+          <button class="btn btn-sm ${currentTimeFormat === '12h' ? 'btn-primary' : 'btn-secondary'}" data-time="12h" style="padding:2px 8px;font-size:11px;">12h</button>
+        </div>
+      </div>
     </div>
 
     <div style="padding:4px 0;border-top:1px solid var(--border);">
@@ -94,6 +119,23 @@ export function showProfileMenu() {
   document.getElementById('pmenu-settings').addEventListener('click', () => { closeMenu(); showProfileModal(); });
   document.getElementById('pmenu-lang-de').addEventListener('click', e => { e.stopPropagation(); setLang('de'); closeMenu(); showProfileMenu(); });
   document.getElementById('pmenu-lang-en').addEventListener('click', e => { e.stopPropagation(); setLang('en'); closeMenu(); showProfileMenu(); });
+  
+  document.querySelectorAll('#pmenu-theme-toggles button').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      localStorage.setItem('theme', btn.dataset.theme);
+      document.documentElement.dataset.theme = btn.dataset.theme;
+      closeMenu(); showProfileMenu();
+    });
+  });
+
+  document.querySelectorAll('#pmenu-time-toggles button').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      localStorage.setItem('timeFormat', btn.dataset.time);
+      closeMenu(); location.reload();
+    });
+  });
   document.getElementById('pmenu-signout').addEventListener('click', () => { api.setToken(null); location.reload(); });
 }
 
