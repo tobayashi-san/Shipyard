@@ -16,12 +16,11 @@ import { t } from './i18n.js';
 let _wsUnsub = null;
 
 // State
-// Returns true if the current user has the given capability
 export function hasCap(key) {
   const p = state.user?.permissions;
   if (!p) return false;     // not loaded yet → deny until profile is known
   if (p.full) return true;  // admin
-  return p[key] !== false;  // default true unless explicitly false
+  return !!p[key];          // strict truthy check (fail-closed)
 }
 
 export const state = {

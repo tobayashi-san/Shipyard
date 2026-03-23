@@ -1360,6 +1360,11 @@ async function loadRolesTab() {
 
     // Form tab switching — collect checked caps before switching so they survive re-render
     const savedCaps = {};
+    // Initialize with existing or default definitions to avoid data loss on unvisited tabs
+    capGroups.forEach(g => g.caps.forEach(c => {
+      savedCaps[c.key] = p[c.key] !== false;
+    }));
+
     function collectCaps() {
       area.querySelectorAll('.rf-cap-chk').forEach(chk => { savedCaps[chk.value] = chk.checked; });
     }
@@ -1368,7 +1373,7 @@ async function loadRolesTab() {
       if (!tab) return '';
       const restored = tab.caps.map(c => ({
         ...c,
-        checked: savedCaps[c.key] !== undefined ? savedCaps[c.key] : p[c.key] !== false,
+        checked: savedCaps[c.key],
       }));
       return `
         ${tab.accessSection}

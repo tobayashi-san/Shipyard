@@ -55,12 +55,13 @@ function getPermissions(user) {
   if (!user) return null;
   if (user.role === 'admin') return FULL;
   const role = db.roles.getById(user.role);
-  if (!role) return { servers: 'all', playbooks: 'all', plugins: 'all' };
+  if (!role) return { servers: [], playbooks: [], plugins: [] }; // Fail Closed!
   try {
     const p = JSON.parse(role.permissions || '{}');
-    return p.full ? FULL : p;
+    if (p.full) return FULL;
+    return { ...USER_DEFAULTS, ...p };
   } catch {
-    return { servers: 'all', playbooks: 'all', plugins: 'all' };
+    return { servers: [], playbooks: [], plugins: [] }; // Fail Closed!
   }
 }
 
@@ -92,8 +93,8 @@ function filterPlugins(plugins, permissions) {
 function can(permissions, capability) {
   if (!permissions) return false;
   if (permissions.full) return true;
-  // Only deny if explicitly set to false — mirrors frontend hasCap() behaviour
-  return permissions[capability] !== false;
+  // Fail-closed enforcement: Capability MUST be explicitly truthy in the permissions object.
+  return !!permissions[capability];
 }
 
 /**
