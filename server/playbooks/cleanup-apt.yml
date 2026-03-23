@@ -1,36 +1,30 @@
+# category: Maintenance
 ---
 - name: Cleanup APT Cache
   hosts: all
   become: true
-
   tasks:
-    - name: Skip non-Debian/Ubuntu systems
+    - name: Skip non-Debian systems
       meta: end_host
       when: ansible_os_family != "Debian"
-
-    - name: Get disk usage before
+    - name: Disk before
       command: df -h /
       register: before
       changed_when: false
-
     - name: Remove unused packages
       apt:
         autoremove: true
         purge: true
-
     - name: Clean APT cache
       apt:
         autoclean: true
-
-    - name: Clear downloaded package files
+    - name: Clear downloaded packages
       command: apt-get clean
       changed_when: false
-
-    - name: Get disk usage after
+    - name: Disk after
       command: df -h /
       register: after
       changed_when: false
-
     - name: Show result
       debug:
         msg:

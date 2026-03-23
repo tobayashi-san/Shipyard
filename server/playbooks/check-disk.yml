@@ -1,39 +1,33 @@
+# category: Maintenance
 ---
 - name: Check Disk Usage
   hosts: all
   become: true
-
   tasks:
     - name: Get disk usage
       command: df -h --output=source,fstype,size,used,avail,pcent,target -x tmpfs -x devtmpfs
       register: disk_usage
       changed_when: false
-
     - name: Print disk usage
       debug:
         msg: "{{ disk_usage.stdout_lines }}"
-
     - name: Find partitions over 80% full
       shell: df --output=pcent,target -x tmpfs -x devtmpfs | awk 'NR>1 && int($1) >= 80 {print}'
       register: critical_partitions
       changed_when: false
-
     - name: Warn about critical partitions
       debug:
         msg: "⚠️  WARNING – Partition nearly full: {{ item }}"
       loop: "{{ critical_partitions.stdout_lines }}"
       when: critical_partitions.stdout_lines | length > 0
-
     - name: All partitions healthy
       debug:
         msg: "✅ All partitions are below 80% usage"
       when: critical_partitions.stdout_lines | length == 0
-
-    - name: Show top 10 largest directories in /
+    - name: Top 10 largest directories
       shell: du -hx --max-depth=2 / 2>/dev/null | sort -rh | head -10
       register: top_dirs
       changed_when: false
-
     - name: Print largest directories
       debug:
         msg: "{{ top_dirs.stdout_lines }}"

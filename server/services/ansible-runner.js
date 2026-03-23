@@ -85,12 +85,16 @@ class AnsibleRunner {
         .filter(file => file.endsWith('.yml') || file.endsWith('.yaml'))
         .map(file => {
           const content = fs.readFileSync(path.join(PLAYBOOKS_DIR, file), 'utf8');
+          const lines = content.split('\n').slice(0, 6);
           // Try to extract name/description from the first play's "name" attribute
           const nameMatch = content.match(/-\s*name:\s*(.+)/);
           const description = nameMatch ? nameMatch[1].trim() : file;
+          // Parse optional # category: comment from the first few lines
+          const catLine = lines.find(l => /^#\s*category:/i.test(l));
+          const category = catLine ? catLine.replace(/^#\s*category:\s*/i, '').trim() : null;
           // Flag internal ones
           const isInternal = file === 'update.yml' || file === 'gather-docker.yml' || file === 'check-image-updates.yml';
-          return { filename: file, description, isInternal };
+          return { filename: file, description, isInternal, category };
         });
     } catch (e) {
       console.error('Error listing playbooks:', e);

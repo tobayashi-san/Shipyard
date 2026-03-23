@@ -1,16 +1,14 @@
+# category: Security
 ---
 - name: Firewall Setup (UFW)
   hosts: all
   become: true
   vars:
-    # Ports to allow — add or remove as needed
     allowed_tcp_ports:
-      - 22    # SSH — DO NOT REMOVE or you will be locked out!
-      - 80    # HTTP
-      - 443   # HTTPS
-    # Set to true to enable UFW after configuring rules
+      - 22
+      - 80
+      - 443
     enable_ufw: true
-
   tasks:
     - name: Install UFW
       apt:
@@ -18,44 +16,31 @@
         state: present
         update_cache: true
       when: ansible_os_family == "Debian"
-
-    - name: Reset UFW to clean state
+    - name: Reset UFW
       ufw:
         state: reset
-
-    - name: Set default incoming policy to deny
+    - name: Default deny incoming
       ufw:
         default: deny
         direction: incoming
-
-    - name: Set default outgoing policy to allow
+    - name: Default allow outgoing
       ufw:
         default: allow
         direction: outgoing
-
-    - name: Allow configured TCP ports
+    - name: Allow configured ports
       ufw:
         rule: allow
         port: "{{ item | string }}"
         proto: tcp
       loop: "{{ allowed_tcp_ports }}"
-
-    - name: Allow loopback interface
-      ufw:
-        rule: allow
-        interface: lo
-        direction: in
-
     - name: Enable UFW
       ufw:
         state: enabled
       when: enable_ufw
-
-    - name: Show final UFW status
+    - name: Final UFW status
       command: ufw status verbose
       register: ufw_final
       changed_when: false
-
-    - name: Print UFW status
+    - name: Print status
       debug:
         msg: "{{ ufw_final.stdout_lines }}"

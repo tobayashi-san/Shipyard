@@ -1,0 +1,65 @@
+# category: Install
+---
+- name: Install Docker Engine
+  hosts: all
+  become: true
+  tasks:
+    - name: Only run on Debian/Ubuntu
+      meta: end_host
+      when: ansible_os_family != "Debian"
+    - name: Check if Docker is already installed
+      command: docker --version
+      register: docker_check
+      ignore_errors: true
+      changed_when: false
+    - name: Already installed
+      debug:
+        msg: "Docker already installed: {{ docker_check.stdout }}"
+      when: docker_check.rc == 0
+    - name: Skip if already installed
+      meta: end_host
+      when: docker_check.rc == 0
+    - name: Remove old packages
+      apt:
+        name: [docker.io, docker-doc, docker-compose, podman-docker, containerd, runc]
+        state: absent
+        purge: true
+      ignore_errors: true
+    - name: Install prerequisites
+      apt:
+        name: [ca-certificates, curl, gnupg, lsb-release]
+        state: present
+        update_cache: true
+    - name: Create keyring directory
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+    - name: Download Docker GPG key
+      shell: |
+        curl -fsSL https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg -o /etc/apt/keyrings/docker.asc
+        chmod a+r /etc/apt/keyrings/docker.asc
+      args:
+        creates: /etc/apt/keyrings/docker.asc
+    - name: Add Docker APT repository
+      shell: |
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/{{ ansible_distribution | lower }} $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
+      args:
+        creates: /etc/apt/sources.list.d/docker.list
+    - name: Install Docker Engine
+      apt:
+        name: [docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin]
+        state: present
+        update_cache: true
+    - name: Enable and start Docker
+      systemd:
+        name: docker
+        state: started
+        enabled: true
+    - name: Verify installation
+      command: docker --version
+      register: docker_version
+      changed_when: false
+    - name: Print version
+      debug:
+        msg: "✅ Docker installed: {{ docker_version.stdout }}"

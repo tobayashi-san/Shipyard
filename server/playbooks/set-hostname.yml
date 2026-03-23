@@ -1,0 +1,31 @@
+# category: Network
+---
+- name: Set Hostname
+  hosts: all
+  become: true
+  vars:
+    new_hostname: "my-server"
+  tasks:
+    - name: Show current hostname
+      command: hostname
+      register: current_hostname
+      changed_when: false
+    - name: Print current hostname
+      debug:
+        msg: "Current hostname: {{ current_hostname.stdout }}"
+    - name: Set new hostname
+      hostname:
+        name: "{{ new_hostname }}"
+    - name: Update /etc/hosts
+      lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1'
+        line: "127.0.1.1\t{{ new_hostname }}"
+        state: present
+    - name: Confirm
+      command: hostname
+      register: new_hn
+      changed_when: false
+    - name: Print new hostname
+      debug:
+        msg: "✅ Hostname changed to: {{ new_hn.stdout }}"

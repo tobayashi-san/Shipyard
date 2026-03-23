@@ -1,0 +1,66 @@
+# category: Network
+---
+- name: Configure Static IP (Netplan)
+  hosts: all
+  become: true
+  vars:
+    network_interface: "eth0"
+    static_ip: "192.168.1.100"
+    prefix_length: 24
+    gateway: "192.168.1.1"
+    dns_servers:
+      - "1.1.1.1"
+      - "8.8.8.8"
+  tasks:
+    - name: Only run on Debian/Ubuntu with Netplan
+      meta: end_host
+      when: ansible_os_family != "Debian"
+    - name: Check Netplan is available
+      stat:
+        path: /etc/netplan
+      register: netplan_dir
+    - name: Abort if Netplan not found
+      fail:
+        msg: "Netplan not found — requires Ubuntu 18.04+"
+      when: not netplan_dir.stat.exists
+    - name: Show current IP
+      shell: ip -br addr show {{ network_interface }} | awk '{print $3}'
+      register: current_ip
+      changed_when: false
+      ignore_errors: true
+    - name: Print current IP
+      debug:
+        msg: "Current IP on {{ network_interface }}: {{ current_ip.stdout | default('unknown') }}"
+    - name: Backup existing Netplan configs
+      shell: |
+        for f in /etc/netplan/*.yaml /etc/netplan/*.yml; do
+          [ -f "$f" ] && cp "$f" "$f.bak.$(date +%Y%m%d%H%M%S)";
+        done
+      ignore_errors: true
+      changed_when: false
+    - name: Write new Netplan config
+      copy:
+        dest: /etc/netplan/99-static-ip.yaml
+        mode: '0600'
+        content: |
+          network:
+            version: 2
+            ethernets:
+              {{ network_interface }}:
+                dhcp4: false
+                addresses:
+                  - {{ static_ip }}/{{ prefix_length }}
+                routes:
+                  - to: default
+                    via: {{ gateway }}
+                nameservers:
+                  addresses:
+          {% for dns in dns_servers %}
+                    - {{ dns }}
+          {% endfor %}
+    - name: Apply Netplan
+      command: netplan apply
+      changed_when: true
+    - name: Confirm
+      debug:
+        msg: "✅ Static IP {{ static_ip }}/{{ prefix_length }} applied to {{ network_interface }}"

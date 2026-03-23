@@ -221,6 +221,10 @@ function renderTemplatesHTML() {
             <i class="fas fa-plus"></i> ${t('pb.new')}
           </button>` : ''}
         </div>
+        <div class="pb-search-wrap">
+          <i class="fas fa-search pb-search-icon"></i>
+          <input class="pb-search-input" id="pb-search" type="text" placeholder="Search playbooks…" autocomplete="off">
+        </div>
         <div id="playbook-list">
           <div class="loading-state"><div class="loader"></div> ${t('pb.loading')}</div>
         </div>
@@ -307,39 +311,93 @@ function renderTemplatesHTML() {
 async function loadPlaybookList() {
   const listEl = document.getElementById('playbook-list');
   if (!listEl) return;
+  let allPlaybooks = [];
   try {
-    const playbooks = await api.getPlaybooks();
-    if (!playbooks || playbooks.length === 0) {
+    allPlaybooks = await api.getPlaybooks();
+    if (!allPlaybooks || allPlaybooks.length === 0) {
       listEl.innerHTML = `<div class="empty-state" style="padding:20px;"><p>${t('pb.noPlaybooks')}.</p></div>`;
       return;
     }
-    const user = playbooks.filter(p => !p.isInternal);
-    const internal = playbooks.filter(p => p.isInternal);
-    let html = '';
-    if (user.length > 0) html += renderPlaybookGroup(t('pb.custom'), user, false);
-    if (internal.length > 0) html += renderPlaybookGroup(t('pb.internal'), internal, true);
-    listEl.innerHTML = html;
-
-    listEl.querySelectorAll('.playbook-item').forEach(item => {
-      if (!hasCap('canEditPlaybooks') && !hasCap('canDeletePlaybooks')) return;
-      item.style.cursor = 'pointer';
-      item.addEventListener('click', () => selectPlaybook(item.dataset.filename, item.dataset.internal === 'true'));
-    });
-    listEl.querySelectorAll('.btn-run-playbook').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openRunPanel(btn.dataset.filename, btn.dataset.description);
-      });
-    });
   } catch (e) {
     listEl.innerHTML = `<p style="padding:12px;color:var(--offline);">${t('pb.loadError', { msg: esc(e.message) })}</p>`;
+    return;
+  }
+
+  function renderList(query) {
+    const q = query.toLowerCase().trim();
+    const filtered = q
+      ? allPlaybooks.filter(p =>
+          p.description.toLowerCase().includes(q) ||
+          p.filename.toLowerCase().includes(q) ||
+          (p.category || '').toLowerCase().includes(q))
+      : allPlaybooks;
+
+    if (filtered.length === 0) {
+      listEl.innerHTML = `<div class="empty-state" style="padding:20px;"><p>Keine Ergebnisse.</p></div>`;
+      return;
+    }
+
+    const user = filtered.filter(p => !p.isInternal);
+    const internal = filtered.filter(p => p.isInternal);
+
+    // Group custom playbooks by category
+    const categoryMap = {};
+    user.forEach(p => {
+      const cat = p.category || 'Custom';
+      if (!categoryMap[cat]) categoryMap[cat] = [];
+      categoryMap[cat].push(p);
+    });
+
+    let html = '';
+    Object.keys(categoryMap).sort().forEach(cat => {
+      html += renderPlaybookGroup(cat, categoryMap[cat], false);
+    });
+    if (internal.length > 0) html += renderPlaybookGroup(t('pb.internal'), internal, true);
+    listEl.innerHTML = html;
+    wirePlaybookItems();
+  }
+
+  renderList('');
+
+  const searchEl = document.getElementById('pb-search');
+  if (searchEl) {
+    searchEl.addEventListener('input', () => renderList(searchEl.value));
   }
 }
 
+function wirePlaybookItems() {
+  const listEl = document.getElementById('playbook-list');
+  if (!listEl) return;
+  listEl.querySelectorAll('.playbook-item').forEach(item => {
+    if (!hasCap('canEditPlaybooks') && !hasCap('canDeletePlaybooks')) return;
+    item.style.cursor = 'pointer';
+    item.addEventListener('click', () => selectPlaybook(item.dataset.filename, item.dataset.internal === 'true'));
+  });
+  listEl.querySelectorAll('.btn-run-playbook').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openRunPanel(btn.dataset.filename, btn.dataset.description);
+    });
+  });
+}
+
 function renderPlaybookGroup(label, playbooks, isInternal) {
+  const iconMap = {
+    Maintenance: 'fa-broom',
+    Network: 'fa-network-wired',
+    Security: 'fa-shield-alt',
+    Install: 'fa-download',
+    System: 'fa-cog',
+    Custom: 'fa-code',
+  };
+  const icon = iconMap[label] || (isInternal ? 'fa-cogs' : 'fa-folder');
   return `
-    <div>
-      <div class="pb-group-title">${label}</div>
+    <div class="pb-category">
+      <div class="pb-category-header">
+        <i class="fas ${icon}"></i>
+        <span>${esc(label)}</span>
+        <span class="pb-category-count">${playbooks.length}</span>
+      </div>
       ${playbooks.map(p => `
         <div class="playbook-item" data-filename="${esc(p.filename)}" data-internal="${isInternal}">
           <div style="overflow:hidden;flex:1;min-width:0;">

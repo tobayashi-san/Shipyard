@@ -1,0 +1,42 @@
+# category: Network
+---
+- name: Network Info Report
+  hosts: all
+  become: true
+  tasks:
+    - name: Show all interfaces and IPs
+      shell: ip -br addr show
+      register: ip_addr
+      changed_when: false
+    - name: Print interfaces
+      debug:
+        msg: "{{ ip_addr.stdout_lines }}"
+    - name: Show routing table
+      command: ip route show
+      register: ip_route
+      changed_when: false
+    - name: Print routes
+      debug:
+        msg: "{{ ip_route.stdout_lines }}"
+    - name: Show DNS config
+      command: cat /etc/resolv.conf
+      register: dns_conf
+      changed_when: false
+    - name: Print DNS
+      debug:
+        msg: "{{ dns_conf.stdout_lines }}"
+    - name: Show hostname
+      command: hostname -f
+      register: fqdn
+      changed_when: false
+    - name: Print hostname
+      debug:
+        msg: "FQDN: {{ fqdn.stdout }}"
+    - name: Test external connectivity
+      command: ping -c 2 -W 2 1.1.1.1
+      register: ping_result
+      ignore_errors: true
+      changed_when: false
+    - name: Connectivity result
+      debug:
+        msg: "{{ '✅ External connectivity OK' if ping_result.rc == 0 else '❌ No external connectivity' }}"
