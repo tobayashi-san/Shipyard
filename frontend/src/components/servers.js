@@ -251,7 +251,12 @@ function attachEvents() {
       dropdown.style.position = 'fixed';
       dropdown.style.right = 'auto';
       dropdown.style.top = 'auto';
-      dropdown.style.left = (btnRect.right - 180) + 'px';
+
+      let posX = btnRect.right - 180;
+      if (posX < 8) posX = 8;
+      if (posX + 180 > window.innerWidth - 8) posX = window.innerWidth - 180 - 8;
+      dropdown.style.left = posX + 'px';
+      
       document.body.appendChild(dropdown);
       // After render, decide: open up or down
       const ddH = dropdown.offsetHeight;

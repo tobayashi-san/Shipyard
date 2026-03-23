@@ -44,6 +44,12 @@ export function navigate(view, params = {}) {
   if (params.serverId)  state.selectedServerId  = params.serverId;
   if (params.pluginId)  state.currentPluginId   = params.pluginId;
   render();
+
+  // Close mobile sidebar on navigation
+  const sb = document.getElementById('sidebar');
+  const overlay = document.getElementById('mobile-overlay');
+  if (sb) sb.classList.remove('mobile-open');
+  if (overlay) overlay.classList.remove('mobile-open');
 }
 
 // Render

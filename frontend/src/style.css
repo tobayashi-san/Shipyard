@@ -98,6 +98,13 @@ button:focus-visible, .btn:focus-visible, .form-input:focus-visible, .tab-btn:fo
 /* ============================================
    Sidebar
    ============================================ */
+.mobile-menu-btn {
+  display: none;
+}
+.mobile-overlay {
+  display: none;
+}
+
 .sidebar {
   width: var(--sidebar-width);
   background: var(--sidebar-bg);
@@ -107,7 +114,8 @@ button:focus-visible, .btn:focus-visible, .form-input:focus-visible, .tab-btn:fo
   overflow-y: auto;
   border-right: 1px solid rgba(255,255,255,0.08);
   box-shadow: 2px 0 12px rgba(0,0,0,0.35);
-  z-index: 10;
+  z-index: 2000;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .sidebar-header {
@@ -619,7 +627,7 @@ button:focus-visible, .btn:focus-visible, .form-input:focus-visible, .tab-btn:fo
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 3000;
   animation: fadeIn 150ms ease;
 }
 
@@ -909,7 +917,7 @@ button:focus-visible, .btn:focus-visible, .form-input:focus-visible, .tab-btn:fo
 /* Move-to-group dropdown */
 .move-dropdown {
   position: fixed;
-  z-index: 1050;
+  z-index: 4000;
   background: var(--bg-panel);
   border: 1px solid var(--border-section);
   border-radius: var(--radius);
@@ -2081,8 +2089,42 @@ input[type="color"].form-input::-moz-color-swatch {
 }
 
 @media (max-width: 768px) {
+  .mobile-menu-btn {
+    display: flex;
+    position: fixed;
+    top: 10px;
+    left: 12px;
+    z-index: 1000;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius);
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-sm);
+    cursor: pointer;
+  }
+  .mobile-overlay.mobile-open {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 1500;
+  }
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    transform: translateX(-100%);
+  }
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
   .page-header {
-    padding: 0 16px;
+    padding: 0 16px 0 58px;
     flex-wrap: wrap;
     gap: 8px;
     min-height: 52px;
