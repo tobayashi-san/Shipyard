@@ -142,6 +142,9 @@ export async function renderServerDetail(serverId) {
             <div class="panel">
               <div class="section-header">
                 <h3><i class="fas fa-chart-bar"></i> ${t('det.resources')}</h3>
+                <button class="btn btn-secondary btn-sm" id="btn-refresh-info" title="${t('common.refresh')}">
+                  <i class="fas fa-sync-alt"></i>
+                </button>
               </div>
               <div id="res-content">
                 <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
@@ -368,6 +371,10 @@ function renderServerInfo(info) {
   set('inf-load', info.load_avg || '—');
 
   // ── Stat cards ──────────────────────────────────────────────
+  const uptimeStatEl = document.getElementById('stat-uptime');
+  if (uptimeStatEl && info.uptime_seconds) {
+    uptimeStatEl.textContent = formatUptime(info.uptime_seconds);
+  }
 
   const resEl = document.getElementById('res-content');
   if (!resEl) return;
@@ -489,6 +496,21 @@ async function loadServerInfo(serverId) {
         .then(fresh => { if (fresh && document.getElementById('inf-status')) renderServerInfo(fresh); })
         .catch(() => {});
     }
+
+    // Reload button for Resources
+    document.getElementById('btn-refresh-info')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-refresh-info');
+      if (btn) { btn.disabled = true; btn.querySelector('i').classList.add('fa-spin'); }
+      const resEl = document.getElementById('res-content');
+      if (resEl) resEl.innerHTML = `<div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>`;
+      try {
+        const fresh = await api.getServerInfo(serverId, true);
+        if (fresh) renderServerInfo(fresh);
+      } catch (e) { showToast(t('common.errorPrefix', { msg: e.message }), 'error'); }
+      finally {
+        if (btn) { btn.disabled = false; btn.querySelector('i').classList.remove('fa-spin'); }
+      }
+    });
   } catch (e) {
     const el = document.getElementById('inf-status');
     if (el) el.innerHTML = `<span class="badge badge-offline">${t('common.errorPrefix', { msg: esc(e.message) })}</span>`;

@@ -666,6 +666,7 @@ const translations = {
 
     // ── Server Detail (extra 2) ───────────────────────────────
     'det.histPageInfo': '{from}–{to} von {total} Einträgen',
+    'det.recent': 'Letzte Einträge',
 
     // ── Schedules (extra) ─────────────────────────────────────
     'sc.namePlaceholder': 'z.B. Weekly Updates',
@@ -1358,6 +1359,7 @@ const translations = {
 
     // ── Server Detail (extra 2) ───────────────────────────────
     'det.histPageInfo': '{from}–{to} of {total} entries',
+    'det.recent': 'Recent Entries',
 
     // ── Schedules (extra) ─────────────────────────────────────
     'sc.namePlaceholder': 'e.g. Weekly Updates',
