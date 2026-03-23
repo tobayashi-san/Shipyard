@@ -2,6 +2,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { api } from '../api.js';
 import { t } from '../i18n.js';
+import { esc } from '../utils/format.js';
 import '@xterm/xterm/css/xterm.css';
 
 export function openSshTerminal(server) {
@@ -26,7 +27,7 @@ export function openSshTerminal(server) {
 
   modal.innerHTML = `
     <div class="ssh-terminal-header">
-      <span><i class="fas fa-terminal"></i>&nbsp; ${server.name} &middot; ${server.ip_address}</span>
+      <span><i class="fas fa-terminal"></i>&nbsp; ${esc(server.name)} &middot; ${esc(server.ip_address)}</span>
       <div style="display:flex;gap:10px;align-items:center;">
         <span id="ssh-status-dot" class="ssh-status-dot connecting"></span>
         <span id="ssh-status-text" style="font-size:12px;color:#8b949e;">${t('term.connecting')}</span>

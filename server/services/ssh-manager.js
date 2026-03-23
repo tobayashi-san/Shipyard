@@ -74,12 +74,14 @@ class SSHManager {
     const keyPath = path.join(SSH_DIR, name);
     const pubKeyPath = `${keyPath}.pub`;
 
-    if (fs.existsSync(keyPath)) {
+    if (fs.existsSync(keyPath) || fs.existsSync(keyPath + '.enc')) {
       const publicKey = fs.readFileSync(pubKeyPath, 'utf8').trim();
       const existing = db.sshKeys.getFirst();
-      if (existing) {
-        return { publicKey, privateKeyPath: keyPath, alreadyExists: true };
+      if (!existing) {
+        // Key exists on disk but not in DB — re-create the DB record
+        db.sshKeys.create(name, publicKey, keyPath);
       }
+      return { publicKey, privateKeyPath: keyPath, alreadyExists: true };
     }
 
     // Generate ED25519 key (modern, fast, secure)
@@ -205,7 +207,7 @@ class SSHManager {
    * Get or create an SSH connection to a server
    */
   async getConnection(server) {
-    const key = `${server.ip_address}:${server.ssh_port}`;
+    const key = `${server.ssh_user || 'root'}@${server.ip_address}:${server.ssh_port}`;
 
     if (this.connections.has(key)) {
       const conn = this.connections.get(key);

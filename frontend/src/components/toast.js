@@ -48,7 +48,7 @@ export function showToast(message, type = 'info', duration = 4000) {
  * Shows a styled confirmation dialog. Returns a Promise<boolean>.
  * Usage: if (!await showConfirm('Wirklich löschen?', { danger: true })) return;
  */
-export function showConfirm(message, { title = '', confirmText = '', danger = false } = {}) {
+export function showConfirm(message, { title = '', confirmText = '', danger = false, html = false } = {}) {
   const resolvedTitle = title || t('common.confirmation');
   const resolvedConfirm = confirmText || t('common.confirm');
   return new Promise((resolve) => {
@@ -60,7 +60,7 @@ export function showConfirm(message, { title = '', confirmText = '', danger = fa
           <h3 class="modal-title">${esc(resolvedTitle)}</h3>
         </div>
         <div class="modal-body">
-          <p style="margin:0;font-size:14px;line-height:1.6;">${message}</p>
+          <p style="margin:0;font-size:14px;line-height:1.6;" id="sc-msg"></p>
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" id="sc-cancel">${t('common.cancel')}</button>
@@ -68,6 +68,8 @@ export function showConfirm(message, { title = '', confirmText = '', danger = fa
         </div>
       </div>
     `;
+    const msgEl = overlay.querySelector('#sc-msg');
+    if (html) { msgEl.innerHTML = message; } else { msgEl.textContent = message; }
     document.body.appendChild(overlay);
 
     const cleanup = (result) => { overlay.remove(); resolve(result); };

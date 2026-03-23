@@ -85,7 +85,14 @@ router.put('/profile', authMiddleware, (req, res) => {
   if (email !== undefined) fields.email = String(email).trim().slice(0, 256);
 
   if (Object.keys(fields).length) {
-    db.users.update(req.user.id, fields);
+    try {
+      db.users.update(req.user.id, fields);
+    } catch (e) {
+      if (e.message && e.message.includes('UNIQUE')) {
+        return res.status(409).json({ error: 'Username already exists' });
+      }
+      return res.status(500).json({ error: e.message });
+    }
     // Also keep legacy settings in sync for backwards compat
     if (fields.username) db.settings.set('auth_username', fields.username);
     if (fields.email !== undefined) db.settings.set('auth_email', fields.email);
@@ -317,11 +324,25 @@ router.post('/totp/confirm', authMiddleware, (req, res) => {
   res.json({ success: true });
 });
 
-// DELETE /api/auth/totp – disable 2FA
-router.delete('/totp', authMiddleware, (req, res) => {
+// DELETE /api/auth/totp – disable 2FA (requires password re-authentication)
+router.delete('/totp', authMiddleware, async (req, res) => {
+  const { password } = req.body || {};
+  if (!password || typeof password !== 'string') {
+    return res.status(400).json({ error: 'Password required to disable 2FA' });
+  }
+
   if (req.user && req.user.id !== 'legacy') {
+    const fullUser = db.users.getByUsername(req.user.username);
+    if (!fullUser) return res.status(404).json({ error: 'User not found' });
+    const valid = await bcrypt.compare(password, fullUser.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Incorrect password' });
     db.users.setTotp(req.user.id, '', false);
   } else {
+    const hash = db.settings.get('auth_password_hash');
+    if (hash) {
+      const valid = await bcrypt.compare(password, hash);
+      if (!valid) return res.status(401).json({ error: 'Incorrect password' });
+    }
     db.settings.set('totp_enabled', '0');
     db.settings.set('totp_secret', '');
   }

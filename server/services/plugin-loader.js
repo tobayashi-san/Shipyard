@@ -10,7 +10,7 @@ let _helpers  = null;
 // ── DB helpers ──────────────────────────────────────────────────────────────
 
 function _db()          { return require('../db'); }
-function isEnabled(id)  { return _db().settings.get(`plugin_${id}_enabled`) === '1'; }
+function isEnabled(id)  { if (!PLUGIN_ID_RE.test(id)) return false; return _db().settings.get(`plugin_${id}_enabled`) === '1'; }
 
 function setEnabled(id, enabled) {
   if (!_loaded.has(id)) throw new Error(`Plugin '${id}' is not loaded`);
@@ -82,6 +82,7 @@ function loadAll(helpers) {
  */
 function reload(id) {
   if (!_helpers) throw new Error('Plugin loader not initialized');
+  if (!PLUGIN_ID_RE.test(id)) throw new Error(`Invalid plugin ID: ${id}`);
   const pluginDir = path.join(PLUGINS_DIR, id);
   if (!fs.existsSync(pluginDir)) throw new Error(`Plugin directory not found: ${id}`);
   _loadOne(pluginDir);
@@ -137,6 +138,7 @@ function getRouter(id) {
  * Returns the absolute path to a plugin's ui.js, or null if not found.
  */
 function getUiPath(id) {
+  if (!PLUGIN_ID_RE.test(id)) return null;
   const uiPath = path.join(PLUGINS_DIR, id, 'ui.js');
   return fs.existsSync(uiPath) ? uiPath : null;
 }

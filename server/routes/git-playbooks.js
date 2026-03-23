@@ -68,7 +68,8 @@ router.put('/config', (req, res) => {
 
 // GET /api/playbooks-git/branches
 router.get('/branches', async (req, res) => {
-  res.json(await gitSync.getBranches());
+  try { res.json(await gitSync.getBranches()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // POST /api/playbooks-git/checkout
@@ -76,26 +77,32 @@ router.post('/checkout', async (req, res) => {
   const { branch } = req.body;
   if (!branch || typeof branch !== 'string') return res.status(400).json({ error: 'branch required' });
   if (!/^[a-zA-Z0-9._\-/]+$/.test(branch)) return res.status(400).json({ error: 'Invalid branch name' });
-  const r = await gitSync.checkout(branch);
-  if (!r.success) return res.status(500).json({ error: r.stderr });
-  res.json({ success: true, output: r.stdout });
+  try {
+    const r = await gitSync.checkout(branch);
+    if (!r.success) return res.status(500).json({ error: r.stderr });
+    res.json({ success: true, output: r.stdout });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // GET /api/playbooks-git/status
 router.get('/status', async (req, res) => {
-  res.json(await gitSync.getStatus());
+  try { res.json(await gitSync.getStatus()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // GET /api/playbooks-git/log
 router.get('/log', async (req, res) => {
-  res.json(await gitSync.getLog());
+  try { res.json(await gitSync.getLog()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // POST /api/playbooks-git/pull
 router.post('/pull', async (req, res) => {
-  const r = await gitSync.pull();
-  if (!r.success) return res.status(500).json({ error: r.stderr });
-  res.json({ success: true, output: r.stdout });
+  try {
+    const r = await gitSync.pull();
+    if (!r.success) return res.status(500).json({ error: r.stderr });
+    res.json({ success: true, output: r.stdout });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // POST /api/playbooks-git/commit
@@ -103,17 +110,21 @@ router.post('/commit', async (req, res) => {
   const { message } = req.body;
   if (!message || typeof message !== 'string') return res.status(400).json({ error: 'message required' });
   if (message.length > 500) return res.status(400).json({ error: 'message too long' });
-  const r = await gitSync.commit(message);
-  if (!r.success) return res.status(400).json({ error: r.stderr || 'Nothing to commit' });
-  res.json({ success: true, output: r.stdout });
+  try {
+    const r = await gitSync.commit(message);
+    if (!r.success) return res.status(400).json({ error: r.stderr || 'Nothing to commit' });
+    res.json({ success: true, output: r.stdout });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // POST /api/playbooks-git/push
 router.post('/push', async (req, res) => {
   const { message } = req.body || {};
-  const r = await gitSync.push(message);
-  if (!r.success) return res.status(500).json({ error: r.stderr });
-  res.json({ success: true, output: r.stdout });
+  try {
+    const r = await gitSync.push(message);
+    if (!r.success) return res.status(500).json({ error: r.stderr });
+    res.json({ success: true, output: r.stdout });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 module.exports = router;

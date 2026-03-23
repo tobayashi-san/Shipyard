@@ -12,10 +12,18 @@ function getMasterKey() {
   return crypto.createHash('sha256').update(secret).digest();
 }
 
+let _noKeyWarned = false;
+
 function encrypt(plaintext) {
   if (!plaintext) return plaintext;
   const masterKey = getMasterKey();
-  if (!masterKey) return plaintext;
+  if (!masterKey) {
+    if (!_noKeyWarned) {
+      console.warn('[crypto] WARNING: SHIPYARD_KEY_SECRET not set — secrets stored unencrypted. Set this env var to enable encryption at rest.');
+      _noKeyWarned = true;
+    }
+    return plaintext;
+  }
   const iv = crypto.randomBytes(16);
   const cipher = crypto.createCipheriv(ALGORITHM, masterKey, iv);
   const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);

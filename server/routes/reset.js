@@ -72,13 +72,17 @@ router.delete('/playbooks', resetLimiter, adminOnly, (req, res) => {
   }
 });
 
-// DELETE /api/reset/auth — clears password + JWT secret + onboarding flag
+// DELETE /api/reset/auth — clears password + JWT secret + onboarding flag + users
 router.delete('/auth', resetLimiter, adminOnly, (req, res) => {
   try {
+    db.db.prepare('DELETE FROM users').run();
     db.settings.set('auth_password_hash', '');
     db.settings.set('auth_jwt_secret', crypto.randomBytes(64).toString('hex'));
     db.settings.set('onboarding_done', '');
-    db.auditLog.write('reset.auth', 'Authentication reset, all sessions invalidated', req.ip);
+    db.settings.set('totp_enabled', '');
+    db.settings.set('totp_secret', '');
+    db.settings.set('totp_secret_pending', '');
+    db.auditLog.write('reset.auth', 'Authentication reset: all users deleted, sessions invalidated', req.ip);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -91,10 +95,14 @@ router.delete('/all', resetLimiter, adminOnly, (req, res) => {
     db.db.transaction(() => {
       deleteServerTables();
       db.db.prepare('DELETE FROM schedules').run();
+      db.db.prepare('DELETE FROM users').run();
     })();
     deleteUserPlaybooks();
     db.settings.set('auth_password_hash', '');
     db.settings.set('auth_jwt_secret', crypto.randomBytes(64).toString('hex'));
+    db.settings.set('totp_enabled', '');
+    db.settings.set('totp_secret', '');
+    db.settings.set('totp_secret_pending', '');
     db.settings.set('wl_app_name', '');
     db.settings.set('wl_app_tagline', '');
     db.settings.set('wl_accent_color', '');

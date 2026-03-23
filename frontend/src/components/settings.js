@@ -674,7 +674,8 @@ async function loadSSHKey() {
   if (!el) return;
   try {
     const key = await api.getSSHKey();
-    const installCmd = `mkdir -p ~/.ssh && echo '${key.publicKey}' >> ~/.ssh/authorized_keys && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys`;
+    const escapedKey = key.publicKey.replace(/'/g, "'\\''");
+    const installCmd = `mkdir -p ~/.ssh && echo '${escapedKey}' >> ~/.ssh/authorized_keys && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys`;
     el.innerHTML = `
       <div class="settings-row">
         <div class="settings-row-label"><span>${t('set.sshName')}</span></div>
@@ -885,7 +886,7 @@ function setupDangerZone() {
       // Replace button with inline confirm
       ctrl.innerHTML = `
         <div class="dz-confirm">
-          <span>${cfg.confirmMsg}</span>
+          <span>${esc(cfg.confirmMsg)}</span>
           <button class="btn btn-secondary btn-sm" id="dz-cancel-${key}">${t('common.cancel')}</button>
           <button class="btn btn-danger btn-sm" id="dz-confirm-${key}">${t('common.yes')}, ${t('common.delete')}</button>
         </div>

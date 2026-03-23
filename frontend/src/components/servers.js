@@ -219,7 +219,7 @@ function attachEvents() {
     btn.addEventListener('click', async e => {
       e.stopPropagation();
       const { groupId, groupName } = btn.dataset;
-      if (!await showConfirm(`${t('srv.confirmDeleteFolder', { name: groupName })}<br><small style="color:var(--text-muted)">${t('srv.folderNote')}</small>`, { title: t('srv.deleteFolder'), confirmText: t('common.delete'), danger: true })) return;
+      if (!await showConfirm(`${esc(t('srv.confirmDeleteFolder', { name: groupName }))}<br><small style="color:var(--text-muted)">${esc(t('srv.folderNote'))}</small>`, { title: t('srv.deleteFolder'), confirmText: t('common.delete'), danger: true, html: true })) return;
       try {
         await api.deleteServerGroup(groupId);
         showToast(t('srv.folderDeleted'), 'success');
@@ -529,7 +529,7 @@ function attachEvents() {
     btn.addEventListener('click', async e => {
       e.stopPropagation();
       const { serverId, serverName } = btn.dataset;
-      if (!await showConfirm(`${t('srv.confirmDelete', { name: serverName })}<br><small style="color:var(--text-muted)">${t('srv.cantUndone')}</small>`, { title: t('srv.delete'), confirmText: t('common.delete'), danger: true })) return;
+      if (!await showConfirm(`${esc(t('srv.confirmDelete', { name: serverName }))}<br><small style="color:var(--text-muted)">${esc(t('srv.cantUndone'))}</small>`, { title: t('srv.delete'), confirmText: t('common.delete'), danger: true, html: true })) return;
       btn.disabled = true;
       try {
         await api.deleteServer(serverId);

@@ -72,9 +72,10 @@ function buildAuthUrl(url, token) {
 async function getTmpKeyPath() {
   if (_tmpKeyPath && fs.existsSync(_tmpKeyPath)) return _tmpKeyPath;
   try {
+    const crypto = require('crypto');
     const sshManager = require('./ssh-manager');
     const keyContent = sshManager.getPrivateKey();
-    const tmpPath = path.join(os.tmpdir(), '.shipyard_git_key');
+    const tmpPath = path.join(os.tmpdir(), `.shipyard_git_key_${crypto.randomUUID()}`);
     fs.writeFileSync(tmpPath, keyContent, { mode: 0o600 });
     _tmpKeyPath = tmpPath;
     return tmpPath;

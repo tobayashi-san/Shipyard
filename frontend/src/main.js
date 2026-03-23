@@ -19,7 +19,7 @@ let _wsUnsub = null;
 // Returns true if the current user has the given capability
 export function hasCap(key) {
   const p = state.user?.permissions;
-  if (!p) return true;      // not loaded yet → optimistic
+  if (!p) return false;     // not loaded yet → deny until profile is known
   if (p.full) return true;  // admin
   return p[key] !== false;  // default true unless explicitly false
 }

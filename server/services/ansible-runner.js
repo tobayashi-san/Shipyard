@@ -1,4 +1,5 @@
 const { spawn, execFileSync } = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -26,7 +27,7 @@ class AnsibleRunner {
     if (fs.existsSync(encPath)) {
       // Key is encrypted — write decrypted content to a temp file
       const plaintext = sshManager.getPrivateKey();
-      const tmpPath = path.join(os.tmpdir(), `shipyard-key-${process.pid}-${Date.now()}`);
+      const tmpPath = path.join(os.tmpdir(), `shipyard-key-${crypto.randomUUID()}`);
       fs.writeFileSync(tmpPath, plaintext, { mode: 0o600 });
       return { keyPath: tmpPath, cleanup: () => { try { fs.unlinkSync(tmpPath); } catch {} } };
     }
@@ -45,7 +46,7 @@ class AnsibleRunner {
     }
 
     // Strip any characters that could break Ansible INI format or inject extra lines
-    const safe = (v) => String(v ?? '').replace(/[\r\n\s=\[\]]/g, '_');
+    const safe = (v) => String(v ?? '').replace(/[\r\n\s=\[\]#;]/g, '_');
 
     let inventory = '[all]\n';
     servers.forEach(server => {
@@ -55,7 +56,8 @@ class AnsibleRunner {
     // Group servers by tags
     const tagGroups = {};
     servers.forEach(server => {
-      const tags = JSON.parse(server.tags || '[]');
+      let tags = [];
+      try { tags = JSON.parse(server.tags || '[]'); } catch {}
       tags.forEach(tag => {
         if (!tagGroups[tag]) tagGroups[tag] = [];
         tagGroups[tag].push(server.name);
@@ -67,7 +69,7 @@ class AnsibleRunner {
       members.forEach(name => { inventory += `${safe(name)}\n`; });
     }
 
-    const inventoryPath = path.join(DATA_DIR, 'inventory.ini');
+    const inventoryPath = path.join(DATA_DIR, `inventory-${crypto.randomUUID()}.ini`);
     fs.writeFileSync(inventoryPath, inventory);
     return inventoryPath;
   }
@@ -123,8 +125,9 @@ class AnsibleRunner {
    */
   async runPlaybook(playbookName, targets = 'all', extraVars = {}, onOutput = null) {
     const { keyPath, cleanup } = this._resolveSshKey();
+    let inventoryPath;
     try {
-      const inventoryPath = this.generateInventory(keyPath);
+      inventoryPath = this.generateInventory(keyPath);
       const playbookPath = path.resolve(PLAYBOOKS_DIR, playbookName);
 
       if (!playbookPath.startsWith(path.resolve(PLAYBOOKS_DIR) + path.sep))
@@ -139,6 +142,7 @@ class AnsibleRunner {
         { cwd: path.join(__dirname, '..') });
     } finally {
       cleanup();
+      if (inventoryPath) try { fs.unlinkSync(inventoryPath); } catch {}
     }
   }
 
@@ -147,13 +151,15 @@ class AnsibleRunner {
    */
   async runAdHoc(targets, module, args = '', onOutput = null) {
     const { keyPath, cleanup } = this._resolveSshKey();
+    let inventoryPath;
     try {
-      const inventoryPath = this.generateInventory(keyPath);
+      inventoryPath = this.generateInventory(keyPath);
       const cmdArgs = ['-i', inventoryPath, targets, '-m', module];
       if (args) cmdArgs.push('-a', args);
       return await this._spawnProcess('ansible', cmdArgs, onOutput);
     } finally {
       cleanup();
+      if (inventoryPath) try { fs.unlinkSync(inventoryPath); } catch {}
     }
   }
 

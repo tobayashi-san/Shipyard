@@ -209,10 +209,10 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
       name: name.slice(0, 100),
       hostname: (hostname || ip_address).slice(0, 255),
       ip_address: ip_address.slice(0, 45),
-      ssh_port: parseInt(ssh_port) || 22,
+      ssh_port: Math.min(65535, Math.max(1, parseInt(ssh_port) || 22)),
       ssh_user: (ssh_user || 'root').slice(0, 100),
-      tags: Array.isArray(tags) ? tags : [],
-      services: Array.isArray(services) ? services : [],
+      tags: Array.isArray(tags) ? tags.filter(t => typeof t === 'string').map(t => t.slice(0, 100)) : [],
+      services: Array.isArray(services) ? services.filter(s => typeof s === 'string').map(s => s.slice(0, 100)) : [],
     });
     db.auditLog.write('server.create', `Server "${name}" (${ip_address}) created`, req.ip);
     res.status(201).json(parseServer(server));
@@ -230,10 +230,10 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
     const sName   = name !== undefined ? String(name).slice(0, 100) : existing.name;
     const sHost   = hostname !== undefined ? String(hostname).slice(0, 255) : existing.hostname;
     const sIp     = ip_address !== undefined ? String(ip_address).slice(0, 45) : existing.ip_address;
-    const sPort   = ssh_port !== undefined ? (parseInt(ssh_port) || 22) : existing.ssh_port;
+    const sPort   = ssh_port !== undefined ? Math.min(65535, Math.max(1, parseInt(ssh_port) || 22)) : existing.ssh_port;
     const sUser   = ssh_user !== undefined ? String(ssh_user).slice(0, 100) : existing.ssh_user;
-    const sTags   = Array.isArray(tags) ? tags : JSON.parse(existing.tags || '[]');
-    const sSvcs   = Array.isArray(services) ? services : JSON.parse(existing.services || '[]');
+    const sTags   = Array.isArray(tags) ? tags.filter(t => typeof t === 'string').map(t => t.slice(0, 100)) : JSON.parse(existing.tags || '[]');
+    const sSvcs   = Array.isArray(services) ? services.filter(s => typeof s === 'string').map(s => s.slice(0, 100)) : JSON.parse(existing.services || '[]');
     const server = db.servers.update(req.params.id, {
       name: sName, hostname: sHost, ip_address: sIp,
       ssh_port: sPort, ssh_user: sUser, tags: sTags, services: sSvcs,

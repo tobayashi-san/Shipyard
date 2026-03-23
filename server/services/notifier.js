@@ -19,6 +19,17 @@ async function sendWebhook(title, message, success) {
   try {
     const parsedUrl = new URL(url);
 
+    // Block internal/metadata IPs to prevent SSRF
+    const blockedHosts = ['localhost', '127.0.0.1', '0.0.0.0', '[::1]', 'metadata.google.internal'];
+    const blockedPrefixes = ['169.254.', '10.', '192.168.', '172.16.', '172.17.', '172.18.', '172.19.',
+      '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.', '172.26.',
+      '172.27.', '172.28.', '172.29.', '172.30.', '172.31.'];
+    if (blockedHosts.includes(parsedUrl.hostname) ||
+        blockedPrefixes.some(p => parsedUrl.hostname.startsWith(p))) {
+      console.warn(`[Webhook] Blocked request to internal address: ${parsedUrl.hostname}`);
+      return { ok: false };
+    }
+
     if (parsedUrl.hostname.includes('discord.com') || parsedUrl.pathname.startsWith('/api/webhooks')) {
       payload = {
         embeds: [{
@@ -71,6 +82,9 @@ async function sendWebhook(title, message, success) {
 
 // ── SMTP ───────────────────────────────────────────────────────────────────
 
+let _smtpTransporter = null;
+let _smtpConfigHash  = '';
+
 async function sendEmail(title, message, success) {
   const host = db.settings.get('smtp_host');
   const to   = db.settings.get('smtp_to');
@@ -84,16 +98,26 @@ async function sendEmail(title, message, success) {
   const from     = db.settings.get('smtp_from') || user;
   const secure   = port === 465;
 
-  const transporter = nodemailer.createTransport({
-    host,
-    port,
-    secure,
-    auth: user ? { user, pass } : undefined,
-    tls: { rejectUnauthorized: !secure },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
-  });
+  // Reuse transporter unless SMTP config has changed
+  const cfgHash = `${host}:${port}:${user}:${pass}:${secure}`;
+  if (_smtpTransporter && _smtpConfigHash !== cfgHash) {
+    try { _smtpTransporter.close(); } catch {}
+    _smtpTransporter = null;
+  }
+  if (!_smtpTransporter) {
+    _smtpTransporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: user ? { user, pass } : undefined,
+      tls: { rejectUnauthorized: true },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+    });
+    _smtpConfigHash = cfgHash;
+  }
+  const transporter = _smtpTransporter;
 
   function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   const icon = success ? '✅' : '❌';

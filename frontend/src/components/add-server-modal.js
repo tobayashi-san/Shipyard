@@ -98,7 +98,7 @@ export function showAddServerModal(onSuccess, editServer = null) {
       ip_address: document.getElementById('server-ip').value.trim(),
       hostname: document.getElementById('server-hostname').value.trim() || document.getElementById('server-ip').value.trim(),
       ssh_user: document.getElementById('server-user').value.trim() || 'root',
-      ssh_port: parseInt(document.getElementById('server-port').value) || 22,
+      ssh_port: Math.min(65535, Math.max(1, parseInt(document.getElementById('server-port').value) || 22)),
       services: document.getElementById('server-services').value.split(',').map(s => s.trim()).filter(Boolean),
       tags: document.getElementById('server-tags').value.split(',').map(s => s.trim()).filter(Boolean),
     };

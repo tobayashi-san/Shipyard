@@ -14,9 +14,17 @@ function sanitizePermissions(perms) {
   if (!perms || typeof perms !== 'object' || Array.isArray(perms)) return {};
   const clean = {};
   for (const [k, v] of Object.entries(perms)) {
-    if (k === 'servers' || k === 'playbooks' || k === 'plugins') {
-      // These accept 'all' or structured objects — pass through
-      clean[k] = v;
+    if (k === 'servers') {
+      // Accept 'all' or { groups: [...], servers: [...] }
+      if (v === 'all') { clean[k] = v; }
+      else if (v && typeof v === 'object' && !Array.isArray(v)) {
+        clean[k] = { groups: Array.isArray(v.groups) ? v.groups.filter(g => typeof g === 'string') : [],
+                     servers: Array.isArray(v.servers) ? v.servers.filter(s => typeof s === 'string') : [] };
+      }
+    } else if (k === 'playbooks' || k === 'plugins') {
+      // Accept 'all' or string array
+      if (v === 'all') { clean[k] = v; }
+      else if (Array.isArray(v)) { clean[k] = v.filter(s => typeof s === 'string'); }
     } else if (ALLOWED_PERMISSION_KEYS.has(k)) {
       clean[k] = !!v; // boolean only
     }

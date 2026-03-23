@@ -446,7 +446,7 @@ function setupPlaybookEvents() {
 
   document.getElementById('btn-delete-playbook')?.addEventListener('click', async () => {
     if (!currentFilename) return;
-    if (!await showConfirm(`${t('pb.confirmDelete', { name: currentFilename })}<br><small style="color:var(--text-muted)">${t('pb.confirmDeleteHint')}</small>`, { title: t('common.delete'), confirmText: t('common.delete'), danger: true })) return;
+    if (!await showConfirm(`${esc(t('pb.confirmDelete', { name: currentFilename }))}<br><small style="color:var(--text-muted)">${esc(t('pb.confirmDeleteHint'))}</small>`, { title: t('common.delete'), confirmText: t('common.delete'), danger: true, html: true })) return;
     try {
       await api.deletePlaybook(currentFilename);
       showToast(t('pb.deleted', { name: currentFilename }), 'success');
@@ -1171,7 +1171,7 @@ function showHistoryModal(filename, versions, onRestored) {
             ">${esc(data.content)}</pre>`;
           }
         } catch (err) {
-          if (previewEl) previewEl.innerHTML = `<p style="color:var(--offline);font-size:13px;padding:8px 0;">${err.message}</p>`;
+          if (previewEl) previewEl.innerHTML = `<p style="color:var(--offline);font-size:13px;padding:8px 0;">${esc(err.message)}</p>`;
         }
       });
     });

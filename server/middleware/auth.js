@@ -21,9 +21,15 @@ function requireCap(capability) {
 
 const authMiddleware = function authMiddleware(req, res, next) {
   // Initial setup mode: no users AND no legacy password hash
+  // Only allow unauthenticated access to setup — req.user stays null,
+  // and can(null, ...) returns false so capability-gated routes are blocked.
   const userCount = db.users.count();
   const legacyHash = db.settings.get('auth_password_hash');
-  if (userCount === 0 && !legacyHash) return next();
+  if (userCount === 0 && !legacyHash) {
+    // Mark as setup mode so routes can detect it, but do NOT grant permissions
+    req.setupMode = true;
+    return next();
+  }
 
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
@@ -53,7 +59,10 @@ const authMiddleware = function authMiddleware(req, res, next) {
   }
 
   // Legacy token: has ok: true (no userId)
+  // Deprecated: kept for backward compat during migration window.
+  // Legacy tokens have no token_version so they cannot be selectively revoked.
   if (payload.ok === true) {
+    console.warn('[auth] Legacy token used — consider re-logging in to obtain a modern token');
     // Find first admin user for backward compat
     const admins = db.users.getAll().filter(u => u.role === 'admin');
     if (admins.length > 0) {

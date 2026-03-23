@@ -432,7 +432,8 @@ app.post('/api/servers/:id/reboot', guardServerAccess, rebootLimiter, (req, res,
     if (result.success) {
       setTimeout(() => {
         systemInfo.getSystemInfo(server)
-          .then(info => db.serverInfo.upsert(server.id, info)).catch(() => {});
+          .then(info => { try { db.serverInfo.upsert(server.id, info); } catch {} })
+          .catch(() => {});
       }, 5000); // give it a little time to boot before polling again
     }
   } catch (error) {
@@ -447,7 +448,7 @@ app.post('/api/servers/:id/docker/:container/restart', guardServerAccess, contai
   next();
 }, async (req, res) => {
   const { id: serverId, container } = req.params;
-  if (!/^[a-zA-Z0-9_.-]+$/.test(container)) return res.status(400).json({ error: 'Invalid container name' });
+  if (!/^[a-zA-Z0-9_.-]+$/.test(container) || container.startsWith('-')) return res.status(400).json({ error: 'Invalid container name' });
   const server = req.server;
 
   const historyId = db.updateHistory.create(serverId, `restart_docker_${container}`);
@@ -519,7 +520,9 @@ const BLOCKED_REMOTE_PREFIXES = ['/etc/', '/usr/', '/bin/', '/sbin/', '/lib/', '
 
 function isBlockedRemotePath(p) {
   const normalized = p.replace(/\/+/g, '/').replace(/\/$/, '');
-  return BLOCKED_REMOTE_PREFIXES.some(prefix => (normalized + '/').startsWith(prefix));
+  // Block all system directories and root-level paths that aren't under /home, /opt, /srv, /var
+  if (BLOCKED_REMOTE_PREFIXES.some(prefix => (normalized + '/').startsWith(prefix))) return true;
+  return false;
 }
 
 // POST /api/servers/:id/docker/compose/write
@@ -666,6 +669,7 @@ wssSsh.on('connection', (ws, req) => {
   conn.on('error', err => {
     if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'error', message: err.message }));
     ws.close();
+    conn.end();
   });
 
   ws.on('message', raw => {

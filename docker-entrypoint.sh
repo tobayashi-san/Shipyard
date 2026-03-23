@@ -13,7 +13,7 @@ if [ -z "$SSL_KEY" ] || [ -z "$SSL_CERT" ]; then
 
   if [ ! -f "$DEFAULT_KEY" ] || [ ! -f "$DEFAULT_CERT" ]; then
     echo "[HTTPS] Generating self-signed certificate..."
-    openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+    openssl req -x509 -nodes -days 3650 -newkey rsa:4096 \
       -keyout "$DEFAULT_KEY" -out "$DEFAULT_CERT" \
       -subj "/CN=shipyard" 2>/dev/null
     chmod 600 "$DEFAULT_KEY"
