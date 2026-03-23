@@ -50,7 +50,7 @@
   --radius: 8px;
   --radius-sm: 5px;
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-  --shadow: 0 4px 12px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.05);
+  --shadow: 0 1px 3px rgba(0,0,0,0.04), 0 8px 16px rgba(0,0,0,0.06), 0 24px 32px rgba(0,0,0,0.04);
 
   /* Typography */
   --font: 'Inter', system-ui, 'Segoe UI', sans-serif;
@@ -798,9 +798,20 @@ button:focus-visible, .btn:focus-visible, .form-input:focus-visible, .tab-btn:fo
   color: var(--text-muted);
 }
 
-.empty-state-icon { font-size: 44px; margin-bottom: 16px; color: var(--border-section); }
-.empty-state h3 { font-size: 16px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
-.empty-state p { font-size: 13px; max-width: 360px; margin: 0 auto 20px; }
+.empty-state-icon { 
+  font-size: 32px; 
+  margin: 0 auto 20px; 
+  color: var(--accent); 
+  background: var(--accent-light);
+  width: 76px;
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+.empty-state h3 { font-size: 16px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+.empty-state p { font-size: 13.5px; max-width: 360px; margin: 0 auto 20px; color: var(--text-muted); }
 
 /* ============================================
    Loading

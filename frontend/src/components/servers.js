@@ -828,10 +828,10 @@ function renderRow(server, depth = 0, folderColor = null) {
       </td>
       <td style="padding-left:6px;padding-right:0;"><span class="status-dot ${dotCls}"></span></td>
       <td style="padding-left:${nameIndent}px;">
-        <strong>${esc(server.name)}</strong>
+        <span style="font-weight:600;color:var(--text-primary);">${esc(server.name)}</span>
         ${(server.tags || []).map(tag => `<span class="server-tag">${esc(tag)}</span>`).join('')}
       </td>
-      <td class="mono">${esc(server.ip_address || '—')}</td>
+      <td class="mono" style="color:var(--text-muted);font-size:12px;">${esc(server.ip_address || '—')}</td>
       <td id="os-${server.id}" class="mono" style="color:var(--text-muted);">—</td>
       <td id="cpu-${server.id}">
         <div style="display:flex;align-items:center;gap:6px;">

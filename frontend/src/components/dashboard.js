@@ -199,8 +199,8 @@ function serverHealthRow(s) {
       <td><span class="status-dot ${dotCls}"></span></td>
       <td>
         <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
-          <strong>${esc(s.name)}</strong>
-          <span style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);">${esc(s.ip_address)}</span>
+          <span style="font-weight:600;color:var(--text-primary);">${esc(s.name)}</span>
+          <span style="font-size:11.5px;color:var(--text-muted);font-family:var(--font-mono);">${esc(s.ip_address)}</span>
         </div>
       </td>
       <td>${ramBar}</td>
