@@ -25,7 +25,7 @@ export function showProfileMenu() {
   const currentLang = getLang();
 
   _menuBackdrop = document.createElement('div');
-  _menuBackdrop.style.cssText = 'position:fixed;inset:0;z-index:1099;';
+  _menuBackdrop.style.cssText = 'position:fixed;inset:0;z-index:3099;';
   _menuBackdrop.addEventListener('click', closeMenu);
   document.body.appendChild(_menuBackdrop);
 
@@ -35,7 +35,7 @@ export function showProfileMenu() {
     bottom: ${rect ? window.innerHeight - rect.top + 6 : 70}px;
     left: ${rect ? rect.left : 0}px;
     width: ${rect ? rect.width : 220}px;
-    z-index: 1100;
+    z-index: 3100;
     background: var(--bg-panel);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -116,7 +116,7 @@ export async function showProfileModal() {
   try { profile = await api.getProfile(); } catch {}
 
   _modalBackdrop = document.createElement('div');
-  _modalBackdrop.style.cssText = 'position:fixed;inset:0;z-index:1199;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;';
+  _modalBackdrop.style.cssText = 'position:fixed;inset:0;z-index:3199;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;';
   _modalBackdrop.addEventListener('click', closeModal);
   document.body.appendChild(_modalBackdrop);
 

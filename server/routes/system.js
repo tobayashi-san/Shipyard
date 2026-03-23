@@ -46,6 +46,30 @@ router.post('/generate', adminOnly, (req, res) => {
   }
 });
 
+// GET /api/system/key/export - Export private key
+router.get('/key/export', adminOnly, (req, res) => {
+  try {
+    const key = sshManager.getPrivateKey();
+    res.json({ privateKey: key, success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/system/key/import - Import private key
+router.post('/key/import', adminOnly, (req, res) => {
+  try {
+    const { privateKey } = req.body;
+    if (!privateKey || typeof privateKey !== 'string') {
+      return res.status(400).json({ error: 'privateKey is required' });
+    }
+    const result = sshManager.importKey(privateKey);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // POST /api/system/deploy - Deploy SSH key to a server
 router.post('/deploy', adminOnly, deployLimiter, async (req, res) => {
   try {

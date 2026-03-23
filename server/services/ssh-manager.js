@@ -146,6 +146,38 @@ class SSHManager {
   }
 
   /**
+   * Import an existing SSH private key
+   */
+  importKey(privateKeyContent, name = 'shipyard_imported') {
+    const keyPath = path.join(SSH_DIR, name);
+    const pubKeyPath = `${keyPath}.pub`;
+
+    // Write private key
+    fs.writeFileSync(keyPath, privateKeyContent, { mode: 0o600 });
+    
+    // Generate public key from the private key
+    let publicKey;
+    try {
+      publicKey = execFileSync('ssh-keygen', ['-y', '-f', keyPath], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    } catch (e) {
+      if (fs.existsSync(keyPath)) fs.unlinkSync(keyPath);
+      throw new Error('Invalid or unsupported SSH private key format. Ensure it is not passphrase-protected.');
+    }
+    fs.writeFileSync(pubKeyPath, publicKey, { mode: 0o644 });
+
+    // Encrypt at rest if SHIPYARD_KEY_SECRET is configured
+    const encrypted = encryptKey(privateKeyContent);
+    if (encrypted) {
+      fs.writeFileSync(keyPath + '.enc', encrypted, { mode: 0o600 });
+      fs.unlinkSync(keyPath);
+    }
+
+    db.sshKeys.create(name, publicKey, keyPath);
+
+    return { publicKey, privateKeyPath: keyPath, alreadyExists: false };
+  }
+
+  /**
    * Deploy SSH key to a remote server (requires password for first connection)
    */
   async deployKey(serverIp, sshUser, password, sshPort = 22) {

@@ -716,12 +716,60 @@ async function loadSSHKey() {
           </div>
         </div>
       </div>
+      <div class="settings-row" style="align-items:flex-start;">
+        <div class="settings-row-label">
+          <span>Manage Key</span>
+          <small>Export or Import Private Key</small>
+        </div>
+        <div class="settings-row-control" style="flex:1;min-width:0;display:flex;gap:10px;">
+          <button class="btn btn-secondary btn-sm" id="btn-export-key" title="Download private key"><i class="fas fa-download"></i> Export Key</button>
+          <button class="btn btn-secondary btn-sm" id="btn-import-key" title="Upload private key"><i class="fas fa-upload"></i> Import Key</button>
+        </div>
+      </div>
     `;
     document.getElementById('btn-copy-key')?.addEventListener('click', () => {
       navigator.clipboard.writeText(key.publicKey).then(() => showToast(t('set.keyCopied'), 'success'));
     });
     document.getElementById('btn-copy-cmd')?.addEventListener('click', () => {
       navigator.clipboard.writeText(installCmd).then(() => showToast(t('set.cmdCopied'), 'success'));
+    });
+
+    document.getElementById('btn-export-key')?.addEventListener('click', async () => {
+      try {
+        const { privateKey } = await api.exportSSHKey();
+        const blob = new Blob([privateKey], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'shipyard_id_ed25519';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      } catch (err) {
+        showToast(t('common.errorPrefix', { msg: err.message }), 'error');
+      }
+    });
+
+    const handleImport = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (rev) => {
+        try {
+          await api.importSSHKey(rev.target.result);
+          showToast('SSH key imported successfully', 'success');
+          loadSSHKey();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      };
+      reader.readAsText(file);
+    };
+
+    document.getElementById('btn-import-key')?.addEventListener('click', () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '*';
+      input.onchange = handleImport;
+      input.click();
     });
   } catch {
     el.innerHTML = `
@@ -731,6 +779,9 @@ async function loadSSHKey() {
           <span style="font-size:13px;color:var(--text-muted);">${t('set.sshNone')}</span>
           <button class="btn btn-primary btn-sm" id="btn-generate-key">
             <i class="fas fa-key"></i> ${t('set.sshGenerate')}
+          </button>
+          <button class="btn btn-secondary btn-sm" id="btn-empty-import-key">
+            <i class="fas fa-upload"></i> Import Key
           </button>
         </div>
       </div>
@@ -743,6 +794,28 @@ async function loadSSHKey() {
       } catch (err) {
         showToast(t('common.errorPrefix', { msg: err.message }), 'error');
       }
+    });
+
+    document.getElementById('btn-empty-import-key')?.addEventListener('click', () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '*';
+      input.onchange = async e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (rev) => {
+          try {
+            await api.importSSHKey(rev.target.result);
+            showToast('SSH key imported successfully', 'success');
+            loadSSHKey();
+          } catch (err) {
+            showToast(err.message, 'error');
+          }
+        };
+        reader.readAsText(file);
+      };
+      input.click();
     });
   }
 }
