@@ -107,45 +107,7 @@ export async function renderSettings() {
 
       <!-- Tab: Appearance -->
       <div class="tab-panel active" id="tab-appearance">
-        <div class="settings-group-title">${t('set.tabAppearance')}</div>
-        <div class="settings-block">
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span>${t('set.theme')}</span>
-              <small>${t('set.themeHint')}</small>
-            </div>
-            <div class="settings-row-control">
-              <div class="theme-toggle" id="theme-toggle">
-                <button class="theme-btn ${(wl.theme || 'auto') === 'light' ? 'active' : ''}" data-value="light">
-                  <i class="fas fa-sun"></i> ${t('set.light')}
-                </button>
-                <button class="theme-btn ${(wl.theme || 'auto') === 'dark' ? 'active' : ''}" data-value="dark">
-                  <i class="fas fa-moon"></i> ${t('set.dark')}
-                </button>
-                <button class="theme-btn ${(wl.theme || 'auto') === 'auto' ? 'active' : ''}" data-value="auto">
-                  <i class="fas fa-circle-half-stroke"></i> ${t('set.auto')}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="settings-group-title">${t('set.timeFormat')}</div>
-        <div class="settings-block">
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span>${t('set.timeFormat')}</span>
-            </div>
-            <div class="settings-row-control">
-              <div class="theme-toggle" id="time-format-toggle">
-                <button class="theme-btn ${(wl.timeFormat || '24h') === '24h' ? 'active' : ''}" data-value="24h">24h</button>
-                <button class="theme-btn ${(wl.timeFormat || '24h') === '12h' ? 'active' : ''}" data-value="12h">12h</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="settings-group-title">${t('set.whiteLabel')}</div>
+        <div class="settings-group-title" style="margin-top:4px;">${t('set.whiteLabel')}</div>
         <div class="settings-block">
           <div class="settings-row">
             <div class="settings-row-label">
@@ -499,28 +461,6 @@ function setupTabSwitching() {
 // White Label Events
 // ============================================================
 function setupSettingsEvents(wl) {
-  // Theme toggle
-  document.querySelectorAll('#theme-toggle .theme-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const theme = btn.dataset.value;
-      document.querySelectorAll('#theme-toggle .theme-btn').forEach(b => b.classList.toggle('active', b === btn));
-      try {
-        await saveWhiteLabel({ theme });
-      } catch {
-        showToast(t('set.toastErrorSave'), 'error');
-      }
-    });
-  });
-
-  // Time format toggle
-  document.querySelectorAll('#time-format-toggle .theme-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      document.querySelectorAll('#time-format-toggle .theme-btn').forEach(b => b.classList.toggle('active', b === btn));
-      try { await saveWhiteLabel({ timeFormat: btn.dataset.value }); }
-      catch { showToast(t('set.toastErrorSave'), 'error'); }
-    });
-  });
-
   // Sync color picker <-> hex input
   const picker = document.getElementById('wl-color');
   const hexInput = document.getElementById('wl-color-hex');
@@ -553,12 +493,12 @@ function setupSettingsEvents(wl) {
     const btn = document.getElementById('btn-reset-wl');
     btn.disabled = true;
     try {
-      await api.saveSettings({ appName: '', appTagline: '', accentColor: '', theme: 'auto' });
-      state.whiteLabel = { theme: 'auto' };
+      await api.saveSettings({ appName: '', appTagline: '', accentColor: '' });
+      state.whiteLabel = {};
       document.documentElement.style.removeProperty('--accent');
       document.documentElement.style.removeProperty('--accent-hover');
       document.documentElement.style.removeProperty('--accent-light');
-      document.documentElement.dataset.theme = 'auto';
+      document.documentElement.dataset.theme = 'auto'; // Keep this line to reset theme to auto, as it's a default behavior not tied to a specific setting.
       document.title = 'Shipyard';
       document.querySelectorAll('.sidebar-logo-text h1').forEach(el => el.textContent = 'Shipyard');
       document.querySelectorAll('.sidebar-logo-text span').forEach(el => el.textContent = 'Infrastructure');
@@ -566,7 +506,6 @@ function setupSettingsEvents(wl) {
       document.getElementById('wl-tagline').value = '';
       document.getElementById('wl-color').value = '#3b82f6';
       document.getElementById('wl-color-hex').value = '#3b82f6';
-      document.querySelectorAll('#theme-toggle .theme-btn').forEach(b => b.classList.toggle('active', b.dataset.value === 'auto'));
       showToast(t('set.toastReset'), 'success');
     } catch {
       showToast(t('set.toastErrorReset'), 'error');

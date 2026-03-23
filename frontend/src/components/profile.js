@@ -25,6 +25,10 @@ export function showProfileMenu() {
   const currentLang = getLang();
   const currentTheme = localStorage.getItem('theme') || 'auto';
   const currentTimeFormat = localStorage.getItem('timeFormat') || '24h';
+  
+  const ctnStyle = 'width: 114px; background: var(--bg-row-alt); padding: 3px; border-radius: 6px; display: flex; gap: 2px; border: 1px solid var(--border);';
+  const btnStyle = 'flex: 1; border: none; background: transparent; color: var(--text-muted); font-size: 11px; padding: 4px 0; border-radius: 4px; cursor: pointer; transition: all 150ms; font-weight: 500;';
+  const actStyle = 'background: var(--bg-panel); color: var(--text-primary); box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);';
 
   _menuBackdrop = document.createElement('div');
   _menuBackdrop.style.cssText = 'position:fixed;inset:0;z-index:3099;';
@@ -70,37 +74,37 @@ export function showProfileMenu() {
         <span>Profile settings</span>
       </div>
 
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px;">
         <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-primary);">
           <i class="fas fa-globe" style="width:16px;opacity:.7;"></i>
           <span>Language</span>
         </div>
-        <div style="display:flex;gap:3px;">
-          <button class="btn btn-sm ${currentLang === 'de' ? 'btn-primary' : 'btn-secondary'}" id="pmenu-lang-de" style="padding:2px 8px;font-size:11px;">DE</button>
-          <button class="btn btn-sm ${currentLang === 'en' ? 'btn-primary' : 'btn-secondary'}" id="pmenu-lang-en" style="padding:2px 8px;font-size:11px;">EN</button>
+        <div style="${ctnStyle}">
+          <button style="${btnStyle} ${currentLang === 'de' ? actStyle : ''}" id="pmenu-lang-de">DE</button>
+          <button style="${btnStyle} ${currentLang === 'en' ? actStyle : ''}" id="pmenu-lang-en">EN</button>
         </div>
       </div>
 
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 16px 8px;">
         <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-primary);">
           <i class="fas fa-moon" style="width:16px;opacity:.7;"></i>
           <span>Theme</span>
         </div>
-        <div style="display:flex;gap:3px;" id="pmenu-theme-toggles">
-          <button class="btn btn-sm ${currentTheme === 'light' ? 'btn-primary' : 'btn-secondary'}" data-theme="light" style="padding:2px 8px;font-size:11px;"><i class="fas fa-sun"></i></button>
-          <button class="btn btn-sm ${currentTheme === 'dark' ? 'btn-primary' : 'btn-secondary'}" data-theme="dark" style="padding:2px 8px;font-size:11px;"><i class="fas fa-moon"></i></button>
-          <button class="btn btn-sm ${currentTheme === 'auto' ? 'btn-primary' : 'btn-secondary'}" data-theme="auto" style="padding:2px 8px;font-size:11px;">Auto</button>
+        <div style="${ctnStyle}" id="pmenu-theme-toggles">
+          <button style="${btnStyle} ${currentTheme === 'light' ? actStyle : ''}" data-theme="light" title="Light"><i class="fas fa-sun"></i></button>
+          <button style="${btnStyle} ${currentTheme === 'dark' ? actStyle : ''}" data-theme="dark" title="Dark"><i class="fas fa-moon"></i></button>
+          <button style="${btnStyle} ${currentTheme === 'auto' ? actStyle : ''}" data-theme="auto" title="Auto">Auto</button>
         </div>
       </div>
 
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 16px 8px;">
         <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-primary);">
           <i class="fas fa-clock" style="width:16px;opacity:.7;"></i>
           <span>Time Format</span>
         </div>
-        <div style="display:flex;gap:3px;" id="pmenu-time-toggles">
-          <button class="btn btn-sm ${currentTimeFormat === '24h' ? 'btn-primary' : 'btn-secondary'}" data-time="24h" style="padding:2px 8px;font-size:11px;">24h</button>
-          <button class="btn btn-sm ${currentTimeFormat === '12h' ? 'btn-primary' : 'btn-secondary'}" data-time="12h" style="padding:2px 8px;font-size:11px;">12h</button>
+        <div style="${ctnStyle}" id="pmenu-time-toggles">
+          <button style="${btnStyle} ${currentTimeFormat === '24h' ? actStyle : ''}" data-time="24h">24h</button>
+          <button style="${btnStyle} ${currentTimeFormat === '12h' ? actStyle : ''}" data-time="12h">12h</button>
         </div>
       </div>
     </div>
