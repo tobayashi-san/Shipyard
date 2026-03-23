@@ -73,21 +73,68 @@ export async function renderServerDetail(serverId) {
     <div class="page-content">
       <!-- Overview tab -->
       <div class="tab-panel active" id="tab-overview">
+
+        <!-- Stat Cards -->
+        <div class="stat-cards-row">
+          <div class="stat-card">
+            <div class="stat-card-icon"><i class="fas fa-clock"></i></div>
+            <div>
+              <div class="stat-card-value" id="stat-uptime">—</div>
+              <div class="stat-card-label">${t('det.uptime')}</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-icon"><i class="fas fa-cubes"></i></div>
+            <div>
+              <div class="stat-card-value" id="stat-docker">—</div>
+              <div class="stat-card-label">${t('det.tabDocker')}</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-icon" id="stat-updates-icon"><i class="fas fa-box-open"></i></div>
+            <div>
+              <div class="stat-card-value" id="stat-updates">—</div>
+              <div class="stat-card-label">${t('det.tabUpdates')}</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-icon"><i class="fas fa-microchip"></i></div>
+            <div>
+              <div class="stat-card-value" id="stat-cpu">—</div>
+              <div class="stat-card-label">${t('det.cpu')}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Main 2-col grid -->
         <div class="overview-grid">
           <!-- System Info -->
-          <div class="panel">
-            <div class="section-header">
-              <h3><i class="fas fa-info-circle"></i> ${t('det.sysinfo')}</h3>
+          <div style="display:flex;flex-direction:column;gap:16px;">
+            <div class="panel">
+              <div class="section-header">
+                <h3><i class="fas fa-info-circle"></i> ${t('det.sysinfo')}</h3>
+              </div>
+              <table class="info-table" id="info-table">
+                <tr><td>${t('common.status')}</td><td id="inf-status">${t('det.loading')}</td></tr>
+                <tr><td>${t('det.os')}</td><td id="inf-os">—</td></tr>
+                <tr><td>${t('det.kernel')}</td><td id="inf-kernel">—</td></tr>
+                <tr><td>${t('det.cpu')}</td><td id="inf-cpu">—</td></tr>
+                <tr><td>${t('det.cores')}</td><td id="inf-cores">—</td></tr>
+                <tr><td>${t('det.uptime')}</td><td id="inf-uptime">—</td></tr>
+                <tr><td>${t('det.loadAvg')}</td><td id="inf-load">—</td></tr>
+              </table>
             </div>
-            <table class="info-table" id="info-table">
-              <tr><td>${t('common.status')}</td><td id="inf-status">${t('det.loading')}</td></tr>
-              <tr><td>${t('det.os')}</td><td id="inf-os">—</td></tr>
-              <tr><td>${t('det.kernel')}</td><td id="inf-kernel">—</td></tr>
-              <tr><td>${t('det.cpu')}</td><td id="inf-cpu">—</td></tr>
-              <tr><td>${t('det.cores')}</td><td id="inf-cores">—</td></tr>
-              <tr><td>${t('det.uptime')}</td><td id="inf-uptime">—</td></tr>
-              <tr><td>${t('det.loadAvg')}</td><td id="inf-load">—</td></tr>
-            </table>
+
+            <!-- Recent Activity -->
+            <div class="panel">
+              <div class="section-header">
+                <h3><i class="fas fa-history"></i> ${t('det.tabHistory')}</h3>
+                <span style="font-size:11px;color:var(--text-muted);">${t('det.recent')}</span>
+              </div>
+              <div id="recent-activity-content">
+                <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
+              </div>
+            </div>
           </div>
 
           <!-- Resources -->
@@ -304,6 +351,17 @@ function renderServerInfo(info) {
   set('inf-uptime', info.uptime_seconds ? formatUptime(info.uptime_seconds) : '—');
   set('inf-load', info.load_avg || '—');
 
+  // ── Stat cards ──────────────────────────────────────────────
+  const cpuStatEl = document.getElementById('stat-cpu');
+  const uptimeStatEl = document.getElementById('stat-uptime');
+  if (cpuStatEl && info.cpu_usage_pct != null) {
+    cpuStatEl.textContent = info.cpu_usage_pct + '%';
+    cpuStatEl.style.color = info.cpu_usage_pct > 90 ? 'var(--offline)' : info.cpu_usage_pct > 70 ? 'var(--warning)' : 'var(--online)';
+  }
+  if (uptimeStatEl && info.uptime_seconds) {
+    uptimeStatEl.textContent = formatUptime(info.uptime_seconds);
+  }
+
   const resEl = document.getElementById('res-content');
   if (!resEl) return;
 
@@ -311,34 +369,45 @@ function renderServerInfo(info) {
   const diskPct = info.disk_total_gb ? Math.round((info.disk_used_gb / info.disk_total_gb) * 100) : 0;
   const cpuPct  = info.cpu_usage_pct ?? null;
 
-  const bar = (pct) => `<div class="progress-fill${pct > 90 ? ' critical' : pct > 70 ? ' high' : ''}" style="width:${pct}%"></div>`;
+  const bar = (pct) => {
+    const cls = pct > 90 ? 'critical' : pct > 70 ? 'high' : '';
+    return `<div class="progress-bar-thick"><div class="progress-bar-fill ${cls}" style="width:${pct}%"></div></div>`;
+  };
 
-  // RAM: show used in MB or GB depending on size
+  // RAM labels
   const ramUsedLabel  = info.ram_total_mb ? (info.ram_used_mb  >= 1024 ? (info.ram_used_mb  / 1024).toFixed(1) + ' GB' : Math.round(info.ram_used_mb)  + ' MB') : null;
   const ramTotalLabel = info.ram_total_mb ? (info.ram_total_mb >= 1024 ? (info.ram_total_mb / 1024).toFixed(1) + ' GB' : Math.round(info.ram_total_mb) + ' MB') : null;
-  const ramAbsolute   = ramUsedLabel ? `${ramUsedLabel} / ${ramTotalLabel} (${ramPct}%)` : '—';
+  const ramAbsolute   = ramUsedLabel ? `${ramUsedLabel} / ${ramTotalLabel}` : '—';
 
-  // Disk: always GB
+  // Disk labels
   const diskUsedLabel  = info.disk_total_gb ? info.disk_used_gb.toFixed(1)  + ' GB' : null;
   const diskTotalLabel = info.disk_total_gb ? info.disk_total_gb.toFixed(1) + ' GB' : null;
-  const diskAbsolute   = diskUsedLabel ? `${diskUsedLabel} / ${diskTotalLabel} (${diskPct}%)` : '—';
+  const diskAbsolute   = diskUsedLabel ? `${diskUsedLabel} / ${diskTotalLabel}` : '—';
 
   resEl.innerHTML = `
-    ${cpuPct !== null ? `
-    <div class="progress-row">
-      <div class="progress-label">${t('det.cpu')}</div>
-      <div class="progress-track">${bar(cpuPct)}</div>
-      <div class="progress-value">${cpuPct}%</div>
-    </div>` : ''}
-    <div class="progress-row">
-      <div class="progress-label">RAM</div>
-      <div class="progress-track">${bar(ramPct)}</div>
-      <div class="progress-value">${ramAbsolute}</div>
-    </div>
-    <div class="progress-row" style="border-bottom:none;">
-      <div class="progress-label">Disk</div>
-      <div class="progress-track">${bar(diskPct)}</div>
-      <div class="progress-value">${diskAbsolute}</div>
+    <div class="res-block">
+      ${cpuPct !== null ? `
+      <div class="res-row">
+        <div class="res-header">
+          <span class="res-label">${t('det.cpu')}</span>
+          <span class="res-value ${cpuPct > 90 ? 'res-critical' : cpuPct > 70 ? 'res-warn' : 'res-ok'}">${cpuPct}%</span>
+        </div>
+        ${bar(cpuPct)}
+      </div>` : ''}
+      <div class="res-row">
+        <div class="res-header">
+          <span class="res-label">RAM</span>
+          <span class="res-value ${ramPct > 90 ? 'res-critical' : ramPct > 70 ? 'res-warn' : ''}">${ramAbsolute} <span style="opacity:.6;font-size:11px;">(${ramPct}%)</span></span>
+        </div>
+        ${bar(ramPct)}
+      </div>
+      <div class="res-row" style="margin-bottom:0;">
+        <div class="res-header">
+          <span class="res-label">Disk</span>
+          <span class="res-value ${diskPct > 90 ? 'res-critical' : diskPct > 70 ? 'res-warn' : ''}">${diskAbsolute} <span style="opacity:.6;font-size:11px;">(${diskPct}%)</span></span>
+        </div>
+        ${bar(diskPct)}
+      </div>
     </div>
   `;
 }
@@ -348,6 +417,34 @@ async function loadServerInfo(serverId) {
     const info = await api.getServerInfo(serverId);
     if (!info) return;
     renderServerInfo(info);
+    loadRecentActivity(serverId);
+    // Also populate docker stat card
+    if (hasCap('canViewDocker')) {
+      api.getDockerContainers(serverId).then(containers => {
+        const el = document.getElementById('stat-docker');
+        if (el && containers) el.textContent = containers.length;
+      }).catch(() => {});
+    } else {
+      const el = document.getElementById('stat-docker');
+      if (el) el.textContent = 'N/A';
+    }
+    // Populate updates stat card
+    if (hasCap('canViewUpdates')) {
+      api.getServerUpdates(serverId).then(updates => {
+        const el = document.getElementById('stat-updates');
+        const iconEl = document.getElementById('stat-updates-icon');
+        if (el && updates) {
+          el.textContent = updates.length;
+          if (updates.length > 0) {
+            el.style.color = 'var(--warning)';
+            if(iconEl) iconEl.style.color = 'var(--warning)';
+          }
+        }
+      }).catch(() => {});
+    } else {
+      const el = document.getElementById('stat-updates');
+      if (el) el.textContent = 'N/A';
+    }
 
     // If cached, silently fetch fresh data in background
     if (info._cached) {
@@ -358,6 +455,41 @@ async function loadServerInfo(serverId) {
   } catch (e) {
     const el = document.getElementById('inf-status');
     if (el) el.innerHTML = `<span class="badge badge-offline">${t('common.errorPrefix', { msg: esc(e.message) })}</span>`;
+  }
+}
+
+async function loadRecentActivity(serverId) {
+  const el = document.getElementById('recent-activity-content');
+  if (!el) return;
+  try {
+    const history = await api.getServerHistory(serverId);
+    if (!history || history.length === 0) {
+      el.innerHTML = `<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px;"><i class="fas fa-inbox" style="display:block;font-size:24px;margin-bottom:8px;opacity:.4;"></i> ${t('det.noHistory') || 'No activity yet.'}</div>`;
+      return;
+    }
+    const items = history.slice(0, 6);
+    el.innerHTML = items.map(item => {
+      const d = new Date(item.started_at);
+      const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const date = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+      const ok = item.status === 'success';
+      const fail = item.status === 'failed';
+      return `
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--border);">
+          <i class="fas fa-${ok ? 'check-circle' : fail ? 'times-circle' : 'spinner'}"
+            style="font-size:14px;color:var(--${ok ? 'online' : fail ? 'offline' : 'warning'});flex-shrink:0;"></i>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(item.action || item.playbook_name || '—')}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:1px;">${esc(item.triggered_by || 'system')}</div>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);text-align:right;flex-shrink:0;">
+            <div>${time}</div>
+            <div>${date}</div>
+          </div>
+        </div>`;
+    }).join('');
+  } catch (e) {
+    if (el) el.innerHTML = `<div style="padding:16px;color:var(--text-muted);font-size:13px;">Could not load activity.</div>`;
   }
 }
 
