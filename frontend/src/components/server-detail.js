@@ -1150,14 +1150,22 @@ async function loadHistory(serverId) {
     el.innerHTML = `
       <table class="data-table">
         <thead>
-          <tr><th>${t('det.colAction')}</th><th>${t('common.status')}</th><th>${t('det.colStarted')}</th><th>${t('det.colDone')}</th></tr>
+          <tr><th>${t('det.colAction')}</th><th>Trigger</th><th>${t('common.status')}</th><th>${t('det.colStarted')}</th><th>${t('det.colDone')}</th></tr>
         </thead>
         <tbody>
           ${items.map(h => {
             const statusCls = h.status === 'success' ? 'online' : h.status === 'failed' ? 'offline' : 'warning';
+            const isSchedule = h._type === 'schedule';
+            const trigger = isSchedule
+              ? `<span style="display:inline-flex;align-items:center;gap:5px;"><i class="fas fa-calendar-alt" style="color:var(--accent);font-size:11px;"></i> ${esc(h.triggered_by || 'schedule')}</span>`
+              : `<span style="color:var(--text-muted);font-size:11px;">${esc(h.triggered_by || 'system')}</span>`;
             return `
               <tr class="no-hover">
-                <td class="mono">${esc(h.action)}</td>
+                <td class="mono" style="display:flex;align-items:center;gap:6px;">
+                  ${isSchedule ? '<span class="badge" style="font-size:10px;padding:1px 6px;background:var(--accent-light);color:var(--accent);border:1px solid var(--accent);flex-shrink:0;">Playbook</span>' : ''}
+                  ${esc(h.action)}
+                </td>
+                <td>${trigger}</td>
                 <td><span class="badge badge-${statusCls}">${h.status}</span></td>
                 <td class="mono" style="font-size:11px;color:var(--text-muted);">${formatDate(h.started_at)}</td>
                 <td class="mono" style="font-size:11px;color:var(--text-muted);">${formatDate(h.completed_at)}</td>

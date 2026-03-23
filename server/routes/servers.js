@@ -361,11 +361,41 @@ router.get('/:id/updates', guardServerAccess, async (req, res) => {
   }
 });
 
-// GET /api/servers/:id/history - Get update history
+// GET /api/servers/:id/history - Get update history + scheduled playbook runs
 router.get('/:id/history', guardServerAccess, (req, res) => {
   try {
-    const history = db.updateHistory.getByServer(req.params.id);
-    res.json(history);
+    const server = db.servers.getById(req.params.id);
+    const manualHistory = db.updateHistory.getByServer(req.params.id);
+
+    // Also fetch scheduled playbook runs that targeted this server
+    let scheduleRuns = [];
+    if (server) {
+      const allRuns = db.scheduleHistory.getAll(200);
+      const serverName = server.name;
+      scheduleRuns = allRuns
+        .filter(r => {
+          const targets = (r.targets || '').split(',').map(t => t.trim());
+          return targets.includes('all') || targets.includes(serverName);
+        })
+        .map(r => ({
+          id: r.id,
+          server_id: req.params.id,
+          action: r.playbook,
+          triggered_by: r.schedule_name || 'schedule',
+          status: r.status,
+          started_at: r.started_at,
+          completed_at: r.completed_at,
+          _type: 'schedule',
+          schedule_name: r.schedule_name,
+          playbook: r.playbook,
+        }));
+    }
+
+    // Merge and sort by started_at descending
+    const combined = [...manualHistory, ...scheduleRuns]
+      .sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
+
+    res.json(combined);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
