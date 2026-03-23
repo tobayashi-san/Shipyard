@@ -121,6 +121,9 @@ app.use('/api/roles', authMiddleware, rolesRouter);
 // Protect all other /api routes
 app.use('/api', authMiddleware);
 
+// Lightweight ping endpoint for latency measurement (responds immediately, no DB/SSH)
+app.get('/api/ping', (req, res) => res.json({ ok: true, ts: Date.now() }));
+
 // API Routes
 const resetRouter        = require('./routes/reset');
 const serversRouter      = require('./routes/servers');

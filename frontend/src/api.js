@@ -116,6 +116,9 @@ class ApiClient {
   }
   importServers(servers) { return this.request('/servers/import', { method: 'POST', body: { servers } }); }
 
+  // Ping – accurately measures browser-to-server round trip via a minimal endpoint
+  ping() { return this.request('/ping'); }
+
   // System Info
   getServerInfo(id, force = false) { return this.request(`/servers/${id}/info${force ? '?force=1' : ''}`); }
   getServerServices(id) { return this.request(`/servers/${id}/services`); }

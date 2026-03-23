@@ -428,25 +428,34 @@ function renderServerInfo(info) {
 
 async function loadServerInfo(serverId) {
   try {
-    // Measure ping via API round-trip time
-    const pingStart = Date.now();
+    // Load server info (may be cached — not used for latency)
     const info = await api.getServerInfo(serverId);
-    const pingMs = Date.now() - pingStart;
     if (!info) return;
     renderServerInfo(info);
     loadRecentActivity(serverId);
 
-    // Ping stat card
-    const pingEl = document.getElementById('stat-ping');
-    const pingIconEl = document.getElementById('stat-ping-icon');
-    const netLatEl = document.getElementById('net-latency');
-    if (pingEl) {
-      pingEl.textContent = pingMs + ' ms';
-      const col = pingMs < 100 ? 'var(--online)' : pingMs < 400 ? 'var(--warning)' : 'var(--offline)';
-      pingEl.style.color = col;
-      if (pingIconEl) pingIconEl.style.color = col;
-    }
-    if (netLatEl) netLatEl.textContent = pingMs + ' ms';
+    // Accurate latency: 3 rapid pings to /api/ping, average the results
+    (async () => {
+      const samples = [];
+      for (let i = 0; i < 3; i++) {
+        const t0 = Date.now();
+        try { await api.ping(); } catch { break; }
+        samples.push(Date.now() - t0);
+        if (i < 2) await new Promise(r => setTimeout(r, 80)); // tiny gap between samples
+      }
+      if (samples.length === 0) return;
+      const pingMs = Math.round(samples.reduce((a, b) => a + b, 0) / samples.length);
+      const pingEl = document.getElementById('stat-ping');
+      const pingIconEl = document.getElementById('stat-ping-icon');
+      const netLatEl = document.getElementById('net-latency');
+      if (pingEl) {
+        pingEl.textContent = pingMs + ' ms';
+        const col = pingMs < 80 ? 'var(--online)' : pingMs < 250 ? 'var(--warning)' : 'var(--offline)';
+        pingEl.style.color = col;
+        if (pingIconEl) pingIconEl.style.color = col;
+      }
+      if (netLatEl) netLatEl.textContent = pingMs + ' ms';
+    })();
 
     // Docker stat card
     if (hasCap('canViewDocker')) {
