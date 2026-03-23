@@ -420,7 +420,7 @@ async function loadServerInfo(serverId) {
     loadRecentActivity(serverId);
     // Also populate docker stat card
     if (hasCap('canViewDocker')) {
-      api.getDockerContainers(serverId).then(containers => {
+      api.getServerDocker(serverId).then(containers => {
         const el = document.getElementById('stat-docker');
         if (el && containers) el.textContent = containers.length;
       }).catch(() => {});
