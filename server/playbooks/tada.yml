@@ -1,7 +1,0 @@
----
-- name: yy
-  hosts: all
-  become: yes
-  tasks:
-    - name: Ping all hosts
-      ping:
