@@ -1,0 +1,41 @@
+---
+- name: Timezone Sync
+  hosts: all
+  become: true
+  vars:
+    target_timezone: "Europe/Berlin"   # Change to your desired timezone
+
+  tasks:
+    - name: Show current timezone
+      command: timedatectl show --property=Timezone --value
+      register: current_tz
+      changed_when: false
+
+    - name: Print current timezone
+      debug:
+        msg: "Current timezone on {{ inventory_hostname }}: {{ current_tz.stdout }}"
+
+    - name: Set timezone
+      community.general.timezone:
+        name: "{{ target_timezone }}"
+      when: current_tz.stdout != target_timezone
+
+    - name: Ensure systemd-timesyncd is enabled and running
+      systemd:
+        name: systemd-timesyncd
+        state: started
+        enabled: true
+      ignore_errors: true
+
+    - name: Force NTP sync
+      command: timedatectl set-ntp true
+      changed_when: false
+
+    - name: Verify time sync status
+      command: timedatectl status
+      register: timedatectl_out
+      changed_when: false
+
+    - name: Print time status
+      debug:
+        msg: "{{ timedatectl_out.stdout_lines }}"

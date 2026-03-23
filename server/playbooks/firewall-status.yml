@@ -1,0 +1,36 @@
+---
+- name: Firewall Status Report
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Check if UFW is installed
+      command: which ufw
+      register: ufw_installed
+      ignore_errors: true
+      changed_when: false
+
+    - name: Show UFW status and rules
+      command: ufw status verbose
+      register: ufw_status
+      changed_when: false
+      when: ufw_installed.rc == 0
+
+    - name: Print UFW status
+      debug:
+        msg: "{{ ufw_status.stdout_lines }}"
+      when: ufw_installed.rc == 0
+
+    - name: UFW not installed
+      debug:
+        msg: "UFW is not installed on {{ inventory_hostname }}"
+      when: ufw_installed.rc != 0
+
+    - name: Show all open listening ports
+      shell: ss -tlnp | column -t
+      register: open_ports
+      changed_when: false
+
+    - name: Print open ports
+      debug:
+        msg: "{{ open_ports.stdout_lines }}"

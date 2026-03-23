@@ -1,0 +1,35 @@
+---
+- name: Cleanup Old Logs
+  hosts: all
+  become: true
+  vars:
+    log_age_days: 30
+
+  tasks:
+    - name: Find old compressed log files
+      find:
+        paths: /var/log
+        age: "{{ log_age_days }}d"
+        patterns: "*.gz,*.1,*.2,*.3,*.4,*.old"
+        recurse: true
+      register: old_logs
+
+    - name: Remove old compressed log files
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ old_logs.files }}"
+      when: old_logs.files | length > 0
+
+    - name: Truncate journal logs older than 30 days
+      command: journalctl --vacuum-time={{ log_age_days }}d
+      changed_when: false
+
+    - name: Show freed space
+      command: df -h /
+      register: disk_after
+      changed_when: false
+
+    - name: Print disk usage
+      debug:
+        msg: "{{ disk_after.stdout_lines }}"

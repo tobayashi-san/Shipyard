@@ -1,0 +1,49 @@
+---
+- name: Cleanup Docker Resources
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Check if Docker is installed
+      command: docker --version
+      register: docker_check
+      ignore_errors: true
+      changed_when: false
+
+    - name: Skip if Docker not installed
+      meta: end_host
+      when: docker_check.rc != 0
+
+    - name: Get disk usage before cleanup
+      command: docker system df
+      register: before
+      changed_when: false
+
+    - name: Print before state
+      debug:
+        msg: "{{ before.stdout_lines }}"
+
+    - name: Remove stopped containers
+      command: docker container prune -f
+      changed_when: false
+
+    - name: Remove unused images
+      command: docker image prune -a -f
+      changed_when: false
+
+    - name: Remove unused volumes
+      command: docker volume prune -f
+      changed_when: false
+
+    - name: Remove unused networks
+      command: docker network prune -f
+      changed_when: false
+
+    - name: Get disk usage after cleanup
+      command: docker system df
+      register: after
+      changed_when: false
+
+    - name: Print after state
+      debug:
+        msg: "{{ after.stdout_lines }}"
