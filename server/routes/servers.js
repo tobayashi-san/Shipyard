@@ -283,7 +283,10 @@ router.get('/:id/notes', guardServerAccess, (req, res) => {
 // PUT /api/servers/:id/notes
 router.put('/:id/notes', guardServerAccess, guard('canEditServers'), (req, res) => {
   try {
-    const notes = typeof req.body.notes === 'string' ? req.body.notes.slice(0, 50000) : '';
+    if (typeof req.body.notes === 'string' && req.body.notes.length > 5000) {
+      return res.status(400).json({ error: 'Notes too long (max 5000 characters)' });
+    }
+    const notes = typeof req.body.notes === 'string' ? req.body.notes : '';
     db.servers.setNotes(req.params.id, notes);
     res.json({ success: true });
   } catch (error) {

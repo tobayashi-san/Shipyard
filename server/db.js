@@ -173,43 +173,63 @@ db.exec(`
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);`);
 
-// Helper: silently ignore "duplicate column" migration errors, rethrow others
-function migrate(sql) {
-  try { db.exec(sql); } catch (e) {
-    if (!e.message || !e.message.includes('duplicate column')) throw e;
+// Robust Migration System
+db.exec('CREATE TABLE IF NOT EXISTS migrations (version INTEGER PRIMARY KEY)');
+const { currentVersion } = db.prepare('SELECT COALESCE(MAX(version), 0) AS currentVersion FROM migrations').get();
+
+function runMigration(v, sql) {
+  if (currentVersion < v) {
+    try {
+      db.exec(sql);
+      console.log(`[db] Applied migration v${v}`);
+    } catch (e) {
+      // Ignoriere "duplicate column", da alte Installationen die Spalten 
+      // bereits durch die alte pragmatische migrate()-Methode haben könnten
+      if (!e.message || (!e.message.includes('duplicate column') && !e.message.includes('already exists'))) {
+        throw e;
+      }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (?)').run(v);
   }
 }
 
-// Migrations
-migrate('ALTER TABLE server_info ADD COLUMN reboot_required BOOLEAN DEFAULT 0;');
-migrate("ALTER TABLE servers ADD COLUMN notes TEXT NOT NULL DEFAULT '';");
-migrate('ALTER TABLE docker_containers ADD COLUMN compose_project TEXT;');
-migrate('ALTER TABLE docker_containers ADD COLUMN compose_working_dir TEXT;');
-migrate('ALTER TABLE server_info ADD COLUMN cpu_usage_pct REAL DEFAULT NULL;');
-migrate('ALTER TABLE servers ADD COLUMN group_id TEXT;');
+// v1: Alle bisherigen Spalten-Updates aus der pragmatischen Variante
+runMigration(1, `
+  ALTER TABLE server_info ADD COLUMN reboot_required BOOLEAN DEFAULT 0;
+  ALTER TABLE servers ADD COLUMN notes TEXT NOT NULL DEFAULT '';
+  ALTER TABLE docker_containers ADD COLUMN compose_project TEXT;
+  ALTER TABLE docker_containers ADD COLUMN compose_working_dir TEXT;
+  ALTER TABLE server_info ADD COLUMN cpu_usage_pct REAL DEFAULT NULL;
+  ALTER TABLE servers ADD COLUMN group_id TEXT;
+`);
 
-// Remove FK constraint from update_history so bulk/ansible operations can store targets
-try {
-  const hasFk = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='update_history'").get();
-  if (hasFk && hasFk.sql && hasFk.sql.includes('FOREIGN KEY')) {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS update_history_new (
-        id TEXT PRIMARY KEY,
-        server_id TEXT NOT NULL,
-        action TEXT NOT NULL,
-        status TEXT DEFAULT 'pending',
-        output TEXT,
-        started_at TEXT DEFAULT (datetime('now')),
-        completed_at TEXT
-      );
-      INSERT OR IGNORE INTO update_history_new SELECT * FROM update_history;
-      DROP TABLE update_history;
-      ALTER TABLE update_history_new RENAME TO update_history;
-      CREATE INDEX IF NOT EXISTS idx_update_history_server_id  ON update_history(server_id);
-      CREATE INDEX IF NOT EXISTS idx_update_history_started_at ON update_history(started_at);
-    `);
+// v2: Update History FK fix & Schedule Targets (aus dem alten Code konsolidiert)
+if (currentVersion < 2) {
+  try {
+    const hasFk = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='update_history'").get();
+    if (hasFk && hasFk.sql && hasFk.sql.includes('FOREIGN KEY')) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS update_history_new (
+          id TEXT PRIMARY KEY,
+          server_id TEXT NOT NULL,
+          action TEXT NOT NULL,
+          status TEXT DEFAULT 'pending',
+          output TEXT,
+          started_at TEXT DEFAULT (datetime('now')),
+          completed_at TEXT
+        );
+        INSERT OR IGNORE INTO update_history_new SELECT * FROM update_history;
+        DROP TABLE update_history;
+        ALTER TABLE update_history_new RENAME TO update_history;
+        CREATE INDEX IF NOT EXISTS idx_update_history_server_id  ON update_history(server_id);
+        CREATE INDEX IF NOT EXISTS idx_update_history_started_at ON update_history(started_at);
+      `);
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (2)').run();
+  } catch (e) {
+    console.error('[db] v2 migration error:', e.message);
   }
-} catch {}
+}
 
 // Schedule execution history
 db.exec(`
@@ -265,9 +285,12 @@ db.exec(`
   );
 `);
 
-migrate("ALTER TABLE server_groups ADD COLUMN color TEXT DEFAULT '#6366f1';");
-migrate('ALTER TABLE server_groups ADD COLUMN parent_id TEXT;');
-migrate('ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0;');
+// Weiterführung von v1-Säuberungen (die alten migriert wurden, bevor die Tabelle angelegt war)
+runMigration(3, `
+  ALTER TABLE server_groups ADD COLUMN color TEXT DEFAULT '#6366f1';
+  ALTER TABLE server_groups ADD COLUMN parent_id TEXT;
+  ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0;
+`);
 
 // Roles table
 db.exec(`

@@ -334,7 +334,9 @@ function attachEvents() {
         // Prevent circular: don't drop onto self or descendants
         const getDescIds = (id) => {
           const ids = new Set([id]);
-          const addChildren = (pid) => serverGroups.filter(g => g.parent_id === pid).forEach(g => { ids.add(g.id); addChildren(g.id); });
+          const addChildren = (pid) => serverGroups.filter(g => g.parent_id === pid).forEach(g => {
+            if (!ids.has(g.id)) { ids.add(g.id); addChildren(g.id); }
+          });
           addChildren(id);
           return ids;
         };
@@ -624,7 +626,9 @@ function showGroupDialog({ title = '', confirmText = '', groups = [], defaultNam
     // Build parent options excluding self and own descendants
     const getDescendantIds = (id) => {
       const ids = new Set([id]);
-      const addChildren = (pid) => groups.filter(g => g.parent_id === pid).forEach(g => { ids.add(g.id); addChildren(g.id); });
+      const addChildren = (pid) => groups.filter(g => g.parent_id === pid).forEach(g => {
+        if (!ids.has(g.id)) { ids.add(g.id); addChildren(g.id); }
+      });
       addChildren(id);
       return ids;
     };
@@ -706,10 +710,12 @@ function showGroupDialog({ title = '', confirmText = '', groups = [], defaultNam
   });
 }
 
-function buildGroupTree(groups, parentId = null) {
+function buildGroupTree(groups, parentId = null, visited = new Set()) {
+  if (parentId !== null && visited.has(parentId)) return [];
+  if (parentId !== null) visited.add(parentId);
   return groups
     .filter(g => (g.parent_id || null) === parentId)
-    .map(g => ({ ...g, children: buildGroupTree(groups, g.id) }));
+    .map(g => ({ ...g, children: buildGroupTree(groups, g.id, new Set(visited)) }));
 }
 
 function renderGroupNode(node, depth, serversByGroup) {
@@ -747,10 +753,12 @@ function renderGroupNode(node, depth, serversByGroup) {
   return html;
 }
 
-function countDescendantServers(node, serversByGroup) {
+function countDescendantServers(node, serversByGroup, visited = new Set()) {
+  if (visited.has(node.id)) return 0;
+  visited.add(node.id);
   let count = 0;
   for (const child of node.children || []) {
-    count += (serversByGroup[child.id] || []).length + countDescendantServers(child, serversByGroup);
+    count += (serversByGroup[child.id] || []).length + countDescendantServers(child, serversByGroup, visited);
   }
   return count;
 }

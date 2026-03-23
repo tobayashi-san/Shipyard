@@ -1,6 +1,7 @@
 import { state } from '../main.js';
+import DOMPurify from 'dompurify';
 
-/** Escape HTML special characters to prevent XSS */
+/** Escape HTML special characters to prevent XSS (Fallback für kleine Strings) */
 export function esc(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
@@ -8,6 +9,11 @@ export function esc(s) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+/** Sanitize an entire block of HTML before inserting it into the DOM */
+export function sanitizeHTML(htmlText) {
+  return DOMPurify.sanitize(htmlText);
 }
 
 function toUtcDate(s) {

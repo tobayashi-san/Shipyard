@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { state, navigate } from '../main.js';
 import { t } from '../i18n.js';
-import { formatCurrentTime, formatDateTimeShort, esc } from '../utils/format.js';
+import { formatCurrentTime, formatDateTimeShort, esc, sanitizeHTML } from '../utils/format.js';
 
 // Called by background poller — only refreshes data, never rebuilds page shell
 export async function refreshDashboardData() {
@@ -16,7 +16,7 @@ export async function renderDashboard() {
   const main = document.querySelector('.main-content');
   if (!main) return;
 
-  main.innerHTML = `
+  main.innerHTML = sanitizeHTML(`
     <div class="page-header">
       <div>
         <h2>${t('dash.title')}</h2>
@@ -31,7 +31,7 @@ export async function renderDashboard() {
     <div class="page-content" id="dash-content">
       <div class="loading-state"><div class="loader"></div> ${t('dash.loading')}</div>
     </div>
-  `;
+  `);
 
   document.getElementById('btn-dash-refresh')?.addEventListener('click', () => renderDashboard());
 
@@ -39,8 +39,9 @@ export async function renderDashboard() {
     const data = await api.getDashboard();
     renderDashboardData(data);
   } catch (e) {
-    document.getElementById('dash-content').innerHTML =
-      `<div class="empty-state"><p style="color:var(--offline);">${t('common.errorPrefix', { msg: esc(e.message) })}</p></div>`;
+    document.getElementById('dash-content').innerHTML = sanitizeHTML(
+      `<div class="empty-state"><p style="color:var(--offline);">${t('common.errorPrefix', { msg: esc(e.message) })}</p></div>`
+    );
   }
 }
 
@@ -63,7 +64,7 @@ function renderDashboardData(data) {
   const content = document.getElementById('dash-content');
   if (!content) return;
 
-  content.innerHTML = `
+  content.innerHTML = sanitizeHTML(`
     <!-- Stat Cards -->
     <div class="dash-stat-row">
       ${statCard('fa-server', summary.total, t('dash.totalServers'), '')}
@@ -148,7 +149,7 @@ function renderDashboardData(data) {
 
       </div>
     </div>
-  `;
+  `);
 
   // Server-Row click
   content.querySelectorAll('.server-health-row').forEach(row => {

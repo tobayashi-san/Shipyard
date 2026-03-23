@@ -15,6 +15,7 @@ const systemInfo = require('./services/system-info');
 const { notify } = require('./services/notifier');
 
 const app = express();
+app.set('trust proxy', 1); // Wichtig für Rate-Limits hinter Reverse-Proxies (Traefik, Nginx, Cloudflare)
 
 // ── HTTPS / HTTP ──────────────────────────────────────────────
 const SSL_KEY  = process.env.SSL_KEY;
