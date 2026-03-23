@@ -40,7 +40,7 @@ export function showProfileMenu() {
     position: fixed;
     bottom: ${rect ? window.innerHeight - rect.top + 6 : 70}px;
     left: ${rect ? rect.left : 0}px;
-    width: ${rect ? rect.width : 220}px;
+    width: 280px;
     z-index: 3100;
     background: var(--bg-panel);
     border: 1px solid var(--border);
@@ -75,7 +75,7 @@ export function showProfileMenu() {
       </div>
 
       <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px;">
-        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-primary);">
+        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-primary);white-space:nowrap;">
           <i class="fas fa-globe" style="width:16px;opacity:.7;"></i>
           <span>Language</span>
         </div>
@@ -86,7 +86,7 @@ export function showProfileMenu() {
       </div>
 
       <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 16px 8px;">
-        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-primary);">
+        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-primary);white-space:nowrap;">
           <i class="fas fa-moon" style="width:16px;opacity:.7;"></i>
           <span>Theme</span>
         </div>
@@ -98,7 +98,7 @@ export function showProfileMenu() {
       </div>
 
       <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 16px 8px;">
-        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-primary);">
+        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-primary);white-space:nowrap;">
           <i class="fas fa-clock" style="width:16px;opacity:.7;"></i>
           <span>Time Format</span>
         </div>
