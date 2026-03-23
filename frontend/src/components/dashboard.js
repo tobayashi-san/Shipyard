@@ -29,7 +29,19 @@ export async function renderDashboard() {
       </div>
     </div>
     <div class="page-content" id="dash-content">
-      <div class="loading-state"><div class="loader"></div> ${t('dash.loading')}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:16px;margin-bottom:24px;">
+        <div class="panel" style="height:86px;"><div class="skeleton" style="width:100%;height:100%;"></div></div>
+        <div class="panel" style="height:86px;"><div class="skeleton" style="width:100%;height:100%;"></div></div>
+        <div class="panel" style="height:86px;"><div class="skeleton" style="width:100%;height:100%;"></div></div>
+        <div class="panel" style="height:86px;"><div class="skeleton" style="width:100%;height:100%;"></div></div>
+      </div>
+      <div class="panel" style="padding:24px;">
+        <div class="skeleton-text" style="width:180px;height:20px;margin-bottom:24px;"></div>
+        <div class="skeleton-text" style="margin-bottom:12px;"></div>
+        <div class="skeleton-text" style="width:85%;margin-bottom:12px;"></div>
+        <div class="skeleton-text" style="width:90%;margin-bottom:12px;"></div>
+        <div class="skeleton-text" style="width:70%;"></div>
+      </div>
     </div>
   `);
 
