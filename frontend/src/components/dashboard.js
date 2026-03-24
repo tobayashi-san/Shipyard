@@ -94,7 +94,7 @@ function renderDashboardData(data) {
         <div class="dash-section-title">${t('dash.serverHealth')}</div>
         <div class="panel">
           ${servers.length === 0 ? `
-            <div class="empty-state" style="padding:32px;">
+            <div class="empty-state">
               <div class="empty-state-icon"><i class="fas fa-server"></i></div>
               <h3>${t('dash.noServers')}</h3>
               <p>${t('dash.noServersHint')}</p>

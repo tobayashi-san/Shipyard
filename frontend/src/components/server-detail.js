@@ -527,7 +527,7 @@ async function loadRecentActivity(serverId) {
   try {
     const history = await api.getServerHistory(serverId);
     if (!history || history.length === 0) {
-      el.innerHTML = `<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px;"><i class="fas fa-inbox" style="display:block;font-size:24px;margin-bottom:8px;opacity:.4;"></i> ${t('det.noHistory') || 'No activity yet.'}</div>`;
+      el.innerHTML = `<div class="empty-state empty-state-sm"><p>${t('det.noHistory') || 'No activity yet.'}</p></div>`;
       return;
     }
     const items = history.slice(0, 6);
@@ -1017,7 +1017,7 @@ function showCustomTaskModal(serverId, task) {
   overlay.id = 'custom-task-modal';
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
-    <div class="modal" style="max-width:500px;width:100%;">
+    <div class="modal modal-md">
       <div class="modal-header">
         <h3>${isEdit ? t('det.editTask') : t('det.addTask')}</h3>
         <button class="btn btn-secondary btn-sm" id="ctm-close"><i class="fas fa-times"></i></button>

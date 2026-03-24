@@ -54,7 +54,7 @@ export function showProfileMenu() {
 
   _menu.innerHTML = `
     <div style="padding:12px 16px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
-      <div style="width:34px;height:34px;border-radius:50%;background:var(--accent);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;">
+      <div style="width:34px;height:34px;border-radius:50%;background:var(--accent);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--text-inverse);">
         <i class="fas fa-user"></i>
       </div>
       <div style="min-width:0;">
@@ -63,7 +63,7 @@ export function showProfileMenu() {
         </div>
         <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
           ${email ? esc(email) : isAdmin ? '<span style="opacity:.5">No email set</span>' : ''}
-          ${isAdmin ? '<span style="margin-left:4px;font-size:9px;background:var(--accent);color:#fff;padding:1px 6px;border-radius:3px;vertical-align:middle;">admin</span>' : ''}
+          ${isAdmin ? '<span style="margin-left:4px;font-size:9px;background:var(--accent);color:var(--text-inverse);padding:1px 6px;border-radius:3px;vertical-align:middle;">admin</span>' : ''}
         </div>
       </div>
     </div>
@@ -162,19 +162,19 @@ export async function showProfileModal() {
   try { profile = await api.getProfile(); } catch {}
 
   _modalBackdrop = document.createElement('div');
-  _modalBackdrop.style.cssText = 'position:fixed;inset:0;z-index:3199;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;';
+  _modalBackdrop.className = 'profile-backdrop';
   _modalBackdrop.addEventListener('click', closeModal);
   document.body.appendChild(_modalBackdrop);
 
   _modal = document.createElement('div');
-  _modal.style.cssText = 'width:100%;max-width:460px;background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 16px 48px rgba(0,0,0,.35);overflow:hidden;';
+  _modal.className = 'profile-modal';
   _modal.addEventListener('click', e => e.stopPropagation());
 
   _modal.innerHTML = `
     <!-- Header -->
     <div style="padding:20px 24px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg-panel-alt);">
       <div style="display:flex;align-items:center;gap:14px;">
-        <div style="width:48px;height:48px;border-radius:50%;background:var(--accent);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff;">
+        <div style="width:48px;height:48px;border-radius:50%;background:var(--accent);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--text-inverse);">
           <i class="fas fa-user"></i>
         </div>
         <div>
@@ -182,7 +182,7 @@ export async function showProfileModal() {
           <div style="font-size:12px;color:var(--text-muted);margin-top:2px;" id="profile-display-email">${esc(profile.email) || '<span style="opacity:.5">No email set</span>'}</div>
           <div style="margin-top:4px;">
             <span style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:4px;
-              ${profile.role === 'admin' ? 'background:var(--accent);color:#fff;' : 'background:var(--bg-row-alt);color:var(--text-muted);border:1px solid var(--border);'}">
+              ${profile.role === 'admin' ? 'background:var(--accent);color:var(--text-inverse);' : 'background:var(--bg-row-alt);color:var(--text-muted);border:1px solid var(--border);'}">
               ${profile.role}
             </span>
           </div>

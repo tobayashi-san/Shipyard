@@ -641,7 +641,7 @@ function showGroupDialog({ title = '', confirmText = '', groups = [], defaultNam
     const parentOptions = groups.filter(g => !excludeIds.has(g.id));
 
     overlay.innerHTML = `
-      <div class="modal" style="max-width:400px;">
+      <div class="modal modal-sm">
         <div class="modal-header"><h3 class="modal-title">${esc(title)}</h3></div>
         <div class="modal-body" style="display:flex;flex-direction:column;gap:16px;">
           <div>

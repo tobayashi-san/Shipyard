@@ -29,7 +29,7 @@ export async function showRunPlaybookModal(onClose, preselectedNames = []) {
   overlay.className = 'modal-overlay animate-fade-in';
 
   overlay.innerHTML = `
-    <div class="modal" style="max-width:500px;">
+    <div class="modal modal-md">
       <h2>
         <i class="fas fa-tools"></i> ${t('run.title')}
         <button id="btn-rp-close" style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:18px;color:var(--text-muted);line-height:1;">×</button>

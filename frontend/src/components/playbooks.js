@@ -310,7 +310,7 @@ async function loadPlaybookList() {
   try {
     allPlaybooks = await api.getPlaybooks();
     if (!allPlaybooks || allPlaybooks.length === 0) {
-      listEl.innerHTML = `<div class="empty-state" style="padding:20px;"><p>${t('pb.noPlaybooks')}.</p></div>`;
+      listEl.innerHTML = `<div class="empty-state empty-state-sm"><p>${t('pb.noPlaybooks')}.</p></div>`;
       return;
     }
   } catch (e) {
@@ -328,7 +328,7 @@ async function loadPlaybookList() {
       : allPlaybooks;
 
     if (filtered.length === 0) {
-      listEl.innerHTML = `<div class="empty-state" style="padding:20px;"><p>Keine Ergebnisse.</p></div>`;
+      listEl.innerHTML = `<div class="empty-state empty-state-sm"><p>${t('pb.noResults')}</p></div>`;
       return;
     }
 
@@ -770,7 +770,7 @@ async function loadVarsList() {
   try {
     const vars = await api.getAnsibleVars();
     if (!vars || vars.length === 0) {
-      el.innerHTML = `<div class="empty-state" style="padding:20px;"><p style="color:var(--text-muted);">${t('vars.noVars')}</p></div>`;
+      el.innerHTML = `<div class="empty-state empty-state-sm"><p>${t('vars.noVars')}</p></div>`;
       return;
     }
     el.innerHTML = `
@@ -953,7 +953,7 @@ async function loadScheduleList() {
   try {
     const schedules = await api.getSchedules();
     if (!schedules || schedules.length === 0) {
-      el.innerHTML = `<div class="empty-state" style="padding:20px;"><p style="color:var(--text-muted);">${t('sc.noSchedules')}</p></div>`;
+      el.innerHTML = `<div class="empty-state empty-state-sm"><p>${t('sc.noSchedules')}</p></div>`;
       return;
     }
     el.innerHTML = `
@@ -1057,7 +1057,7 @@ async function loadHistoryList(scheduleId = null) {
     }
 
     if (!history || history.length === 0) {
-      el.innerHTML = `<div class="empty-state" style="padding:20px;"><p style="color:var(--text-muted);">${t('hist.noHistory')}</p></div>`;
+      el.innerHTML = `<div class="empty-state empty-state-sm"><p>${t('hist.noHistory')}</p></div>`;
       return;
     }
 
@@ -1120,7 +1120,7 @@ function showOutputModal(entry) {
   const overlay = document.getElementById('modal-overlay');
   overlay.classList.remove('hidden');
   overlay.innerHTML = `
-    <div class="modal" style="max-width:700px;width:95%;">
+    <div class="modal modal-wide">
       <h2><i class="fas fa-file-alt"></i> ${esc(entry.schedule_name)} — ${esc(entry.playbook)}</h2>
       <div class="terminal" style="margin:8px 0;max-height:60vh;">
         <div class="terminal-header">
@@ -1182,7 +1182,7 @@ function showHistoryModal(filename, versions, onRestored) {
 
   function render(openVersion = null) {
     overlay.innerHTML = `
-      <div class="modal" style="max-width:620px;width:95%;">
+      <div class="modal modal-wide">
         <h2><i class="fas fa-history"></i> ${t('pb.historyTitle')}</h2>
         <div class="form-body" style="max-height:70vh;overflow-y:auto;" id="pb-hist-list">
           ${renderRows(openVersion)}
@@ -1274,7 +1274,7 @@ async function openScheduleDialog(editId) {
   const overlay = document.getElementById('modal-overlay');
   overlay.classList.remove('hidden');
   overlay.innerHTML = `
-    <div class="modal" style="max-width:480px;">
+    <div class="modal modal-md">
       <h2>${existing ? `<i class="fas fa-edit"></i> ${t('sc.editTitle')}` : `<i class="fas fa-clock"></i> ${t('sc.newTitle')}`}</h2>
       <div class="form-body">
         <form id="schedule-form">

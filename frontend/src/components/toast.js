@@ -55,7 +55,7 @@ export function showConfirm(message, { title = '', confirmText = '', danger = fa
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
-      <div class="modal" style="max-width:420px;">
+      <div class="modal modal-sm">
         <div class="modal-header">
           <h3 class="modal-title">${esc(resolvedTitle)}</h3>
         </div>
@@ -94,7 +94,7 @@ export function showPrompt(label, { title = '', confirmText = '', defaultValue =
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
-      <div class="modal" style="max-width:400px;">
+      <div class="modal modal-sm">
         <div class="modal-header">
           <h3 class="modal-title">${esc(resolvedTitle)}</h3>
         </div>
