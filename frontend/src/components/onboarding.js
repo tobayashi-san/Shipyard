@@ -51,9 +51,17 @@ export async function renderOnboarding() {
           ${t('ob.passwordHint')}
         </p>
         <div class="form-group">
+          <label class="form-label">${t('ob.username')} <span style="font-size:11px;font-weight:400;color:var(--text-muted);">(${t('ob.usernameHint')})</span></label>
+          <input class="form-input" type="text" id="ob-username" placeholder="admin" autocomplete="username" autofocus>
+        </div>
+        <div class="form-group" style="margin-top:12px;">
+          <label class="form-label">${t('ob.displayName')} <span style="font-size:11px;font-weight:400;color:var(--text-muted);">(${t('ob.displayNameHint')})</span></label>
+          <input class="form-input" type="text" id="ob-display-name" placeholder="${t('ob.displayNamePlaceholder')}" autocomplete="name">
+        </div>
+        <div class="form-group" style="margin-top:12px;">
           <label class="form-label">${t('login.password')}</label>
           <input class="form-input" type="password" id="ob-pw1" placeholder="${t('login.minChars')}"
-            autocomplete="new-password" autofocus>
+            autocomplete="new-password">
         </div>
         <div class="form-group" style="margin-top:12px;">
           <label class="form-label">${t('login.confirmPassword')}</label>
@@ -206,12 +214,20 @@ export async function renderOnboarding() {
   // ── Step handlers ──────────────────────────────────────────
 
   async function handlePasswordStep() {
+    const usernameRaw = document.getElementById('ob-username').value.trim();
+    const displayName = document.getElementById('ob-display-name').value.trim();
     const pw1 = document.getElementById('ob-pw1').value;
     const pw2 = document.getElementById('ob-pw2').value;
     const err = document.getElementById('ob-error');
     err.classList.add('hidden');
     err.textContent = '';
 
+    const username = usernameRaw || 'admin';
+    if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
+      err.textContent = t('ob.usernameInvalid');
+      err.classList.remove('hidden');
+      return;
+    }
     if (pw1.length < 12) {
       err.textContent = t('login.errorShort');
       err.classList.remove('hidden');
@@ -228,8 +244,12 @@ export async function renderOnboarding() {
     btn.innerHTML = `<span class="spinner-sm"></span> ${t('common.loading')}`;
 
     try {
-      const result = await api.authSetup('admin', pw1);
+      const result = await api.authSetup(username, pw1);
       api.setToken(result.token);
+      // Save display name if provided
+      if (displayName) {
+        try { await api.updateProfile({ displayName }); } catch {}
+      }
       setStep(2);
     } catch (e) {
       err.textContent = e.message || t('login.errorGeneral');

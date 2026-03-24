@@ -1211,7 +1211,7 @@ async function loadRolesTab() {
     const { servers = [], groups = [], plugins = [], playbooks = [] } = content._meta || {};
     const p = role?.permissions || {};
 
-    const serversRestricted  = p.servers   !== 'all' && p.servers != null;
+    const serversRestricted   = p.servers   !== 'all' && p.servers != null;
     const playbooksRestricted = p.playbooks !== 'all' && p.playbooks != null;
     const pluginsRestricted   = p.plugins   !== 'all' && p.plugins  != null;
 
@@ -1220,276 +1220,231 @@ async function loadRolesTab() {
     const checkedPbooks  = playbooksRestricted ? (p.playbooks || []) : [];
     const checkedPlugins = pluginsRestricted   ? (p.plugins   || []) : [];
 
-    const capGroups = [
-      { label: 'Servers', caps: [
-        { key: 'canViewServers',          label: 'View servers' },
-        { key: 'canAddServers',           label: 'Add servers' },
-        { key: 'canEditServers',          label: 'Edit servers' },
-        { key: 'canDeleteServers',        label: 'Delete servers' },
-        { key: 'canUseTerminal',          label: 'SSH terminal' },
-        { key: 'canExportImportServers',  label: 'Export / Import servers' },
-        { key: 'canViewDocker',           label: 'Docker: view containers & logs' },
-        { key: 'canPullDocker',           label: 'Docker: pull images & check updates' },
-        { key: 'canRestartDocker',        label: 'Docker: restart containers' },
-        { key: 'canManageDockerCompose',  label: 'Docker: manage compose stacks (up/down/edit)' },
-      ]},
-      { label: 'Playbooks', caps: [
-        { key: 'canViewPlaybooks',   label: 'View playbooks' },
-        { key: 'canEditPlaybooks',   label: 'Create / edit playbooks' },
-        { key: 'canDeletePlaybooks', label: 'Delete playbooks' },
-        { key: 'canRunPlaybooks',    label: 'Run playbooks & ad-hoc' },
-      ]},
-      { label: 'Schedules', caps: [
-        { key: 'canViewSchedules',   label: 'View schedules' },
-        { key: 'canAddSchedules',    label: 'Add schedules' },
-        { key: 'canEditSchedules',   label: 'Edit schedules' },
-        { key: 'canDeleteSchedules', label: 'Delete schedules' },
-        { key: 'canToggleSchedules', label: 'Enable / disable schedules' },
-      ]},
-      { label: 'Variables', caps: [
-        { key: 'canViewVars',   label: 'View variables' },
-        { key: 'canAddVars',    label: 'Add variables' },
-        { key: 'canEditVars',   label: 'Edit variables' },
-        { key: 'canDeleteVars', label: 'Delete variables' },
-      ]},
-      { label: 'Other', caps: [
-        { key: 'canViewAudit', label: 'View audit log' },
-      ]},
-    ];
-
-    // Tab definitions — access + caps per section
-    const formTabs = [
-      {
-        id: 'servers', label: 'Servers', icon: 'fa-server',
-        accessSection: `
-          <div style="margin-bottom:12px;">
-            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px;">Accessible Servers</div>
-            <div style="display:flex;flex-direction:column;gap:6px;">
-              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-                <input type="radio" name="rf-servers" value="all" ${!serversRestricted ? 'checked' : ''}> All servers
-              </label>
-              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-                <input type="radio" name="rf-servers" value="restricted" ${serversRestricted ? 'checked' : ''}> Restricted to:
-              </label>
-            </div>
-            <div id="rf-servers-detail" style="margin-top:10px;padding-left:20px;display:${serversRestricted ? 'block' : 'none'};">
-              ${groups.length > 0 ? `
-              <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;">Server Groups / Folders</div>
-              <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px;">
-                ${groups.map(g => `
-                  <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-                    <input type="checkbox" class="rf-group-chk" value="${esc(g.id)}" ${checkedGroups.includes(g.id) ? 'checked' : ''}>
-                    <span style="width:10px;height:10px;border-radius:2px;background:${esc(g.color || '#6366f1')};flex-shrink:0;display:inline-block;"></span>
-                    ${esc(g.name)}
-                  </label>`).join('')}
-              </div>` : ''}
-              ${servers.length > 0 ? `
-              <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;">Individual Servers</div>
-              <div style="display:flex;flex-direction:column;gap:4px;max-height:160px;overflow-y:auto;">
-                ${servers.map(s => `
-                  <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-                    <input type="checkbox" class="rf-server-chk" value="${esc(s.id)}" ${checkedServers.includes(s.id) ? 'checked' : ''}>
-                    <span class="status-dot ${s.status === 'online' ? 'online' : s.status === 'offline' ? 'offline' : 'unknown'}" style="flex-shrink:0;"></span>
-                    ${esc(s.name)}
-                    <span style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);">${esc(s.ip_address)}</span>
-                  </label>`).join('')}
-              </div>` : ''}
-            </div>
-          </div>`,
-        caps: capGroups.find(g => g.label === 'Servers')?.caps || [],
-      },
-      {
-        id: 'playbooks', label: 'Playbooks', icon: 'fa-terminal',
-        accessSection: `
-          <div style="margin-bottom:12px;">
-            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px;">Accessible Playbooks</div>
-            <div style="display:flex;flex-direction:column;gap:6px;">
-              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-                <input type="radio" name="rf-playbooks" value="all" ${!playbooksRestricted ? 'checked' : ''}> All playbooks
-              </label>
-              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-                <input type="radio" name="rf-playbooks" value="restricted" ${playbooksRestricted ? 'checked' : ''}> Restricted to:
-              </label>
-            </div>
-            <div id="rf-playbooks-detail" style="margin-top:8px;padding-left:20px;display:${playbooksRestricted ? 'flex' : 'none'};flex-direction:column;gap:4px;max-height:160px;overflow-y:auto;">
-              ${playbooks.map(pb => `
-                <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-                  <input type="checkbox" class="rf-pb-chk" value="${esc(pb.filename)}" ${checkedPbooks.includes(pb.filename) ? 'checked' : ''}>
-                  <i class="fas fa-terminal" style="font-size:10px;color:var(--text-muted);"></i>
-                  ${esc(pb.filename)}
-                </label>`).join('')}
-            </div>
-          </div>`,
-        caps: capGroups.find(g => g.label === 'Playbooks')?.caps || [],
-      },
-      {
-        id: 'updates', label: 'Updates', icon: 'fa-arrow-up',
-        accessSection: '',
-        caps: [
-          { key: 'canViewUpdates',         label: 'View available updates' },
-          { key: 'canRunUpdates',           label: 'Run system update' },
-          { key: 'canRebootServers',        label: 'Reboot servers' },
-          { key: 'canViewCustomUpdates',    label: 'View custom update tasks' },
-          { key: 'canRunCustomUpdates',     label: 'Run / check custom tasks' },
-          { key: 'canEditCustomUpdates',    label: 'Add / edit custom tasks' },
-          { key: 'canDeleteCustomUpdates',  label: 'Delete custom tasks' },
-        ],
-      },
-      {
-        id: 'schedules', label: 'Schedules', icon: 'fa-clock',
-        accessSection: '',
-        caps: capGroups.find(g => g.label === 'Schedules')?.caps || [],
-      },
-      {
-        id: 'variables', label: 'Variables', icon: 'fa-sliders-h',
-        accessSection: '',
-        caps: capGroups.find(g => g.label === 'Variables')?.caps || [],
-      },
-      {
-        id: 'plugins', label: 'Plugins', icon: 'fa-puzzle-piece',
-        accessSection: plugins.filter(pl => pl.sidebar).length > 0 ? `
-          <div style="margin-bottom:12px;">
-            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px;">Accessible Plugins</div>
-            <div style="display:flex;flex-direction:column;gap:6px;">
-              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-                <input type="radio" name="rf-plugins" value="all" ${!pluginsRestricted ? 'checked' : ''}> All plugins
-              </label>
-              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-                <input type="radio" name="rf-plugins" value="restricted" ${pluginsRestricted ? 'checked' : ''}> Restricted to:
-              </label>
-            </div>
-            <div id="rf-plugins-detail" style="margin-top:8px;padding-left:20px;display:${pluginsRestricted ? 'flex' : 'none'};flex-direction:column;gap:4px;">
-              ${plugins.map(pl => `
-                <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
-                  <input type="checkbox" class="rf-plugin-chk" value="${esc(pl.id)}" ${checkedPlugins.includes(pl.id) ? 'checked' : ''}>
-                  <i class="${esc(pl.sidebar?.icon || 'fas fa-puzzle-piece')}" style="font-size:10px;color:var(--text-muted);"></i>
-                  ${esc(pl.sidebar?.label || pl.name || pl.id)}
-                </label>`).join('')}
-            </div>
-          </div>` : '<div style="font-size:13px;color:var(--text-muted);padding:8px 0;">No plugins installed.</div>',
-        caps: [],
-      },
-      {
-        id: 'other', label: 'Other', icon: 'fa-ellipsis-h',
-        accessSection: '',
-        caps: capGroups.find(g => g.label === 'Other')?.caps || [],
-      },
-    ];
-
-    let activeFormTab = formTabs[0].id;
-
-    function renderFormTab(tabId) {
-      const tab = formTabs.find(t => t.id === tabId);
-      if (!tab) return '';
+    // Helper: section header with select-all toggle
+    function sectionHead(label, icon, cls) {
       return `
-        ${tab.accessSection}
-        ${tab.caps.length > 0 ? `
-        <div>
-          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px;">Permissions</div>
-          <div style="display:flex;flex-direction:column;gap:6px;">
-            ${tab.caps.map(c => `
-              <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;">
-                <input type="checkbox" class="rf-cap-chk" value="${esc(c.key)}" ${p[c.key] !== false ? 'checked' : ''}>
-                ${c.label}
+        <div class="rf-section-head" data-cls="${cls}">
+          <span><i class="fas ${icon}" style="color:var(--accent);margin-right:6px;font-size:11px;"></i>${label}</span>
+          <button type="button" class="btn-link rf-select-all" data-cls="${cls}" style="font-size:11px;">Select all</button>
+        </div>`;
+    }
+
+    // Helper: checkbox grid
+    function capGrid(caps, defaults) {
+      return `<div class="rf-cap-grid">${caps.map(c => `
+        <label class="rf-cap-label">
+          <input type="checkbox" class="rf-cap-chk" value="${esc(c.key)}" ${defaults[c.key] !== false ? 'checked' : ''}>
+          <span>${c.label}</span>
+        </label>`).join('')}</div>`;
+    }
+
+    // Access restriction picker (servers)
+    function serverPicker() {
+      return `
+        <div class="rf-access-row">
+          <label class="rf-radio-label">
+            <input type="radio" name="rf-servers" value="all" ${!serversRestricted ? 'checked' : ''}> All servers
+          </label>
+          <label class="rf-radio-label">
+            <input type="radio" name="rf-servers" value="restricted" ${serversRestricted ? 'checked' : ''}> Restrict access
+          </label>
+        </div>
+        <div id="rf-servers-detail" class="rf-picker-detail" style="display:${serversRestricted ? 'block' : 'none'};">
+          ${groups.length > 0 ? `
+            <div class="rf-picker-label">Server Groups</div>
+            <div class="rf-picker-list">
+              ${groups.map(g => `
+                <label class="rf-cap-label">
+                  <input type="checkbox" class="rf-group-chk" value="${esc(g.id)}" ${checkedGroups.includes(g.id) ? 'checked' : ''}>
+                  <span style="width:8px;height:8px;border-radius:2px;background:${esc(g.color||'#6366f1')};display:inline-block;flex-shrink:0;"></span>
+                  <span>${esc(g.name)}</span>
+                </label>`).join('')}
+            </div>` : ''}
+          ${servers.length > 0 ? `
+            <div class="rf-picker-label" style="margin-top:8px;">Individual Servers</div>
+            <div class="rf-picker-list">
+              ${servers.map(s => `
+                <label class="rf-cap-label">
+                  <input type="checkbox" class="rf-server-chk" value="${esc(s.id)}" ${checkedServers.includes(s.id) ? 'checked' : ''}>
+                  <span class="status-dot ${s.status === 'online' ? 'online' : s.status === 'offline' ? 'offline' : 'unknown'}"></span>
+                  <span>${esc(s.name)}</span>
+                  <span style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);">${esc(s.ip_address)}</span>
+                </label>`).join('')}
+            </div>` : ''}
+        </div>`;
+    }
+
+    function playbookPicker() {
+      return `
+        <div class="rf-access-row">
+          <label class="rf-radio-label"><input type="radio" name="rf-playbooks" value="all" ${!playbooksRestricted ? 'checked' : ''}> All playbooks</label>
+          <label class="rf-radio-label"><input type="radio" name="rf-playbooks" value="restricted" ${playbooksRestricted ? 'checked' : ''}> Restrict access</label>
+        </div>
+        <div id="rf-playbooks-detail" class="rf-picker-detail" style="display:${playbooksRestricted ? 'block' : 'none'};">
+          <div class="rf-picker-list">
+            ${playbooks.map(pb => `
+              <label class="rf-cap-label">
+                <input type="checkbox" class="rf-pb-chk" value="${esc(pb.filename)}" ${checkedPbooks.includes(pb.filename) ? 'checked' : ''}>
+                <i class="fas fa-file-code" style="font-size:10px;color:var(--text-muted);"></i>
+                <span>${esc(pb.filename)}</span>
               </label>`).join('')}
           </div>
-        </div>` : ''}
-      `;
+        </div>`;
+    }
+
+    function pluginPicker() {
+      const sidebarPlugins = plugins.filter(pl => pl.sidebar);
+      if (!sidebarPlugins.length) return '<p style="font-size:12px;color:var(--text-muted);margin:0;">No plugins with UI installed.</p>';
+      return `
+        <div class="rf-access-row">
+          <label class="rf-radio-label"><input type="radio" name="rf-plugins" value="all" ${!pluginsRestricted ? 'checked' : ''}> All plugins</label>
+          <label class="rf-radio-label"><input type="radio" name="rf-plugins" value="restricted" ${pluginsRestricted ? 'checked' : ''}> Restrict access</label>
+        </div>
+        <div id="rf-plugins-detail" class="rf-picker-detail" style="display:${pluginsRestricted ? 'block' : 'none'};">
+          <div class="rf-picker-list">
+            ${sidebarPlugins.map(pl => `
+              <label class="rf-cap-label">
+                <input type="checkbox" class="rf-plugin-chk" value="${esc(pl.id)}" ${checkedPlugins.includes(pl.id) ? 'checked' : ''}>
+                <i class="${esc(pl.sidebar?.icon || 'fas fa-puzzle-piece')}" style="font-size:10px;color:var(--text-muted);"></i>
+                <span>${esc(pl.sidebar?.label || pl.name || pl.id)}</span>
+              </label>`).join('')}
+          </div>
+        </div>`;
     }
 
     area.innerHTML = `
-      <div class="settings-block" style="border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;">
-        <div style="font-size:14px;font-weight:600;margin-bottom:14px;">${isEdit ? `Edit Role: ${esc(role.name)}` : 'New Role'}</div>
+      <div class="rf-form-card">
+        <div class="rf-form-title">${isEdit ? `<i class="fas fa-shield-halved"></i> Edit: ${esc(role.name)}` : '<i class="fas fa-plus"></i> New Role'}</div>
 
-        <div class="form-group" style="margin-bottom:16px;">
-          <label class="form-label">Name</label>
-          <input class="form-input" type="text" id="rf-name" value="${esc(role?.name || '')}" style="max-width:300px;" placeholder="e.g. Ops Team">
+        <div class="form-group" style="margin-bottom:20px;">
+          <label class="form-label">Role Name</label>
+          <input class="form-input" type="text" id="rf-name" value="${esc(role?.name || '')}" style="max-width:280px;" placeholder="e.g. Ops Team">
         </div>
 
-        <!-- Per-category tabs -->
-        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:8px;" id="rf-form-tabs">
-          ${formTabs.map(t => `
-            <button type="button" class="tab-btn${t.id === activeFormTab ? ' active' : ''}" data-ftab="${esc(t.id)}"
-              style="font-size:12px;padding:4px 10px;">
-              <i class="fas ${esc(t.icon)}"></i> ${t.label}
-            </button>`).join('')}
-        </div>
-        <div id="rf-form-tab-content" style="min-height:120px;">
-          ${renderFormTab(activeFormTab)}
+        <!-- Servers -->
+        <div class="rf-section">
+          ${sectionHead('Servers', 'fa-server', 'rf-servers-caps')}
+          ${serverPicker()}
+          ${capGrid([
+            { key: 'canViewServers',         label: 'View' },
+            { key: 'canAddServers',          label: 'Add' },
+            { key: 'canEditServers',         label: 'Edit' },
+            { key: 'canDeleteServers',       label: 'Delete' },
+            { key: 'canUseTerminal',         label: 'SSH Terminal' },
+            { key: 'canExportImportServers', label: 'Export / Import' },
+          ], p)}
+          <div class="rf-subsection-label">Docker</div>
+          ${capGrid([
+            { key: 'canViewDocker',          label: 'View containers & logs' },
+            { key: 'canPullDocker',          label: 'Pull & check updates' },
+            { key: 'canRestartDocker',       label: 'Restart containers' },
+            { key: 'canManageDockerCompose', label: 'Manage Compose stacks' },
+          ], p)}
         </div>
 
-        <div style="display:flex;gap:8px;margin-top:16px;">
-          <button class="btn btn-primary btn-sm" id="rf-save"><i class="fas fa-save"></i> ${isEdit ? 'Save' : 'Create'}</button>
+        <!-- Updates -->
+        <div class="rf-section">
+          ${sectionHead('Updates', 'fa-arrow-up', 'rf-updates-caps')}
+          ${capGrid([
+            { key: 'canViewUpdates',        label: 'View updates' },
+            { key: 'canRunUpdates',         label: 'Run update' },
+            { key: 'canRebootServers',      label: 'Reboot servers' },
+            { key: 'canViewCustomUpdates',  label: 'View custom tasks' },
+            { key: 'canRunCustomUpdates',   label: 'Run / check custom tasks' },
+            { key: 'canEditCustomUpdates',  label: 'Add / edit custom tasks' },
+            { key: 'canDeleteCustomUpdates',label: 'Delete custom tasks' },
+          ], p)}
+        </div>
+
+        <!-- Playbooks -->
+        <div class="rf-section">
+          ${sectionHead('Playbooks', 'fa-terminal', 'rf-playbooks-caps')}
+          ${playbookPicker()}
+          ${capGrid([
+            { key: 'canViewPlaybooks',   label: 'View' },
+            { key: 'canEditPlaybooks',   label: 'Create / Edit' },
+            { key: 'canDeletePlaybooks', label: 'Delete' },
+            { key: 'canRunPlaybooks',    label: 'Run & ad-hoc' },
+          ], p)}
+        </div>
+
+        <!-- Schedules -->
+        <div class="rf-section">
+          ${sectionHead('Schedules', 'fa-clock', 'rf-schedules-caps')}
+          ${capGrid([
+            { key: 'canViewSchedules',   label: 'View' },
+            { key: 'canAddSchedules',    label: 'Add' },
+            { key: 'canEditSchedules',   label: 'Edit' },
+            { key: 'canDeleteSchedules', label: 'Delete' },
+            { key: 'canToggleSchedules', label: 'Enable / Disable' },
+          ], p)}
+        </div>
+
+        <!-- Variables -->
+        <div class="rf-section">
+          ${sectionHead('Variables', 'fa-sliders-h', 'rf-vars-caps')}
+          ${capGrid([
+            { key: 'canViewVars',   label: 'View' },
+            { key: 'canAddVars',    label: 'Add' },
+            { key: 'canEditVars',   label: 'Edit' },
+            { key: 'canDeleteVars', label: 'Delete' },
+          ], p)}
+        </div>
+
+        <!-- Plugins -->
+        <div class="rf-section">
+          ${sectionHead('Plugins', 'fa-puzzle-piece', 'rf-plugins-caps')}
+          ${pluginPicker()}
+        </div>
+
+        <!-- Other -->
+        <div class="rf-section" style="border-bottom:none;">
+          ${sectionHead('Other', 'fa-ellipsis-h', 'rf-other-caps')}
+          ${capGrid([
+            { key: 'canViewAudit', label: 'View audit log' },
+          ], p)}
+        </div>
+
+        <div style="display:flex;gap:8px;padding:16px 0 4px;">
+          <button class="btn btn-primary btn-sm" id="rf-save"><i class="fas fa-save"></i> ${isEdit ? 'Save' : 'Create Role'}</button>
           <button class="btn btn-secondary btn-sm" id="rf-cancel">Cancel</button>
         </div>
-        <p class="login-error hidden" id="rf-error" style="margin-top:8px;"></p>
+        <p class="login-error hidden" id="rf-error"></p>
       </div>
     `;
 
-    // Form tab switching — collect checked caps before switching so they survive re-render
-    const savedCaps = {};
-    // Initialize with existing or default definitions to avoid data loss on unvisited tabs
-    capGroups.forEach(g => g.caps.forEach(c => {
-      savedCaps[c.key] = p[c.key] !== false;
-    }));
+    // Scroll form into view
+    area.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-    function collectCaps() {
-      area.querySelectorAll('.rf-cap-chk').forEach(chk => { savedCaps[chk.value] = chk.checked; });
-    }
-    function renderFormTabWithSaved(tabId) {
-      const tab = formTabs.find(t => t.id === tabId);
-      if (!tab) return '';
-      const restored = tab.caps.map(c => ({
-        ...c,
-        checked: savedCaps[c.key],
+    // Access restriction toggles
+    area.querySelectorAll('input[name="rf-servers"]').forEach(r =>
+      r.addEventListener('change', () => {
+        const el = document.getElementById('rf-servers-detail');
+        if (el) el.style.display = r.value === 'restricted' ? 'block' : 'none';
       }));
-      return `
-        ${tab.accessSection}
-        ${restored.length > 0 ? `
-        <div>
-          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px;">Permissions</div>
-          <div style="display:flex;flex-direction:column;gap:6px;">
-            ${restored.map(c => `
-              <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;">
-                <input type="checkbox" class="rf-cap-chk" value="${esc(c.key)}" ${c.checked ? 'checked' : ''}>
-                ${c.label}
-              </label>`).join('')}
-          </div>
-        </div>` : ''}
-      `;
-    }
+    area.querySelectorAll('input[name="rf-playbooks"]').forEach(r =>
+      r.addEventListener('change', () => {
+        const el = document.getElementById('rf-playbooks-detail');
+        if (el) el.style.display = r.value === 'restricted' ? 'block' : 'none';
+      }));
+    area.querySelectorAll('input[name="rf-plugins"]').forEach(r =>
+      r.addEventListener('change', () => {
+        const el = document.getElementById('rf-plugins-detail');
+        if (el) el.style.display = r.value === 'restricted' ? 'block' : 'none';
+      }));
 
-    area.querySelectorAll('#rf-form-tabs .tab-btn').forEach(btn => {
+    // Select-all toggles per section
+    area.querySelectorAll('.rf-select-all').forEach(btn => {
       btn.addEventListener('click', () => {
-        collectCaps();
-        activeFormTab = btn.dataset.ftab;
-        area.querySelectorAll('#rf-form-tabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.ftab === activeFormTab));
-        document.getElementById('rf-form-tab-content').innerHTML = renderFormTabWithSaved(activeFormTab);
-        bindDetailToggles();
+        const checkboxes = area.querySelectorAll(`.rf-cap-chk`);
+        // scope to nearest rf-section
+        const section = btn.closest('.rf-section');
+        const sectionChks = section ? section.querySelectorAll('.rf-cap-chk') : checkboxes;
+        const allChecked = [...sectionChks].every(c => c.checked);
+        sectionChks.forEach(c => { c.checked = !allChecked; });
+        btn.textContent = allChecked ? 'Select all' : 'Deselect all';
       });
     });
-
-    function bindDetailToggles() {
-      area.querySelectorAll('input[name="rf-servers"]').forEach(r => {
-        r.addEventListener('change', () => {
-          const el = document.getElementById('rf-servers-detail');
-          if (el) el.style.display = r.value === 'restricted' ? 'block' : 'none';
-        });
-      });
-      area.querySelectorAll('input[name="rf-playbooks"]').forEach(r => {
-        r.addEventListener('change', () => {
-          const el = document.getElementById('rf-playbooks-detail');
-          if (el) el.style.display = r.value === 'restricted' ? 'flex' : 'none';
-        });
-      });
-      area.querySelectorAll('input[name="rf-plugins"]').forEach(r => {
-        r.addEventListener('change', () => {
-          const el = document.getElementById('rf-plugins-detail');
-          if (el) el.style.display = r.value === 'restricted' ? 'flex' : 'none';
-        });
-      });
-    }
-    bindDetailToggles();
 
     document.getElementById('rf-cancel')?.addEventListener('click', () => { area.innerHTML = ''; });
     document.getElementById('rf-save')?.addEventListener('click', async () => {
@@ -1500,16 +1455,12 @@ async function loadRolesTab() {
       const name = document.getElementById('rf-name').value.trim();
       if (!name) { errEl.textContent = 'Name required'; errEl.classList.remove('hidden'); return; }
 
-      // Build permissions object
       const serversMode   = area.querySelector('input[name="rf-servers"]:checked')?.value;
       const playbooksMode = area.querySelector('input[name="rf-playbooks"]:checked')?.value;
       const pluginsMode   = area.querySelector('input[name="rf-plugins"]') ? area.querySelector('input[name="rf-plugins"]:checked')?.value : 'all';
 
-      // Collect current visible caps, then merge with savedCaps
-      collectCaps();
-
       const permissions = {};
-      if (serversMode === 'all') {
+      if (serversMode === 'all' || !serversMode) {
         permissions.servers = 'all';
       } else {
         permissions.servers = {
@@ -1517,12 +1468,12 @@ async function loadRolesTab() {
           servers: [...area.querySelectorAll('.rf-server-chk:checked')].map(c => c.value),
         };
       }
-      permissions.playbooks = playbooksMode === 'all' ? 'all'
+      permissions.playbooks = (!playbooksMode || playbooksMode === 'all') ? 'all'
         : [...area.querySelectorAll('.rf-pb-chk:checked')].map(c => c.value);
       permissions.plugins = (!pluginsMode || pluginsMode === 'all') ? 'all'
         : [...area.querySelectorAll('.rf-plugin-chk:checked')].map(c => c.value);
-      // Apply all caps from savedCaps (covers tabs not currently visible)
-      Object.entries(savedCaps).forEach(([key, val]) => { permissions[key] = val; });
+
+      area.querySelectorAll('.rf-cap-chk').forEach(chk => { permissions[chk.value] = chk.checked; });
 
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner-sm"></span>';
@@ -1540,7 +1491,7 @@ async function loadRolesTab() {
         errEl.textContent = e.message;
         errEl.classList.remove('hidden');
         btn.disabled = false;
-        btn.innerHTML = `<i class="fas fa-save"></i> ${isEdit ? 'Save' : 'Create'}`;
+        btn.innerHTML = `<i class="fas fa-save"></i> ${isEdit ? 'Save' : 'Create Role'}`;
       }
     });
   }
