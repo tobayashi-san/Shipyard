@@ -231,20 +231,28 @@ app.get('/api/dashboard', (req, res) => {
       SELECT h.*, s.name as server_name
       FROM update_history h
       LEFT JOIN servers s ON h.server_id = s.id
-      ORDER BY h.started_at DESC LIMIT 200
+      ORDER BY h.started_at DESC LIMIT 500
     `).all();
 
-    // Restrict to entries belonging to servers the user can access.
-    // Only apply filter when the user has a specific server restriction (not 'all').
-    // Match both by server UUID and by server name (ansible runs store name as server_id).
+    // Always filter history against the permission-filtered server list.
+    // A user should see:
+    //   1. Entries where server_id matches a server UUID they can access
+    //   2. Entries where server_id matches a server name they can access (ansible stores names)
+    //   3. Entries for bulk/ansible runs (server_id = 'all' | 'bulk_update' | etc.)
+    //      — only if the user is not server-restricted (full access or servers = 'all')
     const isServerRestricted = perms && !perms.full && perms.servers !== 'all' && perms.servers != null;
-    const allowedServerIds = new Set(servers.map(s => s.id));
+    const allowedServerIds   = new Set(servers.map(s => s.id));
     const allowedServerNames = new Set(servers.map(s => s.name));
-    const recentHistory = isServerRestricted
-      ? allRecentHistory.filter(h =>
-          allowedServerIds.has(h.server_id) || allowedServerNames.has(h.server_id)
-        ).slice(0, 8)
-      : allRecentHistory.slice(0, 8);
+
+    const recentHistory = allRecentHistory.filter(h => {
+      // Entry belongs to a server UUID the user can access
+      if (allowedServerIds.has(h.server_id)) return true;
+      // Entry uses ansible server name instead of UUID
+      if (allowedServerNames.has(h.server_id)) return true;
+      // Bulk / global runs (no specific server) — only show to unrestricted users
+      if (!isServerRestricted) return true;
+      return false;
+    }).slice(0, 8);
 
     res.json({
       summary: { total: servers.length, online, offline, unknown: servers.length - online - offline, rebootRequired, totalUpdates, criticalDisk, criticalRam },
