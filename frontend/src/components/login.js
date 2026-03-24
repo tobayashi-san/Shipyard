@@ -136,12 +136,12 @@ function renderTotp(tempToken, onSuccess) {
         </div>
         <p class="login-hint">${t('login.totpHint')}</p>
         <form id="totp-form" autocomplete="off">
-          <div class="form-group" style="display:flex;gap:8px;justify-content:center;margin-bottom:16px;">
-            ${Array(6).fill(0).map((_, i) => `
-              <input class="form-input totp-digit" type="text" inputmode="numeric" maxlength="1"
-                ${i === 0 ? 'autofocus autocomplete="one-time-code"' : ''}
-                style="width:46px;height:56px;text-align:center;font-size:24px;font-weight:600;padding:0;border-radius:var(--radius-sm);">
-            `).join('')}
+          <div class="form-group" style="margin-bottom:16px;">
+            <input class="form-input totp-code-input" id="totp-code"
+              type="text" inputmode="numeric" pattern="[0-9 ]*"
+              maxlength="7" autocomplete="one-time-code" autofocus
+              placeholder="000 000"
+              style="text-align:center;font-size:28px;font-weight:700;letter-spacing:0.25em;font-family:var(--font-mono);height:60px;padding:0 16px;">
           </div>
           <p class="login-error hidden" id="totp-error"></p>
           <button class="btn btn-primary" type="submit" id="totp-btn" style="width:100%;margin-top:4px;">
@@ -157,42 +157,20 @@ function renderTotp(tempToken, onSuccess) {
 
   document.getElementById('totp-back').addEventListener('click', () => renderLogin(onSuccess));
 
-  const inputs = Array.from(document.querySelectorAll('.totp-digit'));
-  inputs.forEach((input, index) => {
-    // Focus next on input
-    input.addEventListener('input', () => {
-      input.value = input.value.replace(/[^0-9]/g, '');
-      if (input.value && index < inputs.length - 1) {
-        inputs[index + 1].focus();
-      }
-    });
+  const codeInput = document.getElementById('totp-code');
 
-    // Focus prev on backspace
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Backspace' && !input.value && index > 0) {
-        inputs[index - 1].focus();
-      }
-    });
-
-    // Handle paste across all fields
-    input.addEventListener('paste', (e) => {
-      e.preventDefault();
-      const pasted = (e.clipboardData || window.clipboardData).getData('text').replace(/[^0-9]/g, '');
-      if (!pasted) return;
-      for (let i = 0; i < inputs.length; i++) {
-        inputs[i].value = pasted[i] || '';
-      }
-      const focusIndex = Math.min(pasted.length, inputs.length - 1);
-      inputs[focusIndex].focus();
-    });
+  // Strip non-digits on every input (allow space as visual separator)
+  codeInput.addEventListener('input', () => {
+    const digits = codeInput.value.replace(/[^0-9]/g, '').slice(0, 6);
+    // Format as "000 000" while typing
+    codeInput.value = digits.length > 3 ? digits.slice(0, 3) + ' ' + digits.slice(3) : digits;
   });
 
-  // Ensure autofocus actually fires (sometimes browsers block it if not called directly)
-  setTimeout(() => inputs[0].focus(), 100);
+  setTimeout(() => codeInput.focus(), 100);
 
   document.getElementById('totp-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const code = inputs.map(i => i.value).join('');
+    const code = codeInput.value.replace(/[^0-9]/g, '');
     if (code.length < 6) return;
 
     const btn  = document.getElementById('totp-btn');
@@ -210,8 +188,8 @@ function renderTotp(tempToken, onSuccess) {
       errEl.classList.remove('hidden');
       btn.disabled = false;
       btn.innerHTML = `<i class="fas fa-check"></i> ${t('login.totpBtn')}`;
-      inputs.forEach(i => i.value = '');
-      inputs[0].focus();
+      codeInput.value = '';
+      codeInput.focus();
     }
   });
 }
