@@ -154,7 +154,10 @@ function renderApp() {
       <div style="display:flex;align-items:baseline;gap:8px;">
         <h2 style="margin:0;font-size:1.1rem;font-weight:700;"><i class="fas fa-cube"></i> OpenTofu</h2>
         ${_status.installed
-          ? `<span style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono);">${esc(_status.version||_status.binary||'')}</span>`
+          ? `<span style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono);">${esc(_status.version||_status.binary||'')}</span>
+             <button id="tofu-btn-update" class="btn btn-secondary btn-sm" style="font-size:11px;padding:2px 8px;" title="Install a different version">
+               <i class="fas fa-arrow-up-from-bracket"></i> Update
+             </button>`
           : `<span style="font-size:12px;color:var(--offline);"><i class="fas fa-times"></i> not found</span>`
         }
       </div>
@@ -191,6 +194,32 @@ function renderApp() {
   `;
 
   document.getElementById('tofu-btn-new').addEventListener('click', () => openWorkspaceModal(null));
+
+  if (_status.installed) {
+    document.getElementById('tofu-btn-update')?.addEventListener('click', () => {
+      const existing = document.getElementById('tofu-update-panel');
+      if (existing) { existing.remove(); return; }
+      const tabContent = document.getElementById('tofu-tab-content');
+      if (!tabContent) return;
+      const panel = document.createElement('div');
+      panel.id = 'tofu-update-panel';
+      panel.className = 'panel';
+      panel.style.cssText = 'margin-bottom:16px;padding:16px 20px;';
+      panel.innerHTML = `
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px;"><i class="fas fa-arrow-up-from-bracket"></i> Update OpenTofu</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select id="tofu-update-select" class="form-input" style="max-width:200px;" disabled>
+            <option>Loading versions…</option>
+          </select>
+          <button id="tofu-btn-do-update" class="btn btn-primary btn-sm" disabled>
+            <i class="fas fa-download"></i> Install
+          </button>
+          <span id="tofu-update-msg" style="font-size:12px;color:var(--text-muted);"></span>
+        </div>`;
+      tabContent.insertAdjacentElement('beforebegin', panel);
+      initUpdatePanel();
+    });
+  }
 
   document.getElementById('tofu-main-tabs').addEventListener('click', e => {
     const btn = e.target.closest('.tab-btn');
@@ -334,6 +363,54 @@ function setupGuidePanel() {
         </p>
       </div>
     </div>`;
+}
+
+async function initUpdatePanel() {
+  const sel = document.getElementById('tofu-update-select');
+  const btn = document.getElementById('tofu-btn-do-update');
+  const msg = document.getElementById('tofu-update-msg');
+  if (!sel || !btn) return;
+
+  try {
+    const { releases } = await _pluginApi.request('/releases');
+    if (!releases || releases.length === 0) {
+      sel.innerHTML = '<option value="">No releases found</option>';
+      return;
+    }
+    sel.innerHTML = releases.map((v, i) =>
+      `<option value="${esc(v)}"${i === 0 ? ' selected' : ''}>${esc(v)}${i === 0 ? ' (latest)' : ''}${v === _status.version ? ' ← current' : ''}</option>`
+    ).join('');
+    sel.disabled = false;
+    btn.disabled = false;
+  } catch (e) {
+    sel.innerHTML = '<option value="">Could not load versions</option>';
+    if (msg) msg.textContent = e.message;
+    return;
+  }
+
+  btn.addEventListener('click', async () => {
+    const version = sel.value;
+    if (!version) return;
+    btn.disabled = true;
+    sel.disabled = true;
+    btn.innerHTML = '<span class="spinner-sm"></span> Installing…';
+    if (msg) msg.textContent = `Downloading OpenTofu v${version}…`;
+    try {
+      const result = await _pluginApi.request('/install', {
+        method: 'POST',
+        body: JSON.stringify({ version }),
+      });
+      _status = { installed: true, binary: result.binary, version: result.version };
+      _showToast(`OpenTofu updated to v${result.version || version}`, 'success');
+      setTimeout(() => renderApp(), 600);
+    } catch (e) {
+      if (msg) msg.textContent = `✗ ${e.message}`;
+      btn.disabled = false;
+      sel.disabled = false;
+      btn.innerHTML = '<i class="fas fa-download"></i> Install';
+      _showToast('Update failed: ' + e.message, 'error');
+    }
+  });
 }
 
 async function initInstallPanel() {
