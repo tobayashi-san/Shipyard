@@ -2021,7 +2021,11 @@ input[type="color"].form-input::-moz-color-swatch {
   transition: border-color .15s;
 }
 .cm-editor-wrap .cm-editor { border-radius: var(--radius); }
-.cm-editor-wrap .cm-content ::selection { background: rgba(99,102,241,0.35); }
+/* CM6 draws selection via .cm-selectionBackground (not native ::selection) */
+.cm-editor .cm-selectionBackground                  { background: rgba(99,102,241,0.22) !important; }
+.cm-editor.cm-focused .cm-selectionBackground       { background: rgba(99,102,241,0.32) !important; }
+/* Suppress native selection highlight so CM's own layer is the only one shown */
+.cm-editor .cm-content *::selection                 { background: transparent !important; }
 .cm-editor-wrap .cm-editor { width: 100%; }
 .cm-editor-wrap .cm-scroller { overflow-x: auto !important; }
 
