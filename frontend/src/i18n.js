@@ -1394,6 +1394,7 @@ function detectLang() {
 }
 
 let currentLang = detectLang();
+document.documentElement.lang = currentLang;
 
 export function getLang() {
   return currentLang;
@@ -1402,6 +1403,7 @@ export function getLang() {
 export function setLang(lang) {
   currentLang = lang;
   localStorage.setItem('shipyard_lang', lang);
+  document.documentElement.lang = lang;
 }
 
 /**

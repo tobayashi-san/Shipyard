@@ -293,6 +293,7 @@ const composeLimiter = rateLimit({
 
 // POST /api/ansible/run - Run a playbook with WebSocket output
 app.post('/api/ansible/run', async (req, res) => {
+  if (!can(getPermissions(req.user), 'canRunPlaybooks')) return res.status(403).json({ error: 'Permission denied' });
   const { playbook, targets, extraVars } = req.body;
   if (!playbook) return res.status(400).json({ error: 'playbook is required' });
   if (extraVars && (typeof extraVars !== 'object' || Array.isArray(extraVars) ||
@@ -792,6 +793,10 @@ server.listen(PORT, () => {
     console.warn('     or use a reverse proxy (nginx, Caddy) to terminate TLS.\n');
   } else {
     console.log('');
+  }
+  if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+    console.warn('  ⚠️  WARNING: JWT_SECRET env var is not set. A random secret is used on');
+    console.warn('     each restart, which will log out all users. Set JWT_SECRET for persistent sessions.\n');
   }
 
   // Prune audit log entries older than 90 days

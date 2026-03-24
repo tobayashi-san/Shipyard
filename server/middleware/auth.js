@@ -59,10 +59,11 @@ const authMiddleware = function authMiddleware(req, res, next) {
   }
 
   // Legacy token: has ok: true (no userId)
-  // Deprecated: kept for backward compat during migration window.
+  // TODO: Remove legacy token support in a future release (target: v2.0).
   // Legacy tokens have no token_version so they cannot be selectively revoked.
+  // Users must re-login to obtain a modern token before this path is removed.
   if (payload.ok === true) {
-    console.warn('[auth] Legacy token used — consider re-logging in to obtain a modern token');
+    console.warn('[auth] Legacy token used — re-login required before legacy support is removed');
     // Find first admin user for backward compat
     const admins = db.users.getAll().filter(u => u.role === 'admin');
     if (admins.length > 0) {

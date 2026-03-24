@@ -344,6 +344,22 @@ button:focus-visible, .btn:focus-visible, .form-input:focus-visible, .tab-btn:fo
   padding: 0 28px;
   flex-shrink: 0;
   box-shadow: 0 1px 0 var(--border);
+  position: relative;
+}
+
+/* Mobile scroll-fade indicator — hints at more tabs to the right */
+@media (max-width: 768px) {
+  .tab-bar::after {
+    content: '';
+    position: sticky;
+    right: 0;
+    top: 0;
+    width: 32px;
+    height: 100%;
+    flex-shrink: 0;
+    pointer-events: none;
+    background: linear-gradient(to right, transparent, var(--bg-panel));
+  }
 }
 
 .tab-btn {
@@ -1320,7 +1336,7 @@ input[type="color"].form-input::-moz-color-swatch {
   transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.terminal-resize-handle {
+.gt-resize-handle {
   height: 6px;
   background: #1c2128;
   border-top: 2px solid #30363d;
@@ -1330,7 +1346,7 @@ input[type="color"].form-input::-moz-color-swatch {
   justify-content: center;
 }
 
-.terminal-resize-bar {
+.gt-resize-bar {
   width: 40px;
   height: 2px;
   background: #444c56;
@@ -1338,7 +1354,7 @@ input[type="color"].form-input::-moz-color-swatch {
   pointer-events: none;
 }
 
-.global-terminal .terminal-header {
+.gt-header {
   background: #161b22;
   border-top: 1px solid #30363d;
   display: flex;
@@ -1347,7 +1363,7 @@ input[type="color"].form-input::-moz-color-swatch {
   gap: 10px;
 }
 
-.global-terminal .terminal-title {
+.gt-title {
   flex: 1;
   font-family: var(--font-mono);
   font-size: 11px;
@@ -1357,12 +1373,12 @@ input[type="color"].form-input::-moz-color-swatch {
   white-space: nowrap;
 }
 
-.terminal-actions {
+.gt-actions {
   display: flex;
   gap: 6px;
 }
 
-.terminal-btn {
+.gt-btn {
   background: transparent;
   border: none;
   color: #8b949e;
@@ -1372,10 +1388,10 @@ input[type="color"].form-input::-moz-color-swatch {
   transition: color 0.15s;
 }
 
-.terminal-btn:hover { color: #fff; }
-.terminal-btn.close { font-size: 16px; line-height: 1; }
+.gt-btn:hover { color: #fff; }
+.gt-btn.close { font-size: 16px; line-height: 1; }
 
-.global-terminal .terminal-body {
+.gt-body {
   background: #0d1117;
   font-family: var(--font-mono);
   font-size: 13px;
