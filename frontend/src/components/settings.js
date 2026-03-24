@@ -304,7 +304,6 @@ export async function renderSettings() {
             </div>
           </div>
         </div>
-      </div>
 
         <div class="settings-group-title" style="margin-top:20px;">Notification Events</div>
         <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px 0;padding:0 4px;">
@@ -336,6 +335,7 @@ export async function renderSettings() {
             </div>
           </div>
         </div>
+      </div>
 
       <!-- Tab: Plugins -->
       <div class="tab-panel" id="tab-plugins">

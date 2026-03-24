@@ -249,6 +249,7 @@ export async function showProfileModal() {
           </div>
           <div id="profile-2fa-control"></div>
         </div>
+        <div id="totp-disable-panel" style="display:none;flex-direction:column;gap:10px;margin-top:16px;padding:16px;background:var(--bg-row-alt);border-radius:var(--radius-sm);border:1px solid var(--border);"></div>
         <div id="totp-setup-panel" style="display:none;flex-direction:column;gap:10px;margin-top:16px;padding:16px;background:var(--bg-row-alt);border-radius:var(--radius-sm);border:1px solid var(--border);">
           <p style="margin:0;color:var(--text-muted);font-size:13px;">${t('set.totpScanQR')}</p>
           <img id="totp-qr" style="width:160px;height:160px;border-radius:8px;background:#fff;padding:8px;border:1px solid var(--border);" alt="QR Code">
@@ -311,15 +312,18 @@ export async function showProfileModal() {
 async function _load2fa() {
   const statusEl   = document.getElementById('profile-2fa-status');
   const controlEl  = document.getElementById('profile-2fa-control');
-  const setupPanel = document.getElementById('totp-setup-panel');
+  const setupPanel   = document.getElementById('totp-setup-panel');
+  const disablePanel = document.getElementById('totp-disable-panel');
   if (!statusEl) return;
+  if (disablePanel) { disablePanel.style.display = 'none'; disablePanel.innerHTML = ''; }
   try {
     const { enabled } = await api.totpStatus();
     if (enabled) {
       statusEl.innerHTML = '<span style="color:var(--online);"><i class="fas fa-shield-halved" style="margin-right:4px;"></i>Enabled</span>';
       controlEl.innerHTML = `<button class="btn btn-danger btn-sm" id="profile-2fa-disable"><i class="fas fa-shield-xmark"></i> Disable</button>`;
       document.getElementById('profile-2fa-disable').addEventListener('click', () => {
-        const panel = document.getElementById('totp-setup-panel');
+        const panel = document.getElementById('totp-disable-panel');
+        if (panel.style.display === 'flex') { panel.style.display = 'none'; return; }
         panel.style.display = 'flex';
         panel.innerHTML = `
           <p style="margin:0;font-size:13px;color:var(--text-secondary);">Enter your current password to disable two-factor authentication.</p>
