@@ -65,7 +65,7 @@ export function renderSidebar() {
       </div>` : ''}
       <div class="nav-item" id="sidebar-profile-btn">
         <span class="nav-item-icon"><i class="fas fa-user-circle"></i></span>
-        <span>${esc(state.user?.username || 'Profile')}</span>
+        <span>${esc(state.user?.displayName || state.user?.username || 'Profile')}</span>
       </div>
     </div>
 

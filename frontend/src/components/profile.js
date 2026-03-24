@@ -51,6 +51,8 @@ export function showProfileMenu() {
 
   const email = state.user?.email;
   const isAdmin = state.user?.role === 'admin';
+  const displayName = state.user?.displayName;
+  const username = state.user?.username || 'Profile';
 
   _menu.innerHTML = `
     <div style="padding:12px 16px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
@@ -59,10 +61,10 @@ export function showProfileMenu() {
       </div>
       <div style="min-width:0;">
         <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-          ${esc(state.user?.username || 'Profile')}
+          ${esc(displayName || username)}
         </div>
         <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-          ${email ? esc(email) : isAdmin ? '<span style="opacity:.5">No email set</span>' : ''}
+          ${displayName ? `<span style="font-family:var(--font-mono);">@${esc(username)}</span>` : (email ? esc(email) : '<span style="opacity:.5">No email set</span>')}
           ${isAdmin ? '<span style="margin-left:4px;font-size:9px;background:var(--accent);color:var(--text-inverse);padding:1px 6px;border-radius:3px;vertical-align:middle;">admin</span>' : ''}
         </div>
       </div>
@@ -158,7 +160,7 @@ function closeModal() {
 export async function showProfileModal() {
   if (_modal) { closeModal(); return; }
 
-  let profile = { username: state.user?.username || 'admin', email: state.user?.email || '', role: state.user?.role || 'user' };
+  let profile = { username: state.user?.username || 'admin', displayName: state.user?.displayName || '', email: state.user?.email || '', role: state.user?.role || 'user' };
   try { profile = await api.getProfile(); } catch {}
 
   _modalBackdrop = document.createElement('div');
@@ -178,8 +180,8 @@ export async function showProfileModal() {
           <i class="fas fa-user"></i>
         </div>
         <div>
-          <div style="font-size:16px;font-weight:700;line-height:1.2;" id="profile-display-name">${esc(profile.username)}</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;" id="profile-display-email">${esc(profile.email) || '<span style="opacity:.5">No email set</span>'}</div>
+          <div style="font-size:16px;font-weight:700;line-height:1.2;" id="profile-display-name">${esc(profile.displayName || profile.username)}</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;" id="profile-display-sub">${profile.displayName ? '<span style="font-family:var(--font-mono);font-size:11px;">@' + esc(profile.username) + '</span>' : (profile.email ? esc(profile.email) : '<span style="opacity:.5">No email set</span>')}</div>
           <div style="margin-top:4px;">
             <span style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:4px;
               ${profile.role === 'admin' ? 'background:var(--accent);color:var(--text-inverse);' : 'background:var(--bg-row-alt);color:var(--text-muted);border:1px solid var(--border);'}">
@@ -203,11 +205,18 @@ export async function showProfileModal() {
         </div>
         <div style="display:flex;flex-direction:column;gap:12px;">
           <div style="display:flex;align-items:center;gap:12px;">
-            <label style="font-size:13px;color:var(--text-secondary);width:80px;flex-shrink:0;">Username</label>
-            <input class="form-input" id="profile-username" value="${esc(profile.username)}" style="flex:1;">
+            <label style="font-size:13px;color:var(--text-secondary);width:90px;flex-shrink:0;">Display Name</label>
+            <input class="form-input" id="profile-display-name-input" value="${esc(profile.displayName || '')}" placeholder="${esc(profile.username)}" style="flex:1;">
           </div>
           <div style="display:flex;align-items:center;gap:12px;">
-            <label style="font-size:13px;color:var(--text-secondary);width:80px;flex-shrink:0;">Email</label>
+            <label style="font-size:13px;color:var(--text-secondary);width:90px;flex-shrink:0;">Username</label>
+            <div style="flex:1;display:flex;align-items:center;gap:8px;">
+              <input class="form-input" value="${esc(profile.username)}" style="flex:1;opacity:.55;cursor:default;" readonly tabindex="-1">
+              <span style="font-size:11px;color:var(--text-muted);white-space:nowrap;">Login-ID · read-only</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <label style="font-size:13px;color:var(--text-secondary);width:90px;flex-shrink:0;">Email</label>
             <input class="form-input" id="profile-email" type="email" value="${esc(profile.email)}" placeholder="you@example.com" style="flex:1;">
           </div>
           <div style="display:flex;justify-content:flex-end;">
@@ -273,14 +282,19 @@ export async function showProfileModal() {
 
   // Save account
   document.getElementById('profile-save-account').addEventListener('click', async () => {
-    const username = document.getElementById('profile-username').value.trim();
-    const email    = document.getElementById('profile-email').value.trim();
-    if (!username) { showToast('Username cannot be empty', 'error'); return; }
+    const displayName = document.getElementById('profile-display-name-input').value.trim();
+    const email       = document.getElementById('profile-email').value.trim();
     try {
-      await api.updateProfile({ username, email });
-      document.getElementById('profile-display-name').textContent = username;
-      document.getElementById('profile-display-email').innerHTML = email || '<span style="opacity:.5">No email set</span>';
-      if (state.user) { state.user.username = username; state.user.email = email; }
+      await api.updateProfile({ displayName, email });
+      const shownName = displayName || profile.username;
+      document.getElementById('profile-display-name').textContent = shownName;
+      document.getElementById('profile-display-sub').innerHTML = displayName
+        ? `<span style="font-family:var(--font-mono);font-size:11px;">@${esc(profile.username)}</span>`
+        : (email ? esc(email) : '<span style="opacity:.5">No email set</span>');
+      if (state.user) { state.user.displayName = displayName; state.user.email = email; }
+      // keep local profile in sync for re-renders
+      profile.displayName = displayName;
+      profile.email = email;
       showToast('Profile saved', 'success');
     } catch (e) { showToast(e.message, 'error'); }
   });

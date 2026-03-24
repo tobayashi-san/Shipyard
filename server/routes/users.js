@@ -15,7 +15,7 @@ router.get('/', adminOnly, (req, res) => {
 
 // POST /api/users – create user
 router.post('/', adminOnly, async (req, res) => {
-  const { username, email, password, role } = req.body;
+  const { username, displayName, email, password, role } = req.body;
   if (!username || typeof username !== 'string' || !username.trim()) {
     return res.status(400).json({ error: 'username required' });
   }
@@ -27,7 +27,7 @@ router.post('/', adminOnly, async (req, res) => {
   const userRole = (role === 'admin' || knownRoles.includes(role)) ? role : 'user';
   try {
     const hash = await bcrypt.hash(password, 12);
-    const user = db.users.create(username.trim(), email || '', hash, userRole);
+    const user = db.users.create(username.trim(), email || '', hash, userRole, displayName || '');
     db.auditLog.write('users.create', `Created user: ${username}`, req.ip);
     res.status(201).json(user);
   } catch (e) {
@@ -38,16 +38,17 @@ router.post('/', adminOnly, async (req, res) => {
   }
 });
 
-// PUT /api/users/:id – update username/email/role
+// PUT /api/users/:id – admin can update username/displayName/email/role
 router.put('/:id', adminOnly, (req, res) => {
   const { id } = req.params;
-  const { username, email, role } = req.body;
+  const { username, displayName, email, role } = req.body;
   const fields = {};
   if (username !== undefined) {
     const u = String(username).trim().slice(0, 64);
     if (!u) return res.status(400).json({ error: 'Username cannot be empty' });
     fields.username = u;
   }
+  if (displayName !== undefined) fields.display_name = String(displayName).trim().slice(0, 100);
   if (email !== undefined) fields.email = String(email).trim().slice(0, 256);
   if (role !== undefined) {
     const knownRoles = db.roles.getAll().map(r => r.id);

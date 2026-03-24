@@ -64,37 +64,31 @@ router.get('/status', (req, res) => {
 router.get('/profile', authMiddleware, (req, res) => {
   const { getPermissions } = require('../utils/permissions');
   const permissions = getPermissions(req.user);
+  // Re-fetch to get display_name which may not be on the JWT payload
+  const fullUser = db.users.getById(req.user.id);
   res.json({
     id:          req.user.id,
     username:    req.user.username,
-    email:       req.user.email || '',
+    displayName: fullUser?.display_name || '',
+    email:       fullUser?.email || req.user.email || '',
     role:        req.user.role,
     permissions,
   });
 });
 
-// PUT /api/auth/profile
+// PUT /api/auth/profile – users can update their display name and email only
 router.put('/profile', authMiddleware, (req, res) => {
-  const { username, email } = req.body;
+  const { displayName, email } = req.body;
   const fields = {};
-  if (username !== undefined) {
-    const u = String(username).trim().slice(0, 64);
-    if (!u) return res.status(400).json({ error: 'Username cannot be empty' });
-    fields.username = u;
-  }
+  if (displayName !== undefined) fields.display_name = String(displayName).trim().slice(0, 100);
   if (email !== undefined) fields.email = String(email).trim().slice(0, 256);
 
   if (Object.keys(fields).length) {
     try {
       db.users.update(req.user.id, fields);
     } catch (e) {
-      if (e.message && e.message.includes('UNIQUE')) {
-        return res.status(409).json({ error: 'Username already exists' });
-      }
       return res.status(500).json({ error: e.message });
     }
-    // Also keep legacy settings in sync for backwards compat
-    if (fields.username) db.settings.set('auth_username', fields.username);
     if (fields.email !== undefined) db.settings.set('auth_email', fields.email);
   }
 

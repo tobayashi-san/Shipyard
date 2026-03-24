@@ -1585,20 +1585,22 @@ async function loadUsersTab() {
           </div>` :
           users.map((u, i) => {
             const roleName = esc((_allRoles.find(r => r.id === u.role) || {}).name || u.role);
-            const initial = esc((u.username || '?')[0].toUpperCase());
+            const displayName = u.display_name || '';
+            const shownName = displayName || u.username;
+            const initial = esc((shownName || '?')[0].toUpperCase());
             const isSelf = u.id === (window.__currentUserId || '');
             return `
             <div class="settings-row user-row" ${i === users.length - 1 ? 'style="border-bottom:none;"' : ''} data-user-id="${esc(u.id)}">
               <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;">
                 <div class="user-avatar-circle">${initial}</div>
                 <div style="min-width:0;">
-                  <div style="font-size:13px;font-weight:500;color:var(--text-primary);">${esc(u.username)}</div>
-                  ${u.email ? `<div style="font-size:11px;color:var(--text-muted);">${esc(u.email)}</div>` : ''}
+                  <div style="font-size:13px;font-weight:500;color:var(--text-primary);">${esc(shownName)}</div>
+                  <div style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);">@${esc(u.username)}</div>
                 </div>
               </div>
               <span class="badge ${u.role === 'admin' ? 'badge-accent' : 'badge-muted'}" style="flex-shrink:0;">${roleName}</span>
               <div style="display:flex;gap:4px;flex-shrink:0;">
-                <button class="btn btn-secondary btn-sm btn-edit-user" data-id="${esc(u.id)}" data-username="${esc(u.username)}" data-email="${esc(u.email || '')}" data-role="${esc(u.role)}" title="Edit">
+                <button class="btn btn-secondary btn-sm btn-edit-user" data-id="${esc(u.id)}" data-username="${esc(u.username)}" data-display-name="${esc(displayName)}" data-email="${esc(u.email || '')}" data-role="${esc(u.role)}" title="Edit">
                   <i class="fas fa-pen"></i>
                 </button>
                 <button class="btn btn-secondary btn-sm btn-reset-pw" data-id="${esc(u.id)}" data-username="${esc(u.username)}" title="Reset Password">
@@ -1621,7 +1623,7 @@ async function loadUsersTab() {
     // Edit buttons
     content.querySelectorAll('.btn-edit-user').forEach(btn => {
       btn.addEventListener('click', () => {
-        showUserForm({ id: btn.dataset.id, username: btn.dataset.username, email: btn.dataset.email, role: btn.dataset.role });
+        showUserForm({ id: btn.dataset.id, username: btn.dataset.username, displayName: btn.dataset.displayName || '', email: btn.dataset.email, role: btn.dataset.role });
       });
     });
 
@@ -1653,8 +1655,12 @@ async function loadUsersTab() {
       <div class="settings-block" style="border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;">
         <div style="font-size:14px;font-weight:600;margin-bottom:12px;">${isEdit ? 'Edit User' : 'Add User'}</div>
         <div class="form-group" style="margin-bottom:10px;">
-          <label class="form-label">Username</label>
+          <label class="form-label">Username <span style="font-weight:400;color:var(--text-muted);font-size:11px;">(Login-ID)</span></label>
           <input class="form-input" type="text" id="uf-username" value="${esc(user?.username || '')}" style="max-width:300px;" autocomplete="off">
+        </div>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label class="form-label">Display Name <span style="font-weight:400;color:var(--text-muted);font-size:11px;">(shown in UI)</span></label>
+          <input class="form-input" type="text" id="uf-display-name" value="${esc(user?.displayName || '')}" placeholder="${esc(user?.username || '')}" style="max-width:300px;" autocomplete="off">
         </div>
         <div class="form-group" style="margin-bottom:10px;">
           <label class="form-label">Email</label>
@@ -1684,10 +1690,11 @@ async function loadUsersTab() {
       const btn = document.getElementById('uf-save');
       const errEl = document.getElementById('uf-error');
       errEl.classList.add('hidden');
-      const username = document.getElementById('uf-username').value.trim();
-      const email    = document.getElementById('uf-email').value.trim();
-      const role     = document.getElementById('uf-role').value;
-      const password = isEdit ? null : document.getElementById('uf-password')?.value;
+      const username    = document.getElementById('uf-username').value.trim();
+      const displayName = document.getElementById('uf-display-name').value.trim();
+      const email       = document.getElementById('uf-email').value.trim();
+      const role        = document.getElementById('uf-role').value;
+      const password    = isEdit ? null : document.getElementById('uf-password')?.value;
 
       if (!username) { errEl.textContent = 'Username required'; errEl.classList.remove('hidden'); return; }
       if (!isEdit && (!password || password.length < 12)) {
@@ -1700,10 +1707,10 @@ async function loadUsersTab() {
       btn.innerHTML = '<span class="spinner-sm"></span>';
       try {
         if (isEdit) {
-          await api.updateUser(user.id, { username, email, role });
+          await api.updateUser(user.id, { username, displayName, email, role });
           showToast('User updated', 'success');
         } else {
-          await api.createUser({ username, email, password, role });
+          await api.createUser({ username, displayName, email, password, role });
           showToast('User created', 'success');
         }
         area.innerHTML = '';

@@ -292,6 +292,10 @@ runMigration(3, `
   ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0;
 `);
 
+runMigration(4, `
+  ALTER TABLE users ADD COLUMN display_name TEXT DEFAULT '';
+`);
+
 // Roles table
 db.exec(`
   CREATE TABLE IF NOT EXISTS roles (
@@ -676,19 +680,19 @@ module.exports = {
   },
 
   users: {
-    getAll: () => db.prepare('SELECT id, username, email, role, totp_enabled, token_version, created_at FROM users ORDER BY created_at').all(),
-    getById: (id) => db.prepare('SELECT id, username, email, role, totp_enabled, token_version, created_at FROM users WHERE id = ?').get(id),
+    getAll: () => db.prepare('SELECT id, username, display_name, email, role, totp_enabled, token_version, created_at FROM users ORDER BY created_at').all(),
+    getById: (id) => db.prepare('SELECT id, username, display_name, email, role, totp_enabled, token_version, created_at FROM users WHERE id = ?').get(id),
     getByUsername: (username) => db.prepare('SELECT * FROM users WHERE username = ?').get(username),
-    create: (username, email, passwordHash, role) => {
+    create: (username, email, passwordHash, role, displayName) => {
       const id = uuidv4();
       db.prepare(`
-        INSERT INTO users (id, username, email, password_hash, role)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(id, username, email || '', passwordHash, role || 'user');
-      return db.prepare('SELECT id, username, email, role, totp_enabled, token_version, created_at FROM users WHERE id = ?').get(id);
+        INSERT INTO users (id, username, display_name, email, password_hash, role)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(id, username, displayName || '', email || '', passwordHash, role || 'user');
+      return db.prepare('SELECT id, username, display_name, email, role, totp_enabled, token_version, created_at FROM users WHERE id = ?').get(id);
     },
     update: (id, fields) => {
-      const allowed = { username: 'username', email: 'email', role: 'role' };
+      const allowed = { username: 'username', display_name: 'display_name', email: 'email', role: 'role' };
       const sets = [];
       const vals = [];
       for (const [k, v] of Object.entries(fields)) {
@@ -699,7 +703,7 @@ module.exports = {
       if (!sets.length) return;
       vals.push(id);
       db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
-      return db.prepare('SELECT id, username, email, role, totp_enabled, token_version, created_at FROM users WHERE id = ?').get(id);
+      return db.prepare('SELECT id, username, display_name, email, role, totp_enabled, token_version, created_at FROM users WHERE id = ?').get(id);
     },
     setPasswordHash: (id, hash) => db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, id),
     setTotp: (id, secret, enabled) => db.prepare('UPDATE users SET totp_secret = ?, totp_enabled = ? WHERE id = ?').run(secret, enabled ? 1 : 0, id),
