@@ -9,7 +9,7 @@ const translations = {
     'nav.dashboard': 'Dashboard',
     'nav.servers': 'Server',
     'nav.playbooks': 'Playbooks',
-    'nav.settings': 'Einstellungen',
+    'nav.settings': 'Admin',
     'nav.serverCount': '{online} online',
 
     // ── Common ────────────────────────────────────────────────
@@ -453,7 +453,7 @@ const translations = {
     'run.noCustom': 'Keine benutzerdefinierten Playbooks gefunden',
 
     // ── Settings ──────────────────────────────────────────────
-    'set.title': 'Einstellungen',
+    'set.title': 'Admin',
     'set.subtitle': 'SSH-Key, Ansible und Erscheinungsbild konfigurieren',
     'set.tabAppearance': 'Erscheinungsbild',
     'set.tabSsh': 'SSH',
@@ -702,7 +702,7 @@ const translations = {
     'nav.dashboard': 'Dashboard',
     'nav.servers': 'Servers',
     'nav.playbooks': 'Playbooks',
-    'nav.settings': 'Settings',
+    'nav.settings': 'Admin',
     'nav.serverCount': '{online} online',
 
     // ── Common ────────────────────────────────────────────────
@@ -1146,7 +1146,7 @@ const translations = {
     'run.noCustom': 'No custom playbooks found',
 
     // ── Settings ──────────────────────────────────────────────
-    'set.title': 'Settings',
+    'set.title': 'Admin',
     'set.subtitle': 'Configure SSH key, Ansible and appearance',
     'set.tabAppearance': 'Appearance',
     'set.tabSsh': 'SSH',

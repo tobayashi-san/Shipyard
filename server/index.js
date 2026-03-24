@@ -345,7 +345,7 @@ app.post('/api/ansible/run', async (req, res) => {
     db.scheduleHistory.complete(schedHistId, 'failed', error.message);
     db.auditLog.write('ansible.run', `playbook=${playbook} targets=${targets || 'all'} error=${error.message}`, req.ip, false);
     broadcast({ type: 'ansible_error', historyId, error: error.message });
-    notify(`Playbook failed: ${playbook}`, error.message, false).catch(() => {});
+    if (db.settings.get('notify_playbook_failed') !== '0') notify(`Playbook failed: ${playbook}`, error.message, false).catch(() => {});
   }
 });
 
@@ -379,7 +379,7 @@ app.post('/api/servers/:id/update', guardServerAccess, (req, res, next) => {
     db.updateHistory.updateStatus(historyId, 'failed', error.message);
     db.auditLog.write('server.update', `server=${server.name} error=${error.message}`, req.ip, false);
     broadcast({ type: 'update_error', serverId, historyId, error: error.message });
-    notify(`Update failed: ${server.name}`, error.message, false).catch(() => {});
+    if (db.settings.get('notify_update_failed') !== '0') notify(`Update failed: ${server.name}`, error.message, false).catch(() => {});
   }
 });
 
@@ -409,7 +409,7 @@ app.post('/api/servers/update-all', (req, res, next) => {
     db.updateHistory.updateStatus(historyId, 'failed', error.message);
     db.auditLog.write('server.update_all', `error=${error.message}`, req.ip, false);
     broadcast({ type: 'bulk_update_error', historyId, error: error.message });
-    notify('Bulk update failed', error.message, false).catch(() => {});
+    if (db.settings.get('notify_update_failed') !== '0') notify('Bulk update failed', error.message, false).catch(() => {});
   }
 });
 

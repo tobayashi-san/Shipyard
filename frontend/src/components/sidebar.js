@@ -28,7 +28,7 @@ export function renderSidebar() {
 
   sidebar.innerHTML = `
     <div class="sidebar-header">
-      <div class="sidebar-logo-icon"><i class="fas fa-ship"></i></div>
+      ${state.whiteLabel?.showIcon !== false ? '<div class="sidebar-logo-icon"><i class="fas fa-ship"></i></div>' : ''}
       <div class="sidebar-logo-text">
         <h1>${esc(state.whiteLabel?.appName || 'Shipyard')}</h1>
         <span>${esc(state.whiteLabel?.appTagline || 'Infrastructure')}</span>
@@ -69,12 +69,6 @@ export function renderSidebar() {
       </div>
     </div>
 
-    <div class="sidebar-footer">
-      <div class="sidebar-footer-info">
-        <div class="sidebar-footer-dot"></div>
-        <span>${t('nav.serverCount', { online: onlineCount })}</span>
-      </div>
-    </div>
   `;
 
   sidebar.querySelectorAll('.nav-item').forEach(item => {

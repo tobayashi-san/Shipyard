@@ -318,11 +318,39 @@ async function _load2fa() {
     if (enabled) {
       statusEl.innerHTML = '<span style="color:var(--online);"><i class="fas fa-shield-halved" style="margin-right:4px;"></i>Enabled</span>';
       controlEl.innerHTML = `<button class="btn btn-danger btn-sm" id="profile-2fa-disable"><i class="fas fa-shield-xmark"></i> Disable</button>`;
-      document.getElementById('profile-2fa-disable').addEventListener('click', async () => {
-        if (!confirm('Disable two-factor authentication?')) return;
-        await api.totpDisable();
-        showToast('2FA disabled', 'success');
-        _load2fa();
+      document.getElementById('profile-2fa-disable').addEventListener('click', () => {
+        const panel = document.getElementById('totp-setup-panel');
+        panel.style.display = 'flex';
+        panel.innerHTML = `
+          <p style="margin:0;font-size:13px;color:var(--text-secondary);">Enter your current password to disable two-factor authentication.</p>
+          <input class="form-input" type="password" id="totp-disable-pw" placeholder="Current password" autocomplete="current-password">
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-danger btn-sm" id="totp-disable-confirm"><i class="fas fa-shield-xmark"></i> Disable 2FA</button>
+            <button class="btn btn-secondary btn-sm" id="totp-disable-cancel">Cancel</button>
+          </div>
+          <p class="login-error hidden" id="totp-disable-err" style="margin:0;"></p>`;
+        document.getElementById('totp-disable-pw').focus();
+        document.getElementById('totp-disable-cancel').addEventListener('click', () => {
+          panel.style.display = 'none';
+        });
+        document.getElementById('totp-disable-confirm').addEventListener('click', async () => {
+          const btn = document.getElementById('totp-disable-confirm');
+          const errEl = document.getElementById('totp-disable-err');
+          const pw = document.getElementById('totp-disable-pw').value;
+          if (!pw) { errEl.textContent = 'Password required'; errEl.classList.remove('hidden'); return; }
+          btn.disabled = true; btn.innerHTML = '<span class="spinner-sm"></span>';
+          try {
+            await api.totpDisable(pw);
+            showToast('2FA disabled', 'success');
+            panel.style.display = 'none';
+            _load2fa();
+          } catch (e) {
+            errEl.textContent = e.message || 'Incorrect password';
+            errEl.classList.remove('hidden');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-shield-xmark"></i> Disable 2FA';
+          }
+        });
       });
     } else {
       statusEl.innerHTML = '<span style="color:var(--text-muted);">Not enabled</span>';

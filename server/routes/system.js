@@ -91,18 +91,20 @@ router.get('/settings', adminOnly, (req, res) => {
   try {
     const raw = db.settings.getAll();
     res.json({
-      appName:       raw.wl_app_name     || '',
-      appTagline:    raw.wl_app_tagline  || '',
-      accentColor:   raw.wl_accent_color || '',
-      theme:         raw.ui_theme        || 'auto',
-      timeFormat:    raw.ui_time_format  || '24h',
-      webhookUrl:    raw.webhook_url     || '',
-      webhookSecret: raw.webhook_secret  ? '••••••••' : '',
-      smtpHost:      raw.smtp_host       || '',
-      smtpPort:      raw.smtp_port       || '587',
-      smtpUser:      raw.smtp_user       || '',
-      smtpFrom:      raw.smtp_from       || '',
-      smtpTo:        raw.smtp_to         || '',
+      appName:              raw.wl_app_name     || '',
+      appTagline:           raw.wl_app_tagline  || '',
+      accentColor:          raw.wl_accent_color || '',
+      theme:                raw.ui_theme        || 'auto',
+      timeFormat:           raw.ui_time_format  || '24h',
+      webhookUrl:           raw.webhook_url     || '',
+      webhookSecret:        raw.webhook_secret  ? '••••••••' : '',
+      smtpHost:             raw.smtp_host       || '',
+      smtpPort:             raw.smtp_port       || '587',
+      smtpUser:             raw.smtp_user       || '',
+      smtpFrom:             raw.smtp_from       || '',
+      smtpTo:               raw.smtp_to         || '',
+      notifPlaybookFailed:  raw.notify_playbook_failed  !== '0',
+      notifUpdateFailed:    raw.notify_update_failed    !== '0',
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -114,7 +116,8 @@ router.put('/settings', adminOnly, (req, res) => {
   try {
     const { appName, appTagline, accentColor, theme, timeFormat,
             webhookUrl, webhookSecret,
-            smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom, smtpTo } = req.body;
+            smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom, smtpTo,
+            notifPlaybookFailed, notifUpdateFailed } = req.body;
     const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
     if (appName       !== undefined) db.settings.set('wl_app_name',     str(appName, 100));
     if (appTagline    !== undefined) db.settings.set('wl_app_tagline',  str(appTagline, 500));
@@ -128,7 +131,9 @@ router.put('/settings', adminOnly, (req, res) => {
     if (smtpUser      !== undefined) db.settings.set('smtp_user',       str(smtpUser, 256));
     if (smtpPass      !== undefined) setSecret(db, 'smtp_pass',       str(smtpPass, 500));
     if (smtpFrom      !== undefined) db.settings.set('smtp_from',       str(smtpFrom, 256));
-    if (smtpTo        !== undefined) db.settings.set('smtp_to',         str(smtpTo, 256));
+    if (smtpTo               !== undefined) db.settings.set('smtp_to',                  str(smtpTo, 256));
+    if (notifPlaybookFailed  !== undefined) db.settings.set('notify_playbook_failed',   notifPlaybookFailed  ? '1' : '0');
+    if (notifUpdateFailed    !== undefined) db.settings.set('notify_update_failed',     notifUpdateFailed    ? '1' : '0');
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });

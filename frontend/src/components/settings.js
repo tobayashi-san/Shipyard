@@ -37,6 +37,8 @@ export function applyWhiteLabel() {
     document.documentElement.style.setProperty('--accent-light', hexToLight(wl.accentColor));
   }
   document.documentElement.dataset.theme = localStorage.getItem('theme') || 'auto';
+  const logoIcon = document.querySelector('.sidebar-logo-icon');
+  if (logoIcon) logoIcon.style.display = wl.showIcon === false ? 'none' : '';
 }
 
 function shadeColor(hex, pct) {
@@ -137,6 +139,18 @@ export async function renderSettings() {
                 <input class="form-input" type="color" id="wl-color" value="${wl.accentColor || '#3b82f6'}" style="width:48px;height:36px;flex-shrink:0;cursor:pointer;">
                 <input class="form-input" type="text" id="wl-color-hex" value="${wl.accentColor || '#3b82f6'}" placeholder="#3b82f6" style="font-family:var(--font-mono);max-width:120px;">
               </div>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span>Sidebar Icon</span>
+              <small>Show icon in the sidebar header</small>
+            </div>
+            <div class="settings-row-control">
+              <label class="toggle-switch">
+                <input type="checkbox" id="wl-show-icon" ${wl.showIcon !== false ? 'checked' : ''}>
+                <span class="toggle-slider"></span>
+              </label>
             </div>
           </div>
           <div class="settings-row">
@@ -291,6 +305,37 @@ export async function renderSettings() {
           </div>
         </div>
       </div>
+
+        <div class="settings-group-title" style="margin-top:20px;">Notification Events</div>
+        <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px 0;padding:0 4px;">
+          Choose which failures trigger a notification. Notifications are sent only if webhook or email is configured above.
+        </p>
+        <div class="settings-block">
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span>Playbook failure</span>
+              <small>Notify when an Ansible playbook fails</small>
+            </div>
+            <div class="settings-row-control">
+              <label class="toggle-switch">
+                <input type="checkbox" id="notif-playbook-failed" ${wl.notifPlaybookFailed !== false ? 'checked' : ''}>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+          <div class="settings-row" style="border-bottom:none;">
+            <div class="settings-row-label">
+              <span>Update failure</span>
+              <small>Notify when a system or bulk update fails</small>
+            </div>
+            <div class="settings-row-control">
+              <label class="toggle-switch">
+                <input type="checkbox" id="notif-update-failed" ${wl.notifUpdateFailed !== false ? 'checked' : ''}>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
 
       <!-- Tab: Plugins -->
       <div class="tab-panel" id="tab-plugins">
@@ -479,6 +524,7 @@ function setupSettingsEvents(wl) {
         appName:     document.getElementById('wl-name').value.trim() || undefined,
         appTagline:  document.getElementById('wl-tagline').value.trim() || undefined,
         accentColor: document.getElementById('wl-color').value,
+        showIcon:    document.getElementById('wl-show-icon').checked,
       });
       showToast(t('set.toastSaved'), 'success');
     } catch {
@@ -602,6 +648,16 @@ function setupNotificationsEvents() {
       btn.innerHTML = `<i class="fas fa-paper-plane"></i> ${t('set.webhookTest')}`;
     }
   });
+
+  // Notification event toggles — save immediately on change
+  ['notif-playbook-failed', 'notif-update-failed'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', async (e) => {
+      const key = id === 'notif-playbook-failed' ? 'notifPlaybookFailed' : 'notifUpdateFailed';
+      try {
+        await api.saveSettings({ [key]: e.target.checked });
+      } catch { showToast(t('set.toastErrorSave'), 'error'); e.target.checked = !e.target.checked; }
+    });
+  });
 }
 
 // ============================================================
@@ -650,7 +706,7 @@ async function loadSSHKey() {
         </div>
         <div class="settings-row-control" style="flex:1;min-width:0;">
           <div class="ssh-key-display" style="position:relative;">
-            <span style="display:block;padding-right:90px;word-break:break-all;color:var(--accent);">${esc(installCmd)}</span>
+            <span style="display:block;padding-right:90px;word-break:break-all;">${esc(installCmd)}</span>
             <button class="copy-btn" id="btn-copy-cmd"><i class="fas fa-copy"></i> ${t('common.copy')}</button>
           </div>
         </div>
@@ -1513,7 +1569,12 @@ async function loadUsersTab() {
     }
 
     content.innerHTML = `
-      <div class="settings-group-title">User Management</div>
+      <div class="settings-group-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>User Management</span>
+        <button class="btn btn-primary btn-sm" id="btn-add-user">
+          <i class="fas fa-user-plus"></i> Add User
+        </button>
+      </div>
       <div class="settings-block" id="users-list">
         ${users.length === 0 ? `
           <div class="settings-row" style="border-bottom:none;">
@@ -1522,33 +1583,36 @@ async function loadUsersTab() {
               No users found.
             </div>
           </div>` :
-          users.map((u, i) => `
-            <div class="settings-row" ${i === users.length - 1 ? 'style="border-bottom:none;"' : ''} data-user-id="${esc(u.id)}">
-              <div class="settings-row-label">
-                <span>${esc(u.username)}</span>
-                <small>${esc(u.email || '')}</small>
+          users.map((u, i) => {
+            const roleName = esc((_allRoles.find(r => r.id === u.role) || {}).name || u.role);
+            const initial = esc((u.username || '?')[0].toUpperCase());
+            const isSelf = u.id === (window.__currentUserId || '');
+            return `
+            <div class="settings-row user-row" ${i === users.length - 1 ? 'style="border-bottom:none;"' : ''} data-user-id="${esc(u.id)}">
+              <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;">
+                <div class="user-avatar-circle">${initial}</div>
+                <div style="min-width:0;">
+                  <div style="font-size:13px;font-weight:500;color:var(--text-primary);">${esc(u.username)}</div>
+                  ${u.email ? `<div style="font-size:11px;color:var(--text-muted);">${esc(u.email)}</div>` : ''}
+                </div>
               </div>
-              <div class="settings-row-control" style="gap:8px;flex-wrap:wrap;align-items:center;">
-                <span class="badge ${u.role === 'admin' ? 'badge-accent' : 'badge-muted'}">${esc((_allRoles.find(r => r.id === u.role) || {}).name || u.role)}</span>
-                <button class="btn btn-secondary btn-sm btn-edit-user" data-id="${esc(u.id)}" data-username="${esc(u.username)}" data-email="${esc(u.email || '')}" data-role="${esc(u.role)}">
-                  <i class="fas fa-edit"></i> Edit
+              <span class="badge ${u.role === 'admin' ? 'badge-accent' : 'badge-muted'}" style="flex-shrink:0;">${roleName}</span>
+              <div style="display:flex;gap:4px;flex-shrink:0;">
+                <button class="btn btn-secondary btn-sm btn-edit-user" data-id="${esc(u.id)}" data-username="${esc(u.username)}" data-email="${esc(u.email || '')}" data-role="${esc(u.role)}" title="Edit">
+                  <i class="fas fa-pen"></i>
                 </button>
-                <button class="btn btn-secondary btn-sm btn-reset-pw" data-id="${esc(u.id)}" data-username="${esc(u.username)}">
-                  <i class="fas fa-key"></i> Reset PW
+                <button class="btn btn-secondary btn-sm btn-reset-pw" data-id="${esc(u.id)}" data-username="${esc(u.username)}" title="Reset Password">
+                  <i class="fas fa-key"></i>
                 </button>
-                <button class="btn btn-danger btn-sm btn-del-user" data-id="${esc(u.id)}" data-username="${esc(u.username)}" style="display:${u.id === (window.__currentUserId || '') ? 'none' : ''};">
+                <button class="btn btn-danger btn-sm btn-del-user" data-id="${esc(u.id)}" data-username="${esc(u.username)}" title="Delete" ${isSelf ? 'style="visibility:hidden;"' : ''}>
                   <i class="fas fa-trash"></i>
                 </button>
               </div>
-            </div>`).join('')
+            </div>`;
+          }).join('')
         }
       </div>
-      <div style="margin-top:12px;">
-        <button class="btn btn-primary btn-sm" id="btn-add-user">
-          <i class="fas fa-user-plus"></i> Add User
-        </button>
-      </div>
-      <div id="users-form-area" style="margin-top:16px;"></div>
+      <div id="users-form-area" style="margin-top:12px;"></div>
     `;
 
     // Add user button
@@ -1914,10 +1978,18 @@ async function _loadGitLog(panel) {
   const el = panel.querySelector('#git-log-list');
   if (!el) return;
   try {
-    const data = await api.request('/playbooks-git/log');
-    const lines = (data.log || '').trim().split('\n').filter(Boolean);
-    if (!lines.length) { el.textContent = 'No commits yet.'; return; }
-    el.innerHTML = lines.slice(0, 20).map(l => `<div style="padding:3px 0;border-bottom:1px solid var(--border);">${esc(l)}</div>`).join('');
+    const commits = await api.request('/playbooks-git/log');
+    if (!Array.isArray(commits) || !commits.length) { el.textContent = 'No commits yet.'; return; }
+    el.innerHTML = commits.slice(0, 20).map(c => `
+      <div style="display:flex;align-items:flex-start;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);">
+        <code style="color:var(--accent);flex-shrink:0;font-size:11px;">${esc(c.hash)}</code>
+        <div style="flex:1;min-width:0;">
+          <div style="color:var(--text-primary);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(c.message)}</div>
+          <div style="color:var(--text-muted);font-size:11px;margin-top:2px;">
+            <i class="fas fa-user" style="font-size:9px;"></i> ${esc(c.author)} &nbsp;·&nbsp; ${esc(c.date)}
+          </div>
+        </div>
+      </div>`).join('');
   } catch (e) {
     el.textContent = 'Could not load log: ' + e.message;
   }

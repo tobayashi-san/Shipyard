@@ -214,16 +214,16 @@ let currentFilename = null;
 function renderTemplatesHTML() {
   return `
     <div class="page-content-grid">
-      <div class="panel" id="playbook-list-panel">
-        <div class="section-header">
-          <h3><i class="fas fa-list"></i> ${t('pb.title')}</h3>
-          ${hasCap('canEditPlaybooks') ? `<button class="btn btn-primary btn-sm" id="btn-new-playbook">
-            <i class="fas fa-plus"></i> ${t('pb.new')}
+      <div class="panel" id="playbook-list-panel" style="padding:0;overflow:hidden;">
+        <div class="pb-panel-toolbar">
+          <span class="pb-panel-title">Playbooks</span>
+          ${hasCap('canEditPlaybooks') ? `<button class="btn btn-secondary btn-sm" id="btn-new-playbook" title="${t('pb.new')}" style="padding:3px 8px;">
+            <i class="fas fa-plus"></i>
           </button>` : ''}
         </div>
         <div class="pb-search-wrap">
           <i class="fas fa-search pb-search-icon"></i>
-          <input class="pb-search-input" id="pb-search" type="text" placeholder="Search playbooks…" autocomplete="off">
+          <input class="pb-search-input" id="pb-search" type="text" placeholder="Search…" autocomplete="off">
         </div>
         <div id="playbook-list">
           <div class="loading-state"><div class="loader"></div> ${t('pb.loading')}</div>
@@ -282,11 +282,6 @@ function renderTemplatesHTML() {
           <div id="run-output" class="hidden" style="border-top:1px solid var(--border);">
             <div class="terminal" style="border:none;border-radius:0;">
               <div class="terminal-header">
-                <div class="terminal-dots">
-                  <div class="terminal-dot red"></div>
-                  <div class="terminal-dot yellow"></div>
-                  <div class="terminal-dot green"></div>
-                </div>
                 <div class="terminal-title" id="run-terminal-title">${t('pb.output')}</div>
               </div>
               <div class="terminal-body" id="run-terminal-body"></div>
@@ -368,6 +363,9 @@ async function loadPlaybookList() {
 function wirePlaybookItems() {
   const listEl = document.getElementById('playbook-list');
   if (!listEl) return;
+  listEl.querySelectorAll('.pb-category-header').forEach(header => {
+    header.addEventListener('click', () => header.classList.toggle('collapsed'));
+  });
   listEl.querySelectorAll('.playbook-item').forEach(item => {
     if (!hasCap('canEditPlaybooks') && !hasCap('canDeletePlaybooks')) return;
     item.style.cursor = 'pointer';
@@ -382,34 +380,26 @@ function wirePlaybookItems() {
 }
 
 function renderPlaybookGroup(label, playbooks, isInternal) {
-  const iconMap = {
-    Maintenance: 'fa-broom',
-    Network: 'fa-network-wired',
-    Security: 'fa-shield-alt',
-    Install: 'fa-download',
-    System: 'fa-cog',
-    Custom: 'fa-code',
-  };
-  const icon = iconMap[label] || (isInternal ? 'fa-cogs' : 'fa-folder');
   return `
     <div class="pb-category">
       <div class="pb-category-header">
-        <i class="fas ${icon}"></i>
+        <i class="fas fa-chevron-down pb-chevron"></i>
+        <i class="fas ${isInternal ? 'fa-folder-gear' : 'fa-folder'} pb-folder-icon"></i>
         <span>${esc(label)}</span>
         <span class="pb-category-count">${playbooks.length}</span>
       </div>
-      ${playbooks.map(p => `
-        <div class="playbook-item" data-filename="${esc(p.filename)}" data-internal="${isInternal}">
-          <div style="overflow:hidden;flex:1;min-width:0;">
-            <div class="playbook-item-name">${esc(p.description)}</div>
-            <div class="playbook-item-file">${esc(p.filename)}</div>
+      <div class="pb-items">
+        ${playbooks.map(p => `
+          <div class="playbook-item" data-filename="${esc(p.filename)}" data-internal="${isInternal}">
+            <i class="fas fa-file-code pb-file-icon"></i>
+            <span class="playbook-item-name" title="${esc(p.filename)}">${esc(p.description)}</span>
+            ${hasCap('canRunPlaybooks') ? `<button class="btn btn-secondary btn-sm btn-run-playbook pb-run-btn" data-filename="${esc(p.filename)}"
+              data-description="${esc(p.description)}" title="${t('common.run')}">
+              <i class="fas fa-play"></i>
+            </button>` : ''}
           </div>
-          ${hasCap('canRunPlaybooks') ? `<button class="btn btn-secondary btn-sm btn-run-playbook" data-filename="${esc(p.filename)}"
-            data-description="${esc(p.description)}" title="${t('common.run')}" style="flex-shrink:0;">
-            <i class="fas fa-play"></i>
-          </button>` : ''}
-        </div>
-      `).join('')}
+        `).join('')}
+      </div>
     </div>
   `;
 }
@@ -1134,11 +1124,6 @@ function showOutputModal(entry) {
       <h2><i class="fas fa-file-alt"></i> ${esc(entry.schedule_name)} — ${esc(entry.playbook)}</h2>
       <div class="terminal" style="margin:8px 0;max-height:60vh;">
         <div class="terminal-header">
-          <div class="terminal-dots">
-            <div class="terminal-dot red"></div>
-            <div class="terminal-dot yellow"></div>
-            <div class="terminal-dot green"></div>
-          </div>
           <div class="terminal-title">${formatDateTimeShort(entry.started_at)}</div>
         </div>
         <div class="terminal-body" style="white-space:pre-wrap;">${esc(entry.output || t('adhoc.noOutput'))}</div>

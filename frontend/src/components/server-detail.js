@@ -171,11 +171,6 @@ export async function renderServerDetail(serverId) {
         <div id="terminal-container" style="margin-top:16px;display:none;">
           <div class="terminal">
             <div class="terminal-header">
-              <div class="terminal-dots">
-                <div class="terminal-dot red"></div>
-                <div class="terminal-dot yellow"></div>
-                <div class="terminal-dot green"></div>
-              </div>
               <div class="terminal-title" id="terminal-title">Output</div>
             </div>
             <div class="terminal-body" id="terminal-body"></div>

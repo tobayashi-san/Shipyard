@@ -151,12 +151,12 @@ function renderApp() {
   if (!_container) return;
   _container.innerHTML = `
     <div class="page-header">
-      <div style="display:flex;align-items:center;gap:12px;">
-        <h2 style="margin:0;"><i class="fas fa-cube"></i> OpenTofu</h2>
-        <div>${_status.installed
-          ? `<span class="badge badge-online" style="font-size:10.5px;padding:1px 6px;font-weight:600;"><i class="fas fa-check"></i> ${esc(_status.binary)} ${esc(_status.version||'')}</span>`
-          : `<span class="badge badge-offline" style="font-size:10.5px;padding:1px 6px;font-weight:600;"><i class="fas fa-times"></i> Binary not found in PATH</span>`
-        }</div>
+      <div style="display:flex;align-items:baseline;gap:8px;">
+        <h2 style="margin:0;font-size:1.1rem;font-weight:700;"><i class="fas fa-cube"></i> OpenTofu</h2>
+        ${_status.installed
+          ? `<span style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono);">${esc(_status.version||_status.binary||'')}</span>`
+          : `<span style="font-size:12px;color:var(--offline);"><i class="fas fa-times"></i> not found</span>`
+        }
       </div>
       <div style="display:flex;align-items:center;gap:6px;">
         <div style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-secondary);font-size:12px;color:var(--text-muted);">
