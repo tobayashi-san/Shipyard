@@ -4,17 +4,36 @@ Web dashboard for managing Linux servers — SSH, system monitoring, OS updates,
 
 > **Do not expose Shipyard to the public internet.**
 > It stores SSH private keys and has direct shell access to all managed servers.
-> Run it inside a private network or VPN. See [Security Hardening](docs/security.md).
+> Run it inside a private network or VPN. See the [Security Guide](https://github.com/tobayashi-san/Shipyard/wiki/Security-Guide).
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/tobayashi-san/Shipyard.git
-cd Shipyard
+mkdir shipyard && cd shipyard
+
+# Create docker-compose.yml
+cat > docker-compose.yml << 'EOF'
+services:
+  shipyard:
+    image: ghcr.io/tobayashi-san/shipyard:latest
+    container_name: shipyard
+    restart: unless-stopped
+    ports:
+      - "443:443"
+    volumes:
+      - ./data:/app/server/data
+      - ./playbooks:/app/server/playbooks
+      - ./plugins:/app/plugins
+    environment:
+      - NODE_ENV=production
+EOF
+
 docker compose up -d
 ```
 
-Open **`https://<host-ip>`** in your browser. HTTPS is enabled by default with a self-signed certificate — accept the browser warning once, or bring your own certificate (see [Configuration](docs/configuration.md)).
+Open **`https://<host-ip>`** in your browser. The setup wizard will guide you through account creation, appearance settings, and SSH key generation.
+
+HTTPS is enabled by default with a self-signed certificate — accept the browser warning once, or [bring your own certificate](https://github.com/tobayashi-san/Shipyard/wiki/Installation#custom-tls-certificate).
 
 ## Screenshots
 
@@ -73,8 +92,9 @@ Open **`https://<host-ip>`** in your browser. HTTPS is enabled by default with a
 - Test button for both channels in Settings
 
 **Auth & Security**
-- Single-password login with JWT sessions
-- Optional TOTP / 2FA (scan QR code in Settings → Security)
+- Multi-user authentication with JWT sessions
+- Role-based access control (RBAC) with custom roles and granular permissions
+- Optional TOTP / 2FA per user
 - Audit log of all significant actions
 - Rate limiting on login and deploy endpoints
 - HTTPS with HSTS, CSP, X-Frame-Options headers
@@ -82,7 +102,8 @@ Open **`https://<host-ip>`** in your browser. HTTPS is enabled by default with a
 **Plugins**
 - Hot-reloadable plugin system — drop a directory into `/app/plugins/` and click Reload
 - Plugins can add backend routes, a sidebar entry, and a full frontend UI
-- Bundled: **OpenTofu** plugin — manage OpenTofu / Terraform workspaces, run `init`, `validate`, `plan`, `apply`, `destroy` with live output, browse and edit workspace files
+- Bundled: **OpenTofu** — manage OpenTofu / Terraform workspaces with live output
+- Bundled: **Backup Status** — monitor PBS and Veeam Backup & Replication status
 
 **UI**
 - German and English, auto-detected from browser locale
@@ -91,9 +112,17 @@ Open **`https://<host-ip>`** in your browser. HTTPS is enabled by default with a
 
 ## Documentation
 
-- [Deployment](docs/deployment.md) — Docker, updating, uninstalling
-- [Configuration](docs/configuration.md) — Environment variables, HTTPS, ports, project structure
-- [Security Hardening](docs/security.md) — Network isolation, secrets, SSH key encryption
+Full documentation is available in the **[Wiki](https://github.com/tobayashi-san/Shipyard/wiki)**:
+
+- [Installation](https://github.com/tobayashi-san/Shipyard/wiki/Installation) — Docker deployment, requirements, first-time setup
+- [Configuration](https://github.com/tobayashi-san/Shipyard/wiki/Configuration) — Environment variables, app settings, notifications
+- [Security Guide](https://github.com/tobayashi-san/Shipyard/wiki/Security-Guide) — Hardening, encryption at rest, TLS, RBAC
+- [Server Management](https://github.com/tobayashi-san/Shipyard/wiki/Server-Management) — Adding servers, groups, SSH connectivity
+- [Playbooks & Schedules](https://github.com/tobayashi-san/Shipyard/wiki/Playbooks-and-Schedules) — Ansible playbooks, cron schedules
+- [Docker Management](https://github.com/tobayashi-san/Shipyard/wiki/Docker-Management) — Containers, Compose, image updates
+- [Plugin System](https://github.com/tobayashi-san/Shipyard/wiki/Plugin-System) — Writing and installing plugins
+- [API Reference](https://github.com/tobayashi-san/Shipyard/wiki/API-Reference) — Full REST API documentation
+- [Troubleshooting](https://github.com/tobayashi-san/Shipyard/wiki/Troubleshooting) — Common issues and solutions
 
 ## Development
 
