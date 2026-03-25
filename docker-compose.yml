@@ -20,14 +20,10 @@ services:
       start_period: 15s
     environment:
       - NODE_ENV=production
+      - JWT_SECRET=${JWT_SECRET:?Create a .env file with JWT_SECRET — see README}
+      - SHIPYARD_KEY_SECRET=${SHIPYARD_KEY_SECRET:?Create a .env file with SHIPYARD_KEY_SECRET — see README}
       # - PORT=443
-      # - JWT_SECRET=change-me-in-production
       # - ALLOWED_ORIGINS=https://yourdomain.com
-      #
-      # Encrypt SSH private keys at rest — set in docker-compose.override.yml
-      # - SHIPYARD_KEY_SECRET=
-      #
-      # To use your own certificate instead of the auto-generated one:
       # - SSL_CERT=/certs/shipyard.crt
       # - SSL_KEY=/certs/shipyard.key
 

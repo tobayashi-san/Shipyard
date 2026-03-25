@@ -260,7 +260,7 @@ const translations = {
     'det.containerRestarted': 'Container neugestartet',
     'det.containerStopped': 'Container gestoppt',
     'det.stackRemoved': 'Stack entfernt',
-    'det.phasedUpdates': 'Phased Updates (gehalten)',
+    'det.phasedUpdates': 'Zurückgehaltene Pakete',
     'det.loading': 'Wird geladen…',
 
     // ── Add Server Modal ──────────────────────────────────────
@@ -646,7 +646,7 @@ const translations = {
     'det.confirmStackMsg': 'Stack <strong>{name}</strong> wirklich {action}?',
     'det.showLogs': 'Logs anzeigen',
     'det.noOutput': '(Keine Ausgabe)',
-    'det.phasedCount': '{count} Pakete zurückgehalten (Phased Rollout)',
+    'det.phasedCount': '{count} Paket(e) zurückgehalten',
 
     // ── Onboarding (extra) ────────────────────────────────────
     'ob.checkFailed': 'Konnte nicht geprüft werden.',
@@ -960,7 +960,7 @@ const translations = {
     'det.containerRestarted': 'Container restarted',
     'det.containerStopped': 'Container stopped',
     'det.stackRemoved': 'Stack removed',
-    'det.phasedUpdates': 'Phased Updates (held back)',
+    'det.phasedUpdates': 'Held back packages',
     'det.loading': 'Loading…',
 
     // ── Add Server Modal ──────────────────────────────────────
@@ -1346,7 +1346,7 @@ const translations = {
     'det.confirmStackMsg': 'Really {action} stack <strong>{name}</strong>?',
     'det.showLogs': 'Show logs',
     'det.noOutput': '(No output)',
-    'det.phasedCount': '{count} package(s) held back (Phased Rollout)',
+    'det.phasedCount': '{count} package(s) held back',
 
     // ── Onboarding (extra) ────────────────────────────────────
     'ob.checkFailed': 'Could not be verified.',

@@ -96,7 +96,8 @@ class SystemInfoService {
   apt-get update -qq 2>/dev/null
   apt list --upgradable 2>/dev/null | grep "/"
   echo "---PHASED---"
-  apt-get -s dist-upgrade 2>/dev/null | awk '/deferred due to phasing:/{p=1;next} p&&/^[0-9]/{exit} p&&NF{print $1}' 2>/dev/null || true
+  apt-get -s upgrade 2>/dev/null | awk '/^Inst /{print $2}'
+  echo "---WOULDUPGRADE---"
 elif command -v dnf >/dev/null 2>&1; then
   dnf check-update -q 2>/dev/null | awk 'NF>=3 && /^[a-zA-Z0-9]/{n=$1; sub(/\\.[^.]+$/,"",n); print n"/updates "$2}'
   echo "---PHASED---"
@@ -112,10 +113,12 @@ elif command -v zypper >/dev/null 2>&1; then
 fi`;
       const result = await sshManager.execCommand(server, cmd);
 
-      const [upgradableRaw = '', phasedRaw = ''] = result.stdout.split('---PHASED---');
+      const [upgradableRaw = '', rest = ''] = result.stdout.split('---PHASED---');
+      const [wouldUpgradeRaw = ''] = rest.split('---WOULDUPGRADE---');
 
-      const phasedSet = new Set(
-        phasedRaw.trim().split('\n').map(s => s.trim()).filter(Boolean)
+      // Packages that apt would actually install (not blocked by phasing/deps)
+      const wouldUpgradeSet = new Set(
+        wouldUpgradeRaw.trim().split('\n').map(s => s.trim()).filter(Boolean)
       );
 
       const updates = upgradableRaw.trim().split('\n')
@@ -127,7 +130,8 @@ fi`;
             package: pkg,
             version: parts[1] || 'unknown',
             source: parts[2] || '',
-            phased: phasedSet.has(pkg),
+            // Mark as phased if apt wouldn't actually upgrade it
+            phased: wouldUpgradeSet.size > 0 ? !wouldUpgradeSet.has(pkg) : false,
           };
         })
         .filter(u => u.package);

@@ -11,6 +11,10 @@ Web dashboard for managing Linux servers — SSH, system monitoring, OS updates,
 ```bash
 mkdir shipyard && cd shipyard
 
+# Generate secrets
+echo "JWT_SECRET=$(openssl rand -hex 32)" > .env
+echo "SHIPYARD_KEY_SECRET=$(openssl rand -hex 32)" >> .env
+
 # Create docker-compose.yml
 cat > docker-compose.yml << 'EOF'
 services:
@@ -26,6 +30,8 @@ services:
       - ./plugins:/app/plugins
     environment:
       - NODE_ENV=production
+      - JWT_SECRET=${JWT_SECRET}
+      - SHIPYARD_KEY_SECRET=${SHIPYARD_KEY_SECRET}
 EOF
 
 docker compose up -d

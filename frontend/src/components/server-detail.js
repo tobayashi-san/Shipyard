@@ -477,8 +477,9 @@ async function loadServerInfo(serverId) {
         if (el) {
           // API may return array directly or { updates: [] }
           const list = Array.isArray(updates) ? updates : (updates?.updates ?? []);
-          el.textContent = list.length;
-          if (list.length > 0) {
+          const actionable = list.filter(u => !u.phased);
+          el.textContent = actionable.length;
+          if (actionable.length > 0) {
             el.style.color = 'var(--warning)';
             if (iconEl) iconEl.style.color = 'var(--warning)';
           } else {
