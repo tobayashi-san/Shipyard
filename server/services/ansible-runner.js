@@ -25,11 +25,12 @@ class AnsibleRunner {
     const encPath = baseKeyPath + '.enc';
 
     if (fs.existsSync(encPath)) {
-      // Key is encrypted — write decrypted content to a temp file
+      // Key is encrypted — write decrypted content to a secure temp directory
       const plaintext = sshManager.getPrivateKey();
-      const tmpPath = path.join(os.tmpdir(), `shipyard-key-${crypto.randomUUID()}`);
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'shipyard-key-'));
+      const tmpPath = path.join(tmpDir, 'key');
       fs.writeFileSync(tmpPath, plaintext, { mode: 0o600 });
-      return { keyPath: tmpPath, cleanup: () => { try { fs.unlinkSync(tmpPath); } catch {} } };
+      return { keyPath: tmpPath, cleanup: () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {} } };
     }
 
     return { keyPath: baseKeyPath, cleanup: () => {} };

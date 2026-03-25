@@ -37,11 +37,15 @@ const DEFAULTS = {
 
 function getPollingConfig() {
   const g = (key) => db.settings.get(key) ?? DEFAULTS[key];
+  const safeMs = (key, fallback) => {
+    const val = parseInt(g(key));
+    return (Number.isFinite(val) && val > 0 ? val : fallback) * 60 * 1000;
+  };
   return {
-    info:          { enabled: g('poll_info_enabled') !== '0',          intervalMs: Math.max(1, parseInt(g('poll_info_interval_min'))) * 60 * 1000 },
-    updates:       { enabled: g('poll_updates_enabled') !== '0',       intervalMs: Math.max(1, parseInt(g('poll_updates_interval_min'))) * 60 * 1000 },
-    imageUpdates:  { enabled: g('poll_image_updates_enabled') !== '0', intervalMs: Math.max(1, parseInt(g('poll_image_updates_interval_min'))) * 60 * 1000 },
-    customUpdates: { enabled: g('poll_custom_updates_enabled') !== '0',intervalMs: Math.max(1, parseInt(g('poll_custom_updates_interval_min'))) * 60 * 1000 },
+    info:          { enabled: g('poll_info_enabled') !== '0',          intervalMs: safeMs('poll_info_interval_min', 5) },
+    updates:       { enabled: g('poll_updates_enabled') !== '0',       intervalMs: safeMs('poll_updates_interval_min', 60) },
+    imageUpdates:  { enabled: g('poll_image_updates_enabled') !== '0', intervalMs: safeMs('poll_image_updates_interval_min', 360) },
+    customUpdates: { enabled: g('poll_custom_updates_enabled') !== '0',intervalMs: safeMs('poll_custom_updates_interval_min', 360) },
   };
 }
 

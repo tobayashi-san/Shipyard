@@ -109,7 +109,6 @@ export async function showRunPlaybookModal(onClose, preselectedNames = []) {
       const hint   = overlay.querySelector('#bulk-hint');
       hidden.value = activeNames.join(',');
       if (hint) hint.innerHTML = `${activeNames.length} Server · <button type="button" class="btn-link" id="rp-target-all">${t('run.addAll')}</button>`;
-      overlay.querySelector('#rp-target-all')?.addEventListener('click', addAll);
     }
 
     function addAll() {
@@ -133,21 +132,17 @@ export async function showRunPlaybookModal(onClose, preselectedNames = []) {
         btn.addEventListener('click', () => {
           activeNames = activeNames.filter(n => n !== btn.dataset.name);
           rebuildChips();
-          refreshChips();
         });
       });
       refreshChips();
     }
 
-    // Initial chip remove listeners
-    overlay.querySelectorAll('.chip-remove').forEach(btn => {
-      btn.addEventListener('click', () => {
-        activeNames = activeNames.filter(n => n !== btn.dataset.name);
-        rebuildChips();
-      });
+    // Use event delegation on the overlay for dynamically recreated buttons
+    overlay.addEventListener('click', e => {
+      if (e.target.closest('#rp-target-all')) addAll();
     });
 
-    overlay.querySelector('#rp-target-all')?.addEventListener('click', addAll);
+    rebuildChips();
   }
 
   // ── Submit ───────────────────────────────────────────────

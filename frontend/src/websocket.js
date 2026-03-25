@@ -16,6 +16,7 @@ export function closeWebSocket() {
     ws = null;
     state.ws = null;
   }
+  listeners.clear();
   reconnectDelay = 1000;
 }
 

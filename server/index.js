@@ -551,14 +551,15 @@ app.post('/api/servers/:id/docker/compose/write', composeLimiter, guardServerAcc
   if (isBlockedRemotePath(path)) return res.status(400).json({ error: 'Path not allowed: system directories are protected' });
 
   try {
-    // We use a base64 encoded string to safely transfer the multiline compose file via CLI
+    // Use single-quoted paths with proper escaping to prevent shell injection
+    const safePath = path.replace(/'/g, "'\\''");
     const b64 = Buffer.from(content).toString('base64');
-    
+
     // Create directory if it doesn't exist, then write the decoded file
     const result = await ansibleRunner.runAdHoc(
       server.name,
       'shell',
-      `mkdir -p "${path}" && echo "${b64}" | base64 -d > "${path}/docker-compose.yml"`,
+      `mkdir -p '${safePath}' && printf '%s' '${b64.replace(/'/g, "'\\''")}' | base64 -d > '${safePath}/docker-compose.yml'`,
       () => {}
     );
 
@@ -602,10 +603,11 @@ app.post('/api/servers/:id/docker/compose/action', composeLimiter, guardServerAc
 
     broadcast({ type: 'update_output', serverId, historyId, stream: 'stdout', data: `Running compose ${action.toUpperCase()} in ${path} on ${server.name}...\n` });
 
+    const safePath = path.replace(/'/g, "'\\''");
     const result = await ansibleRunner.runAdHoc(
       server.name,
       'shell',
-      `cd "${path}" && ${cmd}`,
+      `cd '${safePath}' && ${cmd}`,
       (type, data) => {
         broadcast({ type: 'update_output', serverId, historyId, stream: type, data });
       }
@@ -773,10 +775,9 @@ function broadcast(data) {
     // Filter server-specific messages for restricted users
     if (data.serverId && meta.perms && !meta.perms.full) {
       const server = db.servers.getById(data.serverId);
-      if (server) {
-        const allowed = filterServers([server], meta.perms);
-        if (allowed.length === 0) continue;
-      }
+      if (!server) continue; // server was deleted — skip broadcast
+      const allowed = filterServers([server], meta.perms);
+      if (allowed.length === 0) continue;
     }
 
     client.send(msg);

@@ -22,7 +22,7 @@ router.get('/', (req, res) => {
   );
   const all = db.scheduleHistory.getAll(limit * 5, scheduleId);
   const filtered = all
-    .filter(h => h.targets && h.targets !== 'all' && accessibleNames.has(h.targets))
+    .filter(h => h.targets != null && h.targets !== '' && h.targets !== 'all' && accessibleNames.has(h.targets))
     .slice(0, limit);
 
   res.json(filtered);

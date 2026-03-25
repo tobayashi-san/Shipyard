@@ -56,6 +56,13 @@ router.put('/:id', adminOnly, (req, res) => {
     fields.role = role;
   }
   try {
+    // Invalidate tokens when role changes so user gets new permissions on next login
+    if (fields.role) {
+      const existing = db.users.getById(id);
+      if (existing && existing.role !== fields.role) {
+        db.users.incrementTokenVersion(id);
+      }
+    }
     const user = db.users.update(id, fields);
     if (!user) return res.status(404).json({ error: 'User not found' });
     db.auditLog.write('users.update', `Updated user: ${id}`, req.ip);

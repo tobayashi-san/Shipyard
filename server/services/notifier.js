@@ -20,13 +20,27 @@ async function sendWebhook(title, message, success) {
     const parsedUrl = new URL(url);
 
     // Block internal/metadata IPs to prevent SSRF
-    const blockedHosts = ['localhost', '127.0.0.1', '0.0.0.0', '[::1]', 'metadata.google.internal'];
-    const blockedPrefixes = ['169.254.', '10.', '192.168.', '172.16.', '172.17.', '172.18.', '172.19.',
-      '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.', '172.26.',
-      '172.27.', '172.28.', '172.29.', '172.30.', '172.31.'];
-    if (blockedHosts.includes(parsedUrl.hostname) ||
-        blockedPrefixes.some(p => parsedUrl.hostname.startsWith(p))) {
-      console.warn(`[Webhook] Blocked request to internal address: ${parsedUrl.hostname}`);
+    const blockedHosts = ['localhost', '0.0.0.0', 'metadata.google.internal',
+      'metadata.google.internal.', '169.254.169.254'];
+    const host = parsedUrl.hostname.replace(/^\[|\]$/g, ''); // strip IPv6 brackets
+    if (blockedHosts.includes(host)) {
+      console.warn(`[Webhook] Blocked request to internal address: ${host}`);
+      return { ok: false };
+    }
+    // Block private/loopback IPv4 ranges
+    const ipv4Prefixes = ['127.', '10.', '192.168.', '169.254.', '0.'];
+    if (ipv4Prefixes.some(p => host.startsWith(p)) ||
+        /^172\.(1[6-9]|2\d|3[01])\./.test(host)) {
+      console.warn(`[Webhook] Blocked request to private IPv4: ${host}`);
+      return { ok: false };
+    }
+    // Block IPv6 loopback, link-local, and private ranges
+    const hostLower = host.toLowerCase();
+    if (hostLower === '::1' || hostLower === '::' ||
+        hostLower.startsWith('fe80:') || hostLower.startsWith('fc') ||
+        hostLower.startsWith('fd') || hostLower.startsWith('::ffff:127.') ||
+        hostLower.startsWith('::ffff:10.') || hostLower.startsWith('::ffff:192.168.')) {
+      console.warn(`[Webhook] Blocked request to private IPv6: ${host}`);
       return { ok: false };
     }
 

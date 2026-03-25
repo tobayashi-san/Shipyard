@@ -58,6 +58,11 @@
   --font: 'Inter', system-ui, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
 
+  /* Misc */
+  --bg-hover: #f0f4fa;
+  --bg-input: #ffffff;
+  --danger: #dc2626;
+
   /* Tab bar */
   --tab-h: 44px;
 }
@@ -1946,7 +1951,7 @@ input[type="color"].form-input::-moz-color-swatch {
 
   --text-primary:   #e4e7f0;
   --text-secondary: #9ba3b4;
-  --text-muted:     #5c6370;
+  --text-muted:     #6e7686;
 
   --accent-light:   rgba(59, 130, 246, 0.18);
 
@@ -1954,6 +1959,10 @@ input[type="color"].form-input::-moz-color-swatch {
   --offline-bg: rgba(220,  38,  38, 0.15);
   --warning-bg: rgba(217, 119,   6, 0.15);
   --unknown-bg: #1e2128;
+
+  --bg-hover: #252830;
+  --bg-input: #1e2128;
+  --danger: #ef4444;
 
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
   --shadow:    0 4px 12px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.25);
@@ -1976,7 +1985,7 @@ input[type="color"].form-input::-moz-color-swatch {
 
     --text-primary:   #e4e7f0;
     --text-secondary: #9ba3b4;
-    --text-muted:     #5c6370;
+    --text-muted:     #6e7686;
 
     --accent-light:   rgba(59, 130, 246, 0.18);
 
@@ -1984,6 +1993,10 @@ input[type="color"].form-input::-moz-color-swatch {
     --offline-bg: rgba(220,  38,  38, 0.15);
     --warning-bg: rgba(217, 119,   6, 0.15);
     --unknown-bg: #1e2128;
+
+    --bg-hover: #252830;
+    --bg-input: #1e2128;
+    --danger: #ef4444;
 
     --shadow-sm: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
     --shadow:    0 4px 12px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.25);
@@ -2568,7 +2581,7 @@ input[type="color"].form-input::-moz-color-swatch {
 }
 .profile-menu-item:hover { background: var(--bg-row-hover); }
 .profile-menu-item--danger { color: var(--danger); }
-.profile-menu-item--danger:hover { background: rgba(239,68,68,.08); }
+.profile-menu-item--danger:hover { background: var(--offline-bg); }
 
 /* ── Role form ──────────────────────────────────────────────── */
 .rf-form-card {

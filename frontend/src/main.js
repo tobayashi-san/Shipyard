@@ -263,7 +263,12 @@ async function boot() {
 if (location.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(location.hostname)) {
   const banner = document.createElement('div');
   banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#b91c1c;color:#fff;font-size:13px;padding:8px 16px;display:flex;align-items:center;gap:10px;';
-  banner.innerHTML = '<i class="fas fa-lock-open"></i> <strong>Insecure connection:</strong> Use HTTPS to protect passwords and tokens. &nbsp;<button onclick="this.parentElement.remove()" style="margin-left:auto;background:none;border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:4px;padding:2px 8px;cursor:pointer;">Dismiss</button>';
+  banner.innerHTML = '<i class="fas fa-lock-open"></i> <strong>Insecure connection:</strong> Use HTTPS to protect passwords and tokens.';
+  const dismissBtn = document.createElement('button');
+  dismissBtn.textContent = 'Dismiss';
+  dismissBtn.style.cssText = 'margin-left:auto;background:none;border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:4px;padding:2px 8px;cursor:pointer;';
+  dismissBtn.addEventListener('click', () => banner.remove());
+  banner.appendChild(dismissBtn);
   document.body.prepend(banner);
 }
 

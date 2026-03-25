@@ -309,7 +309,9 @@ router.get('/:id/info', guardServerAccess, async (req, res) => {
         db.serverInfo.upsert(server.id, info);
         db.servers.updateStatus(server.id, 'online');
       })
-      .catch(() => db.servers.updateStatus(server.id, 'offline'));
+      .catch(() => {
+        try { db.servers.updateStatus(server.id, 'offline'); } catch {}
+      });
     return;
   }
 
@@ -526,10 +528,11 @@ router.get('/:id/docker/compose', guardServerAccess, guard('canManageDockerCompo
 
     const server = req.server;
 
+    const safePath = path.replace(/'/g, "'\\''");
     const result = await ansibleRunner.runAdHoc(
       server.name,
       'command',
-      `cat ${path}/docker-compose.yml`,
+      `cat '${safePath}/docker-compose.yml'`,
       () => {} // silence output
     );
 
