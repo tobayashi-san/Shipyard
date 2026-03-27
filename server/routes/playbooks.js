@@ -33,7 +33,7 @@ const { getPermissions, filterPlaybooks, can } = require('../utils/permissions')
 const { serverError } = require('../utils/http-error');
 
 // GET /api/playbooks - List all available playbooks
-router.get('/', (req, res) => {
+router.get('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canViewPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
     const perms = getPermissions(req.user);
     res.json(filterPlaybooks(ansibleRunner.getAvailablePlaybooks(), perms));

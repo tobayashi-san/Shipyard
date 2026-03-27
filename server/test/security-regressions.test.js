@@ -74,6 +74,7 @@ test('schedule-history list allows restricted user to see multi-target entries t
   const viewerRole = db.roles.create('viewer', {
     servers: { servers: [webId], groups: [] },
     canViewServers: true,
+    canViewSchedules: true,
   });
   const hash = await bcrypt.hash('viewerpass12345', 12);
   db.users.create('viewer', '', hash, viewerRole.id);

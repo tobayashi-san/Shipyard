@@ -196,6 +196,7 @@ const { isValidPlaybook, validateTargets } = require('./utils/validate');
 app.get('/api/dashboard', (req, res) => {
   try {
     const perms = getPermissions(req.user);
+    if (!can(perms, 'canViewServers')) return res.status(403).json({ error: 'Permission denied' });
     const servers = filterServers(db.servers.getAll(), perms);
     const online = servers.filter(s => s.status === 'online').length;
     const offline = servers.filter(s => s.status === 'offline').length;

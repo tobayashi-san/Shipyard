@@ -23,7 +23,7 @@ function guard(cap) {
 }
 
 // GET /api/servers - List all servers
-router.get('/', (req, res) => {
+router.get('/', guard('canViewServers'), (req, res) => {
   try {
     const perms = getPermissions(req.user);
     res.json(filterServers(db.servers.getAll(), perms).map(parseServer));
@@ -123,7 +123,7 @@ router.post('/import', guard('canExportImportServers'), (req, res) => {
 
 // ── Server Groups ─────────────────────────────────────────────
 // GET /api/servers/groups — only return groups the user can see
-router.get('/groups', (req, res) => {
+router.get('/groups', guard('canViewServers'), (req, res) => {
   const perms = getPermissions(req.user);
   const allGroups = db.serverGroups.getAll();
   if (!perms || perms.full || perms.servers === 'all') return res.json(allGroups);
@@ -188,7 +188,7 @@ router.put('/:id/group', guardServerAccess, guard('canEditServers'), (req, res) 
 });
 
 // GET /api/servers/:id - Get single server
-router.get('/:id', guardServerAccess, (req, res) => {
+router.get('/:id', guardServerAccess, guard('canViewServers'), (req, res) => {
   try {
     res.json(parseServer(req.server));
   } catch (error) {
@@ -273,7 +273,7 @@ router.post('/:id/test', guardServerAccess, guard('canUseTerminal'), async (req,
 });
 
 // GET /api/servers/:id/notes
-router.get('/:id/notes', guardServerAccess, (req, res) => {
+router.get('/:id/notes', guardServerAccess, guard('canViewServers'), (req, res) => {
   try {
     res.json({ notes: req.server.notes || '' });
   } catch (error) {
@@ -369,7 +369,7 @@ router.get('/:id/updates', guardServerAccess, guard('canViewUpdates'), async (re
 });
 
 // GET /api/servers/:id/history - Get update history + scheduled playbook runs
-router.get('/:id/history', guardServerAccess, (req, res) => {
+router.get('/:id/history', guardServerAccess, guard('canViewServers'), (req, res) => {
   try {
     const server = db.servers.getById(req.params.id);
     const manualHistory = db.updateHistory.getByServer(req.params.id);
