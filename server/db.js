@@ -417,6 +417,7 @@ module.exports = {
       sshKeyQueries.insert.run(id, name, publicKey, privateKeyPath);
       return id;
     },
+    clear: () => sshKeyQueries.deleteAll.run(),
   },
   dockerContainers: {
     getByServer: (serverId) => dockerContainerQueries.getByServer.all(serverId),

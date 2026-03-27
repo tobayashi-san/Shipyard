@@ -774,19 +774,44 @@ async function loadSSHKey() {
       input2.addEventListener('keydown', (e) => { if (e.key === 'Enter') overlay.querySelector('#export-key-ok').click(); });
     });
 
-    const handleImport = async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = async (rev) => {
+    const doImport = (fileContent) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay active';
+      overlay.innerHTML = `
+        <div class="modal" style="max-width:380px;">
+          <div class="modal-header"><h3>${t('set.importKeyTitle')}</h3></div>
+          <div class="modal-body" style="display:flex;flex-direction:column;gap:12px;">
+            <p style="margin:0;font-size:13px;color:var(--text-muted);">${t('set.importKeyHint')}</p>
+            <input type="password" id="import-key-pass" class="form-input" placeholder="${t('set.importKeyPlaceholder')}" autocomplete="current-password">
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" id="import-key-cancel">${t('common.cancel')}</button>
+            <button class="btn btn-primary" id="import-key-ok"><i class="fas fa-upload"></i> ${t('set.importKeyBtn')}</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      const passInput = overlay.querySelector('#import-key-pass');
+      passInput.focus();
+      const close = () => document.body.removeChild(overlay);
+      overlay.querySelector('#import-key-cancel').addEventListener('click', close);
+      overlay.querySelector('#import-key-ok').addEventListener('click', async () => {
         try {
-          await api.importSSHKey(rev.target.result);
-          showToast('SSH key imported successfully', 'success');
+          await api.importSSHKey(fileContent, passInput.value);
+          showToast(t('set.importKeySuccess'), 'success');
+          close();
           loadSSHKey();
         } catch (err) {
           showToast(err.message, 'error');
         }
-      };
+      });
+      passInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') overlay.querySelector('#import-key-ok').click(); });
+    };
+
+    const handleImport = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (rev) => doImport(rev.target.result);
       reader.readAsText(file);
     };
 
@@ -826,21 +851,7 @@ async function loadSSHKey() {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = '*';
-      input.onchange = async e => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = async (rev) => {
-          try {
-            await api.importSSHKey(rev.target.result);
-            showToast('SSH key imported successfully', 'success');
-            loadSSHKey();
-          } catch (err) {
-            showToast(err.message, 'error');
-          }
-        };
-        reader.readAsText(file);
-      };
+      input.onchange = handleImport;
       input.click();
     });
   }

@@ -62,7 +62,7 @@ app.use(cors({
     ? process.env.ALLOWED_ORIGINS.split(',')
     : ['http://localhost:3000', 'http://localhost:5173'],
 }));
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
 
 // Request logging
 app.use((req, res, next) => {

@@ -2,6 +2,7 @@ const { execFileSync, exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
 const { NodeSSH } = require('node-ssh');
 const db = require('../db');
 const log = require('../utils/logger').child('ssh-manager');
@@ -197,7 +198,6 @@ class SSHManager {
     const plaintext = this.getPrivateKey();
     if (!passphrase) return plaintext;
 
-    const os = require('os');
     const tmpFile = path.join(os.tmpdir(), `shipyard_export_${crypto.randomBytes(8).toString('hex')}`);
     try {
       fs.writeFileSync(tmpFile, plaintext, { mode: 0o600 });
@@ -212,22 +212,35 @@ class SSHManager {
   /**
    * Import an existing SSH private key
    */
-  importKey(privateKeyContent, name = 'shipyard_imported') {
+  importKey(privateKeyContent, name = 'shipyard_imported', passphrase = '') {
     const keyPath = path.join(SSH_DIR, name);
     const pubKeyPath = `${keyPath}.pub`;
 
     // Write private key
     fs.writeFileSync(keyPath, privateKeyContent, { mode: 0o600 });
-    
-    // Generate public key from the private key
+
+    // Generate public key (pass -P to handle passphrase-protected keys)
     let publicKey;
     try {
-      publicKey = execFileSync('ssh-keygen', ['-y', '-f', keyPath], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+      const args = passphrase
+        ? ['-y', '-f', keyPath, '-P', passphrase]
+        : ['-y', '-f', keyPath];
+      publicKey = execFileSync('ssh-keygen', args, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
     } catch (e) {
       if (fs.existsSync(keyPath)) fs.unlinkSync(keyPath);
-      throw new Error('Invalid or unsupported SSH private key format. Ensure it is not passphrase-protected.');
+      throw new Error('Invalid SSH private key or wrong passphrase.');
     }
     fs.writeFileSync(pubKeyPath, publicKey, { mode: 0o644 });
+
+    // Strip passphrase so we can store/use the key without it (we encrypt at rest ourselves)
+    if (passphrase) {
+      try {
+        execFileSync('ssh-keygen', ['-p', '-P', passphrase, '-N', '', '-f', keyPath], { stdio: 'pipe' });
+      } catch (e) {
+        if (fs.existsSync(keyPath)) fs.unlinkSync(keyPath);
+        throw new Error('Failed to strip passphrase from key.');
+      }
+    }
 
     // Encrypt at rest if SHIPYARD_KEY_SECRET is configured
     const encrypted = encryptKey(privateKeyContent);

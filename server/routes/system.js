@@ -53,8 +53,10 @@ router.post('/key/export', adminOnly, deployLimiter, (req, res) => {
   try {
     const passphrase = typeof req.body.passphrase === 'string' ? req.body.passphrase : '';
     const key = sshManager.getPrivateKeyExport(passphrase);
+    db.auditLog.write('ssh.export', `SSH private key exported${passphrase ? ' (passphrase-protected)' : ''}`, req.ip, true);
     res.json({ privateKey: key, success: true });
   } catch (error) {
+    db.auditLog.write('ssh.export', 'SSH private key export failed', req.ip, false);
     serverError(res, error, 'export SSH key');
   }
 });
@@ -62,13 +64,18 @@ router.post('/key/export', adminOnly, deployLimiter, (req, res) => {
 // POST /api/system/key/import - Import private key
 router.post('/key/import', adminOnly, (req, res) => {
   try {
-    const { privateKey } = req.body;
+    const { privateKey, passphrase } = req.body;
     if (!privateKey || typeof privateKey !== 'string') {
       return res.status(400).json({ error: 'privateKey is required' });
     }
-    const result = sshManager.importKey(privateKey);
+    const result = sshManager.importKey(privateKey, 'shipyard_imported', passphrase || '');
+    db.auditLog.write('ssh.import', 'SSH private key imported', req.ip, true);
     res.json(result);
   } catch (error) {
+    db.auditLog.write('ssh.import', 'SSH private key import failed', req.ip, false);
+    if (error.message?.includes('passphrase') || error.message?.includes('Invalid SSH')) {
+      return res.status(400).json({ error: error.message });
+    }
     serverError(res, error, 'import SSH key');
   }
 });
