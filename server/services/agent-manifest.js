@@ -3,6 +3,7 @@ const path = require('path');
 const db = require('../db');
 
 const DEFAULT_MANIFEST_PATH = path.join(__dirname, '..', 'playbooks', 'system', 'agent', 'files', 'default-manifest.json');
+const BUNDLED_MANIFEST_PATH = path.join(__dirname, '..', '..', 'bundled-playbooks', 'system', 'agent', 'files', 'default-manifest.json');
 
 function validateManifest(manifest) {
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
@@ -34,18 +35,46 @@ function normalizeForStorage(manifest, version) {
   };
 }
 
+function _isMinimalFallback(manifest) {
+  return manifest.version === 1 &&
+    Array.isArray(manifest.collectors) &&
+    manifest.collectors.length === 1 &&
+    manifest.collectors[0].id === 'load';
+}
+
+function _readDefaultManifest() {
+  const manifestPath = fs.existsSync(DEFAULT_MANIFEST_PATH) ? DEFAULT_MANIFEST_PATH : BUNDLED_MANIFEST_PATH;
+  const content = fs.readFileSync(manifestPath, 'utf8');
+  return JSON.parse(content);
+}
+
 function ensureSeeded() {
   const existing = db.agentManifests.getLatest();
-  if (existing) return existing;
 
-  let parsed = {
-    version: 1,
-    interval: 30,
-    collectors: [],
-  };
+  // If the only seeded manifest is the minimal hardcoded fallback, try to upgrade
+  // it to the full default manifest (happens when bind-mount hid the file on first run).
+  if (existing) {
+    try {
+      const existingParsed = JSON.parse(existing.content);
+      if (_isMinimalFallback(existingParsed)) {
+        const full = _readDefaultManifest();
+        if (!validateManifest(full) && full.collectors.length > 1) {
+          const upgraded = normalizeForStorage(full, 1);
+          db.agentManifests.createNext({
+            content: JSON.stringify(upgraded),
+            createdBy: 'system',
+            changelog: 'Upgraded from minimal fallback to full default manifest',
+          });
+          return db.agentManifests.getLatest();
+        }
+      }
+    } catch {}
+    return existing;
+  }
+
+  let parsed = { version: 1, interval: 30, collectors: [] };
   try {
-    const content = fs.readFileSync(DEFAULT_MANIFEST_PATH, 'utf8');
-    parsed = JSON.parse(content);
+    parsed = _readDefaultManifest();
   } catch {}
 
   const err = validateManifest(parsed);
