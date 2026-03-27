@@ -113,9 +113,11 @@ class AnsibleRunner {
       };
 
       walk(PLAYBOOKS_DIR, '');
-      const bundledSystemDir = path.join(BUNDLED_PLAYBOOKS_DIR, 'system');
-      if (fs.existsSync(bundledSystemDir)) {
-        walk(bundledSystemDir, 'system');
+      // Also walk the full bundled-playbooks dir so shipped playbooks remain
+      // visible even when the user bind-mounts their own ./playbooks directory.
+      // The `seen` set prevents duplicates when both directories overlap.
+      if (fs.existsSync(BUNDLED_PLAYBOOKS_DIR)) {
+        walk(BUNDLED_PLAYBOOKS_DIR, '');
       }
       out.sort((a, b) => a.filename.localeCompare(b.filename));
       return out;
@@ -164,11 +166,10 @@ class AnsibleRunner {
 
       let resolvedPlaybook = playbookPath;
       if (!fs.existsSync(resolvedPlaybook)) {
+        // Fall back to bundled-playbooks (survives bind mounts of ./playbooks)
         const bundledBase = path.resolve(BUNDLED_PLAYBOOKS_DIR);
         const bundledPath = path.resolve(bundledBase, playbookName);
-        const isSafeBundledPath = bundledPath.startsWith(bundledBase + path.sep);
-        const isInternalSystemPlaybook = String(playbookName).startsWith('system/');
-        if (isInternalSystemPlaybook && isSafeBundledPath && fs.existsSync(bundledPath)) {
+        if (bundledPath.startsWith(bundledBase + path.sep) && fs.existsSync(bundledPath)) {
           resolvedPlaybook = bundledPath;
         } else {
           throw new Error(`Playbook not found: ${playbookName}`);

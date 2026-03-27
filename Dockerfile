@@ -28,7 +28,7 @@ RUN chmod +x docker-entrypoint.sh
 
 RUN mkdir -p /app/.ansible/tmp && chown -R shipyard:shipyard /app/.ansible
 RUN mkdir -p /app/server/playbooks && chown -R shipyard:shipyard /app/server/playbooks
-RUN mkdir -p /app/bundled-playbooks && cp -a /app/server/playbooks/system /app/bundled-playbooks/ && chown -R shipyard:shipyard /app/bundled-playbooks
+RUN mkdir -p /app/bundled-playbooks && cp -a /app/server/playbooks/. /app/bundled-playbooks/ && chown -R shipyard:shipyard /app/bundled-playbooks
 RUN mkdir -p /app/plugins && chown -R shipyard:shipyard /app/plugins
 
 # Bundle default plugins — seeded into the volume on first run by the entrypoint
