@@ -177,66 +177,6 @@ db.exec(`
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);`);
 
-// Robust Migration System
-db.exec('CREATE TABLE IF NOT EXISTS migrations (version INTEGER PRIMARY KEY)');
-const { currentVersion } = db.prepare('SELECT COALESCE(MAX(version), 0) AS currentVersion FROM migrations').get();
-
-function runMigration(v, sql) {
-  if (currentVersion < v) {
-    // Execute each statement individually so one "duplicate column" error
-    // doesn't prevent subsequent ALTER statements from running.
-    const statements = sql.split(';').map(s => s.trim()).filter(Boolean);
-    for (const stmt of statements) {
-      try {
-        db.exec(stmt);
-      } catch (e) {
-        if (!e.message || (!e.message.includes('duplicate column') && !e.message.includes('already exists'))) {
-          throw e;
-        }
-      }
-    }
-    log.info({ version: v }, 'Applied migration');
-    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (?)').run(v);
-  }
-}
-
-// v1: Alle bisherigen Spalten-Updates aus der pragmatischen Variante
-runMigration(1, `
-  ALTER TABLE server_info ADD COLUMN reboot_required BOOLEAN DEFAULT 0;
-  ALTER TABLE servers ADD COLUMN notes TEXT NOT NULL DEFAULT '';
-  ALTER TABLE docker_containers ADD COLUMN compose_project TEXT;
-  ALTER TABLE docker_containers ADD COLUMN compose_working_dir TEXT;
-  ALTER TABLE server_info ADD COLUMN cpu_usage_pct REAL DEFAULT NULL;
-  ALTER TABLE servers ADD COLUMN group_id TEXT;
-`);
-
-// v2: Update History FK fix & Schedule Targets (aus dem alten Code konsolidiert)
-if (currentVersion < 2) {
-  try {
-    const hasFk = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='update_history'").get();
-    if (hasFk && hasFk.sql && hasFk.sql.includes('FOREIGN KEY')) {
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS update_history_new (
-          id TEXT PRIMARY KEY,
-          server_id TEXT NOT NULL,
-          action TEXT NOT NULL,
-          status TEXT DEFAULT 'pending',
-          output TEXT,
-          started_at TEXT DEFAULT (datetime('now')),
-          completed_at TEXT
-        );
-        INSERT OR IGNORE INTO update_history_new SELECT * FROM update_history;
-        DROP TABLE update_history;
-        ALTER TABLE update_history_new RENAME TO update_history;
-        CREATE INDEX IF NOT EXISTS idx_update_history_server_id  ON update_history(server_id);
-        CREATE INDEX IF NOT EXISTS idx_update_history_started_at ON update_history(started_at);
-      `);
-    }
-    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (2)').run();
-  } catch (e) {
-    log.error({ err: e }, 'v2 migration error');
-  }
-}
 
 // Schedule execution history
 db.exec(`
@@ -288,29 +228,12 @@ db.exec(`
     totp_secret TEXT DEFAULT '',
     totp_enabled INTEGER DEFAULT 0,
     totp_secret_pending TEXT DEFAULT '',
+    token_version INTEGER DEFAULT 0,
+    display_name TEXT DEFAULT '',
     created_at TEXT DEFAULT (datetime('now'))
   );
 `);
 
-// Weiterführung von v1-Säuberungen (die alten migriert wurden, bevor die Tabelle angelegt war)
-runMigration(3, `
-  ALTER TABLE server_groups ADD COLUMN color TEXT DEFAULT '#6366f1';
-  ALTER TABLE server_groups ADD COLUMN parent_id TEXT;
-  ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0;
-`);
-
-runMigration(4, `
-  ALTER TABLE users ADD COLUMN display_name TEXT DEFAULT '';
-`);
-
-// Migration v5: backfill columns that were silently skipped in older versions
-// due to the multi-statement db.exec() bug (stopped at first duplicate-column error).
-runMigration(5, `
-  ALTER TABLE server_info ADD COLUMN cpu_usage_pct REAL DEFAULT NULL;
-  ALTER TABLE servers ADD COLUMN notes TEXT NOT NULL DEFAULT '';
-  ALTER TABLE servers ADD COLUMN group_id TEXT;
-  ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0;
-`);
 
 // Roles table
 db.exec(`
