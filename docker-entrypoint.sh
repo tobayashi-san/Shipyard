@@ -11,13 +11,33 @@ DEFAULT_CERT="$CERT_DIR/shipyard.crt"
 if [ -z "$SSL_KEY" ] || [ -z "$SSL_CERT" ]; then
   mkdir -p "$CERT_DIR"
 
+  # Regenerate if cert exists but lacks SANs (pre-v1.0.2 certs)
+  if [ -f "$DEFAULT_CERT" ] && ! openssl x509 -in "$DEFAULT_CERT" -noout -ext subjectAltName 2>/dev/null | grep -q "IP\|DNS"; then
+    echo "[HTTPS] Existing certificate lacks SANs, regenerating..."
+    rm -f "$DEFAULT_KEY" "$DEFAULT_CERT"
+  fi
+
   if [ ! -f "$DEFAULT_KEY" ] || [ ! -f "$DEFAULT_CERT" ]; then
     echo "[HTTPS] Generating self-signed certificate..."
+    # Collect SANs: hostname, container IPs, localhost, and user-provided extras
+    SANS="DNS:shipyard,DNS:localhost,IP:127.0.0.1"
+    HOSTNAME_FQDN=$(hostname -f 2>/dev/null || hostname)
+    HOSTNAME_SHORT=$(hostname -s 2>/dev/null || hostname)
+    [ -n "$HOSTNAME_FQDN" ] && SANS="$SANS,DNS:$HOSTNAME_FQDN"
+    [ -n "$HOSTNAME_SHORT" ] && [ "$HOSTNAME_SHORT" != "$HOSTNAME_FQDN" ] && SANS="$SANS,DNS:$HOSTNAME_SHORT"
+    for ip in $(hostname -I 2>/dev/null); do
+      case "$ip" in *:*) continue ;; esac  # skip IPv6
+      SANS="$SANS,IP:$ip"
+    done
+    # User-provided SANs via CERT_SANS env var (e.g. "IP:10.30.1.10,DNS:myhost.local")
+    # Required for agent push mode so managed servers can verify the certificate.
+    [ -n "$CERT_SANS" ] && SANS="$SANS,$CERT_SANS"
     openssl req -x509 -nodes -days 3650 -newkey rsa:4096 \
       -keyout "$DEFAULT_KEY" -out "$DEFAULT_CERT" \
-      -subj "/CN=shipyard" 2>/dev/null
+      -subj "/CN=shipyard" \
+      -addext "subjectAltName=$SANS" 2>/dev/null
     chmod 600 "$DEFAULT_KEY"
-    echo "[HTTPS] Certificate saved to $CERT_DIR"
+    echo "[HTTPS] Certificate saved to $CERT_DIR (SANs: $SANS)"
   fi
 
   export SSL_KEY="$DEFAULT_KEY"

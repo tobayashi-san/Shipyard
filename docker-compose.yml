@@ -22,6 +22,9 @@ services:
       # - ALLOWED_ORIGINS=https://yourdomain.com
       # - SSL_CERT=/certs/shipyard.crt
       # - SSL_KEY=/certs/shipyard.key
+      # Extra SANs for the self-signed TLS certificate (required for agent push mode).
+      # Set this to your host's LAN IP so managed servers can verify the certificate.
+      # - CERT_SANS=IP:10.30.1.10,DNS:shipyard.example.com
     healthcheck:
       test: ["CMD", "node", "-e", "require('https').get({hostname:'localhost',path:'/api/health',rejectUnauthorized:false}, r => process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
