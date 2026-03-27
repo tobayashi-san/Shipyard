@@ -7,6 +7,7 @@ const gitSync = require('../services/git-sync');
 const log = require('../utils/logger').child('routes:playbooks');
 
 const PLAYBOOKS_DIR = path.join(__dirname, '..', 'playbooks');
+const BUNDLED_PLAYBOOKS_DIR = path.join(__dirname, '..', '..', 'bundled-playbooks');
 const MAX_BACKUPS = 5;
 const RESOLVED_PLAYBOOKS_DIR = path.resolve(PLAYBOOKS_DIR);
 
@@ -25,6 +26,16 @@ function resolveReadPlaybookPath(raw) {
   if (!normalized.endsWith('.yml') && !normalized.endsWith('.yaml')) return null;
   const filepath = path.resolve(PLAYBOOKS_DIR, normalized);
   if (!filepath.startsWith(RESOLVED_PLAYBOOKS_DIR + path.sep)) return null;
+  return { filename: normalized, filepath };
+}
+
+function resolveBundledSystemReadPath(raw) {
+  const normalized = String(raw || '').replace(/\\/g, '/');
+  if (!normalized.startsWith('system/')) return null;
+  if (!normalized.endsWith('.yml') && !normalized.endsWith('.yaml')) return null;
+  const base = path.resolve(BUNDLED_PLAYBOOKS_DIR);
+  const filepath = path.resolve(base, normalized);
+  if (!filepath.startsWith(base + path.sep)) return null;
   return { filename: normalized, filepath };
 }
 
@@ -56,8 +67,15 @@ router.get('/:filename', (req, res, next) => { if (!can(getPermissions(req.user)
   try {
     const resolved = resolveReadPlaybookPath(req.params.filename);
     if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
-    const { filepath } = resolved;
-    if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'Playbook not found' });
+    let { filepath } = resolved;
+    if (!fs.existsSync(filepath)) {
+      const bundled = resolveBundledSystemReadPath(req.params.filename);
+      if (bundled && fs.existsSync(bundled.filepath)) {
+        filepath = bundled.filepath;
+      } else {
+        return res.status(404).json({ error: 'Playbook not found' });
+      }
+    }
     res.json({ content: fs.readFileSync(filepath, 'utf8') });
   } catch (error) {
     serverError(res, error, 'playbooks');

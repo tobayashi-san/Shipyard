@@ -84,6 +84,7 @@ class AnsibleRunner {
     try {
       if (!fs.existsSync(PLAYBOOKS_DIR)) return [];
       const out = [];
+      const seen = new Set();
       const walk = (dir, prefix = '') => {
         const entries = fs.readdirSync(dir, { withFileTypes: true });
         for (const ent of entries) {
@@ -95,6 +96,7 @@ class AnsibleRunner {
             continue;
           }
           if (!relPath.endsWith('.yml') && !relPath.endsWith('.yaml')) continue;
+          if (seen.has(relPath)) continue;
 
           const content = fs.readFileSync(fullPath, 'utf8');
           const lines = content.split('\n').slice(0, 6);
@@ -105,11 +107,16 @@ class AnsibleRunner {
 
           const internalRoot = ['update.yml', 'gather-docker.yml', 'check-image-updates.yml', 'reboot.yml', 'setup-ssh.yml'];
           const isInternal = relPath.startsWith('system/') || internalRoot.includes(relPath);
+          seen.add(relPath);
           out.push({ filename: relPath, description, isInternal, category });
         }
       };
 
       walk(PLAYBOOKS_DIR, '');
+      const bundledSystemDir = path.join(BUNDLED_PLAYBOOKS_DIR, 'system');
+      if (fs.existsSync(bundledSystemDir)) {
+        walk(bundledSystemDir, 'system');
+      }
       out.sort((a, b) => a.filename.localeCompare(b.filename));
       return out;
     } catch (e) {
