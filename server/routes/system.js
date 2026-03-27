@@ -48,10 +48,11 @@ router.post('/generate', adminOnly, (req, res) => {
   }
 });
 
-// GET /api/system/key/export - Export private key
-router.get('/key/export', adminOnly, deployLimiter, (req, res) => {
+// POST /api/system/key/export - Export private key (optional passphrase)
+router.post('/key/export', adminOnly, deployLimiter, (req, res) => {
   try {
-    const key = sshManager.getPrivateKey();
+    const passphrase = typeof req.body.passphrase === 'string' ? req.body.passphrase : '';
+    const key = sshManager.getPrivateKeyExport(passphrase);
     res.json({ privateKey: key, success: true });
   } catch (error) {
     serverError(res, error, 'export SSH key');

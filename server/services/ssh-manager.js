@@ -190,6 +190,26 @@ class SSHManager {
   }
 
   /**
+   * Get the private key for export, optionally protected with a passphrase.
+   * If passphrase is non-empty, a passphrase-encrypted copy is returned.
+   */
+  getPrivateKeyExport(passphrase = '') {
+    const plaintext = this.getPrivateKey();
+    if (!passphrase) return plaintext;
+
+    const os = require('os');
+    const tmpFile = path.join(os.tmpdir(), `shipyard_export_${crypto.randomBytes(8).toString('hex')}`);
+    try {
+      fs.writeFileSync(tmpFile, plaintext, { mode: 0o600 });
+      // Add passphrase: change from empty ('') to the given passphrase
+      execFileSync('ssh-keygen', ['-p', '-P', '', '-N', passphrase, '-f', tmpFile], { stdio: 'pipe' });
+      return fs.readFileSync(tmpFile, 'utf8');
+    } finally {
+      try { fs.unlinkSync(tmpFile); } catch {}
+    }
+  }
+
+  /**
    * Import an existing SSH private key
    */
   importKey(privateKeyContent, name = 'shipyard_imported') {

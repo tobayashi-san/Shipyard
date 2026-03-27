@@ -729,18 +729,49 @@ async function loadSSHKey() {
       navigator.clipboard.writeText(installCmd).then(() => showToast(t('set.cmdCopied'), 'success'));
     });
 
-    document.getElementById('btn-export-key')?.addEventListener('click', async () => {
-      try {
-        const { privateKey } = await api.exportSSHKey();
-        const blob = new Blob([privateKey], { type: 'text/plain' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'shipyard_id_ed25519';
-        a.click();
-        URL.revokeObjectURL(a.href);
-      } catch (err) {
-        showToast(t('common.errorPrefix', { msg: err.message }), 'error');
-      }
+    document.getElementById('btn-export-key')?.addEventListener('click', () => {
+      // Show passphrase dialog
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay active';
+      overlay.innerHTML = `
+        <div class="modal" style="max-width:380px;">
+          <div class="modal-header"><h3>${t('set.exportKeyTitle')}</h3></div>
+          <div class="modal-body" style="display:flex;flex-direction:column;gap:12px;">
+            <p style="margin:0;font-size:13px;color:var(--text-muted);">${t('set.exportKeyHint')}</p>
+            <input type="password" id="export-key-pass" class="form-input" placeholder="${t('set.exportKeyPlaceholder')}" autocomplete="new-password">
+            <input type="password" id="export-key-pass2" class="form-input" placeholder="${t('set.exportKeyConfirm')}" autocomplete="new-password">
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" id="export-key-cancel">${t('common.cancel')}</button>
+            <button class="btn btn-primary" id="export-key-ok"><i class="fas fa-download"></i> ${t('set.exportKeyBtn')}</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      const input1 = overlay.querySelector('#export-key-pass');
+      const input2 = overlay.querySelector('#export-key-pass2');
+      input1.focus();
+      const close = () => document.body.removeChild(overlay);
+      overlay.querySelector('#export-key-cancel').addEventListener('click', close);
+      overlay.querySelector('#export-key-ok').addEventListener('click', async () => {
+        const pass = input1.value;
+        if (pass !== input2.value) {
+          showToast(t('set.exportKeyMismatch'), 'error');
+          return;
+        }
+        try {
+          const { privateKey } = await api.exportSSHKey(pass);
+          const blob = new Blob([privateKey], { type: 'text/plain' });
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'shipyard_id_ed25519';
+          a.click();
+          URL.revokeObjectURL(a.href);
+          close();
+        } catch (err) {
+          showToast(t('common.errorPrefix', { msg: err.message }), 'error');
+        }
+      });
+      input2.addEventListener('keydown', (e) => { if (e.key === 'Enter') overlay.querySelector('#export-key-ok').click(); });
     });
 
     const handleImport = async (e) => {
