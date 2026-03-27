@@ -8,6 +8,7 @@ const db = require('../db');
 const sshManager = require('./ssh-manager');
 
 const PLAYBOOKS_DIR = path.join(__dirname, '..', 'playbooks');
+const BUNDLED_PLAYBOOKS_DIR = path.join(__dirname, '..', '..', 'bundled-playbooks');
 const DATA_DIR = path.join(__dirname, '..', 'data');
 
 class AnsibleRunner {
@@ -134,14 +135,27 @@ class AnsibleRunner {
     let inventoryPath;
     try {
       inventoryPath = this.generateInventory(keyPath);
-      const playbookPath = path.resolve(PLAYBOOKS_DIR, playbookName);
+      const basePlaybooks = path.resolve(PLAYBOOKS_DIR);
+      const playbookPath = path.resolve(basePlaybooks, playbookName);
 
-      if (!playbookPath.startsWith(path.resolve(PLAYBOOKS_DIR) + path.sep))
+      if (!playbookPath.startsWith(basePlaybooks + path.sep)) {
         throw new Error(`Invalid playbook path: ${playbookName}`);
-      if (!fs.existsSync(playbookPath))
-        throw new Error(`Playbook not found: ${playbookName}`);
+      }
 
-      const args = ['-i', inventoryPath, playbookPath, '--limit', targets, '-v'];
+      let resolvedPlaybook = playbookPath;
+      if (!fs.existsSync(resolvedPlaybook)) {
+        const bundledBase = path.resolve(BUNDLED_PLAYBOOKS_DIR);
+        const bundledPath = path.resolve(bundledBase, playbookName);
+        const isSafeBundledPath = bundledPath.startsWith(bundledBase + path.sep);
+        const isInternalSystemPlaybook = String(playbookName).startsWith('system/');
+        if (isInternalSystemPlaybook && isSafeBundledPath && fs.existsSync(bundledPath)) {
+          resolvedPlaybook = bundledPath;
+        } else {
+          throw new Error(`Playbook not found: ${playbookName}`);
+        }
+      }
+
+      const args = ['-i', inventoryPath, resolvedPlaybook, '--limit', targets, '-v'];
       if (Object.keys(extraVars).length > 0) args.push('-e', JSON.stringify(extraVars));
 
       return await this._spawnProcess('ansible-playbook', args, onOutput,

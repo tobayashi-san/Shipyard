@@ -44,7 +44,7 @@ function ansibleBackendPrecheck(res) {
 function handleAgentBackendError(res, e, ctx) {
   const msg = String(e?.message || '');
   if (msg.includes('Playbook not found')) {
-    return res.status(500).json({ error: 'Agent playbooks are missing in this build' });
+    return res.status(500).json({ error: 'Agent playbooks are missing (or overridden by mounted /app/server/playbooks)' });
   }
   if (msg.includes('Failed to run ansible-playbook')) {
     return res.status(503).json({ error: 'Ansible runtime is not available or failed to start' });
