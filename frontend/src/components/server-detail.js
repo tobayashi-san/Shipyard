@@ -1222,6 +1222,21 @@ async function loadAgentTab(serverId) {
   const el = document.getElementById('agent-content');
   if (!el) return;
 
+  const setBusy = (busy, activeBtnId = null) => {
+    ['btn-agent-install', 'btn-agent-update', 'btn-agent-configure', 'btn-agent-rotate-token', 'btn-agent-remove'].forEach(id => {
+      const b = document.getElementById(id);
+      if (!b) return;
+      b.disabled = busy;
+      if (busy && id === activeBtnId) {
+        b.dataset.origHtml = b.dataset.origHtml || b.innerHTML;
+        b.innerHTML = `<span class="spinner-sm"></span> ${t('det.agentWorking')}`;
+      } else if (!busy && b.dataset.origHtml) {
+        b.innerHTML = b.dataset.origHtml;
+        delete b.dataset.origHtml;
+      }
+    });
+  };
+
   async function renderStatus() {
     const status = await api.getAgentStatus(serverId);
     const installed = !!status.installed;
@@ -1242,7 +1257,7 @@ async function loadAgentTab(serverId) {
       </div>
       <div style="margin-top:12px;max-width:860px;">
         <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:6px;">${t('det.agentShipyardUrl')}</label>
-        <input id="agent-shipyard-url" class="form-input" type="text" value="${esc(window.location.origin)}" placeholder="https://shipyard.example.com" style="max-width:520px;width:100%;margin-bottom:10px;">
+        <input id="agent-shipyard-url" class="form-input" type="text" value="${esc(status.shipyardUrl || window.location.origin)}" placeholder="https://shipyard.example.com" style="max-width:520px;width:100%;margin-bottom:10px;">
         <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:6px;">${t('det.agentCaPem')}</label>
         <textarea id="agent-ca-pem" class="form-input" rows="5" placeholder="${t('det.agentCaPemPlaceholder')}" style="width:100%;font-family:var(--font-mono);font-size:11px;line-height:1.35;"></textarea>
       </div>
@@ -1251,6 +1266,7 @@ async function loadAgentTab(serverId) {
     document.getElementById('btn-agent-install')?.addEventListener('click', async () => {
       if (!await showConfirm(t('det.agentInstallConfirm'), { title: t('det.tabAgent'), confirmText: t('det.agentInstall') })) return;
       try {
+        setBusy(true, 'btn-agent-install');
         const shipyard_url = document.getElementById('agent-shipyard-url')?.value?.trim() || '';
         const shipyard_ca_cert_pem = document.getElementById('agent-ca-pem')?.value?.trim() || '';
         await api.installAgent(serverId, { mode: 'push', interval: 30, shipyard_url, shipyard_ca_cert_pem });
@@ -1258,21 +1274,27 @@ async function loadAgentTab(serverId) {
         await renderStatus();
       } catch (e) {
         showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+      } finally {
+        setBusy(false);
       }
     });
 
     document.getElementById('btn-agent-update')?.addEventListener('click', async () => {
       try {
+        setBusy(true, 'btn-agent-update');
         await api.updateAgent(serverId);
         showToast(t('det.agentUpdateStarted'), 'success');
         await renderStatus();
       } catch (e) {
         showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+      } finally {
+        setBusy(false);
       }
     });
 
     document.getElementById('btn-agent-configure')?.addEventListener('click', async () => {
       try {
+        setBusy(true, 'btn-agent-configure');
         const nextMode = ['push', 'pull', 'legacy'].includes(status.mode) ? status.mode : 'push';
         const shipyard_url = document.getElementById('agent-shipyard-url')?.value?.trim() || '';
         const shipyard_ca_cert_pem = document.getElementById('agent-ca-pem')?.value?.trim() || '';
@@ -1281,28 +1303,37 @@ async function loadAgentTab(serverId) {
         await renderStatus();
       } catch (e) {
         showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+      } finally {
+        setBusy(false);
       }
     });
 
     document.getElementById('btn-agent-rotate-token')?.addEventListener('click', async () => {
       try {
+        setBusy(true, 'btn-agent-rotate-token');
         const shipyard_url = document.getElementById('agent-shipyard-url')?.value?.trim() || '';
         const shipyard_ca_cert_pem = document.getElementById('agent-ca-pem')?.value?.trim() || '';
         await api.rotateAgentToken(serverId, { shipyard_url, shipyard_ca_cert_pem });
         showToast(t('det.agentTokenRotated'), 'success');
+        await renderStatus();
       } catch (e) {
         showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+      } finally {
+        setBusy(false);
       }
     });
 
     document.getElementById('btn-agent-remove')?.addEventListener('click', async () => {
       if (!await showConfirm(t('det.agentRemoveConfirm'), { title: t('det.tabAgent'), confirmText: t('det.agentRemove'), danger: true })) return;
       try {
+        setBusy(true, 'btn-agent-remove');
         await api.removeAgent(serverId);
         showToast(t('det.agentRemoved'), 'success');
         await renderStatus();
       } catch (e) {
         showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+      } finally {
+        setBusy(false);
       }
     });
   }

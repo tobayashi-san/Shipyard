@@ -1,5 +1,8 @@
 const express = require('express');
 const crypto = require('crypto');
+const net = require('net');
+const tls = require('tls');
+const { URL } = require('url');
 const db = require('../db');
 const ansibleRunner = require('../services/ansible-runner');
 const manifestService = require('../services/agent-manifest');
@@ -72,6 +75,74 @@ function normalizeCaPem(input) {
   return pem;
 }
 
+function isPrivateIpv4(host) {
+  const m = String(host || '').match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return false;
+  const [a, b, c, d] = m.slice(1).map(Number);
+  if ([a, b, c, d].some(n => n < 0 || n > 255)) return false;
+  if (a === 10 || a === 127 || a === 0) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  return false;
+}
+
+function isLocalHostForAutoCa(hostname) {
+  const host = String(hostname || '').toLowerCase();
+  if (!host) return false;
+  if (host === 'localhost' || host === '::1') return true;
+  if (isPrivateIpv4(host)) return true;
+  const ipVer = net.isIP(host);
+  if (ipVer === 6 && (host.startsWith('fe80:') || host.startsWith('fc') || host.startsWith('fd'))) return true;
+  return false;
+}
+
+function formatPemFromRawCert(raw) {
+  const b64 = Buffer.from(raw).toString('base64');
+  const lines = b64.match(/.{1,64}/g) || [];
+  return `-----BEGIN CERTIFICATE-----\n${lines.join('\n')}\n-----END CERTIFICATE-----`;
+}
+
+async function fetchServerCertPem(shipyardUrl) {
+  const u = new URL(shipyardUrl);
+  if (u.protocol !== 'https:') throw new Error('shipyard_url must use https://');
+  const host = u.hostname;
+  const port = Number(u.port || 443);
+
+  return new Promise((resolve, reject) => {
+    const sock = tls.connect({
+      host,
+      port,
+      servername: net.isIP(host) ? undefined : host,
+      rejectUnauthorized: false,
+      timeout: 6000,
+    });
+
+    sock.on('secureConnect', () => {
+      try {
+        const cert = sock.getPeerCertificate(true);
+        if (!cert || !cert.raw) throw new Error('No peer certificate received');
+        resolve(formatPemFromRawCert(cert.raw));
+      } catch (e) {
+        reject(e);
+      } finally {
+        sock.end();
+      }
+    });
+    sock.on('timeout', () => { sock.destroy(); reject(new Error('TLS handshake timed out')); });
+    sock.on('error', reject);
+  });
+}
+
+async function resolveCaPemForDeployment(shipyardUrl, providedCaPem) {
+  if (providedCaPem) return providedCaPem;
+  let parsed;
+  try { parsed = new URL(shipyardUrl); } catch { throw new Error('Invalid shipyard_url'); }
+  if (parsed.protocol !== 'https:') return '';
+  if (!isLocalHostForAutoCa(parsed.hostname)) return '';
+  return await fetchServerCertPem(shipyardUrl);
+}
+
 router.use(adminOnly);
 
 router.get('/servers/:id/agent/status', (req, res) => {
@@ -90,6 +161,7 @@ router.get('/servers/:id/agent/status', (req, res) => {
     lastSeen: cfg?.last_seen || null,
     runnerVersion: cfg?.runner_version || null,
     manifestVersion: cfg?.last_manifest_version || null,
+    shipyardUrl: cfg?.shipyard_url || null,
     latestManifestVersion: latestManifest?.version || 1,
     hasRecentMetrics: !!recentMetric,
   });
@@ -109,6 +181,7 @@ router.post('/servers/:id/agent/install', async (req, res) => {
   if ((mode === 'auto' || mode === 'push') && !isHttpsUrl(shipyardUrl)) {
     return res.status(400).json({ error: 'HTTPS is required for push/auto mode agent communication' });
   }
+  try { caPem = await resolveCaPemForDeployment(shipyardUrl, caPem); } catch (e) { return res.status(400).json({ error: `Could not auto-load local TLS certificate: ${e.message}` }); }
 
   const token = crypto.randomBytes(32).toString('hex');
   const encryptedToken = encrypt(token);
@@ -119,6 +192,7 @@ router.post('/servers/:id/agent/install', async (req, res) => {
       server_id: server.id,
       mode: mode === 'auto' ? 'push' : mode,
       token: encryptedToken,
+      shipyard_url: shipyardUrl,
       interval,
       installed_at: new Date().toISOString(),
     });
@@ -175,14 +249,15 @@ router.put('/servers/:id/agent/config', async (req, res) => {
   const interval = Math.max(5, Math.min(3600, parseInt(req.body?.interval, 10) || cfg.interval || 30));
   let caPem = '';
   try { caPem = normalizeCaPem(req.body?.shipyard_ca_cert_pem); } catch (e) { return res.status(400).json({ error: e.message }); }
-  const shipyardUrl = resolveShipyardUrl(req, req.body?.shipyard_url);
+  const shipyardUrl = resolveShipyardUrl(req, req.body?.shipyard_url || cfg.shipyard_url);
   if (mode === 'push' && !isHttpsUrl(shipyardUrl)) {
     return res.status(400).json({ error: 'HTTPS is required for push mode agent communication' });
   }
+  try { caPem = await resolveCaPemForDeployment(shipyardUrl, caPem); } catch (e) { return res.status(400).json({ error: `Could not auto-load local TLS certificate: ${e.message}` }); }
 
   const token = getAgentToken(cfg);
   try {
-    db.agentConfig.updateModeInterval(server.id, mode, interval);
+    db.agentConfig.updateModeInterval(server.id, mode, interval, shipyardUrl);
     db.agentConfig.setToken(server.id, encrypt(token));
     const result = await ansibleRunner.runPlaybook(
       'system/agent/agent-configure.yml',
@@ -216,10 +291,11 @@ router.post('/servers/:id/agent/token-rotate', async (req, res) => {
   const interval = cfg.interval || 30;
   let caPem = '';
   try { caPem = normalizeCaPem(req.body?.shipyard_ca_cert_pem); } catch (e) { return res.status(400).json({ error: e.message }); }
-  const shipyardUrl = resolveShipyardUrl(req, req.body?.shipyard_url);
+  const shipyardUrl = resolveShipyardUrl(req, req.body?.shipyard_url || cfg.shipyard_url);
   if (mode === 'push' && !isHttpsUrl(shipyardUrl)) {
     return res.status(400).json({ error: 'HTTPS is required for push mode agent communication' });
   }
+  try { caPem = await resolveCaPemForDeployment(shipyardUrl, caPem); } catch (e) { return res.status(400).json({ error: `Could not auto-load local TLS certificate: ${e.message}` }); }
 
   const token = crypto.randomBytes(32).toString('hex');
   try {

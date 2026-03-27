@@ -162,6 +162,7 @@ db.exec(`
     server_id TEXT PRIMARY KEY,
     mode TEXT NOT NULL DEFAULT 'legacy',
     token TEXT,
+    shipyard_url TEXT,
     interval INTEGER DEFAULT 30,
     installed_at TEXT,
     last_seen TEXT,
@@ -193,6 +194,9 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_agent_metrics_server_ts ON agent_metrics(server_id, timestamp DESC);
   CREATE INDEX IF NOT EXISTS idx_agent_metrics_ts ON agent_metrics(timestamp);
 `);
+
+// Forward-compatible additive migrations for existing installs
+try { db.exec('ALTER TABLE agent_config ADD COLUMN shipyard_url TEXT'); } catch {}
 
 // App settings table
 db.exec(`
@@ -402,11 +406,12 @@ const agentConfigQueries = {
   getByServerId: db.prepare('SELECT * FROM agent_config WHERE server_id = ?'),
   getAll: db.prepare('SELECT * FROM agent_config'),
   upsert: db.prepare(`
-    INSERT INTO agent_config (server_id, mode, token, interval, installed_at, last_seen, runner_version, last_manifest_version, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    INSERT INTO agent_config (server_id, mode, token, shipyard_url, interval, installed_at, last_seen, runner_version, last_manifest_version, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(server_id) DO UPDATE SET
       mode = excluded.mode,
       token = excluded.token,
+      shipyard_url = COALESCE(excluded.shipyard_url, agent_config.shipyard_url),
       interval = excluded.interval,
       installed_at = COALESCE(excluded.installed_at, agent_config.installed_at),
       last_seen = COALESCE(excluded.last_seen, agent_config.last_seen),
@@ -424,7 +429,7 @@ const agentConfigQueries = {
   `),
   updateModeInterval: db.prepare(`
     UPDATE agent_config
-    SET mode = ?, interval = ?, updated_at = datetime('now')
+    SET mode = ?, interval = ?, shipyard_url = COALESCE(?, shipyard_url), updated_at = datetime('now')
     WHERE server_id = ?
   `),
   setToken: db.prepare('UPDATE agent_config SET token = ?, updated_at = datetime(\'now\') WHERE server_id = ?'),
@@ -591,11 +596,12 @@ module.exports = {
   agentConfig: {
     getByServerId: (serverId) => agentConfigQueries.getByServerId.get(serverId),
     getAll: () => agentConfigQueries.getAll.all(),
-    upsert: ({ server_id, mode, token, interval, installed_at, last_seen, runner_version, last_manifest_version }) => {
+    upsert: ({ server_id, mode, token, shipyard_url, interval, installed_at, last_seen, runner_version, last_manifest_version }) => {
       agentConfigQueries.upsert.run(
         server_id,
         mode || 'legacy',
         token || null,
+        shipyard_url || null,
         Number.isFinite(interval) ? interval : 30,
         installed_at || null,
         last_seen || null,
@@ -605,7 +611,7 @@ module.exports = {
       return agentConfigQueries.getByServerId.get(server_id);
     },
     setSeen: (serverId, runnerVersion, manifestVersion) => agentConfigQueries.setSeen.run(runnerVersion || null, Number.isInteger(manifestVersion) ? manifestVersion : null, serverId),
-    updateModeInterval: (serverId, mode, interval) => agentConfigQueries.updateModeInterval.run(mode, interval, serverId),
+    updateModeInterval: (serverId, mode, interval, shipyardUrl = null) => agentConfigQueries.updateModeInterval.run(mode, interval, shipyardUrl, serverId),
     setToken: (serverId, token) => agentConfigQueries.setToken.run(token, serverId),
     delete: (serverId) => agentConfigQueries.delete.run(serverId),
   },
