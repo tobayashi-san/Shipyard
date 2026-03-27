@@ -357,9 +357,9 @@ function setupGuidePanel() {
           <span id="tofu-install-msg" style="font-size:12px;color:var(--text-muted);"></span>
         </div>
         <p style="font-size:12px;color:var(--text-muted);margin:12px 0 0;">
-          Your workspace directories still need to be mounted via
-          <code>docker-compose.override.yml</code>:
-          ${preBlock('services:\n  shipyard:\n    volumes:\n      - /host/path/to/infra:/opt/infra:rw')}
+          Your workspace directories still need to be mounted in
+          <code>docker-compose.yml</code>:
+          ${preBlock('services:\n  shipyard:\n    volumes:\n      - /host/path/to/workspaces:/workspaces:rw')}
         </p>
       </div>
     </div>`;

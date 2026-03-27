@@ -19,10 +19,10 @@ my-plugin/
 4. Place the directory in `/app/plugins/my-plugin/`.
 5. Go to **Settings → Plugins**, click **Reload**, then enable your plugin.
 
-**Docker:** mount your plugin directory into the container via `docker-compose.override.yml`:
+**Docker:** mount your plugin directory into the container via `docker-compose.yml`:
 
 ```yaml
-# docker-compose.override.yml
+# docker-compose.yml
 services:
   shipyard:
     volumes:
@@ -159,7 +159,7 @@ The built-in OpenTofu plugin (`/app/plugins/opentofu/`) is a complete real-world
 
 - Backend: SQLite table creation, file system access, spawning long-running processes, streaming output via `broadcast`
 - Frontend: tabs, a file tree, a CodeMirror editor, terminal output rendering
-- Docker: mounting workspace directories via `docker-compose.override.yml`
+- Docker: mounting workspace directories via `docker-compose.yml`
 
 ## Security
 

@@ -44,6 +44,15 @@ Open **`https://<host-ip>`** in your browser. The setup wizard will guide you th
 
 HTTPS is enabled by default with a self-signed certificate — accept the browser warning once, or [bring your own certificate](https://github.com/tobayashi-san/Shipyard/wiki/Installation#custom-tls-certificate).
 
+## Update
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Because the default image uses `:latest`, this updates Shipyard to the newest published release.
+
 ## Documentation
 
 **[Wiki](https://github.com/tobayashi-san/Shipyard/wiki)** — [Installation](https://github.com/tobayashi-san/Shipyard/wiki/Installation) · [Configuration](https://github.com/tobayashi-san/Shipyard/wiki/Configuration) · [Security Guide](https://github.com/tobayashi-san/Shipyard/wiki/Security-Guide) · [Server Management](https://github.com/tobayashi-san/Shipyard/wiki/Server-Management) · [Playbooks & Schedules](https://github.com/tobayashi-san/Shipyard/wiki/Playbooks-and-Schedules) · [Docker Management](https://github.com/tobayashi-san/Shipyard/wiki/Docker-Management) · [Plugin System](https://github.com/tobayashi-san/Shipyard/wiki/Plugin-System) · [API Reference](https://github.com/tobayashi-san/Shipyard/wiki/API-Reference) · [Troubleshooting](https://github.com/tobayashi-san/Shipyard/wiki/Troubleshooting)
