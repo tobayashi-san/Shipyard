@@ -1,23 +1,19 @@
 services:
   shipyard:
-    build: .
+    image: ghcr.io/tobayashi-san/shipyard:latest
+    container_name: shipyard
+    restart: unless-stopped
     ports:
       - "443:443"
     volumes:
       - shipyard-data:/app/server/data
-      - shipyard-playbooks:/app/server/playbooks
-      - shipyard-plugins:/app/plugins
-      - shipyard-tofu:/workspaces   # OpenTofu workspaces — override in docker-compose.override.yml to use a host bind mount
-      # To use your own certificate instead of the auto-generated one:
+      - ./playbooks:/app/server/playbooks
+      - ./plugins:/app/plugins
+      # OpenTofu workspaces (optional bind mount):
+      # - /path/to/workspaces:/workspaces
+      # Custom TLS certificate (optional):
       # - /etc/ssl/certs/shipyard.crt:/certs/shipyard.crt:ro
       # - /etc/ssl/private/shipyard.key:/certs/shipyard.key:ro
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('https').get({hostname:'localhost',path:'/api/health',rejectUnauthorized:false}, r => process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
     environment:
       - NODE_ENV=production
       - JWT_SECRET=${JWT_SECRET:?Create a .env file with JWT_SECRET — see README}
@@ -26,9 +22,12 @@ services:
       # - ALLOWED_ORIGINS=https://yourdomain.com
       # - SSL_CERT=/certs/shipyard.crt
       # - SSL_KEY=/certs/shipyard.key
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('https').get({hostname:'localhost',path:'/api/health',rejectUnauthorized:false}, r => process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
 volumes:
   shipyard-data:
-  shipyard-playbooks:
-  shipyard-plugins:
-  shipyard-tofu:
