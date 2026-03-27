@@ -25,13 +25,16 @@ services:
     ports:
       - "443:443"
     volumes:
-      - ./data:/app/server/data
+      - shipyard-data:/app/server/data
       - ./playbooks:/app/server/playbooks
       - ./plugins:/app/plugins
     environment:
       - NODE_ENV=production
       - JWT_SECRET=${JWT_SECRET}
       - SHIPYARD_KEY_SECRET=${SHIPYARD_KEY_SECRET}
+
+volumes:
+  shipyard-data:
 EOF
 
 docker compose up -d
@@ -109,7 +112,6 @@ HTTPS is enabled by default with a self-signed certificate — accept the browse
 - Hot-reloadable plugin system — drop a directory into `/app/plugins/` and click Reload
 - Plugins can add backend routes, a sidebar entry, and a full frontend UI
 - Bundled: **OpenTofu** — manage OpenTofu / Terraform workspaces with live output
-- Bundled: **Backup Status** — monitor PBS and Veeam Backup & Replication status
 
 **UI**
 - German and English, auto-detected from browser locale
