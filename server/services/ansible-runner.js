@@ -83,22 +83,35 @@ class AnsibleRunner {
   getAvailablePlaybooks() {
     try {
       if (!fs.existsSync(PLAYBOOKS_DIR)) return [];
-      const files = fs.readdirSync(PLAYBOOKS_DIR);
-      return files
-        .filter(file => file.endsWith('.yml') || file.endsWith('.yaml'))
-        .map(file => {
-          const content = fs.readFileSync(path.join(PLAYBOOKS_DIR, file), 'utf8');
+      const out = [];
+      const walk = (dir, prefix = '') => {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const ent of entries) {
+          if (ent.name.startsWith('.')) continue;
+          const fullPath = path.join(dir, ent.name);
+          const relPath = prefix ? `${prefix}/${ent.name}` : ent.name;
+          if (ent.isDirectory()) {
+            walk(fullPath, relPath);
+            continue;
+          }
+          if (!relPath.endsWith('.yml') && !relPath.endsWith('.yaml')) continue;
+
+          const content = fs.readFileSync(fullPath, 'utf8');
           const lines = content.split('\n').slice(0, 6);
-          // Try to extract name/description from the first play's "name" attribute
           const nameMatch = content.match(/-\s*name:\s*(.+)/);
-          const description = nameMatch ? nameMatch[1].trim() : file;
-          // Parse optional # category: comment from the first few lines
+          const description = nameMatch ? nameMatch[1].trim() : relPath;
           const catLine = lines.find(l => /^#\s*category:/i.test(l));
           const category = catLine ? catLine.replace(/^#\s*category:\s*/i, '').trim() : null;
-          // Flag internal ones
-          const isInternal = file === 'update.yml' || file === 'gather-docker.yml' || file === 'check-image-updates.yml';
-          return { filename: file, description, isInternal, category };
-        });
+
+          const internalRoot = ['update.yml', 'gather-docker.yml', 'check-image-updates.yml', 'reboot.yml', 'setup-ssh.yml'];
+          const isInternal = relPath.startsWith('system/') || internalRoot.includes(relPath);
+          out.push({ filename: relPath, description, isInternal, category });
+        }
+      };
+
+      walk(PLAYBOOKS_DIR, '');
+      out.sort((a, b) => a.filename.localeCompare(b.filename));
+      return out;
     } catch (e) {
       log.error({ err: e }, 'Error listing playbooks');
       return [];

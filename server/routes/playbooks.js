@@ -19,6 +19,15 @@ function resolvePlaybookPath(raw) {
   return { filename, filepath };
 }
 
+// Validate relative playbook path for read-only access (allows subdirectories)
+function resolveReadPlaybookPath(raw) {
+  const normalized = String(raw || '').replace(/\\/g, '/');
+  if (!normalized.endsWith('.yml') && !normalized.endsWith('.yaml')) return null;
+  const filepath = path.resolve(PLAYBOOKS_DIR, normalized);
+  if (!filepath.startsWith(RESOLVED_PLAYBOOKS_DIR + path.sep)) return null;
+  return { filename: normalized, filepath };
+}
+
 function rotateBak(filepath) {
   if (!fs.existsSync(filepath)) return;
   for (let i = MAX_BACKUPS - 1; i >= 1; i--) {
@@ -45,7 +54,7 @@ router.get('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canVie
 // GET /api/playbooks/:filename - Read a playbook's content
 router.get('/:filename', (req, res, next) => { if (!can(getPermissions(req.user), 'canViewPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
-    const resolved = resolvePlaybookPath(req.params.filename);
+    const resolved = resolveReadPlaybookPath(req.params.filename);
     if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
     const { filepath } = resolved;
     if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'Playbook not found' });
