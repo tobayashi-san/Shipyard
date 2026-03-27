@@ -712,6 +712,14 @@ const translations = {
     'set.pluginsEnableTitle': 'Plugin aktivieren',
     'set.pluginsEnableWarning': 'Plugin <strong>{name}</strong> aktivieren? Plugins laufen mit vollen Serverrechten. Nur vertrauenswürdige Plugins aktivieren.',
     'set.pluginsEnableConfirm': 'Aktivieren',
+    'set.tabAudit': 'Audit-Log',
+    'set.auditTitle': 'Audit-Log',
+    'set.auditRefresh': 'Aktualisieren',
+    'set.auditEmpty': 'Keine Audit-Einträge vorhanden.',
+    'set.auditLoadError': 'Audit-Log konnte nicht geladen werden',
+    'set.auditStatusOk': 'Erfolg',
+    'set.auditStatusFailed': 'Fehler',
+    'set.auditIp': 'IP',
 
     // ── Auth / Profile ────────────────────────────────────────
     'auth.profileSaved': 'Profil gespeichert',
@@ -1450,6 +1458,14 @@ const translations = {
     'set.pluginsEnableTitle': 'Enable Plugin',
     'set.pluginsEnableWarning': 'Enable plugin <strong>{name}</strong>? Plugins run with full server privileges. Only enable plugins from trusted sources.',
     'set.pluginsEnableConfirm': 'Enable',
+    'set.tabAudit': 'Audit Log',
+    'set.auditTitle': 'Audit Log',
+    'set.auditRefresh': 'Refresh',
+    'set.auditEmpty': 'No audit entries available.',
+    'set.auditLoadError': 'Failed to load audit log',
+    'set.auditStatusOk': 'Success',
+    'set.auditStatusFailed': 'Failed',
+    'set.auditIp': 'IP',
 
     // ── Auth / Profile ────────────────────────────────────────
     'auth.profileSaved': 'Profile saved',

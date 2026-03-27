@@ -161,6 +161,7 @@ class ApiClient {
 
   // Ansible / Playbooks
   getAnsibleStatus() { return this.request('/system/status'); }
+  getAuditLog(limit = 200) { return this.request(`/system/audit?limit=${encodeURIComponent(limit)}`); }
   getPollingConfig() { return this.request('/system/polling-config'); }
   savePollingConfig(data) { return this.request('/system/polling-config', { method: 'PUT', body: data }); }
   getPlaybooks() { return this.request('/playbooks'); }

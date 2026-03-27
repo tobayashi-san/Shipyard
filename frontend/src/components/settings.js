@@ -101,6 +101,9 @@ export async function renderSettings() {
       <button class="tab-btn" data-tab="roles">
         <i class="fas fa-shield-halved"></i> Roles
       </button>
+      <button class="tab-btn" data-tab="audit">
+        <i class="fas fa-clipboard-list"></i> ${t('set.tabAudit')}
+      </button>
       <button class="tab-btn" data-tab="danger">
         <i class="fas fa-triangle-exclamation"></i> ${t('set.tabDanger')}
       </button>
@@ -460,6 +463,13 @@ export async function renderSettings() {
         </div>
       </div>
 
+      <!-- Tab: Audit -->
+      <div class="tab-panel" id="tab-audit">
+        <div id="audit-settings-content">
+          <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
+        </div>
+      </div>
+
       <!-- Tab: Git -->
       <div class="tab-panel" id="tab-git">
         <div id="git-settings-content">
@@ -490,6 +500,13 @@ export async function renderSettings() {
   document.querySelector('.tab-btn[data-tab="roles"]')?.addEventListener('click', () => {
     if (!document.getElementById('roles-settings-content')?.dataset.loaded) {
       loadRolesTab();
+    }
+  });
+
+  // Audit tab loads lazily when first clicked
+  document.querySelector('.tab-btn[data-tab="audit"]')?.addEventListener('click', () => {
+    if (!document.getElementById('audit-settings-content')?.dataset.loaded) {
+      loadAuditTab();
     }
   });
 
@@ -1819,6 +1836,59 @@ async function loadUsersTab() {
   }
 
   await renderUsers();
+}
+
+// ============================================================
+// Audit Tab
+// ============================================================
+async function loadAuditTab() {
+  const content = document.getElementById('audit-settings-content');
+  if (!content) return;
+  content.dataset.loaded = '1';
+
+  async function renderAudit() {
+    let rows = [];
+    try {
+      rows = await api.getAuditLog(250);
+    } catch (e) {
+      content.innerHTML = `<div style="padding:16px;color:var(--offline);font-size:13px;">${esc(t('set.auditLoadError'))}: ${esc(e.message)}</div>`;
+      return;
+    }
+
+    content.innerHTML = `
+      <div class="settings-group-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>${t('set.auditTitle')}</span>
+        <button class="btn btn-secondary btn-sm" id="btn-refresh-audit"><i class="fas fa-rotate"></i> ${t('set.auditRefresh')}</button>
+      </div>
+      <div class="settings-block" id="audit-list">
+        ${rows.length === 0 ? `
+          <div class="settings-row" style="border-bottom:none;">
+            <div style="padding:20px 0;color:var(--text-muted);font-size:13px;text-align:center;width:100%;">
+              <i class="fas fa-clipboard-list" style="opacity:.4;font-size:1.5rem;margin-bottom:8px;display:block;"></i>
+              ${t('set.auditEmpty')}
+            </div>
+          </div>` :
+          rows.map((r, i) => `
+            <div class="settings-row" ${i === rows.length - 1 ? 'style="border-bottom:none;"' : ''}>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:12px;color:var(--text-primary);font-family:var(--font-mono);">${esc(r.action || '')}</div>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:2px;white-space:pre-wrap;word-break:break-word;">${esc(r.detail || '—')}</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${t('set.auditIp')}: ${esc(r.ip || '—')}</div>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
+                <span style="font-size:11px;padding:2px 8px;border-radius:999px;${r.success ? 'background:rgba(34,197,94,.14);color:#22c55e;' : 'background:rgba(239,68,68,.14);color:#ef4444;'}">${r.success ? t('set.auditStatusOk') : t('set.auditStatusFailed')}</span>
+                <span style="font-size:11px;color:var(--text-muted);">${esc(r.created_at || '')}</span>
+              </div>
+            </div>
+          `).join('')
+        }
+      </div>
+    `;
+
+    document.getElementById('btn-refresh-audit')?.addEventListener('click', renderAudit);
+  }
+
+  await renderAudit();
 }
 
 // ============================================================
