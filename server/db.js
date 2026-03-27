@@ -334,6 +334,7 @@ const sshKeyQueries = {
   getAll: db.prepare('SELECT id, name, public_key, created_at FROM ssh_keys'),
   getFirst: db.prepare('SELECT * FROM ssh_keys LIMIT 1'),
   insert: db.prepare('INSERT INTO ssh_keys (id, name, public_key, private_key_path) VALUES (?, ?, ?, ?)'),
+  deleteAll: db.prepare('DELETE FROM ssh_keys'),
 };
 
 // Docker Containers
@@ -406,6 +407,12 @@ module.exports = {
     getAll: () => sshKeyQueries.getAll.all(),
     getFirst: () => sshKeyQueries.getFirst.get(),
     create: (name, publicKey, privateKeyPath) => {
+      const id = uuidv4();
+      sshKeyQueries.insert.run(id, name, publicKey, privateKeyPath);
+      return id;
+    },
+    replace: (name, publicKey, privateKeyPath) => {
+      sshKeyQueries.deleteAll.run();
       const id = uuidv4();
       sshKeyQueries.insert.run(id, name, publicKey, privateKeyPath);
       return id;

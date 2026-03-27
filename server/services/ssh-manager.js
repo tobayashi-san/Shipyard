@@ -216,7 +216,16 @@ class SSHManager {
       fs.unlinkSync(keyPath);
     }
 
-    db.sshKeys.create(name, publicKey, keyPath);
+    // Remove old key files, then replace DB record
+    for (const old of db.sshKeys.getAll()) {
+      const p = old.private_key_path;
+      if (p && p !== keyPath) {
+        try { fs.unlinkSync(p); } catch {}
+        try { fs.unlinkSync(p + '.enc'); } catch {}
+        try { fs.unlinkSync(p + '.pub'); } catch {}
+      }
+    }
+    db.sshKeys.replace(name, publicKey, keyPath);
 
     return { publicKey, privateKeyPath: keyPath, alreadyExists: false };
   }
