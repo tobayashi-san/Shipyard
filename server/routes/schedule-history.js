@@ -3,6 +3,13 @@ const router = express.Router();
 const db = require('../db');
 const { getPermissions, filterServers } = require('../utils/permissions');
 
+function parseTargets(targets) {
+  return String(targets || '')
+    .split(',')
+    .map(t => t.trim())
+    .filter(Boolean);
+}
+
 // GET /api/schedule-history?limit=100&scheduleId=xxx
 router.get('/', (req, res) => {
   const limit = Math.min(500, Math.max(1, parseInt(req.query.limit) || 100));
@@ -22,7 +29,13 @@ router.get('/', (req, res) => {
   );
   const all = db.scheduleHistory.getAll(limit * 5, scheduleId);
   const filtered = all
-    .filter(h => h.targets != null && h.targets !== '' && h.targets !== 'all' && accessibleNames.has(h.targets))
+    .filter(h => {
+      if (!h.targets) return false;
+      const targets = parseTargets(h.targets);
+      if (targets.length === 0) return false;
+      if (targets.includes('all')) return false;
+      return targets.some(t => accessibleNames.has(t));
+    })
     .slice(0, limit);
 
   res.json(filtered);
@@ -39,12 +52,9 @@ router.get('/:id', (req, res) => {
     const accessibleNames = new Set(
       filterServers(db.servers.getAll(), perms).map(s => s.name)
     );
-    if (row.targets && row.targets !== 'all' && !accessibleNames.has(row.targets)) {
-      return res.status(403).json({ error: 'Permission denied' });
-    }
-    if (row.targets === 'all') {
-      return res.status(403).json({ error: 'Permission denied' });
-    }
+    const targets = parseTargets(row.targets);
+    if (targets.includes('all')) return res.status(403).json({ error: 'Permission denied' });
+    if (!targets.some(t => accessibleNames.has(t))) return res.status(403).json({ error: 'Permission denied' });
   }
 
   res.json(row);

@@ -181,7 +181,7 @@ async function initGitWidget() {
   });
 
   document.getElementById('pb-git-settings-link')?.addEventListener('click', () => {
-    import('../main.js').then(m => m.navigate('settings'));
+    navigate('settings');
   });
 }
 

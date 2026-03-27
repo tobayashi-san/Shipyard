@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const rateLimit = require('express-rate-limit');
 const ansibleRunner = require('../services/ansible-runner');
-const { getPermissions, can } = require('../utils/permissions');
+const db = require('../db');
+const { getPermissions, filterServers, can } = require('../utils/permissions');
 const { serverError } = require('../utils/http-error');
 
 const adhocLimiter = rateLimit({
@@ -36,6 +37,20 @@ router.post('/run', adhocLimiter, (req, res, next) => {
   if (args && args.length > 2000) return res.status(400).json({ error: 'args too long' });
 
   const targetStr = (typeof targets === 'string' && targets.trim()) ? targets.trim() : 'all';
+
+  // Target authorization: restricted users may only run against their accessible servers
+  const perms = getPermissions(req.user);
+  if (!perms.full && perms.servers !== 'all') {
+    const resolvedTargets = targetStr.split(',').map(t => t.trim()).filter(Boolean);
+    if (resolvedTargets.length === 0 || resolvedTargets.includes('all')) {
+      return res.status(403).json({ error: 'Restricted users must specify individual server targets' });
+    }
+    const accessibleNames = new Set(filterServers(db.servers.getAll(), perms).map(s => s.name));
+    const forbidden = resolvedTargets.filter(t => !accessibleNames.has(t));
+    if (forbidden.length > 0) {
+      return res.status(403).json({ error: `Access denied to: ${forbidden.join(', ')}` });
+    }
+  }
 
   try {
     const outputLines = [];

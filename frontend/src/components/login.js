@@ -6,7 +6,13 @@ import { t } from '../i18n.js';
  * Calls onSuccess() after a valid token is obtained.
  */
 export async function renderLogin(onSuccess) {
-  const status = await api.getAuthStatus();
+  let status;
+  try {
+    status = await api.getAuthStatus();
+  } catch {
+    // If the status check fails, assume configured (show login, not setup wizard)
+    status = { configured: true };
+  }
   const isSetup = !status.configured;
 
   document.body.innerHTML = `

@@ -259,7 +259,7 @@ router.delete('/:id', guardServerAccess, guard('canDeleteServers'), (req, res) =
 });
 
 // POST /api/servers/:id/test - Test SSH connection
-router.post('/:id/test', guardServerAccess, async (req, res) => {
+router.post('/:id/test', guardServerAccess, guard('canUseTerminal'), async (req, res) => {
   try {
     const server = req.server;
     const connected = await sshManager.testConnection(server);
@@ -296,7 +296,7 @@ router.put('/:id/notes', guardServerAccess, guard('canEditServers'), (req, res) 
 });
 
 // GET /api/servers/:id/info - Get system info (stale-while-revalidate)
-router.get('/:id/info', guardServerAccess, async (req, res) => {
+router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, res) => {
   const server = req.server;
 
   const cached = db.serverInfo.get(req.params.id);
@@ -333,7 +333,7 @@ router.get('/:id/info', guardServerAccess, async (req, res) => {
 });
 
 // GET /api/servers/:id/services - Get running services
-router.get('/:id/services', guardServerAccess, async (req, res) => {
+router.get('/:id/services', guardServerAccess, guard('canViewServers'), async (req, res) => {
   try {
     const server = req.server;
     const services = await systemInfo.getServices(server);
@@ -344,7 +344,7 @@ router.get('/:id/services', guardServerAccess, async (req, res) => {
 });
 
 // GET /api/servers/:id/updates - Get available updates (stale-while-revalidate)
-router.get('/:id/updates', guardServerAccess, async (req, res) => {
+router.get('/:id/updates', guardServerAccess, guard('canViewUpdates'), async (req, res) => {
   const server = req.server;
 
   const cached = db.updatesCache.get(req.params.id);

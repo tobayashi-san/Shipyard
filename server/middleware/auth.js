@@ -21,11 +21,11 @@ function requireCap(capability) {
 
 const authMiddleware = function authMiddleware(req, res, next) {
   // Initial setup mode: no users exist yet.
-  // Only allow unauthenticated access to setup — req.user stays null,
-  // and can(null, ...) returns false so capability-gated routes are blocked.
+  // IMPORTANT: Do NOT allow access to non-auth API routes in this state.
+  // Otherwise, a reset of /api/reset/auth would make existing operational data public.
   if (db.users.count() === 0) {
     req.setupMode = true;
-    return next();
+    return res.status(503).json({ error: 'Setup required' });
   }
 
   const authHeader = req.headers.authorization;

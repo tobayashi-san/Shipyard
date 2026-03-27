@@ -18,6 +18,12 @@ docker-compose.override.yml
 # Claude Code
 .claude/
 
+# Agent instruction files (local)
+AGENTS.md
+.cursorrules
+.cursor/
+.github/copilot-instructions.md
+
 # Editor / OS
 .DS_Store
 *.swp

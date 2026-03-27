@@ -4,7 +4,7 @@ import { renderServerDetail } from './components/server-detail.js';
 import { renderSettings, applyWhiteLabel } from './components/settings.js';
 import { renderPlaybooks } from './components/playbooks.js';
 import { renderServers, refreshServersInPlace } from './components/servers.js';
-import { initWebSocket, onWsMessage } from './websocket.js';
+import { initWebSocket, closeWebSocket, onWsMessage, onWsUnauthorized } from './websocket.js';
 import { setupComposeModal } from './components/compose-modal.js';
 import { renderLogin } from './components/login.js';
 import { renderOnboarding } from './components/onboarding.js';
@@ -190,7 +190,23 @@ async function boot() {
   setupGlobalTerminal();
 
   // Check auth
-  const authStatus = await api.getAuthStatus();
+  let authStatus;
+  try {
+    authStatus = await api.getAuthStatus();
+  } catch (e) {
+    console.error('Failed to load auth status:', e);
+    document.body.innerHTML = `
+      <div class="login-screen">
+        <div class="login-card">
+          <h1>Shipyard</h1>
+          <p style="margin-top:10px;color:var(--offline);">Failed to reach backend API.</p>
+          <p style="font-size:12px;color:var(--text-muted);margin-top:6px;">${String(e?.message ?? e)}</p>
+          <button id="retry-boot" class="btn-primary" style="margin-top:14px;">Retry</button>
+        </div>
+      </div>`;
+    document.getElementById('retry-boot')?.addEventListener('click', () => location.reload());
+    return;
+  }
 
   // Fresh install — show onboarding wizard (includes password setup)
   if (!authStatus.configured && !authStatus.onboardingDone) {
@@ -204,8 +220,10 @@ async function boot() {
     return;
   }
 
-  // Redirect to login on any 401
-  api.onUnauthorized(() => renderLogin(boot));
+  // Redirect to login on any 401 (HTTP) or 4001 (WebSocket); stop reconnect loop
+  const handleUnauthorized = () => { closeWebSocket(); renderLogin(boot); };
+  api.onUnauthorized(handleUnauthorized);
+  onWsUnauthorized(handleUnauthorized);
 
   // Load settings, servers, and plugins in parallel
   try {

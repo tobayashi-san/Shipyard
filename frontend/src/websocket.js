@@ -6,6 +6,9 @@ let reconnectTimer = null;
 let reconnectDelay = 1000;
 const MAX_RECONNECT_DELAY = 30000;
 const listeners = new Set();
+let _onUnauthorized = null;
+
+export function onWsUnauthorized(cb) { _onUnauthorized = cb; }
 
 export function closeWebSocket() {
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
@@ -16,7 +19,6 @@ export function closeWebSocket() {
     ws = null;
     state.ws = null;
   }
-  listeners.clear();
   reconnectDelay = 1000;
 }
 
@@ -46,7 +48,13 @@ export function initWebSocket() {
     }
   };
 
-  ws.onclose = () => {
+  ws.onclose = (event) => {
+    // 4001 = server rejected the token (unauthorized / revoked / setup required)
+    if (event.code === 4001) {
+      api.setToken(null);
+      if (_onUnauthorized) _onUnauthorized();
+      return; // do not reconnect
+    }
     reconnectTimer = setTimeout(initWebSocket, reconnectDelay);
     reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
   };

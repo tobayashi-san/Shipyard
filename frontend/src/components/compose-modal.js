@@ -1,6 +1,7 @@
 import { showToast } from './toast.js';
 import { api } from '../api.js';
 import { t } from '../i18n.js';
+import { esc } from '../utils/format.js';
 
 export function setupComposeModal() {
   const overlay = document.getElementById('compose-modal-overlay');
@@ -37,7 +38,7 @@ export function setupComposeModal() {
 
     titleEl.innerHTML = isNew
       ? `<i class="fas fa-plus-circle"></i> ${t('compose.newStack')}`
-      : `<i class="fas fa-edit"></i> ${t('compose.edit', { project })}`;
+      : `<i class="fas fa-edit"></i> ${t('compose.edit', { project: esc(project) })}`;
     pathInput.value = dir;
     pathInput.disabled = !isNew;
 

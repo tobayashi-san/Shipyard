@@ -1,5 +1,6 @@
 import { api } from '../api.js';
 import { state } from '../main.js';
+import { renderSidebar } from './sidebar.js';
 import { showToast, showConfirm } from './toast.js';
 import { t } from '../i18n.js';
 import { esc } from '../utils/format.js';
@@ -1099,7 +1100,6 @@ async function loadPluginsList() {
           // Re-render with updated list
           await render(state.plugins);
           // Update sidebar
-          const { renderSidebar } = await import('./sidebar.js');
           renderSidebar();
         } catch (e) {
           showToast(t('common.errorPrefix', { msg: e.message }), 'error');

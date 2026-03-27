@@ -318,12 +318,34 @@ const composeLimiter = rateLimit({
 
 // POST /api/ansible/run - Run a playbook with WebSocket output
 app.post('/api/ansible/run', async (req, res) => {
-  if (!can(getPermissions(req.user), 'canRunPlaybooks')) return res.status(403).json({ error: 'Permission denied' });
+  const perms = getPermissions(req.user);
+  if (!can(perms, 'canRunPlaybooks')) return res.status(403).json({ error: 'Permission denied' });
   const { playbook, targets, extraVars } = req.body;
   if (!playbook) return res.status(400).json({ error: 'playbook is required' });
   if (!isValidPlaybook(playbook)) return res.status(400).json({ error: 'Invalid playbook filename' });
+
+  // Playbook whitelist: restricted roles may only run their permitted playbooks
+  if (!perms.full && perms.playbooks !== 'all') {
+    if (!Array.isArray(perms.playbooks) || !perms.playbooks.includes(playbook)) {
+      return res.status(403).json({ error: 'Playbook not permitted for your role' });
+    }
+  }
+
   const targetsErr = validateTargets(targets);
   if (targetsErr) return res.status(400).json({ error: targetsErr });
+
+  // Target authorization: restricted users may only run against their accessible servers
+  if (!perms.full && perms.servers !== 'all') {
+    const resolvedTargets = targets ? targets.split(',').map(t => t.trim()).filter(Boolean) : [];
+    if (resolvedTargets.length === 0 || resolvedTargets.includes('all')) {
+      return res.status(403).json({ error: 'Restricted users must specify individual server targets' });
+    }
+    const accessibleNames = new Set(filterServers(db.servers.getAll(), perms).map(s => s.name));
+    const forbidden = resolvedTargets.filter(t => !accessibleNames.has(t));
+    if (forbidden.length > 0) {
+      return res.status(403).json({ error: `Access denied to: ${forbidden.join(', ')}` });
+    }
+  }
   if (extraVars && (typeof extraVars !== 'object' || Array.isArray(extraVars) ||
       Object.values(extraVars).some(v => !['string', 'number', 'boolean'].includes(typeof v)))) {
     return res.status(400).json({ error: 'extraVars must be a flat object with string/number/boolean values' });
@@ -741,7 +763,7 @@ wssSsh.on('connection', (ws, req) => {
 const clients = new Map(); // ws -> { user, perms }
 
 function verifyWsAuth(ws, url) {
-  if (db.users.count() === 0) return true;
+  if (db.users.count() === 0) { ws.close(4001, 'Setup required'); return false; }
   const secret = getJwtSecret();
   try {
     const payload = jwt.verify(url.searchParams.get('token'), secret);

@@ -53,7 +53,10 @@ class ApiClient {
 
   // Auth (no token needed – plain fetch)
   getAuthStatus() {
-    return fetch('/api/auth/status').then(r => r.json());
+    return fetch('/api/auth/status').then(async (r) => {
+      if (!r.ok) throw new Error(`Auth status failed: ${r.status}`);
+      return r.json();
+    });
   }
   authSetup(username, password) {
     return fetch('/api/auth/setup', {
