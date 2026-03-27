@@ -303,6 +303,14 @@ runMigration(4, `
   ALTER TABLE users ADD COLUMN display_name TEXT DEFAULT '';
 `);
 
+// Migration v5: backfill columns that were silently skipped in older versions
+// due to the multi-statement db.exec() bug (stopped at first duplicate-column error).
+runMigration(5, `
+  ALTER TABLE server_info ADD COLUMN cpu_usage_pct REAL DEFAULT NULL;
+  ALTER TABLE servers ADD COLUMN notes TEXT NOT NULL DEFAULT '';
+  ALTER TABLE servers ADD COLUMN group_id TEXT;
+`);
+
 // Roles table
 db.exec(`
   CREATE TABLE IF NOT EXISTS roles (
