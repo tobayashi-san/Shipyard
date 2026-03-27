@@ -52,6 +52,14 @@ if [ -d /app/bundled-plugins ]; then
   done
 fi
 
+# Ensure internal system playbooks are always present, even when
+# /app/server/playbooks is bind-mounted from the host.
+if [ -d /app/bundled-playbooks/system ]; then
+  mkdir -p /app/server/playbooks/system
+  cp -r /app/bundled-playbooks/system/. /app/server/playbooks/system/
+  chown -R shipyard:shipyard /app/server/playbooks/system
+fi
+
 # Fix ownership of OpenTofu workspace directories registered by the plugin
 TOFU_PATHS="/app/server/data/tofu-workspace-paths.txt"
 if [ -f "$TOFU_PATHS" ]; then
