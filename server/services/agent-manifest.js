@@ -59,7 +59,7 @@ function ensureSeeded() {
       if (_isMinimalFallback(existingParsed)) {
         const full = _readDefaultManifest();
         if (!validateManifest(full) && full.collectors.length > 1) {
-          const upgraded = normalizeForStorage(full, 1);
+          const upgraded = normalizeForStorage(full, existing.version + 1);
           db.agentManifests.createNext({
             content: JSON.stringify(upgraded),
             createdBy: 'system',

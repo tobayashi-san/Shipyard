@@ -66,7 +66,9 @@ router.get('/manifest', (req, res) => {
     return res.status(304).end();
   }
 
-  res.json(latest.parsed);
+  // Strip _comment (human-readable, breaks the agent's lightweight awk parser)
+  const { _comment, ...manifest } = latest.parsed;
+  res.json(manifest);
 });
 
 router.post('/report', (req, res) => {
