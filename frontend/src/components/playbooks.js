@@ -332,10 +332,11 @@ async function loadPlaybookList() {
       return;
     }
 
+    // Internal playbooks (system/agent/*, update.yml, …) are operated from
+    // the Server Detail > Agent tab — hide them here to avoid confusion.
     const user = filtered.filter(p => !p.isInternal);
-    const internal = filtered.filter(p => p.isInternal);
 
-    // Group custom playbooks by category
+    // Group by category
     const categoryMap = {};
     user.forEach(p => {
       const cat = p.category || 'Custom';
@@ -344,10 +345,13 @@ async function loadPlaybookList() {
     });
 
     let html = '';
-    Object.keys(categoryMap).sort().forEach(cat => {
-      html += renderPlaybookGroup(cat, categoryMap[cat], false);
-    });
-    if (internal.length > 0) html += renderPlaybookGroup(t('pb.internal'), internal, true);
+    if (user.length === 0) {
+      html = `<div class="empty-state empty-state-sm"><p>${t('pb.noPlaybooks')}.</p></div>`;
+    } else {
+      Object.keys(categoryMap).sort().forEach(cat => {
+        html += renderPlaybookGroup(cat, categoryMap[cat], false);
+      });
+    }
     listEl.innerHTML = html;
     wirePlaybookItems();
   }
@@ -609,17 +613,9 @@ async function loadQuickRunPlaybooks() {
   try {
     const playbooks = await api.getPlaybooks();
     const user = playbooks.filter(p => !p.isInternal);
-    const internal = playbooks.filter(p => p.isInternal);
     let opts = `<option value="">${t('qr.selectPlaybook')}</option>`;
     if (user.length) {
-      opts += `<optgroup label="${t('pb.custom')}">` +
-        user.map(p => `<option value="${esc(p.filename)}">${esc(p.description)}</option>`).join('') +
-        '</optgroup>';
-    }
-    if (internal.length) {
-      opts += `<optgroup label="${t('pb.internal')}">` +
-        internal.map(p => `<option value="${esc(p.filename)}">${esc(p.description)}</option>`).join('') +
-        '</optgroup>';
+      opts += user.map(p => `<option value="${esc(p.filename)}">${esc(p.description)}</option>`).join('');
     }
     sel.innerHTML = opts;
   } catch {}
@@ -1255,7 +1251,7 @@ async function openScheduleDialog(editId) {
   }
 
   let playbooks = [];
-  try { playbooks = await api.getPlaybooks(); } catch {}
+  try { playbooks = (await api.getPlaybooks()).filter(p => !p.isInternal); } catch {}
 
   const parsed = existing ? cronToSelectors(existing.cron_expression) : { interval: 'daily', hour: 3, minute: 0, weekday: 1, monthday: 1 };
   const parsedHour   = parsed.hour ?? 3;
