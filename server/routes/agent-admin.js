@@ -139,8 +139,16 @@ async function resolveCaPemForDeployment(shipyardUrl, providedCaPem) {
   let parsed;
   try { parsed = new URL(shipyardUrl); } catch { throw new Error('Invalid shipyard_url'); }
   if (parsed.protocol !== 'https:') return '';
-  if (!isLocalHostForAutoCa(parsed.hostname)) return '';
-  return await fetchServerCertPem(shipyardUrl);
+  // Always auto-fetch the server cert for HTTPS — self-signed certs are common
+  // in homelab setups regardless of whether the host is a private IP or a hostname.
+  try {
+    return await fetchServerCertPem(shipyardUrl);
+  } catch {
+    // If auto-fetch fails (e.g. DNS unreachable from Shipyard itself), only
+    // error out for private/local IPs where self-signed is almost certain.
+    if (isLocalHostForAutoCa(parsed.hostname)) throw new Error('Could not auto-fetch TLS certificate');
+    return '';
+  }
 }
 
 router.use(adminOnly);

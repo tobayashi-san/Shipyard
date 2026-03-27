@@ -182,10 +182,14 @@ async function pollSystemInfo() {
         const lastSeenMs = agentCfg.last_seen ? new Date(agentCfg.last_seen).getTime() : 0;
         if (lastSeenMs && (Date.now() - lastSeenMs) <= intervalSec * 10 * 1000) {
           db.servers.updateStatus(server.id, 'online');
-        } else {
-          db.servers.updateStatus(server.id, 'offline');
+          return;
         }
-        return;
+        if (lastSeenMs) {
+          // Agent has reported before but is now overdue — mark offline
+          db.servers.updateStatus(server.id, 'offline');
+          return;
+        }
+        // Agent never reported yet — fall through to SSH polling as fallback
       }
 
       if (agentCfg?.mode === 'pull') {
