@@ -96,6 +96,23 @@ router.put('/:id/password', adminOnly, async (req, res) => {
   }
 });
 
+// PUT /api/users/:id/totp-disable – admin disables another user's 2FA
+router.put('/:id/totp-disable', adminOnly, (req, res) => {
+  const { id } = req.params;
+  const user = db.users.getById(id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  try {
+    db.users.setTotp(id, '', false);
+    db.users.setPendingTotp(id, '');
+    db.users.incrementTokenVersion(id);
+    db.auditLog.write('users.totp.disable', `Admin disabled 2FA for user: ${id}`, req.ip);
+    res.json({ success: true });
+  } catch (e) {
+    serverError(res, e, 'admin disable user totp');
+  }
+});
+
 // DELETE /api/users/:id – delete user (cannot delete own account)
 router.delete('/:id', adminOnly, (req, res) => {
   const { id } = req.params;

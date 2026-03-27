@@ -235,6 +235,7 @@ class ApiClient {
   createUser(data)                 { return this.request('/users', { method: 'POST', body: data }); }
   updateUser(id, data)             { return this.request(`/users/${id}`, { method: 'PUT', body: data }); }
   resetUserPassword(id, password)  { return this.request(`/users/${id}/password`, { method: 'PUT', body: { password } }); }
+  disableUserTotp(id)              { return this.request(`/users/${id}/totp-disable`, { method: 'PUT' }); }
   deleteUser(id)                   { return this.request(`/users/${id}`, { method: 'DELETE' }); }
 
   // Role management

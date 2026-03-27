@@ -20,6 +20,7 @@ const authMiddleware = require('../middleware/auth');
 const serversRouter = require('../routes/servers');
 const scheduleHistoryRouter = require('../routes/schedule-history');
 const adhocRouter = require('../routes/adhoc');
+const usersRouter = require('../routes/users');
 const { getPermissions, filterPlaybooks } = require('../utils/permissions');
 
 const app = express();
@@ -29,6 +30,7 @@ app.use('/api', authMiddleware);
 app.use('/api/servers', serversRouter);
 app.use('/api/schedule-history', scheduleHistoryRouter);
 app.use('/api/adhoc', adhocRouter);
+app.use('/api/users', usersRouter);
 
 after(() => {
   for (const ext of ['', '-wal', '-shm']) {
@@ -186,3 +188,36 @@ test('server endpoints that trigger SSH/polling are capability-gated', async () 
   assert.equal(updatesRes.status, 403);
 });
 
+test('admin can disable another user\'s 2FA from user management', async () => {
+  wipeDb();
+  await setupAdmin();
+
+  const role = db.roles.create('viewer', {
+    servers: 'all',
+    canViewServers: true,
+  });
+  const hash = await bcrypt.hash('viewerpass12345', 12);
+  const created = db.users.create('viewer2fa', '', hash, role.id);
+  db.users.setPendingTotp(created.id, 'PENDING_SECRET');
+  db.users.setTotp(created.id, 'ACTIVE_SECRET', true);
+
+  const before = db.users.getByUsername('viewer2fa');
+  assert.equal(before.totp_enabled, 1);
+  assert.equal(before.totp_secret, 'ACTIVE_SECRET');
+  assert.equal(before.token_version || 0, 0);
+
+  const adminToken = await login('admin', 'testpass12345');
+  const res = await request(app)
+    .put(`/api/users/${created.id}/totp-disable`)
+    .set('Authorization', `Bearer ${adminToken}`)
+    .send({});
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.success, true);
+
+  const after = db.users.getByUsername('viewer2fa');
+  assert.equal(after.totp_enabled, 0);
+  assert.equal(after.totp_secret, '');
+  assert.equal(after.totp_secret_pending, '');
+  assert.equal(after.token_version, 1);
+});

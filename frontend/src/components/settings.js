@@ -1599,6 +1599,9 @@ async function loadUsersTab() {
                 <button class="btn btn-secondary btn-sm btn-reset-pw" data-id="${esc(u.id)}" data-username="${esc(u.username)}" title="Reset Password">
                   <i class="fas fa-key"></i>
                 </button>
+                <button class="btn btn-secondary btn-sm btn-disable-2fa" data-id="${esc(u.id)}" data-username="${esc(u.username)}" title="Disable 2FA" ${u.totp_enabled ? '' : 'disabled'}>
+                  <i class="fas fa-shield-xmark"></i>
+                </button>
                 <button class="btn btn-danger btn-sm btn-del-user" data-id="${esc(u.id)}" data-username="${esc(u.username)}" title="Delete" ${isSelf ? 'style="visibility:hidden;"' : ''}>
                   <i class="fas fa-trash"></i>
                 </button>
@@ -1623,6 +1626,24 @@ async function loadUsersTab() {
     // Reset password buttons
     content.querySelectorAll('.btn-reset-pw').forEach(btn => {
       btn.addEventListener('click', () => showResetPasswordForm(btn.dataset.id, btn.dataset.username));
+    });
+
+    // Disable 2FA buttons
+    content.querySelectorAll('.btn-disable-2fa').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!await showConfirm(`Disable 2FA for \"${btn.dataset.username}\"?`, {
+          title: 'Disable 2FA',
+          confirmText: 'Disable',
+          danger: true,
+        })) return;
+        try {
+          await api.disableUserTotp(btn.dataset.id);
+          showToast('2FA disabled for user', 'success');
+          await renderUsers();
+        } catch (e) {
+          showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+        }
+      });
     });
 
     // Delete buttons
