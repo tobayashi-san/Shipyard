@@ -309,6 +309,7 @@ runMigration(5, `
   ALTER TABLE server_info ADD COLUMN cpu_usage_pct REAL DEFAULT NULL;
   ALTER TABLE servers ADD COLUMN notes TEXT NOT NULL DEFAULT '';
   ALTER TABLE servers ADD COLUMN group_id TEXT;
+  ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0;
 `);
 
 // Roles table
