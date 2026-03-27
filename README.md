@@ -44,6 +44,10 @@ Open **`https://<host-ip>`** in your browser. The setup wizard will guide you th
 
 HTTPS is enabled by default with a self-signed certificate — accept the browser warning once, or [bring your own certificate](https://github.com/tobayashi-san/Shipyard/wiki/Installation#custom-tls-certificate).
 
+## Documentation
+
+**[Wiki](https://github.com/tobayashi-san/Shipyard/wiki)** — [Installation](https://github.com/tobayashi-san/Shipyard/wiki/Installation) · [Configuration](https://github.com/tobayashi-san/Shipyard/wiki/Configuration) · [Security Guide](https://github.com/tobayashi-san/Shipyard/wiki/Security-Guide) · [Server Management](https://github.com/tobayashi-san/Shipyard/wiki/Server-Management) · [Playbooks & Schedules](https://github.com/tobayashi-san/Shipyard/wiki/Playbooks-and-Schedules) · [Docker Management](https://github.com/tobayashi-san/Shipyard/wiki/Docker-Management) · [Plugin System](https://github.com/tobayashi-san/Shipyard/wiki/Plugin-System) · [API Reference](https://github.com/tobayashi-san/Shipyard/wiki/API-Reference) · [Troubleshooting](https://github.com/tobayashi-san/Shipyard/wiki/Troubleshooting)
+
 ## Screenshots
 
 ![Dashboard](docs/images/Dashboard.png)
@@ -60,77 +64,18 @@ HTTPS is enabled by default with a self-signed certificate — accept the browse
 
 ## Features
 
-**Servers**
-- Add, edit, delete servers with tags and service labels
-- Organize servers into nested groups
-- Bulk import and export (JSON or CSV)
-
-**Monitoring**
-- CPU, RAM, disk, uptime, load average — polled in the background
-- Configurable polling intervals per metric (system info, OS updates, image updates, custom updates)
-- Dashboard with health summary, resource alerts, and recent activity
-
-**Updates**
-- OS package updates via Ansible (`apt`, `dnf`, `pacman`, …) with live terminal output
-- Custom Update Tasks — track anything outside the package manager: scripts, GitHub releases; shows current vs. latest version with badge
-- Docker / Podman image update checks across all containers
-
-**Docker & Compose**
-- Container overview with status, logs, and restart
-- Read and edit `docker-compose.yml` files directly from the browser
-- Run `up`, `down`, and `pull` on Compose stacks
-
-**Ansible**
-- Create, edit, and run custom playbooks with a built-in YAML editor
-- Automatic version history (up to 5 backups per playbook)
-- Scheduler — run playbooks on a cron schedule
-- Live terminal output streamed via WebSocket
-
-**SSH Terminal**
-- Browser-based terminal per server
-- Resizable, ANSI-aware
-
-**SSH Key Management**
-- Auto-generate an Ed25519 key pair on first start
-- Deploy the public key to servers directly from the UI (password-based bootstrap)
-- Optional AES-256-GCM encryption of the private key at rest (`SHIPYARD_KEY_SECRET`)
-
-**Notifications**
-- Webhook support: Discord, Slack, or generic JSON
-- SMTP email alerts
-- Test button for both channels in Settings
-
-**Auth & Security**
-- Multi-user authentication with JWT sessions
-- Role-based access control (RBAC) with custom roles and granular permissions
-- Optional TOTP / 2FA per user
-- Audit log of all significant actions
-- Rate limiting on login and deploy endpoints
-- HTTPS with HSTS, CSP, X-Frame-Options headers
-
-**Plugins**
-- Hot-reloadable plugin system — drop a directory into `/app/plugins/` and click Reload
-- Plugins can add backend routes, a sidebar entry, and a full frontend UI
-- Bundled: **OpenTofu** — manage OpenTofu / Terraform workspaces with live output
-
-**UI**
-- German and English, auto-detected from browser locale
-- Light / Dark / Auto theme
-- White-label: custom app name, tagline, accent color
-
-## Documentation
-
-Full documentation is available in the **[Wiki](https://github.com/tobayashi-san/Shipyard/wiki)**:
-
-- [Installation](https://github.com/tobayashi-san/Shipyard/wiki/Installation) — Docker deployment, requirements, first-time setup
-- [Configuration](https://github.com/tobayashi-san/Shipyard/wiki/Configuration) — Environment variables, app settings, notifications
-- [Security Guide](https://github.com/tobayashi-san/Shipyard/wiki/Security-Guide) — Hardening, encryption at rest, TLS, RBAC
-- [Server Management](https://github.com/tobayashi-san/Shipyard/wiki/Server-Management) — Adding servers, groups, SSH connectivity
-- [Playbooks & Schedules](https://github.com/tobayashi-san/Shipyard/wiki/Playbooks-and-Schedules) — Ansible playbooks, cron schedules
-- [Docker Management](https://github.com/tobayashi-san/Shipyard/wiki/Docker-Management) — Containers, Compose, image updates
-- [Plugin System](https://github.com/tobayashi-san/Shipyard/wiki/Plugin-System) — Writing and installing plugins
-- [API Reference](https://github.com/tobayashi-san/Shipyard/wiki/API-Reference) — Full REST API documentation
-- [Troubleshooting](https://github.com/tobayashi-san/Shipyard/wiki/Troubleshooting) — Common issues and solutions
+- **Servers** — add, edit, group, bulk import/export (JSON or CSV)
+- **Monitoring** — CPU, RAM, disk, uptime, load average polled in the background
+- **OS Updates** — via Ansible (`apt`, `dnf`, `pacman`, …) with live terminal output
+- **Custom Update Tasks** — track scripts or GitHub releases, shows current vs. latest
+- **Docker & Compose** — container overview, logs, restart, edit and run Compose stacks
+- **Ansible** — built-in YAML editor, version history, cron scheduler, live output
+- **SSH Terminal** — browser-based, resizable, ANSI-aware
+- **SSH Key Management** — auto-generate Ed25519, deploy via UI, AES-256-GCM encryption at rest
+- **Notifications** — webhooks (Discord, Slack) and SMTP email alerts
+- **Auth & Security** — JWT, RBAC with custom roles, TOTP/2FA, audit log, rate limiting, HTTPS
+- **Plugins** — hot-reloadable; bundled: OpenTofu / Terraform workspace manager
+- **UI** — German & English, light/dark/auto theme, white-label support
 
 ## Development
 
