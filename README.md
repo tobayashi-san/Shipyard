@@ -30,8 +30,8 @@ services:
       - ./plugins:/app/plugins
     environment:
       - NODE_ENV=production
-      - JWT_SECRET=${JWT_SECRET}
-      - SHIPYARD_KEY_SECRET=${SHIPYARD_KEY_SECRET}
+      - JWT_SECRET=${JWT_SECRET:?Create a .env file with JWT_SECRET — see README}
+      - SHIPYARD_KEY_SECRET=${SHIPYARD_KEY_SECRET:?Create a .env file with SHIPYARD_KEY_SECRET — see README}
 
 volumes:
   shipyard-data:
