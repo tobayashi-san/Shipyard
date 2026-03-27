@@ -199,10 +199,19 @@ export async function renderSettings() {
           </div>
           <div class="settings-row">
             <div class="settings-row-label"></div>
-            <div class="settings-row-control">
+            <div class="settings-row-control" style="display:flex;gap:8px;flex-wrap:wrap;">
               <button class="btn btn-primary btn-sm" id="btn-deploy-key">
                 <i class="fas fa-key"></i> ${t('set.sshDistributeBtn')}
               </button>
+              <button class="btn btn-secondary btn-sm" id="btn-deploy-key-all">
+                <i class="fas fa-key"></i> ${t('set.sshDistributeAllBtn')}
+              </button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label"></div>
+            <div class="settings-row-control" style="font-size:12px;color:var(--text-muted);">
+              ${t('set.sshDistributeAllHint')}
             </div>
           </div>
         </div>
@@ -579,6 +588,34 @@ function setupSettingsEvents(wl) {
     } finally {
       btn.disabled = false;
       btn.innerHTML = `<i class="fas fa-key"></i> ${t('set.sshDistributeBtn')}`;
+    }
+  });
+
+  document.getElementById('btn-deploy-key-all')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-deploy-key-all');
+    const password = document.getElementById('deploy-password').value;
+    if (!password) {
+      showToast(t('set.serverPasswordPlaceholder'), 'error');
+      return;
+    }
+    const ok = await showConfirm(t('set.sshDeployAllConfirm'), {
+      title: t('set.sshDistributeAllBtn'),
+      confirmText: t('set.sshDistributeAllBtn'),
+      danger: true,
+    });
+    if (!ok) return;
+
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-sm"></span> ${t('set.deploying')}`;
+    try {
+      const result = await api.deploySSHKeyAll({ password });
+      showToast(t('set.sshDistributedAllResult', { succeeded: result.succeeded, failed: result.failed }), result.failed ? 'warning' : 'success');
+      document.getElementById('deploy-password').value = '';
+    } catch (error) {
+      showToast(t('common.errorPrefix', { msg: error.message }), 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<i class="fas fa-key"></i> ${t('set.sshDistributeAllBtn')}`;
     }
   });
 }

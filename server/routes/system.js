@@ -96,6 +96,45 @@ router.post('/deploy', adminOnly, deployLimiter, async (req, res) => {
   }
 });
 
+// POST /api/system/deploy-all - Deploy SSH key to multiple/all servers
+router.post('/deploy-all', adminOnly, deployLimiter, async (req, res) => {
+  try {
+    const { password, serverIds } = req.body || {};
+    if (!password || typeof password !== 'string') {
+      return res.status(400).json({ error: 'password is required' });
+    }
+
+    const allServers = db.servers.getAll();
+    let targets = allServers;
+    if (Array.isArray(serverIds) && serverIds.length > 0) {
+      const idSet = new Set(serverIds.filter(id => typeof id === 'string'));
+      targets = allServers.filter(s => idSet.has(s.id));
+    }
+
+    if (targets.length === 0) {
+      return res.status(400).json({ error: 'No target servers found' });
+    }
+
+    const results = [];
+    for (const s of targets) {
+      try {
+        await sshManager.deployKey(s.ip_address, s.ssh_user || 'root', password, s.ssh_port || 22);
+        results.push({ id: s.id, name: s.name, ip_address: s.ip_address, success: true });
+      } catch (e) {
+        results.push({ id: s.id, name: s.name, ip_address: s.ip_address, success: false, error: e.message });
+      }
+    }
+
+    const failed = results.filter(r => !r.success).length;
+    const succeeded = results.length - failed;
+    db.auditLog.write('ssh.deploy_all', `SSH key deploy all: success=${succeeded} failed=${failed}`, req.ip, failed === 0);
+    res.json({ success: failed === 0, total: results.length, succeeded, failed, results });
+  } catch (error) {
+    db.auditLog.write('ssh.deploy_all', 'Bulk SSH key deploy failed', req.ip, false);
+    serverError(res, error, 'deploy SSH key to all servers');
+  }
+});
+
 // GET /api/system/settings - Get all app settings (white label etc.)
 router.get('/settings', adminOnly, (req, res) => {
   try {

@@ -153,6 +153,7 @@ class ApiClient {
   importSSHKey(privateKey, passphrase = '') { return this.request('/system/key/import', { method: 'POST', body: { privateKey, passphrase } }); }
   generateSSHKey(name) { return this.request('/system/generate', { method: 'POST', body: { name } }); }
   deploySSHKey(data) { return this.request('/system/deploy', { method: 'POST', body: data }); }
+  deploySSHKeyAll(data) { return this.request('/system/deploy-all', { method: 'POST', body: data }); }
 
   // App Settings
   getSettings() { return this.request('/system/settings'); }

@@ -21,6 +21,8 @@ const serversRouter = require('../routes/servers');
 const scheduleHistoryRouter = require('../routes/schedule-history');
 const adhocRouter = require('../routes/adhoc');
 const usersRouter = require('../routes/users');
+const systemRouter = require('../routes/system');
+const sshManager = require('../services/ssh-manager');
 const { getPermissions, filterPlaybooks } = require('../utils/permissions');
 
 const app = express();
@@ -31,6 +33,7 @@ app.use('/api/servers', serversRouter);
 app.use('/api/schedule-history', scheduleHistoryRouter);
 app.use('/api/adhoc', adhocRouter);
 app.use('/api/users', usersRouter);
+app.use('/api/system', systemRouter);
 
 after(() => {
   for (const ext of ['', '-wal', '-shm']) {
@@ -221,4 +224,48 @@ test('admin can disable another user\'s 2FA from user management', async () => {
   assert.equal(after.totp_secret, '');
   assert.equal(after.totp_secret_pending, '');
   assert.equal(after.token_version, 1);
+});
+
+test('deploy-all key endpoint is admin-only and returns per-server results', async () => {
+  wipeDb();
+  await setupAdmin();
+
+  const role = db.roles.create('viewer', {
+    servers: 'all',
+    canViewServers: true,
+  });
+  const hash = await bcrypt.hash('viewerpass12345', 12);
+  db.users.create('viewer-noadmin', '', hash, role.id);
+
+  const web = db.servers.create({ name: 'web-1', hostname: 'web-1', ip_address: '10.0.0.10', tags: [], services: [] });
+  const dbs = db.servers.create({ name: 'db-1', hostname: 'db-1', ip_address: '10.0.0.11', tags: [], services: [] });
+
+  const originalDeploy = sshManager.deployKey.bind(sshManager);
+  sshManager.deployKey = async (ip) => {
+    if (ip === '10.0.0.10') return { success: true };
+    throw new Error('Auth failed');
+  };
+
+  try {
+    const userToken = await login('viewer-noadmin', 'viewerpass12345');
+    const forbidden = await request(app)
+      .post('/api/system/deploy-all')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ password: 'pw' });
+    assert.equal(forbidden.status, 403);
+
+    const adminToken = await login('admin', 'testpass12345');
+    const res = await request(app)
+      .post('/api/system/deploy-all')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ password: 'pw', serverIds: [web.id, dbs.id] });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.total, 2);
+    assert.equal(res.body.succeeded, 1);
+    assert.equal(res.body.failed, 1);
+    assert.equal(Array.isArray(res.body.results), true);
+  } finally {
+    sshManager.deployKey = originalDeploy;
+  }
 });
