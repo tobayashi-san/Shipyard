@@ -1,6 +1,7 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const log = require('./utils/logger').child('db');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'shipyard.db');
 
@@ -27,6 +28,8 @@ db.exec(`
     services TEXT DEFAULT '[]',
     status TEXT DEFAULT 'unknown',
     last_seen TEXT,
+    notes TEXT NOT NULL DEFAULT '',
+    group_id TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -44,6 +47,7 @@ db.exec(`
     uptime_seconds INTEGER,
     load_avg TEXT,
     reboot_required BOOLEAN DEFAULT 0,
+    cpu_usage_pct REAL DEFAULT NULL,
     updated_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
   );
@@ -179,16 +183,19 @@ const { currentVersion } = db.prepare('SELECT COALESCE(MAX(version), 0) AS curre
 
 function runMigration(v, sql) {
   if (currentVersion < v) {
-    try {
-      db.exec(sql);
-      console.log(`[db] Applied migration v${v}`);
-    } catch (e) {
-      // Ignoriere "duplicate column", da alte Installationen die Spalten 
-      // bereits durch die alte pragmatische migrate()-Methode haben könnten
-      if (!e.message || (!e.message.includes('duplicate column') && !e.message.includes('already exists'))) {
-        throw e;
+    // Execute each statement individually so one "duplicate column" error
+    // doesn't prevent subsequent ALTER statements from running.
+    const statements = sql.split(';').map(s => s.trim()).filter(Boolean);
+    for (const stmt of statements) {
+      try {
+        db.exec(stmt);
+      } catch (e) {
+        if (!e.message || (!e.message.includes('duplicate column') && !e.message.includes('already exists'))) {
+          throw e;
+        }
       }
     }
+    log.info({ version: v }, 'Applied migration');
     db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (?)').run(v);
   }
 }
@@ -227,7 +234,7 @@ if (currentVersion < 2) {
     }
     db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (2)').run();
   } catch (e) {
-    console.error('[db] v2 migration error:', e.message);
+    log.error({ err: e }, 'v2 migration error');
   }
 }
 
@@ -320,7 +327,7 @@ db.exec(`
     });
     db.prepare(`INSERT OR IGNORE INTO roles (id, name, is_system, permissions) VALUES ('admin', 'Admin', 1, ?)`).run(adminPerm);
     db.prepare(`INSERT OR IGNORE INTO roles (id, name, is_system, permissions) VALUES ('user', 'User', 1, ?)`).run(userPerm);
-  } catch (e) { console.error('[db] Role seed error:', e.message); }
+  } catch (e) { log.error({ err: e }, 'Role seed error'); }
 })();
 
 // Migration: if users table is empty AND auth_password_hash exists, create admin user from settings
@@ -343,9 +350,9 @@ db.exec(`
       INSERT INTO users (id, username, email, password_hash, role, totp_secret, totp_enabled)
       VALUES (?, ?, ?, ?, 'admin', ?, ?)
     `).run(id, username, email, hash.value, totpSecret, totpEnabled);
-    console.log('[db] Migrated admin user from settings to users table');
+    log.info('Migrated admin user from settings to users table');
   } catch (e) {
-    console.error('[db] Admin migration error:', e.message);
+    log.error({ err: e }, 'Admin migration error');
   }
 })();
 

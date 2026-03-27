@@ -4,6 +4,11 @@ const path = require('path');
 const crypto = require('crypto');
 const { NodeSSH } = require('node-ssh');
 const db = require('../db');
+const log = require('../utils/logger').child('ssh-manager');
+
+const MAX_CONNECTIONS  = 20;
+const IDLE_TIMEOUT_MS  = 5 * 60 * 1000; // 5 minutes
+const CLEANUP_INTERVAL = 60 * 1000;     // check every minute
 
 const SSH_DIR = path.join(__dirname, '..', 'data', 'ssh');
 const ALGORITHM = 'aes-256-gcm';
@@ -62,9 +67,48 @@ function readPrivateKey(keyPath) {
 
 class SSHManager {
   constructor() {
-    this.connections = new Map();
-    this.connecting = new Map(); // pending connect promises
+    this.connections = new Map(); // key → NodeSSH
+    this.lastUsed    = new Map(); // key → timestamp
+    this.connecting  = new Map(); // key → pending connect promise
     fs.mkdirSync(SSH_DIR, { recursive: true });
+
+    this._cleanupTimer = setInterval(() => this._evictIdle(), CLEANUP_INTERVAL);
+    // Allow the process to exit even if this timer is still running
+    if (this._cleanupTimer.unref) this._cleanupTimer.unref();
+  }
+
+  /** Close connections that have been idle longer than IDLE_TIMEOUT_MS */
+  _evictIdle() {
+    const now = Date.now();
+    for (const [key, ts] of this.lastUsed) {
+      if (now - ts > IDLE_TIMEOUT_MS) {
+        const conn = this.connections.get(key);
+        if (conn) {
+          try { conn.dispose(); } catch {}
+          log.debug({ key }, 'Evicted idle SSH connection');
+        }
+        this.connections.delete(key);
+        this.lastUsed.delete(key);
+      }
+    }
+  }
+
+  /** Evict the least-recently-used connection to make room */
+  _evictLRU() {
+    let oldestKey = null;
+    let oldestTs  = Infinity;
+    for (const [key, ts] of this.lastUsed) {
+      if (ts < oldestTs) { oldestTs = ts; oldestKey = key; }
+    }
+    if (oldestKey) {
+      const conn = this.connections.get(oldestKey);
+      if (conn) {
+        try { conn.dispose(); } catch {}
+        log.debug({ key: oldestKey }, 'Evicted LRU SSH connection');
+      }
+      this.connections.delete(oldestKey);
+      this.lastUsed.delete(oldestKey);
+    }
   }
 
   /**
@@ -236,20 +280,30 @@ class SSHManager {
   }
 
   /**
-   * Get or create an SSH connection to a server
+   * Get or create an SSH connection to a server.
+   * Enforces MAX_CONNECTIONS via LRU eviction.
    */
   async getConnection(server) {
     const key = `${server.ssh_user || 'root'}@${server.ip_address}:${server.ssh_port}`;
 
     if (this.connections.has(key)) {
       const conn = this.connections.get(key);
-      if (conn.isConnected()) return conn;
+      if (conn.isConnected()) {
+        this.lastUsed.set(key, Date.now());
+        return conn;
+      }
       this.connections.delete(key);
+      this.lastUsed.delete(key);
     }
 
     // If a connect is already in progress, wait for it instead of opening another
     if (this.connecting.has(key)) {
       return this.connecting.get(key);
+    }
+
+    // Enforce connection cap before opening a new one
+    if (this.connections.size >= MAX_CONNECTIONS) {
+      this._evictLRU();
     }
 
     const privateKey = readPrivateKey(this.getPrivateKeyPath());
@@ -263,6 +317,7 @@ class SSHManager {
       readyTimeout: 10000,
     }).then(() => {
       this.connections.set(key, ssh);
+      this.lastUsed.set(key, Date.now());
       this.connecting.delete(key);
       return ssh;
     }).catch(error => {
@@ -279,7 +334,9 @@ class SSHManager {
    */
   async execCommand(server, command) {
     const ssh = await this.getConnection(server);
+    const key = `${server.ssh_user || 'root'}@${server.ip_address}:${server.ssh_port}`;
     const result = await ssh.execCommand(command);
+    this.lastUsed.set(key, Date.now());
     return {
       stdout: result.stdout,
       stderr: result.stderr,
@@ -315,13 +372,15 @@ class SSHManager {
   }
 
   /**
-   * Close all connections
+   * Close all connections and stop the cleanup timer
    */
   closeAll() {
-    for (const [key, conn] of this.connections) {
+    clearInterval(this._cleanupTimer);
+    for (const [, conn] of this.connections) {
       try { conn.dispose(); } catch {}
     }
     this.connections.clear();
+    this.lastUsed.clear();
   }
 }
 

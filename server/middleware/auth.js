@@ -20,13 +20,10 @@ function requireCap(capability) {
 }
 
 const authMiddleware = function authMiddleware(req, res, next) {
-  // Initial setup mode: no users AND no legacy password hash
+  // Initial setup mode: no users exist yet.
   // Only allow unauthenticated access to setup — req.user stays null,
   // and can(null, ...) returns false so capability-gated routes are blocked.
-  const userCount = db.users.count();
-  const legacyHash = db.settings.get('auth_password_hash');
-  if (userCount === 0 && !legacyHash) {
-    // Mark as setup mode so routes can detect it, but do NOT grant permissions
+  if (db.users.count() === 0) {
     req.setupMode = true;
     return next();
   }
@@ -46,41 +43,18 @@ const authMiddleware = function authMiddleware(req, res, next) {
     return res.status(401).json({ error: 'Token invalid or expired' });
   }
 
-  // New-style token: has userId
-  if (payload.userId) {
-    const user = db.users.getById(payload.userId);
-    if (!user) return res.status(401).json({ error: 'User not found' });
-    // Reject tokens issued before a password change
-    if (payload.tv !== undefined && payload.tv !== (user.token_version || 0)) {
-      return res.status(401).json({ error: 'Token revoked' });
-    }
-    req.user = user;
-    return next();
+  if (!payload.userId) {
+    return res.status(401).json({ error: 'Invalid token — please log in again' });
   }
 
-  // Legacy token: has ok: true (no userId)
-  // TODO: Remove legacy token support in a future release (target: v2.0).
-  // Legacy tokens have no token_version so they cannot be selectively revoked.
-  // Users must re-login to obtain a modern token before this path is removed.
-  if (payload.ok === true) {
-    console.warn('[auth] Legacy token used — re-login required before legacy support is removed');
-    // Find first admin user for backward compat
-    const admins = db.users.getAll().filter(u => u.role === 'admin');
-    if (admins.length > 0) {
-      req.user = admins[0];
-    } else {
-      // Fallback: create a synthetic user object from settings
-      req.user = {
-        id: 'legacy',
-        username: db.settings.get('auth_username') || 'admin',
-        email: db.settings.get('auth_email') || '',
-        role: 'admin',
-      };
-    }
-    return next();
+  const user = db.users.getById(payload.userId);
+  if (!user) return res.status(401).json({ error: 'User not found' });
+  // Reject tokens issued before a password change
+  if (payload.tv !== undefined && payload.tv !== (user.token_version || 0)) {
+    return res.status(401).json({ error: 'Token revoked' });
   }
-
-  return res.status(401).json({ error: 'Invalid token' });
+  req.user = user;
+  return next();
 };
 
 module.exports = authMiddleware;

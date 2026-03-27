@@ -8,6 +8,8 @@ const scheduler = require('../services/scheduler');
 const { sendWebhook, sendEmail } = require('../services/notifier');
 const { adminOnly } = require('../middleware/auth');
 const { setSecret } = require('../utils/crypto');
+const { serverError } = require('../utils/http-error');
+const { rotateJwtSecret } = require('../utils/jwt-secret');
 
 const deployLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -28,7 +30,7 @@ router.get('/key', (req, res) => {
     }
     res.json(keyInfo);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'get SSH key');
   }
 });
 
@@ -42,17 +44,17 @@ router.post('/generate', adminOnly, (req, res) => {
     const result = sshManager.generateKey(rawName);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'generate SSH key');
   }
 });
 
 // GET /api/system/key/export - Export private key
-router.get('/key/export', adminOnly, (req, res) => {
+router.get('/key/export', adminOnly, deployLimiter, (req, res) => {
   try {
     const key = sshManager.getPrivateKey();
     res.json({ privateKey: key, success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'export SSH key');
   }
 });
 
@@ -66,7 +68,7 @@ router.post('/key/import', adminOnly, (req, res) => {
     const result = sshManager.importKey(privateKey);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'import SSH key');
   }
 });
 
@@ -82,7 +84,7 @@ router.post('/deploy', adminOnly, deployLimiter, async (req, res) => {
     res.json(result);
   } catch (error) {
     db.auditLog.write('ssh.deploy', `SSH key deploy failed for ${req.body?.ip_address}`, req.ip, false);
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'deploy SSH key');
   }
 });
 
@@ -107,7 +109,7 @@ router.get('/settings', adminOnly, (req, res) => {
       notifUpdateFailed:    raw.notify_update_failed    !== '0',
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'get settings');
   }
 });
 
@@ -136,7 +138,7 @@ router.put('/settings', adminOnly, (req, res) => {
     if (notifUpdateFailed    !== undefined) db.settings.set('notify_update_failed',     notifUpdateFailed    ? '1' : '0');
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'save settings');
   }
 });
 
@@ -149,7 +151,7 @@ router.post('/webhook-test', adminOnly, async (req, res) => {
     }
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'webhook test');
   }
 });
 
@@ -159,7 +161,7 @@ router.post('/smtp-test', adminOnly, async (req, res) => {
     await sendEmail('Shipyard Test', 'This is a test email from Shipyard.', true);
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'smtp test');
   }
 });
 
@@ -186,6 +188,18 @@ router.put('/polling-config', adminOnly, (req, res) => {
   res.json({ success: true });
 });
 
+// POST /api/system/rotate-jwt-secret – invalidate all sessions by rotating the JWT signing key
+router.post('/rotate-jwt-secret', adminOnly, (req, res) => {
+  const rotated = rotateJwtSecret();
+  if (!rotated) {
+    return res.status(400).json({
+      error: 'JWT_SECRET is set via environment variable. Update it there to rotate the signing key.',
+    });
+  }
+  db.auditLog.write('system.rotate-jwt', 'JWT secret rotated — all sessions invalidated', req.ip);
+  res.json({ success: true, message: 'JWT secret rotated. All users must log in again.' });
+});
+
 // POST /api/system/onboarding-complete – mark first-run wizard as done
 router.post('/onboarding-complete', adminOnly, (req, res) => {
   db.settings.set('onboarding_done', '1');
@@ -198,7 +212,7 @@ router.get('/audit', adminOnly, (req, res) => {
     const limit = Math.min(parseInt(req.query.limit) || 100, 500);
     res.json(db.auditLog.getRecent(limit));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'audit log');
   }
 });
 

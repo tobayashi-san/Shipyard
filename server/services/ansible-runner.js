@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const log = require('../utils/logger').child('ansible');
 const db = require('../db');
 const sshManager = require('./ssh-manager');
 
@@ -98,7 +99,7 @@ class AnsibleRunner {
           return { filename: file, description, isInternal, category };
         });
     } catch (e) {
-      console.error('Error listing playbooks:', e);
+      log.error({ err: e }, 'Error listing playbooks');
       return [];
     }
   }

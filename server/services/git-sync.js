@@ -14,6 +14,7 @@ const fs = require('fs');
 const os = require('os');
 const util = require('util');
 const execFileAsync = util.promisify(execFile);
+const log = require('../utils/logger').child('git');
 
 const db = require('../db');
 const { getSecret, setSecret } = require('../utils/crypto');
@@ -318,10 +319,10 @@ async function autoPull() {
   if (!cfg.autoPull || !cfg.repoUrl) return;
   try {
     const r = await pull();
-    if (!r.success) console.warn('[Git] Auto-pull failed:', r.stderr);
-    else console.log('[Git] Auto-pull complete:', r.stdout || 'up to date');
+    if (!r.success) log.warn({ stderr: r.stderr }, 'Auto-pull failed');
+    else log.info({ stdout: r.stdout || 'up to date' }, 'Auto-pull complete');
   } catch (e) {
-    console.warn('[Git] Auto-pull error:', e.message);
+    log.warn({ err: e }, 'Auto-pull error');
   }
 }
 
@@ -343,17 +344,17 @@ async function autoPush(message = 'Update playbooks') {
     await runGit(['add', '-A']);
     const cr = await runGit(['commit', '-m', message]);
     if (!cr.success && !cr.stderr.includes('nothing to commit')) {
-      console.warn('[Git] Auto-commit failed:', cr.stderr);
+      log.warn({ stderr: cr.stderr }, 'Auto-commit failed');
       return;
     }
 
     const authUrl = cfg.authToken ? buildAuthUrl(cfg.repoUrl, cfg.authToken) : cfg.repoUrl;
     await setRemote(authUrl);
     const pr = await runGit(['push', 'origin', `HEAD:${cfg.branch}`]);
-    if (!pr.success) console.warn('[Git] Auto-push failed:', pr.stderr);
-    else console.log('[Git] Auto-push complete');
+    if (!pr.success) log.warn({ stderr: pr.stderr }, 'Auto-push failed');
+    else log.info('Auto-push complete');
   } catch (e) {
-    console.warn('[Git] Auto-push error:', e.message);
+    log.warn({ err: e }, 'Auto-push error');
   }
 }
 

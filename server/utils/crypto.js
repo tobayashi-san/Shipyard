@@ -4,6 +4,7 @@
  * Values are stored with an 'enc:' prefix; plaintext values are auto-encrypted on read.
  */
 const crypto = require('crypto');
+const log = require('./logger').child('crypto');
 const ALGORITHM = 'aes-256-gcm';
 
 function getMasterKey() {
@@ -19,7 +20,7 @@ function encrypt(plaintext) {
   const masterKey = getMasterKey();
   if (!masterKey) {
     if (!_noKeyWarned) {
-      console.warn('[crypto] WARNING: SHIPYARD_KEY_SECRET not set — secrets stored unencrypted. Set this env var to enable encryption at rest.');
+      log.warn('SHIPYARD_KEY_SECRET not set — secrets stored unencrypted. Set this env var to enable encryption at rest.');
       _noKeyWarned = true;
     }
     return plaintext;

@@ -3,13 +3,14 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { adminOnly } = require('../middleware/auth');
+const { serverError } = require('../utils/http-error');
 
 // GET /api/users – list all users (no password_hash)
 router.get('/', adminOnly, (req, res) => {
   try {
     res.json(db.users.getAll());
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e, 'list users');
   }
 });
 
@@ -34,7 +35,7 @@ router.post('/', adminOnly, async (req, res) => {
     if (e.message && e.message.includes('UNIQUE')) {
       return res.status(409).json({ error: 'Username already exists' });
     }
-    res.status(500).json({ error: e.message });
+    serverError(res, e, 'create user');
   }
 });
 
@@ -71,7 +72,7 @@ router.put('/:id', adminOnly, (req, res) => {
     if (e.message && e.message.includes('UNIQUE')) {
       return res.status(409).json({ error: 'Username already exists' });
     }
-    res.status(500).json({ error: e.message });
+    serverError(res, e, 'update user');
   }
 });
 
@@ -88,14 +89,10 @@ router.put('/:id/password', adminOnly, async (req, res) => {
     const hash = await bcrypt.hash(password, 12);
     db.users.setPasswordHash(id, hash);
     db.users.incrementTokenVersion(id);
-    // Keep legacy settings in sync if resetting admin
-    if (user.role === 'admin') {
-      db.settings.set('auth_password_hash', hash);
-    }
     db.auditLog.write('users.password', `Admin reset password for user: ${id}`, req.ip);
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e, 'reset user password');
   }
 });
 
@@ -112,7 +109,7 @@ router.delete('/:id', adminOnly, (req, res) => {
     db.auditLog.write('users.delete', `Deleted user: ${id}`, req.ip);
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e, 'delete user');
   }
 });
 

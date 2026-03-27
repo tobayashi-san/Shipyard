@@ -4,6 +4,7 @@ const ansibleRunner = require('../services/ansible-runner');
 const fs = require('fs');
 const path = require('path');
 const gitSync = require('../services/git-sync');
+const log = require('../utils/logger').child('routes:playbooks');
 
 const PLAYBOOKS_DIR = path.join(__dirname, '..', 'playbooks');
 const MAX_BACKUPS = 5;
@@ -29,6 +30,7 @@ function rotateBak(filepath) {
 }
 
 const { getPermissions, filterPlaybooks, can } = require('../utils/permissions');
+const { serverError } = require('../utils/http-error');
 
 // GET /api/playbooks - List all available playbooks
 router.get('/', (req, res) => {
@@ -36,7 +38,7 @@ router.get('/', (req, res) => {
     const perms = getPermissions(req.user);
     res.json(filterPlaybooks(ansibleRunner.getAvailablePlaybooks(), perms));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'playbooks');
   }
 });
 
@@ -49,7 +51,7 @@ router.get('/:filename', (req, res, next) => { if (!can(getPermissions(req.user)
     if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'Playbook not found' });
     res.json({ content: fs.readFileSync(filepath, 'utf8') });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'playbooks');
   }
 });
 
@@ -72,9 +74,9 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canEd
     fs.writeFileSync(filepath, content, 'utf8');
     res.json({ success: true, filename: finalFilename });
     // Auto-push to git in background (non-blocking)
-    gitSync.autoPush(`Update ${finalFilename}`).catch(() => {});
+    gitSync.autoPush(`Update ${finalFilename}`).catch(err => log.warn({ err }, 'Auto-push failed'));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'playbooks');
   }
 });
 
@@ -94,7 +96,7 @@ router.get('/:filename/history', (req, res, next) => { if (!can(getPermissions(r
     }
     res.json(versions);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'playbooks');
   }
 });
 
@@ -112,7 +114,7 @@ router.get('/:filename/history/:version', (req, res, next) => { if (!can(getPerm
     if (!fs.existsSync(bakPath)) return res.status(404).json({ error: 'Backup not found' });
     res.json({ content: fs.readFileSync(bakPath, 'utf8') });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'playbooks');
   }
 });
 
@@ -137,7 +139,7 @@ router.post('/:filename/restore/:version', (req, res, next) => { if (!can(getPer
     if (fs.existsSync(dupPath)) fs.unlinkSync(dupPath);
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'playbooks');
   }
 });
 
@@ -154,9 +156,9 @@ router.delete('/:filename', (req, res, next) => { if (!can(getPermissions(req.us
     if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'Playbook not found' });
     fs.unlinkSync(filepath);
     res.json({ success: true });
-    gitSync.autoPush(`Delete ${filename}`).catch(() => {});
+    gitSync.autoPush(`Delete ${filename}`).catch(err => log.warn({ err }, 'Auto-push failed'));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'playbooks');
   }
 });
 

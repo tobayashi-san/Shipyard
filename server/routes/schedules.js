@@ -4,6 +4,7 @@ const db = require('../db');
 const cron = require('node-cron');
 const scheduler = require('../services/scheduler');
 const { getPermissions, can } = require('../utils/permissions');
+const { isValidPlaybook, validateTargets } = require('../utils/validate');
 
 // GET /api/schedules — list all
 router.get('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canViewSchedules')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
@@ -24,16 +25,18 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
   if (!name || !playbook || !cronExpression) {
     return res.status(400).json({ error: 'name, playbook, and cronExpression are required' });
   }
-  if (typeof name !== 'string' || name.length > 100) return res.status(400).json({ error: 'Invalid name' });
-  if (typeof playbook !== 'string' || playbook.length > 200) return res.status(400).json({ error: 'Invalid playbook' });
+  if (typeof name !== 'string' || !name.trim() || name.length > 100) return res.status(400).json({ error: 'Invalid name' });
+  if (!isValidPlaybook(playbook)) return res.status(400).json({ error: 'Invalid playbook filename (must be letters/digits/_ - ending in .yml or .yaml)' });
   if (typeof cronExpression !== 'string' || cronExpression.length > 100) return res.status(400).json({ error: 'Invalid cronExpression' });
   if (!cron.validate(cronExpression)) {
     return res.status(400).json({ error: 'Invalid cron expression' });
   }
+  const targetsErr = validateTargets(targets);
+  if (targetsErr) return res.status(400).json({ error: targetsErr });
   if (db.schedules.getAll().length >= 100) {
     return res.status(400).json({ error: 'Maximum number of schedules (100) reached' });
   }
-  const id = db.schedules.create(name, playbook, targets, cronExpression);
+  const id = db.schedules.create(name.trim(), playbook, targets, cronExpression);
   scheduler.reload(id);
   res.json({ id, status: 'created' });
 });
@@ -46,15 +49,16 @@ router.put('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'can
   const { name, playbook, targets, cronExpression, enabled } = req.body;
   const fields = {};
   if (name !== undefined) {
-    if (typeof name !== 'string' || name.length > 100) return res.status(400).json({ error: 'Invalid name' });
-    fields.name = name;
+    if (typeof name !== 'string' || !name.trim() || name.length > 100) return res.status(400).json({ error: 'Invalid name' });
+    fields.name = name.trim();
   }
   if (playbook !== undefined) {
-    if (typeof playbook !== 'string' || playbook.length > 200) return res.status(400).json({ error: 'Invalid playbook' });
+    if (!isValidPlaybook(playbook)) return res.status(400).json({ error: 'Invalid playbook filename (must be letters/digits/_ - ending in .yml or .yaml)' });
     fields.playbook = playbook;
   }
   if (targets !== undefined) {
-    if (typeof targets !== 'string' || targets.length > 500) return res.status(400).json({ error: 'Invalid targets' });
+    const targetsErr = validateTargets(targets);
+    if (targetsErr) return res.status(400).json({ error: targetsErr });
     fields.targets = targets;
   }
   if (cronExpression !== undefined) {

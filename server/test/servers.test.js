@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 process.env.DB_PATH = path.join(os.tmpdir(), `lab_test_servers_${Date.now()}.db`);
 process.env.JWT_SECRET = 'test-jwt-secret-for-server-tests';
+process.env.NODE_ENV = 'test';
 
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');

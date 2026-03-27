@@ -3,6 +3,7 @@ const router = express.Router();
 const rateLimit = require('express-rate-limit');
 const ansibleRunner = require('../services/ansible-runner');
 const { getPermissions, can } = require('../utils/permissions');
+const { serverError } = require('../utils/http-error');
 
 const adhocLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -44,7 +45,7 @@ router.post('/run', adhocLimiter, (req, res, next) => {
     );
     res.json({ success: result.success, output: outputLines, exitCode: result.code ?? 0 });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e, 'adhoc run');
   }
 });
 

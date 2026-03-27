@@ -3,6 +3,7 @@ const router = express.Router({ mergeParams: true });
 const db = require('../db');
 const scheduler = require('../services/scheduler');
 const { getPermissions, can, guardServerAccess } = require('../utils/permissions');
+const { serverError } = require('../utils/http-error');
 
 function guard(cap) {
   return (req, res, next) => {
@@ -67,7 +68,7 @@ router.post('/:taskId/check', guardServerAccess, guard('canRunCustomUpdates'), a
     await scheduler.checkCustomTask(server, task);
     res.json(db.customUpdateTasks.getById(task.id));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, 'custom update check');
   }
 });
 

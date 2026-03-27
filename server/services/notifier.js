@@ -4,6 +4,7 @@
  */
 const https = require('https');
 const http = require('http');
+const log = require('../utils/logger').child('webhook');
 const db = require('../db');
 const { getSecret } = require('../utils/crypto');
 
@@ -24,14 +25,14 @@ async function sendWebhook(title, message, success) {
       'metadata.google.internal.', '169.254.169.254'];
     const host = parsedUrl.hostname.replace(/^\[|\]$/g, ''); // strip IPv6 brackets
     if (blockedHosts.includes(host)) {
-      console.warn(`[Webhook] Blocked request to internal address: ${host}`);
+      log.warn({ host }, 'Blocked request to internal address');
       return { ok: false };
     }
     // Block private/loopback IPv4 ranges
     const ipv4Prefixes = ['127.', '10.', '192.168.', '169.254.', '0.'];
     if (ipv4Prefixes.some(p => host.startsWith(p)) ||
         /^172\.(1[6-9]|2\d|3[01])\./.test(host)) {
-      console.warn(`[Webhook] Blocked request to private IPv4: ${host}`);
+      log.warn({ host }, 'Blocked request to private IPv4');
       return { ok: false };
     }
     // Block IPv6 loopback, link-local, and private ranges
@@ -40,7 +41,7 @@ async function sendWebhook(title, message, success) {
         hostLower.startsWith('fe80:') || hostLower.startsWith('fc') ||
         hostLower.startsWith('fd') || hostLower.startsWith('::ffff:127.') ||
         hostLower.startsWith('::ffff:10.') || hostLower.startsWith('::ffff:192.168.')) {
-      console.warn(`[Webhook] Blocked request to private IPv6: ${host}`);
+      log.warn({ host }, 'Blocked request to private IPv6');
       return { ok: false };
     }
 

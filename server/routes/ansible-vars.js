@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { getPermissions, can } = require('../utils/permissions');
+const { serverError } = require('../utils/http-error');
 
 const MAX_KEY_LEN = 100;
 const MAX_VAL_LEN = 10000;
@@ -31,7 +32,7 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
     res.status(201).json(db.ansibleVars.create(key.trim(), value, description || ''));
   } catch (e) {
     if (e.message?.includes('UNIQUE')) return res.status(409).json({ error: 'Variable key already exists' });
-    throw e;
+    serverError(res, e, 'create ansible var');
   }
 });
 
@@ -48,7 +49,7 @@ router.put('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'can
     res.json(updated);
   } catch (e) {
     if (e.message?.includes('UNIQUE')) return res.status(409).json({ error: 'Variable key already exists' });
-    throw e;
+    serverError(res, e, 'update ansible var');
   }
 });
 

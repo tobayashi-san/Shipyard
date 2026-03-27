@@ -1,10 +1,12 @@
 const fs   = require('fs');
 const path = require('path');
+const log  = require('../utils/logger').child('plugins');
 
 const PLUGINS_DIR  = process.env.PLUGINS_DIR || '/app/plugins';
 const PLUGIN_ID_RE = /^[a-z0-9][a-z0-9_-]*$/;
 
 const _loaded = new Map(); // id -> { manifest, router }
+const _failed = new Map(); // id -> error message (plugins that loaded their manifest but threw during register)
 let _helpers  = null;
 
 // ── DB helpers ──────────────────────────────────────────────────────────────
@@ -70,9 +72,11 @@ function loadAll(helpers) {
     const pluginDir = path.join(PLUGINS_DIR, entry.name);
     try {
       _loadOne(pluginDir);
-      console.log(`[plugins] Loaded: ${entry.name}`);
+      _failed.delete(entry.name);
+      log.info({ plugin: entry.name }, 'Loaded plugin');
     } catch (e) {
-      console.warn(`[plugins] Failed to load "${entry.name}": ${e.message}`);
+      _failed.set(entry.name, e.message || String(e));
+      log.warn({ err: e, plugin: entry.name }, 'Failed to load plugin');
     }
   }
 }
@@ -85,7 +89,13 @@ function reload(id) {
   if (!PLUGIN_ID_RE.test(id)) throw new Error(`Invalid plugin ID: ${id}`);
   const pluginDir = path.join(PLUGINS_DIR, id);
   if (!fs.existsSync(pluginDir)) throw new Error(`Plugin directory not found: ${id}`);
-  _loadOne(pluginDir);
+  try {
+    _loadOne(pluginDir);
+    _failed.delete(id);
+  } catch (e) {
+    _failed.set(id, e.message || String(e));
+    throw e;
+  }
 }
 
 /**
@@ -94,6 +104,7 @@ function reload(id) {
 function reloadAll() {
   if (!_helpers) throw new Error('Plugin loader not initialized');
   _loaded.clear();
+  _failed.clear();
   loadAll(_helpers);
 }
 
@@ -114,11 +125,12 @@ function list() {
     for (const entry of fs.readdirSync(PLUGINS_DIR, { withFileTypes: true })) {
       if (!entry.isDirectory() || seen.has(entry.name)) continue;
       const pluginDir = path.join(PLUGINS_DIR, entry.name);
+      const loadError = _failed.get(entry.name) || null;
       try {
         const manifest = _readManifest(pluginDir);
-        result.push({ ...manifest, enabled: false, loaded: false, error: 'Plugin not loaded' });
+        result.push({ ...manifest, enabled: false, loaded: false, error: loadError || 'Plugin not loaded' });
       } catch (e) {
-        result.push({ id: entry.name, name: entry.name, enabled: false, loaded: false, error: e.message });
+        result.push({ id: entry.name, name: entry.name, enabled: false, loaded: false, error: loadError || e.message });
       }
     }
   }

@@ -3,6 +3,7 @@ const router     = express.Router();
 const db         = require('../db');
 const { adminOnly } = require('../middleware/auth');
 const { ALLOWED_PERMISSION_KEYS } = require('../utils/permissions');
+const { serverError } = require('../utils/http-error');
 
 function parse(role) {
   try { return { ...role, permissions: JSON.parse(role.permissions || '{}') }; }
@@ -36,7 +37,7 @@ function sanitizePermissions(perms) {
 // GET /api/roles
 router.get('/', adminOnly, (req, res) => {
   try { res.json(db.roles.getAll().map(parse)); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  catch (e) { serverError(res, e, 'list roles'); }
 });
 
 // POST /api/roles
@@ -49,7 +50,7 @@ router.post('/', adminOnly, (req, res) => {
     res.status(201).json(parse(role));
   } catch (e) {
     if (e.message?.includes('UNIQUE')) return res.status(409).json({ error: 'Role name already exists' });
-    res.status(500).json({ error: e.message });
+    serverError(res, e, 'create role');
   }
 });
 
@@ -66,7 +67,7 @@ router.put('/:id', adminOnly, (req, res) => {
     res.json(parse(updated));
   } catch (e) {
     if (e.message?.includes('UNIQUE')) return res.status(409).json({ error: 'Role name already exists' });
-    res.status(500).json({ error: e.message });
+    serverError(res, e, 'update role');
   }
 });
 
@@ -81,7 +82,7 @@ router.delete('/:id', adminOnly, (req, res) => {
     db.roles.delete(req.params.id);
     db.auditLog.write('roles.delete', `Deleted role: ${req.params.id}`, req.ip);
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e, 'delete role'); }
 });
 
 module.exports = router;

@@ -8,6 +8,8 @@ const path = require('path');
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const { Client: SshClient } = require('ssh2');
+const log = require('./utils/logger');
+const { serverError } = require('./utils/http-error');
 const db = require('./db');
 const ansibleRunner = require('./services/ansible-runner');
 const sshManager = require('./services/ssh-manager');
@@ -29,9 +31,7 @@ if (SSL_KEY && SSL_CERT) {
     key  = fs.readFileSync(SSL_KEY);
     cert = fs.readFileSync(SSL_CERT);
   } catch (e) {
-    console.error(`[HTTPS] Failed to read certificate files: ${e.message}`);
-    console.error(`        SSL_KEY=${SSL_KEY}`);
-    console.error(`        SSL_CERT=${SSL_CERT}`);
+    log.fatal({ err: e, SSL_KEY, SSL_CERT }, 'Failed to read certificate files');
     process.exit(1);
   }
   server  = https.createServer({ key, cert }, app);
@@ -63,6 +63,21 @@ app.use(cors({
     : ['http://localhost:3000', 'http://localhost:5173'],
 }));
 app.use(express.json());
+
+// Request logging
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
+    if (req.path.startsWith('/api/')) {
+      log.child({ module: 'http' })[level]({
+        method: req.method, url: req.path, status: res.statusCode, duration,
+      }, 'request');
+    }
+  });
+  next();
+});
 
 // Security headers
 app.use((req, res, next) => {
@@ -102,7 +117,8 @@ app.get('/api/health', (req, res) => {
     db.db.prepare('SELECT 1').get();
     res.json({ status: 'ok', uptime: Math.floor(process.uptime()) });
   } catch (e) {
-    res.status(500).json({ status: 'error', error: e.message });
+    log.error({ err: e }, 'Health check failed');
+    res.status(500).json({ status: 'error', error: 'Database unavailable' });
   }
 });
 
@@ -174,6 +190,7 @@ app.get('/plugins/:pluginId/ui.js', (req, res) => {
 });
 
 const { getPermissions, filterServers, filterPlugins, can, guardServerAccess } = require('./utils/permissions');
+const { isValidPlaybook, validateTargets } = require('./utils/validate');
 
 // GET /api/dashboard – aggregated stats from DB cache (no SSH, instant)
 app.get('/api/dashboard', (req, res) => {
@@ -260,7 +277,7 @@ app.get('/api/dashboard', (req, res) => {
       recentHistory,
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e, 'dashboard stats');
   }
 });
 
@@ -304,6 +321,9 @@ app.post('/api/ansible/run', async (req, res) => {
   if (!can(getPermissions(req.user), 'canRunPlaybooks')) return res.status(403).json({ error: 'Permission denied' });
   const { playbook, targets, extraVars } = req.body;
   if (!playbook) return res.status(400).json({ error: 'playbook is required' });
+  if (!isValidPlaybook(playbook)) return res.status(400).json({ error: 'Invalid playbook filename' });
+  const targetsErr = validateTargets(targets);
+  if (targetsErr) return res.status(400).json({ error: targetsErr });
   if (extraVars && (typeof extraVars !== 'object' || Array.isArray(extraVars) ||
       Object.values(extraVars).some(v => !['string', 'number', 'boolean'].includes(typeof v)))) {
     return res.status(400).json({ error: 'extraVars must be a flat object with string/number/boolean values' });
@@ -575,7 +595,7 @@ app.post('/api/servers/:id/docker/compose/write', composeLimiter, guardServerAcc
       res.status(500).json({ error: 'Failed to write docker-compose.yml', details: result.stderr || result.stdout });
     }
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err, 'write docker-compose');
   }
 });
 
@@ -698,7 +718,9 @@ wssSsh.on('connection', (ws, req) => {
         const cols = Math.min(Math.max(parseInt(msg.cols) || 80, 10), 500);
         stream.setWindow(rows, cols, 0, 0);
       }
-    } catch {}
+    } catch (e) {
+      log.debug({ err: e }, 'SSH terminal message error');
+    }
   });
 
   ws.on('close', () => {
@@ -741,10 +763,6 @@ function getWsUser(url) {
   try {
     const payload = jwt.verify(url.searchParams.get('token'), secret);
     if (payload.userId) return db.users.getById(payload.userId) || null;
-    if (payload.ok === true) {
-      const admins = db.users.getAll().filter(u => u.role === 'admin');
-      return admins[0] || { role: 'admin' };
-    }
     return null;
   } catch { return null; }
 }
@@ -795,17 +813,12 @@ if (process.env.NODE_ENV === 'production') {
 const proto   = isHttps ? 'https' : 'http';
 const wsProto = isHttps ? 'wss'   : 'ws';
 server.listen(PORT, () => {
-  console.log(`\n  ⚓  Shipyard running on ${proto}://localhost:${PORT}`);
-  console.log(`  📡 WebSocket on ${wsProto}://localhost:${PORT}/ws`);
+  log.info({ url: `${proto}://localhost:${PORT}`, ws: `${wsProto}://localhost:${PORT}/ws` }, 'Shipyard running');
   if (!isHttps && process.env.NODE_ENV === 'production') {
-    console.warn('\n  ⚠️  SECURITY: Running without HTTPS. Set SSL_KEY and SSL_CERT env vars');
-    console.warn('     or use a reverse proxy (nginx, Caddy) to terminate TLS.\n');
-  } else {
-    console.log('');
+    log.warn('Running without HTTPS. Set SSL_KEY and SSL_CERT env vars or use a reverse proxy (nginx, Caddy) to terminate TLS.');
   }
   if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
-    console.warn('  ⚠️  WARNING: JWT_SECRET env var is not set. A random secret is used on');
-    console.warn('     each restart, which will log out all users. Set JWT_SECRET for persistent sessions.\n');
+    log.warn('JWT_SECRET env var is not set. A random secret is used on each restart, which will log out all users.');
   }
 
   // Prune audit log entries older than 90 days
@@ -821,11 +834,34 @@ server.listen(PORT, () => {
 });
 
 // Graceful shutdown
-process.on('SIGINT', () => {
-  console.log('\nShutting down...');
-  require('./services/scheduler').stopPolling();
+function shutdown(signal) {
+  log.info({ signal }, 'Shutting down...');
+
+  // 10-second hard deadline in case something hangs
+  const forceExit = setTimeout(() => {
+    log.warn('Graceful shutdown timed out — forcing exit');
+    process.exit(1);
+  }, 10_000);
+  if (forceExit.unref) forceExit.unref();
+
+  // Stop scheduler (pollers + cron jobs)
+  try { require('./services/scheduler').shutdown(); } catch {}
+
+  // Close all SSH connections (also stops the idle-cleanup timer)
   sshManager.closeAll();
-  try { db.db.close(); } catch {}
-  server.close();
-  process.exit(0);
-});
+
+  // Close WebSocket clients so the HTTP server can drain completely
+  for (const ws of wss.clients)    { try { ws.close(1001, 'Server shutting down'); } catch {} }
+  for (const ws of wssSsh.clients) { try { ws.close(1001, 'Server shutting down'); } catch {} }
+
+  // Stop accepting new HTTP connections; exit when existing ones finish
+  server.close(() => {
+    try { db.db.close(); } catch {}
+    clearTimeout(forceExit);
+    log.info('Shutdown complete');
+    process.exit(0);
+  });
+}
+
+process.on('SIGINT',  () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));

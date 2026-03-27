@@ -1,10 +1,12 @@
 const express = require('express');
 const router = express.Router();
+const log = require('../utils/logger').child('routes:servers');
 const db = require('../db');
 const sshManager = require('../services/ssh-manager');
 const systemInfo = require('../services/system-info');
 const ansibleRunner = require('../services/ansible-runner');
 const { parseImageUpdateOutput } = require('../utils/parse-image-updates');
+const { serverError } = require('../utils/http-error');
 
 // Deserialize JSON fields for API responses
 function parseServer(s) {
@@ -26,7 +28,7 @@ router.get('/', (req, res) => {
     const perms = getPermissions(req.user);
     res.json(filterServers(db.servers.getAll(), perms).map(parseServer));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'list servers');
   }
 });
 
@@ -67,7 +69,7 @@ router.get('/export', guard('canExportImportServers'), (req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename="servers.json"');
     res.json(servers);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'export servers');
   }
 });
 
@@ -115,7 +117,7 @@ router.post('/import', guard('canExportImportServers'), (req, res) => {
 
     res.json(results);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'import servers');
   }
 });
 
@@ -190,7 +192,7 @@ router.get('/:id', guardServerAccess, (req, res) => {
   try {
     res.json(parseServer(req.server));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'get server');
   }
 });
 
@@ -217,7 +219,7 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
     db.auditLog.write('server.create', `Server "${name}" (${ip_address}) created`, req.ip);
     res.status(201).json(parseServer(server));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'create server');
   }
 });
 
@@ -240,8 +242,7 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
     });
     res.json(parseServer(server));
   } catch (error) {
-    console.error('Server update error:', error);
-    res.status(500).json({ error: 'Failed to update server' });
+    serverError(res, error, 'update server');
   }
 });
 
@@ -253,7 +254,7 @@ router.delete('/:id', guardServerAccess, guard('canDeleteServers'), (req, res) =
     db.auditLog.write('server.delete', `Server "${server.name}" (${server.ip_address}) deleted`, req.ip);
     res.json({ message: 'Server deleted' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'delete server');
   }
 });
 
@@ -276,7 +277,7 @@ router.get('/:id/notes', guardServerAccess, (req, res) => {
   try {
     res.json({ notes: req.server.notes || '' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'get server notes');
   }
 });
 
@@ -290,7 +291,7 @@ router.put('/:id/notes', guardServerAccess, guard('canEditServers'), (req, res) 
     db.servers.setNotes(req.params.id, notes);
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'update server notes');
   }
 });
 
@@ -309,7 +310,8 @@ router.get('/:id/info', guardServerAccess, async (req, res) => {
         db.serverInfo.upsert(server.id, info);
         db.servers.updateStatus(server.id, 'online');
       })
-      .catch(() => {
+      .catch(err => {
+        log.debug({ err, server: server.name }, 'Background info refresh failed');
         try { db.servers.updateStatus(server.id, 'offline'); } catch {}
       });
     return;
@@ -323,7 +325,7 @@ router.get('/:id/info', guardServerAccess, async (req, res) => {
     res.json(info);
   } catch (error) {
     db.servers.updateStatus(req.params.id, 'offline');
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'get server info');
   }
 });
 
@@ -334,7 +336,7 @@ router.get('/:id/services', guardServerAccess, async (req, res) => {
     const services = await systemInfo.getServices(server);
     res.json(services);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'get server services');
   }
 });
 
@@ -359,7 +361,7 @@ router.get('/:id/updates', guardServerAccess, async (req, res) => {
     res.json(updates);
   } catch (error) {
     if (cached) return res.json(cached);
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'get server updates');
   }
 });
 
@@ -399,7 +401,7 @@ router.get('/:id/history', guardServerAccess, (req, res) => {
 
     res.json(combined);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'get server history');
   }
 });
 
@@ -453,7 +455,7 @@ async function refreshDockerCache(server) {
     });
     db.dockerContainers.syncForServer(server.id, containers);
   } catch (e) {
-    console.error('Failed to parse docker output:', e);
+    log.error({ err: e }, 'Failed to parse docker output');
   }
 }
 
@@ -475,7 +477,7 @@ router.get('/:id/docker', guardServerAccess, guard('canViewDocker'), async (req,
     res.json(buildDockerResponse(req.params.id));
   } catch (error) {
     if (cached.length > 0) return res.json(cached);
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'get docker containers');
   }
 });
 
@@ -498,7 +500,7 @@ router.get('/:id/docker/:container/logs', guardServerAccess, guard('canViewDocke
     );
     res.json({ logs: result.stdout || '' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'get container logs');
   }
 });
 
@@ -511,7 +513,7 @@ router.get('/:id/docker/image-updates', guardServerAccess, guard('canPullDocker'
     db.dockerImageUpdatesCache.set(server.id, updates);
     res.json(updates);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'get docker image updates');
   }
 });
 
@@ -548,7 +550,7 @@ router.get('/:id/docker/compose', guardServerAccess, guard('canManageDockerCompo
       res.status(500).json({ error: 'Failed to read docker-compose.yml. It might not exist in this directory.' });
     }
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    serverError(res, error, 'get docker compose');
   }
 });
 

@@ -1,4 +1,5 @@
 const cron = require('node-cron');
+const log = require('../utils/logger').child('scheduler');
 const db = require('../db');
 const ansibleRunner = require('./ansible-runner');
 const systemInfo = require('./system-info');
@@ -52,7 +53,7 @@ function getPollingConfig() {
 let lastInfoPollTime = 0;
 
 function runNow(pollFn, label) {
-  pollFn().catch(err => console.error(`[Poller] ${label} error:`, err.message));
+  pollFn().catch(err => log.error({ err, label }, 'Poller error'));
 }
 
 function makePoller(pollFn, label, intervalMs) {
@@ -72,16 +73,16 @@ function init(broadcastFn) {
   try {
     schedules = db.schedules.getAll();
   } catch (e) {
-    console.error('[Scheduler] Failed to load schedules from DB:', e.message);
+    log.error({ err: e }, 'Failed to load schedules from DB');
     return;
   }
   for (const s of schedules) {
     if (s.enabled) {
       try { register(s); }
-      catch (e) { console.error(`[Scheduler] Failed to register "${s.name}":`, e.message); }
+      catch (e) { log.error({ err: e, schedule: s.name }, 'Failed to register schedule'); }
     }
   }
-  console.log(`[Scheduler] Loaded ${schedules.filter(s => s.enabled).length} active schedule(s)`);
+  log.info({ count: schedules.filter(s => s.enabled).length }, 'Loaded active schedules');
 }
 
 /**
@@ -93,17 +94,17 @@ function register(schedule) {
   }
 
   if (!cron.validate(schedule.cron_expression)) {
-    console.error(`[Scheduler] Invalid cron: "${schedule.cron_expression}" for schedule "${schedule.name}"`);
+    log.error({ cron: schedule.cron_expression, schedule: schedule.name }, 'Invalid cron expression');
     return;
   }
 
   const task = cron.schedule(schedule.cron_expression, async () => {
     if (running.has(schedule.id)) {
-      console.log(`[Scheduler] Skipping "${schedule.name}" – previous run still in progress`);
+      log.info({ schedule: schedule.name }, 'Skipping – previous run still in progress');
       return;
     }
     running.add(schedule.id);
-    console.log(`[Scheduler] Running "${schedule.name}" (${schedule.playbook}) on ${schedule.targets}`);
+    log.info({ schedule: schedule.name, playbook: schedule.playbook, targets: schedule.targets }, 'Running schedule');
     broadcast({ type: 'schedule_start', scheduleId: schedule.id, name: schedule.name });
 
     // Sync playbooks from git before running
@@ -128,12 +129,12 @@ function register(schedule) {
       db.scheduleHistory.complete(histId, status, outputLines.join(''));
       db.scheduleHistory.prune();
       broadcast({ type: 'schedule_complete', scheduleId: schedule.id, success: result.success });
-      console.log(`[Scheduler] "${schedule.name}" completed: ${status}`);
+      log.info({ schedule: schedule.name, status }, 'Schedule completed');
     } catch (error) {
       db.schedules.updateLastRun(schedule.id, 'failed');
       db.scheduleHistory.complete(histId, 'failed', outputLines.join('') + (outputLines.length ? '\n' : '') + error.message);
       broadcast({ type: 'schedule_error', scheduleId: schedule.id, error: error.message });
-      console.error(`[Scheduler] "${schedule.name}" error:`, error.message);
+      log.error({ err: error, schedule: schedule.name }, 'Schedule error');
     } finally {
       running.delete(schedule.id);
     }
@@ -177,12 +178,13 @@ async function pollSystemInfo() {
         const info = await systemInfo.getSystemInfo(server);
         db.serverInfo.upsert(server.id, info);
         db.servers.updateStatus(server.id, 'online');
-      } catch {
+      } catch (err) {
+        log.debug({ err, server: server.name }, 'System info poll failed');
         db.servers.updateStatus(server.id, 'offline');
       }
     }));
     broadcast({ type: 'cache_updated', scope: 'info' });
-    console.log(`[Poller] System info refreshed for ${servers.length} server(s)`);
+    log.info({ count: servers.length }, 'System info refreshed');
   } finally {
     infoPolling = false;
   }
@@ -200,12 +202,12 @@ async function pollUpdates() {
       try {
         const updates = await systemInfo.getAvailableUpdates(server);
         db.updatesCache.set(server.id, updates);
-      } catch {
-        // ignore – keep stale cache
+      } catch (err) {
+        log.debug({ err, server: server.name }, 'Updates poll failed');
       }
     }));
     broadcast({ type: 'cache_updated', scope: 'updates' });
-    console.log(`[Poller] Updates cache refreshed for ${servers.length} server(s)`);
+    log.info({ count: servers.length }, 'Updates cache refreshed');
   } finally {
     updatesPolling = false;
   }
@@ -224,12 +226,12 @@ async function pollImageUpdates() {
         const result = await ansibleRunner.runPlaybook('check-image-updates.yml', server.name);
         const results = parseImageUpdateOutput(result.stdout);
         db.dockerImageUpdatesCache.set(server.id, results);
-      } catch {
-        // keep stale cache
+      } catch (err) {
+        log.debug({ err, server: server.name }, 'Image updates poll failed');
       }
     }));
     broadcast({ type: 'cache_updated', scope: 'image_updates' });
-    console.log(`[Poller] Docker image updates checked for ${servers.length} server(s)`);
+    log.info({ count: servers.length }, 'Docker image updates checked');
   } finally {
     imageUpdatesPolling = false;
   }
@@ -252,14 +254,18 @@ async function checkCustomTask(server, task) {
         const data = await res.json();
         lastVersion = data.tag_name || lastVersion;
       }
-    } catch { /* keep stale */ }
+    } catch (err) {
+      log.debug({ err, repo: task.github_repo }, 'GitHub release check failed');
+    }
   }
 
   if (task.check_command) {
     try {
       const result = await sshManager.execCommand(server, task.check_command);
       if (result.code === 0) currentVersion = result.stdout.trim() || currentVersion;
-    } catch { /* keep stale */ }
+    } catch (err) {
+      log.debug({ err, server: server.name, task: task.name }, 'Custom update check command failed');
+    }
   }
 
   const normalize = v => v ? v.trim().replace(/^v/i, '') : v;
@@ -277,10 +283,10 @@ async function pollCustomUpdates() {
     const servers = db.servers.getAll();
     await Promise.allSettled(servers.map(async server => {
       const tasks = db.customUpdateTasks.getByServer(server.id);
-      await Promise.allSettled(tasks.map(task => checkCustomTask(server, task).catch(() => {})));
+      await Promise.allSettled(tasks.map(task => checkCustomTask(server, task).catch(err => log.debug({ err, server: server.name }, 'Custom task check failed'))));
     }));
     broadcast({ type: 'cache_updated', scope: 'custom_updates' });
-    console.log('[Poller] Custom update tasks checked');
+    log.info('Custom update tasks checked');
   } finally {
     customUpdatesPolling = false;
   }
@@ -295,7 +301,7 @@ function setupPollingIntervals() {
   if (cfg.info.enabled) {
     infoPoller = setInterval(() => {
       if (Date.now() - lastInfoPollTime >= cfg.info.intervalMs) {
-        pollSystemInfo().catch(err => console.error('[Poller] System info error:', err.message));
+        pollSystemInfo().catch(err => log.error({ err }, 'System info poll error'));
       }
     }, 60 * 1000); // tick every minute, decide whether to actually poll
   }
@@ -304,7 +310,12 @@ function setupPollingIntervals() {
   if (cfg.imageUpdates.enabled)  imageUpdatesPoller  = makePoller(pollImageUpdates,  'Image updates',  cfg.imageUpdates.intervalMs);
   if (cfg.customUpdates.enabled) customUpdatesPoller = makePoller(pollCustomUpdates, 'Custom updates', cfg.customUpdates.intervalMs);
 
-  console.log(`[Poller] Config – info:${cfg.info.enabled ? cfg.info.intervalMs/60000+'min' : 'off'} updates:${cfg.updates.enabled ? cfg.updates.intervalMs/60000+'min' : 'off'} images:${cfg.imageUpdates.enabled ? cfg.imageUpdates.intervalMs/60000+'min' : 'off'} custom:${cfg.customUpdates.enabled ? cfg.customUpdates.intervalMs/60000+'min' : 'off'}`);
+  log.info({
+    info: cfg.info.enabled ? cfg.info.intervalMs / 60000 + 'min' : 'off',
+    updates: cfg.updates.enabled ? cfg.updates.intervalMs / 60000 + 'min' : 'off',
+    images: cfg.imageUpdates.enabled ? cfg.imageUpdates.intervalMs / 60000 + 'min' : 'off',
+    custom: cfg.customUpdates.enabled ? cfg.customUpdates.intervalMs / 60000 + 'min' : 'off',
+  }, 'Poller config');
 }
 
 /**
@@ -325,7 +336,7 @@ function startPolling() {
 function restartPolling() {
   stopPolling();
   setupPollingIntervals();
-  console.log('[Poller] Restarted with new config');
+  log.info('Poller restarted with new config');
 }
 
 /**
@@ -348,4 +359,22 @@ function stopPolling() {
   if (customUpdatesPoller)  { clearInterval(customUpdatesPoller);  customUpdatesPoller = null; }
 }
 
-module.exports = { init, register, unregister, reload, startPolling, stopPolling, restartPolling, onClientConnect, checkCustomTask, getPollingConfig, DEFAULTS };
+/**
+ * Stop all scheduled cron jobs.
+ */
+function stopJobs() {
+  for (const [id, task] of jobs) {
+    task.stop();
+  }
+  jobs.clear();
+}
+
+/**
+ * Full shutdown: stop pollers and all cron jobs.
+ */
+function shutdown() {
+  stopPolling();
+  stopJobs();
+}
+
+module.exports = { init, register, unregister, reload, startPolling, stopPolling, stopJobs, shutdown, restartPolling, onClientConnect, checkCustomTask, getPollingConfig, DEFAULTS };

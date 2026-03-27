@@ -6,6 +6,8 @@ const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const db = require('../db');
 const { adminOnly } = require('../middleware/auth');
+const { serverError } = require('../utils/http-error');
+const { setSecret } = require('../utils/crypto');
 
 const resetLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
@@ -46,7 +48,7 @@ router.delete('/servers', resetLimiter, adminOnly, (req, res) => {
     db.auditLog.write('reset.servers', 'All servers and related data deleted', req.ip);
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e, 'reset');
   }
 });
 
@@ -57,7 +59,7 @@ router.delete('/schedules', resetLimiter, adminOnly, (req, res) => {
     db.auditLog.write('reset.schedules', 'All schedules deleted', req.ip);
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e, 'reset');
   }
 });
 
@@ -68,7 +70,7 @@ router.delete('/playbooks', resetLimiter, adminOnly, (req, res) => {
     db.auditLog.write('reset.playbooks', 'All user playbooks deleted', req.ip);
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e, 'reset');
   }
 });
 
@@ -77,7 +79,7 @@ router.delete('/auth', resetLimiter, adminOnly, (req, res) => {
   try {
     db.db.prepare('DELETE FROM users').run();
     db.settings.set('auth_password_hash', '');
-    db.settings.set('auth_jwt_secret', crypto.randomBytes(64).toString('hex'));
+    setSecret(db, 'auth_jwt_secret', crypto.randomBytes(64).toString('hex'));
     db.settings.set('onboarding_done', '');
     db.settings.set('totp_enabled', '');
     db.settings.set('totp_secret', '');
@@ -85,7 +87,7 @@ router.delete('/auth', resetLimiter, adminOnly, (req, res) => {
     db.auditLog.write('reset.auth', 'Authentication reset: all users deleted, sessions invalidated', req.ip);
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e, 'reset');
   }
 });
 
@@ -99,7 +101,7 @@ router.delete('/all', resetLimiter, adminOnly, (req, res) => {
     })();
     deleteUserPlaybooks();
     db.settings.set('auth_password_hash', '');
-    db.settings.set('auth_jwt_secret', crypto.randomBytes(64).toString('hex'));
+    setSecret(db, 'auth_jwt_secret', crypto.randomBytes(64).toString('hex'));
     db.settings.set('totp_enabled', '');
     db.settings.set('totp_secret', '');
     db.settings.set('totp_secret_pending', '');
@@ -111,7 +113,7 @@ router.delete('/all', resetLimiter, adminOnly, (req, res) => {
     db.auditLog.write('reset.all', 'Full factory reset performed', req.ip);
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e, 'reset');
   }
 });
 

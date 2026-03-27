@@ -4,6 +4,7 @@ const db = require('../db');
 const gitSync = require('../services/git-sync');
 const { adminOnly } = require('../middleware/auth');
 const { setSecret } = require('../utils/crypto');
+const { serverError } = require('../utils/http-error');
 
 // All git-playbooks routes are admin-only
 router.use(adminOnly);
@@ -51,7 +52,7 @@ router.post('/setup', async (req, res) => {
     if (!result.success) return res.status(500).json({ error: result.error });
     res.json({ success: true, pullOutput: result.pullOutput });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e, 'git setup');
   }
 });
 
@@ -69,7 +70,7 @@ router.put('/config', (req, res) => {
 // GET /api/playbooks-git/branches
 router.get('/branches', async (req, res) => {
   try { res.json(await gitSync.getBranches()); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  catch (e) { serverError(res, e, 'git branches'); }
 });
 
 // POST /api/playbooks-git/checkout
@@ -81,19 +82,19 @@ router.post('/checkout', async (req, res) => {
     const r = await gitSync.checkout(branch);
     if (!r.success) return res.status(500).json({ error: r.stderr });
     res.json({ success: true, output: r.stdout });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e, 'git checkout'); }
 });
 
 // GET /api/playbooks-git/status
 router.get('/status', async (req, res) => {
   try { res.json(await gitSync.getStatus()); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  catch (e) { serverError(res, e, 'git status'); }
 });
 
 // GET /api/playbooks-git/log
 router.get('/log', async (req, res) => {
   try { res.json(await gitSync.getLog()); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  catch (e) { serverError(res, e, 'git log'); }
 });
 
 // POST /api/playbooks-git/pull
@@ -102,7 +103,7 @@ router.post('/pull', async (req, res) => {
     const r = await gitSync.pull();
     if (!r.success) return res.status(500).json({ error: r.stderr });
     res.json({ success: true, output: r.stdout });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e, 'git pull'); }
 });
 
 // POST /api/playbooks-git/commit
@@ -114,7 +115,7 @@ router.post('/commit', async (req, res) => {
     const r = await gitSync.commit(message);
     if (!r.success) return res.status(400).json({ error: r.stderr || 'Nothing to commit' });
     res.json({ success: true, output: r.stdout });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e, 'git commit'); }
 });
 
 // POST /api/playbooks-git/push
@@ -124,7 +125,7 @@ router.post('/push', async (req, res) => {
     const r = await gitSync.push(message);
     if (!r.success) return res.status(500).json({ error: r.stderr });
     res.json({ success: true, output: r.stdout });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e, 'git push'); }
 });
 
 module.exports = router;
