@@ -66,9 +66,10 @@ router.get('/manifest', (req, res) => {
     return res.status(304).end();
   }
 
-  // Strip _comment (human-readable, breaks the agent's lightweight awk parser)
+  // Strip _comment (human-readable, not needed by agent)
   const { _comment, ...manifest } = latest.parsed;
-  res.json(manifest);
+  // Pretty-print so the agent's lightweight awk parser can process line by line
+  res.type('json').send(JSON.stringify(manifest, null, 2));
 });
 
 router.post('/report', (req, res) => {
