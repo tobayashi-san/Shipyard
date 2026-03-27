@@ -27,6 +27,34 @@ function isHttpsUrl(url) {
   return /^https:\/\//i.test(String(url || ''));
 }
 
+function resolveShipyardUrl(req, explicit) {
+  const candidate = String(explicit || '').trim();
+  if (candidate) return candidate;
+  return inferShipyardUrl(req);
+}
+
+function ansibleBackendPrecheck(res) {
+  if (!ansibleRunner.isInstalled()) {
+    res.status(503).json({ error: 'Ansible backend is not available on this Shipyard instance' });
+    return false;
+  }
+  return true;
+}
+
+function handleAgentBackendError(res, e, ctx) {
+  const msg = String(e?.message || '');
+  if (msg.includes('Playbook not found')) {
+    return res.status(500).json({ error: 'Agent playbooks are missing in this build' });
+  }
+  if (msg.includes('Failed to run ansible-playbook')) {
+    return res.status(503).json({ error: 'Ansible runtime is not available or failed to start' });
+  }
+  if (msg.includes('Invalid playbook path')) {
+    return res.status(500).json({ error: 'Invalid internal playbook path' });
+  }
+  return serverError(res, e, ctx);
+}
+
 function getAgentToken(cfg) {
   const stored = cfg?.token ? decrypt(cfg.token) : '';
   return stored || crypto.randomBytes(32).toString('hex');
@@ -68,6 +96,7 @@ router.get('/servers/:id/agent/status', (req, res) => {
 });
 
 router.post('/servers/:id/agent/install', async (req, res) => {
+  if (!ansibleBackendPrecheck(res)) return;
   const server = requireServer(req.params.id, res);
   if (!server) return;
 
@@ -76,7 +105,7 @@ router.post('/servers/:id/agent/install', async (req, res) => {
   const interval = Math.max(5, Math.min(3600, parseInt(req.body?.interval, 10) || 30));
   let caPem = '';
   try { caPem = normalizeCaPem(req.body?.shipyard_ca_cert_pem); } catch (e) { return res.status(400).json({ error: e.message }); }
-  const shipyardUrl = inferShipyardUrl(req);
+  const shipyardUrl = resolveShipyardUrl(req, req.body?.shipyard_url);
   if ((mode === 'auto' || mode === 'push') && !isHttpsUrl(shipyardUrl)) {
     return res.status(400).json({ error: 'HTTPS is required for push/auto mode agent communication' });
   }
@@ -114,11 +143,12 @@ router.post('/servers/:id/agent/install', async (req, res) => {
     res.json({ success: true, mode, interval });
   } catch (e) {
     db.auditLog.write('agent.install', `Agent install failed on ${server.name}`, req.ip, false);
-    serverError(res, e, 'agent install');
+    handleAgentBackendError(res, e, 'agent install');
   }
 });
 
 router.post('/servers/:id/agent/update', async (req, res) => {
+  if (!ansibleBackendPrecheck(res)) return;
   const server = requireServer(req.params.id, res);
   if (!server) return;
   try {
@@ -128,11 +158,12 @@ router.post('/servers/:id/agent/update', async (req, res) => {
     res.json({ success: true });
   } catch (e) {
     db.auditLog.write('agent.update', `Agent update failed on ${server.name}`, req.ip, false);
-    serverError(res, e, 'agent update');
+    handleAgentBackendError(res, e, 'agent update');
   }
 });
 
 router.put('/servers/:id/agent/config', async (req, res) => {
+  if (!ansibleBackendPrecheck(res)) return;
   const server = requireServer(req.params.id, res);
   if (!server) return;
 
@@ -144,7 +175,7 @@ router.put('/servers/:id/agent/config', async (req, res) => {
   const interval = Math.max(5, Math.min(3600, parseInt(req.body?.interval, 10) || cfg.interval || 30));
   let caPem = '';
   try { caPem = normalizeCaPem(req.body?.shipyard_ca_cert_pem); } catch (e) { return res.status(400).json({ error: e.message }); }
-  const shipyardUrl = inferShipyardUrl(req);
+  const shipyardUrl = resolveShipyardUrl(req, req.body?.shipyard_url);
   if (mode === 'push' && !isHttpsUrl(shipyardUrl)) {
     return res.status(400).json({ error: 'HTTPS is required for push mode agent communication' });
   }
@@ -169,11 +200,12 @@ router.put('/servers/:id/agent/config', async (req, res) => {
     res.json({ success: true, mode, interval });
   } catch (e) {
     db.auditLog.write('agent.configure', `Agent configure failed on ${server.name}`, req.ip, false);
-    serverError(res, e, 'agent configure');
+    handleAgentBackendError(res, e, 'agent configure');
   }
 });
 
 router.post('/servers/:id/agent/token-rotate', async (req, res) => {
+  if (!ansibleBackendPrecheck(res)) return;
   const server = requireServer(req.params.id, res);
   if (!server) return;
 
@@ -184,7 +216,7 @@ router.post('/servers/:id/agent/token-rotate', async (req, res) => {
   const interval = cfg.interval || 30;
   let caPem = '';
   try { caPem = normalizeCaPem(req.body?.shipyard_ca_cert_pem); } catch (e) { return res.status(400).json({ error: e.message }); }
-  const shipyardUrl = inferShipyardUrl(req);
+  const shipyardUrl = resolveShipyardUrl(req, req.body?.shipyard_url);
   if (mode === 'push' && !isHttpsUrl(shipyardUrl)) {
     return res.status(400).json({ error: 'HTTPS is required for push mode agent communication' });
   }
@@ -208,11 +240,12 @@ router.post('/servers/:id/agent/token-rotate', async (req, res) => {
     res.json({ success: true });
   } catch (e) {
     db.auditLog.write('agent.token.rotate', `Agent token rotate failed on ${server.name}`, req.ip, false);
-    serverError(res, e, 'agent token rotate');
+    handleAgentBackendError(res, e, 'agent token rotate');
   }
 });
 
 router.delete('/servers/:id/agent', async (req, res) => {
+  if (!ansibleBackendPrecheck(res)) return;
   const server = requireServer(req.params.id, res);
   if (!server) return;
   try {
@@ -223,11 +256,11 @@ router.delete('/servers/:id/agent', async (req, res) => {
     res.json({ success: true, mode: 'legacy' });
   } catch (e) {
     db.auditLog.write('agent.remove', `Agent remove failed on ${server.name}`, req.ip, false);
-    serverError(res, e, 'agent remove');
+    handleAgentBackendError(res, e, 'agent remove');
   }
 });
 
-router.get('/agent/manifest', (req, res) => {
+router.get('/agent-manifest', (req, res) => {
   try {
     const latest = manifestService.getLatestParsed();
     res.json({ version: latest.version, content: latest.parsed });
@@ -236,7 +269,7 @@ router.get('/agent/manifest', (req, res) => {
   }
 });
 
-router.get('/agent/manifest/history', (req, res) => {
+router.get('/agent-manifest/history', (req, res) => {
   try {
     const limit = Math.max(1, Math.min(200, parseInt(req.query.limit, 10) || 50));
     res.json(db.agentManifests.listRecent(limit));
@@ -245,7 +278,7 @@ router.get('/agent/manifest/history', (req, res) => {
   }
 });
 
-router.put('/agent/manifest', (req, res) => {
+router.put('/agent-manifest', (req, res) => {
   try {
     const createdBy = req.user?.id || req.user?.username || 'admin';
     const changelog = String(req.body?.changelog || '').slice(0, 500);

@@ -187,9 +187,9 @@ class ApiClient {
   configureAgent(serverId, data) { return this.request(`/v1/servers/${serverId}/agent/config`, { method: 'PUT', body: data }); }
   rotateAgentToken(serverId, data = {}) { return this.request(`/v1/servers/${serverId}/agent/token-rotate`, { method: 'POST', body: data }); }
   removeAgent(serverId) { return this.request(`/v1/servers/${serverId}/agent`, { method: 'DELETE' }); }
-  getAgentManifest() { return this.request('/v1/agent/manifest'); }
-  getAgentManifestHistory(limit = 50) { return this.request(`/v1/agent/manifest/history?limit=${encodeURIComponent(limit)}`); }
-  saveAgentManifest(content, changelog = '') { return this.request('/v1/agent/manifest', { method: 'PUT', body: { content, changelog } }); }
+  getAgentManifest() { return this.request('/v1/agent-manifest'); }
+  getAgentManifestHistory(limit = 50) { return this.request(`/v1/agent-manifest/history?limit=${encodeURIComponent(limit)}`); }
+  saveAgentManifest(content, changelog = '') { return this.request('/v1/agent-manifest', { method: 'PUT', body: { content, changelog } }); }
 
   // Plugins
   getPlugins()          { return this.request('/plugins'); }
