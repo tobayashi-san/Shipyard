@@ -6,6 +6,7 @@ const systemInfo = require('./system-info');
 const sshManager = require('./ssh-manager');
 const { parseImageUpdateOutput } = require('../utils/parse-image-updates');
 const gitSync = require('./git-sync');
+const pullModeManager = require('./pull-mode-manager');
 
 // In-memory map: scheduleId -> cron task
 const jobs = new Map();
@@ -17,6 +18,7 @@ let infoPoller = null;
 let updatesPoller = null;
 let imageUpdatesPoller = null;
 let customUpdatesPoller = null;
+let agentMetricsPruner = null;
 let infoPolling = false;
 let updatesPolling = false;
 let imageUpdatesPolling = false;
@@ -174,6 +176,32 @@ async function pollSystemInfo() {
   try {
     const servers = db.servers.getAll();
     await Promise.allSettled(servers.map(async server => {
+      const agentCfg = db.agentConfig.getByServerId(server.id);
+      if (agentCfg?.mode === 'push') {
+        const intervalSec = Math.max(5, parseInt(agentCfg.interval, 10) || 30);
+        const lastSeenMs = agentCfg.last_seen ? new Date(agentCfg.last_seen).getTime() : 0;
+        if (lastSeenMs && (Date.now() - lastSeenMs) <= intervalSec * 10 * 1000) {
+          db.servers.updateStatus(server.id, 'online');
+        } else {
+          db.servers.updateStatus(server.id, 'offline');
+        }
+        return;
+      }
+
+      if (agentCfg?.mode === 'pull') {
+        const r = await pullModeManager.pollServer(server);
+        if (r.ok) {
+          const intervalSec = Math.max(5, parseInt(agentCfg.interval, 10) || 30);
+          const lastSeenMs = agentCfg.last_seen ? new Date(agentCfg.last_seen).getTime() : 0;
+          if (lastSeenMs && (Date.now() - lastSeenMs) <= intervalSec * 10 * 1000) {
+            db.servers.updateStatus(server.id, 'online');
+          } else if (!r.report) {
+            db.servers.updateStatus(server.id, 'offline');
+          }
+          return;
+        }
+      }
+
       try {
         const info = await systemInfo.getSystemInfo(server);
         db.serverInfo.upsert(server.id, info);
@@ -188,6 +216,18 @@ async function pollSystemInfo() {
   } finally {
     infoPolling = false;
   }
+}
+
+function startAgentMetricsRetention() {
+  if (agentMetricsPruner) clearInterval(agentMetricsPruner);
+  agentMetricsPruner = setInterval(() => {
+    try {
+      const days = parseInt(db.settings.get('agent_metrics_retention_days') || '7', 10);
+      db.agentMetrics.pruneOlderThanDays(days);
+    } catch (err) {
+      log.debug({ err }, 'Agent metrics retention prune failed');
+    }
+  }, 60 * 60 * 1000);
 }
 
 /**
@@ -328,6 +368,7 @@ function startPolling() {
   if (cfg.imageUpdates.enabled)  runNow(pollImageUpdates,  'Image updates');
   if (cfg.customUpdates.enabled) runNow(pollCustomUpdates, 'Custom updates');
   setupPollingIntervals();
+  startAgentMetricsRetention();
 }
 
 /**
@@ -357,6 +398,7 @@ function stopPolling() {
   if (updatesPoller)        { clearInterval(updatesPoller);        updatesPoller = null; }
   if (imageUpdatesPoller)   { clearInterval(imageUpdatesPoller);   imageUpdatesPoller = null; }
   if (customUpdatesPoller)  { clearInterval(customUpdatesPoller);  customUpdatesPoller = null; }
+  if (agentMetricsPruner)   { clearInterval(agentMetricsPruner);   agentMetricsPruner = null; }
 }
 
 /**

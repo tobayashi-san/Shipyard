@@ -212,6 +212,7 @@ function serverHealthRow(s) {
       <td>
         <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
           <span style="font-weight:600;color:var(--text-primary);">${esc(s.name)}</span>
+          ${agentBadge(s)}
           <span style="font-size:11.5px;color:var(--text-muted);font-family:var(--font-mono);">${esc(s.ip_address)}</span>
         </div>
       </td>
@@ -222,6 +223,16 @@ function serverHealthRow(s) {
       <td>${updatesCell(s)}</td>
     </tr>
   `;
+}
+
+function agentBadge(s) {
+  const mode = s.agent_mode || 'legacy';
+  const state = s.agent_state || 'legacy';
+  if (mode === 'legacy') return '';
+  const color = state === 'ok' ? 'var(--online)' : state === 'warning' ? 'var(--warning)' : 'var(--offline)';
+  const label = state === 'ok' ? t('dash.agentOk') : state === 'warning' ? t('dash.agentDelayed') : t('dash.agentStale');
+  const title = `${t('dash.agentMode')}: ${mode} · ${label}`;
+  return `<span class="badge" title="${esc(title)}" style="font-size:10px;padding:1px 6px;background:${color}1f;color:${color};border:1px solid ${color};display:inline-flex;align-items:center;gap:4px;"><i class="fas fa-robot" style="font-size:9px;"></i>${esc(mode)}</span>`;
 }
 
 function miniBar(pct) {

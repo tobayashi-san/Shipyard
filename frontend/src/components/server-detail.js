@@ -63,6 +63,7 @@ export async function renderServerDetail(serverId) {
       ${hasCap('canViewDocker') ? `<button class="tab-btn" data-tab="docker">${t('det.tabDocker')}</button>` : ''}
       ${(hasCap('canViewUpdates') || hasCap('canRunUpdates') || hasCap('canRebootServers') || hasCap('canViewCustomUpdates') || hasCap('canRunCustomUpdates') || hasCap('canEditCustomUpdates') || hasCap('canDeleteCustomUpdates')) ? `<button class="tab-btn" data-tab="updates">${t('det.tabUpdates')}</button>` : ''}
       <button class="tab-btn" data-tab="history">${t('det.tabHistory')}</button>
+      ${state.user?.role === 'admin' ? `<button class="tab-btn" data-tab="agent">${t('det.tabAgent')}</button>` : ''}
       <button class="tab-btn" data-tab="notes">
         <i class="fas fa-sticky-note" style="margin-right:5px;"></i>${t('det.tabNotes')}
         ${server.notes?.trim() ? '<span class="nav-item-badge" style="margin-left:6px;" aria-label="has notes">●</span>' : ''}
@@ -235,6 +236,18 @@ export async function renderServerDetail(serverId) {
         </div>
       </div>
 
+      <!-- Agent tab -->
+      ${state.user?.role === 'admin' ? `<div class="tab-panel" id="tab-agent">
+        <div class="panel">
+          <div class="section-header">
+            <h3><i class="fas fa-robot"></i> ${t('det.tabAgent')}</h3>
+          </div>
+          <div id="agent-content">
+            <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
+          </div>
+        </div>
+      </div>` : ''}
+
       <!-- Notes tab -->
       <div class="tab-panel" id="tab-notes">
         <div class="notes-layout">
@@ -261,6 +274,7 @@ export async function renderServerDetail(serverId) {
   let dockerLoaded = false;
   let updatesLoaded = false;
   let historyLoaded = false;
+  let agentLoaded = false;
   let notesLoaded = false;
 
   tabBtns.forEach(btn => {
@@ -274,6 +288,7 @@ export async function renderServerDetail(serverId) {
       if (btn.dataset.tab === 'docker' && !dockerLoaded) { loadDockerContainers(serverId); dockerLoaded = true; }
       if (btn.dataset.tab === 'updates' && !updatesLoaded) { loadUpdates(serverId); updatesLoaded = true; }
       if (btn.dataset.tab === 'history' && !historyLoaded) { loadHistory(serverId); historyLoaded = true; }
+      if (btn.dataset.tab === 'agent' && !agentLoaded) { loadAgentTab(serverId); agentLoaded = true; }
       if (btn.dataset.tab === 'notes' && !notesLoaded) { setupNotesTab(serverId); notesLoaded = true; }
     });
   });
@@ -1198,6 +1213,97 @@ async function loadHistory(serverId) {
       return;
     }
     renderHistoryPage();
+  } catch (e) {
+    el.innerHTML = `<div class="empty-state"><p style="color:var(--offline);">${esc(e.message)}</p></div>`;
+  }
+}
+
+async function loadAgentTab(serverId) {
+  const el = document.getElementById('agent-content');
+  if (!el) return;
+
+  async function renderStatus() {
+    const status = await api.getAgentStatus(serverId);
+    const installed = !!status.installed;
+
+    el.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px;">
+        <div class="panel" style="padding:12px;"><div style="font-size:11px;color:var(--text-muted);">${t('det.agentMode')}</div><div style="font-size:15px;font-weight:600;">${esc(status.mode || 'legacy')}</div></div>
+        <div class="panel" style="padding:12px;"><div style="font-size:11px;color:var(--text-muted);">${t('det.agentLastSeen')}</div><div style="font-size:15px;font-weight:600;">${esc(status.lastSeen || '—')}</div></div>
+        <div class="panel" style="padding:12px;"><div style="font-size:11px;color:var(--text-muted);">${t('det.agentRunnerVersion')}</div><div style="font-size:15px;font-weight:600;">${esc(status.runnerVersion || '—')}</div></div>
+        <div class="panel" style="padding:12px;"><div style="font-size:11px;color:var(--text-muted);">${t('det.agentManifestVersion')}</div><div style="font-size:15px;font-weight:600;">${esc(String(status.manifestVersion || status.latestManifestVersion || '—'))}</div></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        ${!installed ? `<button class="btn btn-primary btn-sm" id="btn-agent-install"><i class="fas fa-download"></i> ${t('det.agentInstall')}</button>` : ''}
+        ${installed ? `<button class="btn btn-secondary btn-sm" id="btn-agent-update"><i class="fas fa-rotate"></i> ${t('det.agentUpdate')}</button>` : ''}
+        ${installed ? `<button class="btn btn-secondary btn-sm" id="btn-agent-configure"><i class="fas fa-sliders"></i> ${t('det.agentConfigure')}</button>` : ''}
+        ${installed ? `<button class="btn btn-secondary btn-sm" id="btn-agent-rotate-token"><i class="fas fa-key"></i> ${t('det.agentRotateToken')}</button>` : ''}
+        ${installed ? `<button class="btn btn-danger btn-sm" id="btn-agent-remove"><i class="fas fa-trash"></i> ${t('det.agentRemove')}</button>` : ''}
+      </div>
+      <div style="margin-top:12px;max-width:860px;">
+        <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:6px;">${t('det.agentCaPem')}</label>
+        <textarea id="agent-ca-pem" class="form-input" rows="5" placeholder="${t('det.agentCaPemPlaceholder')}" style="width:100%;font-family:var(--font-mono);font-size:11px;line-height:1.35;"></textarea>
+      </div>
+    `;
+
+    document.getElementById('btn-agent-install')?.addEventListener('click', async () => {
+      if (!await showConfirm(t('det.agentInstallConfirm'), { title: t('det.tabAgent'), confirmText: t('det.agentInstall') })) return;
+      try {
+        const shipyard_ca_cert_pem = document.getElementById('agent-ca-pem')?.value?.trim() || '';
+        await api.installAgent(serverId, { mode: 'push', interval: 30, shipyard_ca_cert_pem });
+        showToast(t('det.agentInstallStarted'), 'success');
+        await renderStatus();
+      } catch (e) {
+        showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+      }
+    });
+
+    document.getElementById('btn-agent-update')?.addEventListener('click', async () => {
+      try {
+        await api.updateAgent(serverId);
+        showToast(t('det.agentUpdateStarted'), 'success');
+        await renderStatus();
+      } catch (e) {
+        showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+      }
+    });
+
+    document.getElementById('btn-agent-configure')?.addEventListener('click', async () => {
+      try {
+        const nextMode = ['push', 'pull', 'legacy'].includes(status.mode) ? status.mode : 'push';
+        const shipyard_ca_cert_pem = document.getElementById('agent-ca-pem')?.value?.trim() || '';
+        await api.configureAgent(serverId, { mode: nextMode, interval: status.interval || 30, shipyard_ca_cert_pem });
+        showToast(t('det.agentConfigureStarted'), 'success');
+        await renderStatus();
+      } catch (e) {
+        showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+      }
+    });
+
+    document.getElementById('btn-agent-rotate-token')?.addEventListener('click', async () => {
+      try {
+        const shipyard_ca_cert_pem = document.getElementById('agent-ca-pem')?.value?.trim() || '';
+        await api.rotateAgentToken(serverId, { shipyard_ca_cert_pem });
+        showToast(t('det.agentTokenRotated'), 'success');
+      } catch (e) {
+        showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+      }
+    });
+
+    document.getElementById('btn-agent-remove')?.addEventListener('click', async () => {
+      if (!await showConfirm(t('det.agentRemoveConfirm'), { title: t('det.tabAgent'), confirmText: t('det.agentRemove'), danger: true })) return;
+      try {
+        await api.removeAgent(serverId);
+        showToast(t('det.agentRemoved'), 'success');
+        await renderStatus();
+      } catch (e) {
+        showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+      }
+    });
+  }
+
+  try {
+    await renderStatus();
   } catch (e) {
     el.innerHTML = `<div class="empty-state"><p style="color:var(--offline);">${esc(e.message)}</p></div>`;
   }

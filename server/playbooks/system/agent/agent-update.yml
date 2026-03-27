@@ -1,0 +1,70 @@
+---
+# ─────────────────────────────────────────────────────────
+# Shipyard Agent – Update Playbook
+#
+# Aktualisiert NUR das Runner-Script auf allen Servern.
+# Konfiguration und Modus bleiben unverändert.
+#
+# Wird von Shipyard ausgeführt wenn eine neue Agent-Version
+# verfügbar ist, oder manuell:
+#   ansible-playbook agent-update.yml -i inventory.yml
+# ─────────────────────────────────────────────────────────
+
+- name: Shipyard Agent update
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    install_dir: "/usr/local/bin"
+    runner_script: "shipyard-runner"
+
+  tasks:
+
+    - name: Prüfe ob Agent installiert ist
+      ansible.builtin.stat:
+        path: "{{ install_dir }}/{{ runner_script }}"
+      register: agent_exists
+
+    - name: Überspringe Server ohne Agent
+      ansible.builtin.debug:
+        msg: "Kein Agent installiert, überspringe"
+      when: not agent_exists.stat.exists
+
+    - name: Aktuelle Version lesen
+      ansible.builtin.command:
+        cmd: "grep '^RUNNER_VERSION=' {{ install_dir }}/{{ runner_script }}"
+      register: old_version
+      changed_when: false
+      when: agent_exists.stat.exists
+
+    - name: Runner-Script aktualisieren
+      ansible.builtin.copy:
+        src: files/shipyard-runner.sh
+        dest: "{{ install_dir }}/{{ runner_script }}"
+        owner: root
+        group: root
+        mode: "0755"
+        backup: true
+      register: script_updated
+      when: agent_exists.stat.exists
+
+    - name: Neue Version lesen
+      ansible.builtin.command:
+        cmd: "grep '^RUNNER_VERSION=' {{ install_dir }}/{{ runner_script }}"
+      register: new_version
+      changed_when: false
+      when: agent_exists.stat.exists and script_updated.changed
+
+    - name: Agent neu starten (nur wenn Script geändert)
+      ansible.builtin.systemd:
+        name: shipyard-agent
+        state: restarted
+      when: agent_exists.stat.exists and script_updated.changed
+
+    - name: Update-Status anzeigen
+      ansible.builtin.debug:
+        msg: >-
+          {{ old_version.stdout | default('?') }} →
+          {{ new_version.stdout | default('unverändert') }}
+      when: agent_exists.stat.exists

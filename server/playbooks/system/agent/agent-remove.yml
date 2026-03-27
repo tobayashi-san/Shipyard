@@ -1,0 +1,73 @@
+---
+# ─────────────────────────────────────────────────────────
+# Shipyard Agent – Deinstallation
+#
+# Entfernt den Agent vollständig und sauber.
+# Server fällt automatisch auf Legacy-SSH-Polling zurück.
+#
+#   ansible-playbook agent-remove.yml -i inventory.yml
+# ─────────────────────────────────────────────────────────
+
+- name: Shipyard Agent removal
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    agent_user: "shipyard-agent"
+    agent_group: "shipyard-agent"
+    install_dir: "/usr/local/bin"
+    config_dir: "/etc/shipyard"
+    data_dir: "/var/lib/shipyard-agent"
+    runner_script: "shipyard-runner"
+
+  tasks:
+
+    - name: Agent-Service stoppen und deaktivieren
+      ansible.builtin.systemd:
+        name: shipyard-agent
+        state: stopped
+        enabled: false
+      ignore_errors: true
+
+    - name: Systemd-Unit entfernen
+      ansible.builtin.file:
+        path: /etc/systemd/system/shipyard-agent.service
+        state: absent
+      notify: Reload systemd
+
+    - name: Runner-Script entfernen
+      ansible.builtin.file:
+        path: "{{ install_dir }}/{{ runner_script }}"
+        state: absent
+
+    - name: Konfiguration entfernen
+      ansible.builtin.file:
+        path: "{{ config_dir }}"
+        state: absent
+
+    - name: Datenverzeichnis entfernen
+      ansible.builtin.file:
+        path: "{{ data_dir }}"
+        state: absent
+
+    - name: Agent-User entfernen
+      ansible.builtin.user:
+        name: "{{ agent_user }}"
+        state: absent
+        remove: true
+
+    - name: Agent-Gruppe entfernen
+      ansible.builtin.group:
+        name: "{{ agent_group }}"
+        state: absent
+
+    - name: Bestätigung
+      ansible.builtin.debug:
+        msg: "Agent entfernt. Server fällt auf Legacy-SSH-Polling zurück."
+
+  handlers:
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true

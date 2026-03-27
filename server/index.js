@@ -17,7 +17,10 @@ const systemInfo = require('./services/system-info');
 const { notify } = require('./services/notifier');
 
 const app = express();
-app.set('trust proxy', 1); // Wichtig für Rate-Limits hinter Reverse-Proxies (Traefik, Nginx, Cloudflare)
+
+if (process.env.TRUST_PROXY === '1') {
+  app.set('trust proxy', 1);
+}
 
 // ── HTTPS / HTTP ──────────────────────────────────────────────
 const SSL_KEY  = process.env.SSL_KEY;
@@ -126,7 +129,9 @@ app.get('/api/health', (req, res) => {
 const { router: authRouter } = require('./routes/auth');
 const { getJwtSecret } = require('./utils/jwt-secret');
 const authMiddleware = require('./middleware/auth');
+const agentRouter = require('./routes/agent');
 app.use('/api/auth', authRouter);
+app.use('/api/v1/agent', agentRouter);
 
 // Users management (admin-only, enforced inside the router)
 const usersRouter = require('./routes/users');
@@ -153,7 +158,9 @@ const scheduleHistoryRouter = require('./routes/schedule-history');
 const ansibleVarsRouter  = require('./routes/ansible-vars');
 const adhocRouter        = require('./routes/adhoc');
 const gitPlaybooksRouter = require('./routes/git-playbooks');
+const agentAdminRouter   = require('./routes/agent-admin');
 const gitSync            = require('./services/git-sync');
+const manifestService    = require('./services/agent-manifest');
 app.use('/api/reset', resetRouter);
 app.use('/api/servers', serversRouter);
 app.use('/api/servers/:id/custom-updates', customUpdatesRouter);
@@ -165,6 +172,7 @@ app.use('/api/ansible-vars', ansibleVarsRouter);
 app.use('/api/adhoc', adhocRouter);
 app.use('/api/playbooks-git', gitPlaybooksRouter);
 app.use('/api/plugins', pluginsAdminRouter);
+app.use('/api/v1', agentAdminRouter);
 
 // Dynamic plugin data routes — auth is handled inside each plugin's own router
 app.use('/api/plugin/:pluginId', (req, res, next) => {
@@ -212,6 +220,7 @@ app.get('/api/dashboard', (req, res) => {
       const containers = db.dockerContainers.getByServer(s.id);
       const imageUpdatesMeta = db.dockerImageUpdatesCache.getWithMeta(s.id);
       const imageUpdates = imageUpdatesMeta ? imageUpdatesMeta.results : null;
+      const agentCfg = db.agentConfig.getByServerId(s.id);
 
       if (info?.reboot_required) rebootRequired++;
       totalUpdates += updates.filter(u => !u.phased).length;
@@ -220,6 +229,24 @@ app.get('/api/dashboard', (req, res) => {
       const diskPct = info?.disk_total_gb ? Math.round((info.disk_used_gb / info.disk_total_gb) * 100) : null;
       if (ramPct > 85) criticalRam++;
       if (diskPct > 85) criticalDisk++;
+
+      let agentMode = 'legacy';
+      let agentState = 'legacy';
+      let agentLastSeen = null;
+      if (agentCfg && agentCfg.mode && agentCfg.mode !== 'legacy') {
+        agentMode = agentCfg.mode;
+        agentLastSeen = agentCfg.last_seen || null;
+        const intervalSec = Math.max(5, parseInt(agentCfg.interval, 10) || 30);
+        const seenMs = agentCfg.last_seen ? new Date(agentCfg.last_seen).getTime() : 0;
+        if (!seenMs) {
+          agentState = 'failed';
+        } else {
+          const ageMs = Date.now() - seenMs;
+          if (ageMs <= intervalSec * 3 * 1000) agentState = 'ok';
+          else if (ageMs <= intervalSec * 10 * 1000) agentState = 'warning';
+          else agentState = 'failed';
+        }
+      }
 
       return {
         id: s.id,
@@ -241,6 +268,9 @@ app.get('/api/dashboard', (req, res) => {
         image_updates_checked_at: imageUpdatesMeta?.updated_at || null,
         custom_updates_count: db.customUpdateTasks.countHasUpdate(s.id),
         info_cached_at: info?.updated_at || null,
+        agent_mode: agentMode,
+        agent_state: agentState,
+        agent_last_seen: agentLastSeen,
       };
     });
 
@@ -854,6 +884,9 @@ server.listen(PORT, () => {
 
   // Load plugins after all helpers are available
   pluginLoader.loadAll({ db, broadcast, sshManager, ansibleRunner, scheduler });
+
+  // Ensure agent manifest exists (seed on first run)
+  try { manifestService.ensureSeeded(); } catch (e) { log.warn({ err: e }, 'Failed to seed agent manifest'); }
 });
 
 // Graceful shutdown

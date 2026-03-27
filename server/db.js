@@ -156,6 +156,44 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_custom_update_tasks_server ON custom_update_tasks(server_id);
 `);
 
+// Agent system tables
+db.exec(`
+  CREATE TABLE IF NOT EXISTS agent_config (
+    server_id TEXT PRIMARY KEY,
+    mode TEXT NOT NULL DEFAULT 'legacy',
+    token TEXT,
+    interval INTEGER DEFAULT 30,
+    installed_at TEXT,
+    last_seen TEXT,
+    runner_version TEXT,
+    last_manifest_version INTEGER,
+    updated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS agent_manifests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    version INTEGER NOT NULL UNIQUE,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_by TEXT,
+    changelog TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS agent_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    server_id TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    manifest_v INTEGER,
+    data TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_agent_metrics_server_ts ON agent_metrics(server_id, timestamp DESC);
+  CREATE INDEX IF NOT EXISTS idx_agent_metrics_ts ON agent_metrics(timestamp);
+`);
+
 // App settings table
 db.exec(`
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -360,6 +398,52 @@ const composeProjectQueries = {
   delete: db.prepare('DELETE FROM compose_projects WHERE server_id = ? AND project_name = ?')
 };
 
+const agentConfigQueries = {
+  getByServerId: db.prepare('SELECT * FROM agent_config WHERE server_id = ?'),
+  getAll: db.prepare('SELECT * FROM agent_config'),
+  upsert: db.prepare(`
+    INSERT INTO agent_config (server_id, mode, token, interval, installed_at, last_seen, runner_version, last_manifest_version, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(server_id) DO UPDATE SET
+      mode = excluded.mode,
+      token = excluded.token,
+      interval = excluded.interval,
+      installed_at = COALESCE(excluded.installed_at, agent_config.installed_at),
+      last_seen = COALESCE(excluded.last_seen, agent_config.last_seen),
+      runner_version = COALESCE(excluded.runner_version, agent_config.runner_version),
+      last_manifest_version = COALESCE(excluded.last_manifest_version, agent_config.last_manifest_version),
+      updated_at = datetime('now')
+  `),
+  setSeen: db.prepare(`
+    UPDATE agent_config
+    SET last_seen = datetime('now'),
+        runner_version = COALESCE(?, runner_version),
+        last_manifest_version = COALESCE(?, last_manifest_version),
+        updated_at = datetime('now')
+    WHERE server_id = ?
+  `),
+  updateModeInterval: db.prepare(`
+    UPDATE agent_config
+    SET mode = ?, interval = ?, updated_at = datetime('now')
+    WHERE server_id = ?
+  `),
+  setToken: db.prepare('UPDATE agent_config SET token = ?, updated_at = datetime(\'now\') WHERE server_id = ?'),
+  delete: db.prepare('DELETE FROM agent_config WHERE server_id = ?'),
+};
+
+const agentManifestQueries = {
+  getLatest: db.prepare('SELECT * FROM agent_manifests ORDER BY version DESC LIMIT 1'),
+  getByVersion: db.prepare('SELECT * FROM agent_manifests WHERE version = ?'),
+  listRecent: db.prepare('SELECT id, version, created_at, created_by, changelog FROM agent_manifests ORDER BY version DESC LIMIT ?'),
+  insert: db.prepare('INSERT INTO agent_manifests (version, content, created_by, changelog) VALUES (?, ?, ?, ?)'),
+};
+
+const agentMetricsQueries = {
+  insert: db.prepare('INSERT INTO agent_metrics (server_id, timestamp, manifest_v, data) VALUES (?, ?, ?, ?)'),
+  recentByServer: db.prepare('SELECT * FROM agent_metrics WHERE server_id = ? ORDER BY timestamp DESC LIMIT ?'),
+  pruneOlderThan: db.prepare('DELETE FROM agent_metrics WHERE timestamp < ?'),
+};
+
 module.exports = {
   db,
   uuidv4,
@@ -501,6 +585,52 @@ module.exports = {
     getAll: () => {
       const rows = db.prepare('SELECT key, value FROM app_settings').all();
       return Object.fromEntries(rows.map(r => [r.key, r.value]));
+    },
+  },
+
+  agentConfig: {
+    getByServerId: (serverId) => agentConfigQueries.getByServerId.get(serverId),
+    getAll: () => agentConfigQueries.getAll.all(),
+    upsert: ({ server_id, mode, token, interval, installed_at, last_seen, runner_version, last_manifest_version }) => {
+      agentConfigQueries.upsert.run(
+        server_id,
+        mode || 'legacy',
+        token || null,
+        Number.isFinite(interval) ? interval : 30,
+        installed_at || null,
+        last_seen || null,
+        runner_version || null,
+        Number.isInteger(last_manifest_version) ? last_manifest_version : null,
+      );
+      return agentConfigQueries.getByServerId.get(server_id);
+    },
+    setSeen: (serverId, runnerVersion, manifestVersion) => agentConfigQueries.setSeen.run(runnerVersion || null, Number.isInteger(manifestVersion) ? manifestVersion : null, serverId),
+    updateModeInterval: (serverId, mode, interval) => agentConfigQueries.updateModeInterval.run(mode, interval, serverId),
+    setToken: (serverId, token) => agentConfigQueries.setToken.run(token, serverId),
+    delete: (serverId) => agentConfigQueries.delete.run(serverId),
+  },
+
+  agentManifests: {
+    getLatest: () => agentManifestQueries.getLatest.get(),
+    getByVersion: (version) => agentManifestQueries.getByVersion.get(version),
+    listRecent: (limit = 50) => agentManifestQueries.listRecent.all(limit),
+    createNext: ({ content, createdBy, changelog }) => {
+      const latest = agentManifestQueries.getLatest.get();
+      const nextVersion = latest ? latest.version + 1 : 1;
+      agentManifestQueries.insert.run(nextVersion, content, createdBy || null, changelog || null);
+      return agentManifestQueries.getByVersion.get(nextVersion);
+    },
+  },
+
+  agentMetrics: {
+    insert: ({ serverId, timestamp, manifestVersion, data }) => {
+      agentMetricsQueries.insert.run(serverId, timestamp, Number.isInteger(manifestVersion) ? manifestVersion : null, data);
+    },
+    recentByServer: (serverId, limit = 100) => agentMetricsQueries.recentByServer.all(serverId, limit),
+    pruneOlderThanDays: (days) => {
+      const keepSeconds = Math.max(1, parseInt(days, 10) || 7) * 24 * 60 * 60;
+      const cutoff = Math.floor(Date.now() / 1000) - keepSeconds;
+      return agentMetricsQueries.pruneOlderThan.run(cutoff);
     },
   },
 

@@ -86,6 +86,9 @@ export async function renderSettings() {
       <button class="tab-btn" data-tab="system">
         <i class="fas fa-wrench"></i> ${t('set.tabSystem')}
       </button>
+      <button class="tab-btn" data-tab="agent-manifest">
+        <i class="fas fa-robot"></i> ${t('set.tabAgentManifest')}
+      </button>
       <button class="tab-btn" data-tab="notifications">
         <i class="fas fa-bell"></i> Notifications
       </button>
@@ -230,6 +233,13 @@ export async function renderSettings() {
         <div class="settings-group-title">${t('set.polling')}</div>
         <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px 0;padding:0 4px;">${t('set.pollingHint')}</p>
         <div class="settings-block" id="polling-config-content">
+          <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
+        </div>
+      </div>
+
+      <!-- Tab: Agent Manifest -->
+      <div class="tab-panel" id="tab-agent-manifest">
+        <div id="agent-manifest-content">
           <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
         </div>
       </div>
@@ -507,6 +517,13 @@ export async function renderSettings() {
   document.querySelector('.tab-btn[data-tab="audit"]')?.addEventListener('click', () => {
     if (!document.getElementById('audit-settings-content')?.dataset.loaded) {
       loadAuditTab();
+    }
+  });
+
+  // Agent manifest tab loads lazily when first clicked
+  document.querySelector('.tab-btn[data-tab="agent-manifest"]')?.addEventListener('click', () => {
+    if (!document.getElementById('agent-manifest-content')?.dataset.loaded) {
+      loadAgentManifestTab();
     }
   });
 
@@ -1836,6 +1853,109 @@ async function loadUsersTab() {
   }
 
   await renderUsers();
+}
+
+// ============================================================
+// Agent Manifest Tab
+// ============================================================
+async function loadAgentManifestTab() {
+  const content = document.getElementById('agent-manifest-content');
+  if (!content) return;
+  content.dataset.loaded = '1';
+
+  async function renderManifest() {
+    let manifest = null;
+    let history = [];
+    try {
+      const [latest, list] = await Promise.all([
+        api.getAgentManifest(),
+        api.getAgentManifestHistory(30),
+      ]);
+      manifest = latest;
+      history = Array.isArray(list) ? list : [];
+    } catch (e) {
+      content.innerHTML = `<div style="padding:16px;color:var(--offline);font-size:13px;">${esc(t('set.agentManifestLoadError'))}: ${esc(e.message)}</div>`;
+      return;
+    }
+
+    const jsonStr = JSON.stringify(manifest?.content || {}, null, 2);
+    content.innerHTML = `
+      <div class="settings-group-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>${t('set.agentManifestTitle')}</span>
+        <button class="btn btn-secondary btn-sm" id="btn-agent-manifest-reload"><i class="fas fa-rotate"></i> ${t('set.agentManifestReload')}</button>
+      </div>
+      <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px 0;">${t('set.agentManifestHint')}</p>
+      <div class="settings-block">
+        <div class="settings-row">
+          <div class="settings-row-label"><span>${t('set.agentManifestVersion', { version: manifest?.version || 1 })}</span></div>
+          <div class="settings-row-control"></div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <span>JSON</span>
+          </div>
+          <div class="settings-row-control">
+            <textarea id="agent-manifest-json" class="form-input" rows="16" style="width:100%;max-width:900px;font-family:var(--font-mono);font-size:12px;line-height:1.4;white-space:pre;">${esc(jsonStr)}</textarea>
+          </div>
+        </div>
+        <div class="settings-row" style="border-bottom:none;">
+          <div class="settings-row-label">
+            <span>${t('set.agentManifestChangelog')}</span>
+          </div>
+          <div class="settings-row-control" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <input id="agent-manifest-changelog" class="form-input" type="text" placeholder="${t('set.agentManifestChangelogPlaceholder')}" style="max-width:420px;width:100%;">
+            <button class="btn btn-primary btn-sm" id="btn-agent-manifest-save"><i class="fas fa-save"></i> ${t('set.agentManifestSave')}</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-group-title" style="margin-top:20px;">${t('set.agentManifestHistory')}</div>
+      <div class="settings-block" id="agent-manifest-history">
+        ${history.length ? history.map((h, i) => `
+          <div class="settings-row" ${i === history.length - 1 ? 'style="border-bottom:none;"' : ''}>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;font-weight:600;">v${esc(String(h.version))}</div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${esc(h.changelog || '—')}</div>
+            </div>
+            <div style="font-size:11px;color:var(--text-muted);flex-shrink:0;">${esc(h.created_at || '')}</div>
+          </div>
+        `).join('') : `
+          <div class="settings-row" style="border-bottom:none;">
+            <div style="padding:14px 0;color:var(--text-muted);font-size:13px;">${t('set.agentManifestNoHistory')}</div>
+          </div>
+        `}
+      </div>
+    `;
+
+    document.getElementById('btn-agent-manifest-reload')?.addEventListener('click', renderManifest);
+    document.getElementById('btn-agent-manifest-save')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-agent-manifest-save');
+      const raw = document.getElementById('agent-manifest-json')?.value || '{}';
+      const changelog = document.getElementById('agent-manifest-changelog')?.value || '';
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        showToast(t('set.agentManifestInvalidJson'), 'error');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = `<span class="spinner-sm"></span> ${t('set.saving')}`;
+      try {
+        await api.saveAgentManifest(parsed, changelog);
+        showToast(t('set.agentManifestSaved'), 'success');
+        await renderManifest();
+      } catch (e) {
+        showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<i class="fas fa-save"></i> ${t('set.agentManifestSave')}`;
+      }
+    });
+  }
+
+  await renderManifest();
 }
 
 // ============================================================

@@ -180,6 +180,17 @@ class ApiClient {
     return this.request('/ansible/run', { method: 'POST', body: { playbook, targets, extraVars } });
   }
 
+  // Agent (v1)
+  getAgentStatus(serverId) { return this.request(`/v1/servers/${serverId}/agent/status`); }
+  installAgent(serverId, data) { return this.request(`/v1/servers/${serverId}/agent/install`, { method: 'POST', body: data }); }
+  updateAgent(serverId) { return this.request(`/v1/servers/${serverId}/agent/update`, { method: 'POST' }); }
+  configureAgent(serverId, data) { return this.request(`/v1/servers/${serverId}/agent/config`, { method: 'PUT', body: data }); }
+  rotateAgentToken(serverId, data = {}) { return this.request(`/v1/servers/${serverId}/agent/token-rotate`, { method: 'POST', body: data }); }
+  removeAgent(serverId) { return this.request(`/v1/servers/${serverId}/agent`, { method: 'DELETE' }); }
+  getAgentManifest() { return this.request('/v1/agent/manifest'); }
+  getAgentManifestHistory(limit = 50) { return this.request(`/v1/agent/manifest/history?limit=${encodeURIComponent(limit)}`); }
+  saveAgentManifest(content, changelog = '') { return this.request('/v1/agent/manifest', { method: 'PUT', body: { content, changelog } }); }
+
   // Plugins
   getPlugins()          { return this.request('/plugins'); }
   enablePlugin(id)      { return this.request(`/plugins/${id}/enable`,  { method: 'POST' }); }

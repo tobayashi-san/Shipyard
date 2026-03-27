@@ -1,0 +1,136 @@
+---
+# ─────────────────────────────────────────────────────────
+# Shipyard Agent – Konfiguration ändern
+#
+# Ändert Modus, Intervall oder Token ohne Neuinstallation.
+#
+#   ansible-playbook agent-configure.yml -i inventory.yml \
+#     -e "agent_mode=push" -e "agent_interval=15"
+# ─────────────────────────────────────────────────────────
+
+- name: Shipyard Agent reconfigure
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    agent_mode: "auto"
+    agent_interval: 30
+    agent_version: "3.0.0"
+    agent_user: "shipyard-agent"
+    agent_group: "shipyard-agent"
+    install_dir: "/usr/local/bin"
+    config_dir: "/etc/shipyard"
+    data_dir: "/var/lib/shipyard-agent"
+    runner_script: "shipyard-runner"
+
+  tasks:
+
+    - name: Prüfe HTTPS-URL für Push/Auto
+      ansible.builtin.assert:
+        that:
+          - shipyard_url is match('^https://')
+        fail_msg: "shipyard_url muss mit https:// beginnen"
+      when: agent_mode in ['push', 'auto']
+
+    - name: Schreibe optionales Shipyard-CA-Zertifikat für TLS-Prüfung
+      ansible.builtin.copy:
+        content: "{{ shipyard_ca_cert_pem }}"
+        dest: /tmp/shipyard-agent-ca.crt
+        owner: root
+        group: root
+        mode: "0644"
+      when: (shipyard_ca_cert_pem | default('') | length) > 0
+
+    - name: Prüfe ob Agent installiert ist
+      ansible.builtin.stat:
+        path: "{{ install_dir }}/{{ runner_script }}"
+      register: agent_exists
+
+    - name: Abbruch wenn kein Agent installiert
+      ansible.builtin.fail:
+        msg: "Kein Agent installiert. Nutze agent-deploy.yml zuerst."
+      when: not agent_exists.stat.exists
+
+    - name: Teste Erreichbarkeit (für Auto-Modus)
+      ansible.builtin.uri:
+        url: "{{ shipyard_url }}/api/health"
+        method: GET
+        timeout: 5
+        status_code: [200, 401, 403]
+        validate_certs: true
+        ca_path: "{{ ((shipyard_ca_cert_pem | default('') | length) > 0) | ternary('/tmp/shipyard-agent-ca.crt', omit) }}"
+      register: shipyard_reachable
+      ignore_errors: true
+      when: agent_mode == "auto"
+
+    - name: Bestimme effektiven Modus
+      ansible.builtin.set_fact:
+        effective_mode: >-
+          {%- if agent_mode != 'auto' -%}
+            {{ agent_mode }}
+          {%- elif shipyard_reachable is succeeded -%}
+            push
+          {%- else -%}
+            pull
+          {%- endif -%}
+
+    - name: Setze optionalen Shipyard-CA-Pfad für Runner
+      ansible.builtin.set_fact:
+        shipyard_ca_cert_path: "{{ config_dir }}/shipyard-ca.crt"
+      when: (shipyard_ca_cert_pem | default('') | length) > 0
+
+    - name: Prüfe vorhandenes Shipyard-CA-Zertifikat
+      ansible.builtin.stat:
+        path: "{{ config_dir }}/shipyard-ca.crt"
+      register: existing_shipyard_ca
+
+    - name: Übernehme vorhandenen Shipyard-CA-Pfad für Runner
+      ansible.builtin.set_fact:
+        shipyard_ca_cert_path: "{{ config_dir }}/shipyard-ca.crt"
+      when: (shipyard_ca_cert_pem | default('') | length) == 0 and existing_shipyard_ca.stat.exists
+
+    - name: Environment-Datei aktualisieren
+      ansible.builtin.template:
+        src: templates/runner.env.j2
+        dest: "{{ config_dir }}/runner.env"
+        owner: root
+        group: "{{ agent_group }}"
+        mode: "0640"
+      notify: Restart shipyard-agent
+
+    - name: Installiere optionales Shipyard-CA-Zertifikat dauerhaft
+      ansible.builtin.copy:
+        content: "{{ shipyard_ca_cert_pem }}"
+        dest: "{{ config_dir }}/shipyard-ca.crt"
+        owner: root
+        group: "{{ agent_group }}"
+        mode: "0640"
+      when: (shipyard_ca_cert_pem | default('') | length) > 0
+      notify: Restart shipyard-agent
+
+    - name: Systemd-Unit aktualisieren
+      ansible.builtin.template:
+        src: templates/shipyard-agent.service.j2
+        dest: /etc/systemd/system/shipyard-agent.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - Reload systemd
+        - Restart shipyard-agent
+
+    - name: Status anzeigen
+      ansible.builtin.debug:
+        msg: "Konfiguration aktualisiert. Modus: {{ effective_mode | trim }}, Intervall: {{ agent_interval }}s"
+
+  handlers:
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Restart shipyard-agent
+      ansible.builtin.systemd:
+        name: shipyard-agent
+        state: restarted

@@ -1,0 +1,44 @@
+# Generiert von Shipyard – nicht manuell bearbeiten
+[Unit]
+Description=Shipyard Metrics Agent ({{ effective_mode | trim }})
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User={{ agent_user }}
+Group={{ agent_group }}
+EnvironmentFile={{ config_dir }}/runner.env
+ExecStart={{ install_dir }}/{{ runner_script }}
+Restart=always
+RestartSec=10
+TimeoutStopSec=15
+
+# Sicherheitshärtung
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+# Dateisystem
+ReadOnlyPaths=/proc /sys /etc/os-release
+ReadWritePaths={{ data_dir }}
+
+# Netzwerk (Push braucht ausgehend HTTPS, Pull braucht nichts)
+{% if effective_mode | trim == 'pull' %}
+RestrictAddressFamilies=AF_UNIX
+{% endif %}
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=shipyard-agent
+
+[Install]
+WantedBy=multi-user.target
