@@ -99,7 +99,7 @@ function renderDashboardData(data) {
               <h3>${t('dash.noServers')}</h3>
               <p>${t('dash.noServersHint')}</p>
               <button class="btn btn-primary" id="btn-empty-add-server" style="margin-top:8px;">
-                <i class="fas fa-plus"></i> ${t('srv.addServer')}
+                <i class="fas fa-plus"></i> ${t('srv.add')}
               </button>
             </div>
           ` : `

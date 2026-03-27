@@ -325,6 +325,9 @@ router.get('/:id/info', guardServerAccess, async (req, res) => {
     res.json(info);
   } catch (error) {
     db.servers.updateStatus(req.params.id, 'offline');
+    if (error.message && error.message.includes('SSH connection failed')) {
+      return res.status(503).json({ error: error.message });
+    }
     serverError(res, error, 'get server info');
   }
 });
