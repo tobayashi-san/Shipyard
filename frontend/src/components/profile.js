@@ -295,7 +295,7 @@ export async function showProfileModal() {
       // keep local profile in sync for re-renders
       profile.displayName = displayName;
       profile.email = email;
-      showToast('Profile saved', 'success');
+      showToast(t('auth.profileSaved'), 'success');
     } catch (e) { showToast(e.message, 'error'); }
   });
 
@@ -311,11 +311,11 @@ export async function showProfileModal() {
     const current = document.getElementById('profile-pw-current').value;
     const next    = document.getElementById('profile-pw-new').value;
     const confirm = document.getElementById('profile-pw-confirm').value;
-    if (next.length < 12) { showToast('Password must be at least 12 characters', 'error'); return; }
-    if (next !== confirm)  { showToast('Passwords do not match', 'error'); return; }
+    if (next.length < 12) { showToast(t('set.pwTooShort'), 'error'); return; }
+    if (next !== confirm)  { showToast(t('set.pwMismatch'), 'error'); return; }
     try {
       await api.authChangePassword(current, next);
-      showToast('Password changed — signing out…', 'success');
+      showToast(t('auth.pwChangedSignOut'), 'success');
       setTimeout(() => { api.setToken(null); location.reload(); }, 1500);
     } catch (e) { showToast(e.message, 'error'); }
   });
@@ -359,7 +359,7 @@ async function _load2fa() {
           btn.disabled = true; btn.innerHTML = '<span class="spinner-sm"></span>';
           try {
             await api.totpDisable(pw);
-            showToast('2FA disabled', 'success');
+            showToast(t('auth.2faDisabled'), 'success');
             panel.style.display = 'none';
             _load2fa();
           } catch (e) {
@@ -389,10 +389,10 @@ async function _load2fa() {
     const code = document.getElementById('totp-confirm-code').value.replace(/\s/g, '');
     try {
       await api.totpConfirm(code);
-      showToast('2FA enabled', 'success');
+      showToast(t('auth.2faEnabled'), 'success');
       setupPanel.style.display = 'none';
       _load2fa();
-    } catch (e) { showToast(e.message || 'Invalid code', 'error'); }
+    } catch (e) { showToast(e.message || t('set.totpInvalid'), 'error'); }
   });
   document.getElementById('btn-totp-cancel')?.addEventListener('click', () => {
     setupPanel.style.display = 'none';

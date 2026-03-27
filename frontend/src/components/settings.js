@@ -1239,9 +1239,9 @@ async function loadRolesTab() {
         if (!confirm(`Delete role "${btn.dataset.name}"?`)) return;
         try {
           await api.deleteRole(btn.dataset.id);
-          showToast('Role deleted', 'success');
+          showToast(t('role.deleted'), 'success');
           await renderRoles();
-        } catch (e) { showToast('Error: ' + e.message, 'error'); }
+        } catch (e) { showToast(t('common.errorPrefix', { msg: e.message }), 'error'); }
       });
     });
   }
@@ -1522,10 +1522,10 @@ async function loadRolesTab() {
       try {
         if (isEdit) {
           await api.updateRole(role.id, { name, permissions });
-          showToast('Role updated', 'success');
+          showToast(t('role.updated'), 'success');
         } else {
           await api.createRole({ name, permissions });
-          showToast('Role created', 'success');
+          showToast(t('role.created'), 'success');
         }
         area.innerHTML = '';
         await renderRoles();
@@ -1631,10 +1631,10 @@ async function loadUsersTab() {
         if (!confirm(`Delete user "${btn.dataset.username}"? This cannot be undone.`)) return;
         try {
           await api.deleteUser(btn.dataset.id);
-          showToast('User deleted', 'success');
+          showToast(t('user.deleted'), 'success');
           await renderUsers();
         } catch (e) {
-          showToast('Error: ' + e.message, 'error');
+          showToast(t('common.errorPrefix', { msg: e.message }), 'error');
         }
       });
     });
@@ -1701,10 +1701,10 @@ async function loadUsersTab() {
       try {
         if (isEdit) {
           await api.updateUser(user.id, { username, displayName, email, role });
-          showToast('User updated', 'success');
+          showToast(t('user.updated'), 'success');
         } else {
           await api.createUser({ username, displayName, email, password, role });
-          showToast('User created', 'success');
+          showToast(t('user.created'), 'success');
         }
         area.innerHTML = '';
         await renderUsers();
@@ -1749,7 +1749,7 @@ async function loadUsersTab() {
       btn.innerHTML = '<span class="spinner-sm"></span>';
       try {
         await api.resetUserPassword(userId, password);
-        showToast('Password reset successfully', 'success');
+        showToast(t('user.pwReset'), 'success');
         area.innerHTML = '';
       } catch (e) {
         errEl.textContent = e.message;
@@ -2026,10 +2026,10 @@ function _setupGitSetupEvents(panel) {
           autoPush:  panel.querySelector('#git-auto-push').checked,
         },
       });
-      showToast('Git repository connected!', 'success');
+      showToast(t('git.connected'), 'success');
       await loadGitSettingsTab();
     } catch (e) {
-      showToast('Error: ' + e.message, 'error');
+      showToast(t('common.errorPrefix', { msg: e.message }), 'error');
       btn.disabled = false;
       btn.innerHTML = `<i class="fas fa-plug"></i> Connect Repository`;
     }
@@ -2040,7 +2040,7 @@ function _setupGitDashboardEvents(panel) {
   panel.querySelector('#btn-git-disconnect')?.addEventListener('click', async () => {
     if (!await showConfirm('Disconnect Git? This will not delete your remote repository.')) return;
     await api.request('/playbooks-git/disconnect', { method: 'POST' });
-    showToast('Git disconnected.', 'success');
+    showToast(t('git.disconnected'), 'success');
     await loadGitSettingsTab();
   });
 
@@ -2087,7 +2087,7 @@ function _setupGitDashboardEvents(panel) {
           autoPush: panel.querySelector('#git-auto-push').checked,
         },
       });
-      showToast('Git settings saved.', 'success');
-    } catch (e) { showToast('Error: ' + e.message, 'error'); }
+      showToast(t('git.saved'), 'success');
+    } catch (e) { showToast(t('common.errorPrefix', { msg: e.message }), 'error'); }
   });
 }

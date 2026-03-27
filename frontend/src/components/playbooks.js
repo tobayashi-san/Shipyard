@@ -160,14 +160,14 @@ async function initGitWidget() {
     btn.disabled = true;
     try {
       await api.request('/playbooks-git/pull', { method: 'POST' });
-      showToast('Pulled from git.', 'success');
+      showToast(t('git.pulled'), 'success');
       // Reload the current tab so new/changed playbooks appear immediately
       const content = document.getElementById('pb-tab-content');
       if (content) {
         content.innerHTML = renderTabContent(activeTab);
         await initTab(activeTab);
       }
-    } catch (e) { showToast('Pull failed: ' + e.message, 'error'); }
+    } catch (e) { showToast(t('git.pullFailed', { msg: e.message }), 'error'); }
     finally { btn.disabled = false; }
   });
 
@@ -175,8 +175,8 @@ async function initGitWidget() {
     e.currentTarget.disabled = true;
     try {
       await api.request('/playbooks-git/push', { method: 'POST' });
-      showToast('Pushed to git.', 'success');
-    } catch (e) { showToast('Push failed: ' + e.message, 'error'); }
+      showToast(t('git.pushed'), 'success');
+    } catch (e) { showToast(t('git.pushFailed', { msg: e.message }), 'error'); }
     finally { document.getElementById('pb-git-push-btn')&&(document.getElementById('pb-git-push-btn').disabled=false); }
   });
 

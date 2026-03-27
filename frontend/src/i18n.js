@@ -708,6 +708,29 @@ const translations = {
     'set.pluginsEnableTitle': 'Plugin aktivieren',
     'set.pluginsEnableWarning': 'Plugin <strong>{name}</strong> aktivieren? Plugins laufen mit vollen Serverrechten. Nur vertrauenswürdige Plugins aktivieren.',
     'set.pluginsEnableConfirm': 'Aktivieren',
+
+    // ── Auth / Profile ────────────────────────────────────────
+    'auth.profileSaved': 'Profil gespeichert',
+    'auth.pwChangedSignOut': 'Passwort geändert — Abmeldung…',
+    'auth.2faEnabled': '2FA aktiviert',
+    'auth.2faDisabled': '2FA deaktiviert',
+
+    // ── Roles ─────────────────────────────────────────────────
+    'role.deleted': 'Rolle gelöscht',
+    'role.updated': 'Rolle aktualisiert',
+    'role.created': 'Rolle erstellt',
+
+    // ── Users ─────────────────────────────────────────────────
+    'user.deleted': 'Benutzer gelöscht',
+    'user.updated': 'Benutzer aktualisiert',
+    'user.created': 'Benutzer erstellt',
+    'user.pwReset': 'Passwort erfolgreich zurückgesetzt',
+
+    // ── Git (extra) ───────────────────────────────────────────
+    'git.connected': 'Git-Repository verbunden!',
+    'git.disconnected': 'Git getrennt.',
+    'git.pullFailed': 'Pull fehlgeschlagen: {msg}',
+    'git.pushFailed': 'Push fehlgeschlagen: {msg}',
   },
 
   en: {
@@ -1419,6 +1442,29 @@ const translations = {
     'set.pluginsEnableTitle': 'Enable Plugin',
     'set.pluginsEnableWarning': 'Enable plugin <strong>{name}</strong>? Plugins run with full server privileges. Only enable plugins from trusted sources.',
     'set.pluginsEnableConfirm': 'Enable',
+
+    // ── Auth / Profile ────────────────────────────────────────
+    'auth.profileSaved': 'Profile saved',
+    'auth.pwChangedSignOut': 'Password changed — signing out…',
+    'auth.2faEnabled': '2FA enabled',
+    'auth.2faDisabled': '2FA disabled',
+
+    // ── Roles ─────────────────────────────────────────────────
+    'role.deleted': 'Role deleted',
+    'role.updated': 'Role updated',
+    'role.created': 'Role created',
+
+    // ── Users ─────────────────────────────────────────────────
+    'user.deleted': 'User deleted',
+    'user.updated': 'User updated',
+    'user.created': 'User created',
+    'user.pwReset': 'Password reset successfully',
+
+    // ── Git (extra) ───────────────────────────────────────────
+    'git.connected': 'Git repository connected!',
+    'git.disconnected': 'Git disconnected.',
+    'git.pullFailed': 'Pull failed: {msg}',
+    'git.pushFailed': 'Push failed: {msg}',
   },
 };
 
