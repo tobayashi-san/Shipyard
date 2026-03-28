@@ -692,7 +692,7 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
         return;
       }
       const labels = { up: t('det.composeActionUp'), down: t('det.composeActionDown'), pull: t('det.composeActionPull') };
-      if (!await showConfirm(t('det.confirmStackMsg', { name: esc(project), action: labels[action] || action }), { title: t('det.confirmStackTitle'), confirmText: t('common.run'), danger: action === 'down' })) return;
+      if (!await showConfirm(t('det.confirmStackMsg', { name: esc(project), action: labels[action] || action }), { title: t('det.confirmStackTitle'), confirmText: t('common.run'), danger: action === 'down', html: true })) return;
       openGlobalTerminal(`compose ${action.toUpperCase()}: ${project}`);
       try {
         await api.runDockerComposeAction(serverId, dir, action);
