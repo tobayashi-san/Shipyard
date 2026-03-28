@@ -17,6 +17,7 @@ function parseContainerDate(d) {
 
 // Persists image update check results per server across container list refreshes
 const imageUpdateMaps = {};
+let _composeChangedListener = null;
 
 // ============================================================
 // Server Detail – Tab-based flat admin panel layout
@@ -28,6 +29,11 @@ export async function renderServerDetail(serverId) {
 
   const server = state.servers.find(s => s.id === serverId) || await api.getServer(serverId);
   if (!server) { navigate('dashboard'); return; }
+
+  if (_composeChangedListener) {
+    document.removeEventListener('shipyard:compose-changed', _composeChangedListener);
+    _composeChangedListener = null;
+  }
 
   const dotCls = server.status === 'online' ? 'online' : server.status === 'offline' ? 'offline' : 'unknown';
   const statusLabel = server.status === 'online' ? t('common.online') : server.status === 'offline' ? t('common.offline') : t('common.unknown');
@@ -393,6 +399,19 @@ export async function renderServerDetail(serverId) {
 
   // ---- Load Overview eagerly ----
   loadServerInfo(serverId);
+
+  _composeChangedListener = (event) => {
+    if (state.currentView !== 'server-detail' || state.selectedServerId !== serverId) return;
+    if (event.detail?.serverId !== serverId) return;
+    const delayMs = Math.max(0, parseInt(event.detail?.delayMs, 10) || 0);
+    window.setTimeout(() => {
+      if (state.currentView !== 'server-detail' || state.selectedServerId !== serverId) return;
+      loadDockerContainers(serverId);
+      loadServerInfo(serverId);
+      loadRecentActivity(serverId);
+    }, delayMs);
+  };
+  document.addEventListener('shipyard:compose-changed', _composeChangedListener);
 }
 
 // ============================================================

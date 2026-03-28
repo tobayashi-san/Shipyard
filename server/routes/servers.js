@@ -562,7 +562,8 @@ router.get('/:id/docker/compose', guardServerAccess, guard('canManageDockerCompo
       server.name,
       'command',
       `cat '${safePath}/docker-compose.yml'`,
-      () => {} // silence output
+      () => {}, // silence output
+      { become: true }
     );
 
     if (result.success) {

@@ -9,6 +9,7 @@ let _runId       = null;   // active WebSocket run id
 let _pluginApi   = null;
 let _api         = null;
 let _navigate    = null;
+let _refreshServersState = null;
 let _showToast   = null;
 let _showConfirm = null;
 let _openFile    = null;   // { path, content, dirty }
@@ -52,11 +53,12 @@ function fileIcon(name) {
 }
 
 // ── Mount / Unmount ───────────────────────────────────────────────────────
-export async function mount(container, { api, pluginApi, navigate, showToast, showConfirm, onWsMessage }) {
+export async function mount(container, { api, pluginApi, navigate, refreshServersState, showToast, showConfirm, onWsMessage }) {
   _container   = container;
   _pluginApi   = pluginApi;
   _api         = api;
   _navigate    = navigate || (() => {});
+  _refreshServersState = refreshServersState || null;
   _showToast   = showToast;
   _showConfirm = showConfirm;
   _wsUnsub = onWsMessage(handleWsMessage);
@@ -78,11 +80,12 @@ export async function mount(container, { api, pluginApi, navigate, showToast, sh
 
 export function unmount() {
   if (_wsUnsub) { _wsUnsub(); _wsUnsub = null; }
+  _refreshServersState = null;
   _container = _selected = _runId = _fileTree = _openFile = null;
 }
 
 // ── WebSocket ─────────────────────────────────────────────────────────────
-function handleWsMessage(msg) {
+async function handleWsMessage(msg) {
   if (msg.type === 'tofu_start') {
     _runId = msg.runId;
     updateRunButtons(true);
@@ -99,6 +102,9 @@ function handleWsMessage(msg) {
     refreshRunList();
     // Update dashboard cards
     refreshDashboardCard(msg.workspaceId);
+    if (msg.success && _refreshServersState) {
+      try { await _refreshServersState({ renderCurrentView: false, reason: 'opentofu-run' }); } catch {}
+    }
   }
 }
 

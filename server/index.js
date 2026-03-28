@@ -634,7 +634,8 @@ app.post('/api/servers/:id/docker/compose/write', composeLimiter, guardServerAcc
       server.name,
       ops.ensureDir.module,
       ops.ensureDir.args,
-      () => {}
+      () => {},
+      { become: true }
     );
     if (!ensureDir.success) {
       return res.status(500).json({ error: 'Failed to create compose directory', details: ensureDir.stderr || ensureDir.stdout });
@@ -644,7 +645,8 @@ app.post('/api/servers/:id/docker/compose/write', composeLimiter, guardServerAcc
       server.name,
       ops.copyFile.module,
       ops.copyFile.args,
-      () => {}
+      () => {},
+      { become: true }
     );
 
     if (copyResult.success) {
@@ -696,7 +698,8 @@ app.post('/api/servers/:id/docker/compose/action', composeLimiter, guardServerAc
       `cd '${safePath}' && ${cmd}`,
       (type, data) => {
         broadcast({ type: 'update_output', serverId, historyId, stream: type, data });
-      }
+      },
+      { become: true }
     );
 
     db.updateHistory.updateStatus(historyId, result.success ? 'success' : 'failed', result.stdout + result.stderr);

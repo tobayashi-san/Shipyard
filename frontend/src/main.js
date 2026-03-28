@@ -14,6 +14,7 @@ import { t } from './i18n.js';
 
 // Track active WS message listener so it can be removed on re-boot
 let _wsUnsub = null;
+let _serversRefreshPromise = null;
 
 // State
 export function hasCap(key) {
@@ -33,6 +34,44 @@ export const state = {
   whiteLabel: {},
   user: null, // { id, username, email, role, permissions }
 };
+
+function normalizeServer(server) {
+  return {
+    ...server,
+    services: typeof server.services === 'string' ? JSON.parse(server.services) : server.services || [],
+    tags: typeof server.tags === 'string' ? JSON.parse(server.tags) : server.tags || [],
+  };
+}
+
+export async function refreshServersState({ renderCurrentView = false, reason = 'manual' } = {}) {
+  if (_serversRefreshPromise) return _serversRefreshPromise;
+  _serversRefreshPromise = (async () => {
+    const servers = await api.getServers();
+    state.servers = servers.map(normalizeServer);
+    document.dispatchEvent(new CustomEvent('shipyard:servers-refreshed', {
+      detail: { reason, servers: state.servers },
+    }));
+
+    if (renderCurrentView) {
+      if (state.currentView === 'dashboard') {
+        refreshDashboardData();
+      } else if (state.currentView === 'servers') {
+        await refreshServersInPlace();
+      } else if (state.currentView === 'plugin') {
+        renderSidebar();
+      }
+    } else if (state.currentView === 'plugin') {
+      renderSidebar();
+    }
+
+    return state.servers;
+  })();
+  try {
+    return await _serversRefreshPromise;
+  } finally {
+    _serversRefreshPromise = null;
+  }
+}
 
 // Router
 export function navigate(view, params = {}) {
@@ -238,11 +277,7 @@ async function boot() {
     if (profile?.role === 'admin') {
       try { state.whiteLabel = await api.getSettings(); } catch {}
     }
-    state.servers = servers.map(s => ({
-      ...s,
-      services: typeof s.services === 'string' ? JSON.parse(s.services) : s.services || [],
-      tags: typeof s.tags === 'string' ? JSON.parse(s.tags) : s.tags || [],
-    }));
+    state.servers = servers.map(normalizeServer);
     state.plugins = plugins;
   } catch (e) {
     console.error('Failed to load initial data:', e);

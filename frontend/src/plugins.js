@@ -1,5 +1,5 @@
 import { api }       from './api.js';
-import { state, navigate } from './main.js';
+import { state, navigate, refreshServersState } from './main.js';
 import { onWsMessage } from './websocket.js';
 import { showToast, showConfirm } from './components/toast.js';
 import { esc }       from './utils/format.js';
@@ -58,6 +58,7 @@ export async function renderPlugin(pluginId) {
         pluginApi: createPluginApi(pluginId),
         state,
         navigate,
+        refreshServersState,
         showToast,
         showConfirm,
         onWsMessage,

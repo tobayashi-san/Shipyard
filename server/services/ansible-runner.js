@@ -221,13 +221,14 @@ class AnsibleRunner {
   /**
    * Run ad-hoc Ansible command
    */
-  async runAdHoc(targets, module, args = '', onOutput = null) {
+  async runAdHoc(targets, module, args = '', onOutput = null, options = {}) {
     const { keyPath, cleanup } = this._resolveSshKey();
     let inventoryPath;
     try {
       inventoryPath = this.generateInventory(keyPath);
       const cmdArgs = ['-i', inventoryPath, targets, '-m', module];
       if (args) cmdArgs.push('-a', args);
+      if (options.become) cmdArgs.push('--become');
       return await this._spawnProcess('ansible', cmdArgs, onOutput);
     } finally {
       cleanup();

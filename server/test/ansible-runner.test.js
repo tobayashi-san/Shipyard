@@ -39,3 +39,32 @@ test('generateInventory sanitizes tag-based group names for ansible ini syntax',
 
   fs.unlinkSync(inventoryPath);
 });
+
+test('runAdHoc appends --become when requested', async () => {
+  const originalResolve = ansibleRunner._resolveSshKey;
+  const originalSpawn = ansibleRunner._spawnProcess;
+  const originalGenerateInventory = ansibleRunner.generateInventory;
+
+  let capturedArgs = null;
+  ansibleRunner._resolveSshKey = () => ({ keyPath: '/tmp/test-key', cleanup: () => {} });
+  ansibleRunner.generateInventory = () => '/tmp/test-inventory.ini';
+  ansibleRunner._spawnProcess = async (_binary, args) => {
+    capturedArgs = args;
+    return { success: true, stdout: '', stderr: '', code: 0 };
+  };
+
+  try {
+    await ansibleRunner.runAdHoc('ubuntu-server-01', 'command', 'whoami', null, { become: true });
+    assert.deepEqual(capturedArgs, [
+      '-i', '/tmp/test-inventory.ini',
+      'ubuntu-server-01',
+      '-m', 'command',
+      '-a', 'whoami',
+      '--become',
+    ]);
+  } finally {
+    ansibleRunner._resolveSshKey = originalResolve;
+    ansibleRunner._spawnProcess = originalSpawn;
+    ansibleRunner.generateInventory = originalGenerateInventory;
+  }
+});

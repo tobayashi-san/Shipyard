@@ -90,8 +90,14 @@ export function setupComposeModal() {
       if (!pathInput.disabled) {
         showToast(t('compose.savedStarting'), 'success');
         await api.runDockerComposeAction(currentServerId, path, 'up');
+        document.dispatchEvent(new CustomEvent('shipyard:compose-changed', {
+          detail: { serverId: currentServerId, path, delayMs: 4000, action: 'up' },
+        }));
       } else {
         showToast(t('compose.saved'), 'success');
+        document.dispatchEvent(new CustomEvent('shipyard:compose-changed', {
+          detail: { serverId: currentServerId, path, delayMs: 500, action: 'save' },
+        }));
       }
       closeModal();
     } catch (err) {
