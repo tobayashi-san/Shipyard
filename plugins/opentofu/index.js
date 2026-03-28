@@ -46,6 +46,9 @@ const DIRECT_SSH_USER_KEYS = ['shipyard_ssh_user', 'ssh_user', 'default_user', '
 const DIRECT_SSH_PORT_KEYS = ['shipyard_ssh_port', 'ssh_port', 'port'];
 const APPLY_SYNC_MAX_WAIT_MS = Math.max(0, parseInt(process.env.TOFU_SYNC_MAX_WAIT_MS || '90000', 10) || 90000);
 const APPLY_SYNC_RETRY_MS = Math.max(1000, parseInt(process.env.TOFU_SYNC_RETRY_MS || '5000', 10) || 5000);
+const TOFU_RUN_HISTORY_MAX = Math.max(25, parseInt(process.env.TOFU_RUN_HISTORY_MAX || '250', 10) || 250);
+const TOFU_RUN_PAGE_SIZE_DEFAULT = Math.max(1, parseInt(process.env.TOFU_RUN_PAGE_SIZE_DEFAULT || '20', 10) || 20);
+const TOFU_RUN_PAGE_SIZE_MAX = Math.max(TOFU_RUN_PAGE_SIZE_DEFAULT, parseInt(process.env.TOFU_RUN_PAGE_SIZE_MAX || '100', 10) || 100);
 const SHIPYARD_OUTPUT_BLOCK_START = '# BEGIN SHIPYARD MANAGED OUTPUT';
 const SHIPYARD_OUTPUT_BLOCK_END = '# END SHIPYARD MANAGED OUTPUT';
 const SHIPYARD_OUTPUT_GENERATORS = {
@@ -139,6 +142,46 @@ function sleep(ms) {
 
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function isDirectoryEmpty(dirPath) {
+  try {
+    return fs.readdirSync(dirPath).length === 0;
+  } catch {
+    return false;
+  }
+}
+
+function moveWorkspaceDirectory(fromPath, toPath) {
+  const source = path.resolve(fromPath);
+  const target = path.resolve(toPath);
+  if (source === target) return false;
+  if (!fs.existsSync(source)) return false;
+
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+
+  if (fs.existsSync(target)) {
+    const stats = fs.statSync(target);
+    if (!stats.isDirectory()) {
+      throw new Error(`Target path exists and is not a directory: ${target}`);
+    }
+    if (!isDirectoryEmpty(target)) {
+      throw new Error(`Target path already exists and is not empty: ${target}`);
+    }
+    fs.cpSync(source, target, { recursive: true, force: false, errorOnExist: true });
+    fs.rmSync(source, { recursive: true, force: true });
+    return true;
+  }
+
+  try {
+    fs.renameSync(source, target);
+    return true;
+  } catch (e) {
+    if (e.code !== 'EXDEV') throw e;
+    fs.cpSync(source, target, { recursive: true, force: false, errorOnExist: true });
+    fs.rmSync(source, { recursive: true, force: true });
+    return true;
+  }
 }
 
 function parseJsonArray(raw) {
@@ -648,6 +691,21 @@ function upsertManagedShipyardOutputs(existingContent, generatedBlock) {
   return `${trimmed}\n\n${generatedBlock}`;
 }
 
+function pruneWorkspaceRuns(db, workspaceId, keep = TOFU_RUN_HISTORY_MAX) {
+  const limit = Math.max(1, parseInt(keep, 10) || TOFU_RUN_HISTORY_MAX);
+  return db.db.prepare(`
+    DELETE FROM tofu_runs
+    WHERE workspace_id = ?
+      AND id NOT IN (
+        SELECT id
+        FROM tofu_runs
+        WHERE workspace_id = ?
+        ORDER BY started_at DESC
+        LIMIT ?
+      )
+  `).run(workspaceId, workspaceId, limit);
+}
+
 const https = require('https');
 const http  = require('http');
 const { promisify } = require('util');
@@ -1036,6 +1094,46 @@ override.tf.json
     catch (e) { return e; }
   }
 
+  function isDirectoryEmpty(dirPath) {
+    try {
+      return fs.readdirSync(dirPath).length === 0;
+    } catch {
+      return false;
+    }
+  }
+
+  function moveWorkspaceDirectory(fromPath, toPath) {
+    const source = path.resolve(fromPath);
+    const target = path.resolve(toPath);
+    if (source === target) return false;
+    if (!fs.existsSync(source)) return false;
+
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+
+    if (fs.existsSync(target)) {
+      const stats = fs.statSync(target);
+      if (!stats.isDirectory()) {
+        throw new Error(`Target path exists and is not a directory: ${target}`);
+      }
+      if (!isDirectoryEmpty(target)) {
+        throw new Error(`Target path already exists and is not empty: ${target}`);
+      }
+      fs.cpSync(source, target, { recursive: true, force: false, errorOnExist: true });
+      fs.rmSync(source, { recursive: true, force: true });
+      return true;
+    }
+
+    try {
+      fs.renameSync(source, target);
+      return true;
+    } catch (e) {
+      if (e.code !== 'EXDEV') throw e;
+      fs.cpSync(source, target, { recursive: true, force: false, errorOnExist: true });
+      fs.rmSync(source, { recursive: true, force: true });
+      return true;
+    }
+  }
+
   function permissionError(e, wsPath) {
     return e.code === 'EACCES'
       ? `Permission denied. Fix with: chown -R 1001:1001 ${wsPath}`
@@ -1114,9 +1212,22 @@ override.tf.json
     const { name, path: wPath, description, env_vars } = req.body;
     if (!name || !wPath) return res.status(400).json({ error: 'name and path are required' });
     if (!isAllowedPath(wPath)) return res.status(400).json({ error: 'Path must be under /opt/, /srv/, /home/, /var/lib/, or /app/' });
+    const existing = getWorkspace(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Workspace not found' });
+    const nextPath = wPath.trim();
+    const shouldMoveFiles = req.body.move_files !== false;
+    const pathChanged = path.resolve(existing.path) !== path.resolve(nextPath);
+
+    if (pathChanged && shouldMoveFiles) {
+      try {
+        moveWorkspaceDirectory(existing.path, nextPath);
+      } catch (e) {
+        return res.status(400).json({ error: permissionError(e, existing.path), code: e.code });
+      }
+    }
+
     const result = db.db.prepare('UPDATE tofu_workspaces SET name=?, path=?, description=?, env_vars=? WHERE id=?')
-      .run(name.trim(), wPath.trim(), (description || '').trim(), JSON.stringify(env_vars || {}), req.params.id);
-    if (result.changes === 0) return res.status(404).json({ error: 'Workspace not found' });
+      .run(name.trim(), nextPath, (description || '').trim(), JSON.stringify(env_vars || {}), req.params.id);
     syncPathsFile();
     res.json({ success: true });
   });
@@ -1131,11 +1242,26 @@ override.tf.json
   // ── Routes: Run history ───────────────────────────────────────────────────
 
   router.get('/workspaces/:id/runs', (req, res) => {
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+    const pageSize = Math.min(TOFU_RUN_PAGE_SIZE_MAX, Math.max(1, parseInt(req.query.page_size) || parseInt(req.query.limit) || TOFU_RUN_PAGE_SIZE_DEFAULT));
+    const requestedPage = Math.max(1, parseInt(req.query.page) || 1);
+    const total = db.db.prepare('SELECT COUNT(*) AS c FROM tofu_runs WHERE workspace_id = ?').get(req.params.id).c || 0;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const page = Math.min(requestedPage, totalPages);
+    const offset = (page - 1) * pageSize;
     const runs = db.db.prepare(
-      'SELECT id, workspace_id, action, status, started_at, completed_at FROM tofu_runs WHERE workspace_id = ? ORDER BY started_at DESC LIMIT ?'
-    ).all(req.params.id, limit);
-    res.json(runs);
+      'SELECT id, workspace_id, action, status, started_at, completed_at FROM tofu_runs WHERE workspace_id = ? ORDER BY started_at DESC LIMIT ? OFFSET ?'
+    ).all(req.params.id, pageSize, offset);
+    res.json({
+      items: runs,
+      pagination: {
+        page,
+        page_size: pageSize,
+        total,
+        total_pages: totalPages,
+        has_prev: page > 1,
+        has_next: page < totalPages,
+      },
+    });
   });
 
   router.get('/workspaces/:id/runs/:runId', (req, res) => {
@@ -1167,6 +1293,7 @@ override.tf.json
     // Save run to DB
     db.db.prepare('INSERT INTO tofu_runs (id, workspace_id, action) VALUES (?, ?, ?)')
       .run(dbRunId, workspace.id, action);
+    pruneWorkspaceRuns(db, workspace.id);
 
     const args = [action, '-no-color'];
     if (action === 'apply' || action === 'destroy') args.push('-auto-approve');
@@ -1478,5 +1605,7 @@ module.exports = {
     detectTerraformResources,
     generateShipyardOutputsBlock,
     upsertManagedShipyardOutputs,
+    pruneWorkspaceRuns,
+    moveWorkspaceDirectory,
   },
 };

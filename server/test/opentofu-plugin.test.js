@@ -22,6 +22,8 @@ const {
   detectTerraformResources,
   generateShipyardOutputsBlock,
   upsertManagedShipyardOutputs,
+  pruneWorkspaceRuns,
+  moveWorkspaceDirectory,
 } = opentofuPlugin._test;
 
 after(() => {
@@ -168,6 +170,53 @@ test('upsertManagedShipyardOutputs replaces only the managed section', () => {
   assert.match(second, /"vm" = \{\}/);
   assert.equal((second.match(/BEGIN SHIPYARD MANAGED OUTPUT/g) || []).length, 1);
   assert.match(second, /output "foo"/);
+});
+
+test('pruneWorkspaceRuns keeps only the newest run entries for a workspace', () => {
+  db.db.prepare(`
+    CREATE TABLE IF NOT EXISTS tofu_runs (
+      id           TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      action       TEXT NOT NULL,
+      status       TEXT NOT NULL DEFAULT 'running',
+      output       TEXT NOT NULL DEFAULT '',
+      started_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TEXT
+    )
+  `).run();
+
+  for (let i = 1; i <= 5; i++) {
+    db.db.prepare(`
+      INSERT INTO tofu_runs (id, workspace_id, action, status, output, started_at)
+      VALUES (?, 'ws-prune', 'apply', 'success', '', ?)
+    `).run(`run-${i}`, `2026-03-2${i} 10:00:00`);
+  }
+
+  pruneWorkspaceRuns(db, 'ws-prune', 3);
+
+  const remaining = db.db.prepare(`
+    SELECT id FROM tofu_runs WHERE workspace_id = ? ORDER BY started_at DESC
+  `).all('ws-prune').map(row => row.id);
+
+  assert.deepEqual(remaining, ['run-5', 'run-4', 'run-3']);
+});
+
+test('moveWorkspaceDirectory moves an existing workspace without losing files', () => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tofu-move-'));
+  const sourceDir = path.join(baseDir, 'old');
+  const targetDir = path.join(baseDir, 'new');
+  fs.mkdirSync(path.join(sourceDir, 'nested'), { recursive: true });
+  fs.writeFileSync(path.join(sourceDir, 'main.tf'), 'resource "x" "y" {}', 'utf8');
+  fs.writeFileSync(path.join(sourceDir, 'nested', 'outputs.tf'), 'output "z" { value = 1 }', 'utf8');
+
+  const moved = moveWorkspaceDirectory(sourceDir, targetDir);
+
+  assert.equal(moved, true);
+  assert.equal(fs.existsSync(sourceDir), false);
+  assert.equal(fs.readFileSync(path.join(targetDir, 'main.tf'), 'utf8'), 'resource "x" "y" {}');
+  assert.equal(fs.readFileSync(path.join(targetDir, 'nested', 'outputs.tf'), 'utf8'), 'output "z" { value = 1 }');
+
+  fs.rmSync(baseDir, { recursive: true, force: true });
 });
 
 test('reconcileManagedServers creates, updates and cleans up plugin-managed servers', async () => {

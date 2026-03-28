@@ -14,6 +14,8 @@ let _showConfirm = null;
 let _openFile    = null;   // { path, content, dirty }
 let _fileTree    = null;
 let _status      = null;
+let _runsPage    = 1;
+let _runsPageSize = 20;
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 function esc(s) {
@@ -120,18 +122,48 @@ function appendTerminal(data, stream) {
   body.scrollTop = body.scrollHeight;
 }
 
+function normalizeRunsResponse(response) {
+  if (Array.isArray(response)) {
+    return {
+      items: response,
+      pagination: {
+        page: 1,
+        page_size: response.length || _runsPageSize,
+        total: response.length,
+        total_pages: 1,
+        has_prev: false,
+        has_next: false,
+      },
+    };
+  }
+  return {
+    items: Array.isArray(response?.items) ? response.items : [],
+    pagination: response?.pagination || {
+      page: 1,
+      page_size: _runsPageSize,
+      total: 0,
+      total_pages: 1,
+      has_prev: false,
+      has_next: false,
+    },
+  };
+}
+
 async function refreshRunList() {
   if (!_selected) return;
   const el = document.getElementById('tofu-runs-list');
   if (!el) return;
   try {
-    const runs = await _pluginApi.request(`/workspaces/${_selected}/runs`);
+    const response = await _pluginApi.request(`/workspaces/${_selected}/runs?page=${_runsPage}&page_size=${_runsPageSize}`);
+    const { items: runs, pagination } = normalizeRunsResponse(response);
+    _runsPage = pagination.page;
+    _runsPageSize = pagination.page_size;
     _workspaces = _workspaces.map(w => {
       if (w.id !== _selected) return w;
       return { ...w, last_run: runs[0] || null };
     });
-    el.innerHTML = renderRunsTable(runs);
-    bindRunsEvents(runs);
+    el.innerHTML = renderRunsTable(runs, pagination);
+    bindRunsEvents(runs, pagination);
   } catch {}
 }
 
@@ -501,6 +533,7 @@ function renderWorkspacesTab(content) {
   content.querySelectorAll('.tofu-ws-item').forEach(item => {
     item.addEventListener('click', () => {
       _selected = item.dataset.id;
+      _runsPage = 1;
       _fileTree = null; _openFile = null;
       renderWorkspacesTab(content);
     });
@@ -634,6 +667,7 @@ async function loadRunsTab(el, ws) {
   `;
 
   if (_runId) updateRunButtons(true);
+  _runsPage = 1;
 
   document.querySelectorAll('.tofu-action').forEach(btn => {
     btn.addEventListener('click', () => executeAction(ws, btn.dataset.action));
@@ -648,17 +682,21 @@ async function loadRunsTab(el, ws) {
   document.getElementById('tofu-btn-refresh-runs')?.addEventListener('click', () => refreshRunList());
 
   try {
-    const runs = await _pluginApi.request(`/workspaces/${ws.id}/runs`);
+    const response = await _pluginApi.request(`/workspaces/${ws.id}/runs?page=${_runsPage}&page_size=${_runsPageSize}`);
+    const { items: runs, pagination } = normalizeRunsResponse(response);
+    _runsPage = pagination.page;
+    _runsPageSize = pagination.page_size;
     const listEl = document.getElementById('tofu-runs-list');
-    if (listEl) { listEl.innerHTML = renderRunsTable(runs); bindRunsEvents(runs); }
+    if (listEl) { listEl.innerHTML = renderRunsTable(runs, pagination); bindRunsEvents(runs, pagination); }
   } catch {}
 }
 
-function renderRunsTable(runs) {
+function renderRunsTable(runs, pagination) {
   if (!runs || runs.length === 0) {
     return `<div class="empty-state" style="padding:20px;"><p style="color:var(--text-muted);">No runs yet</p></div>`;
   }
   return `
+    <div>
     <table class="data-table">
       <thead><tr>
         <th>Action</th><th>Status</th><th>Started</th><th style="width:40px;"></th>
@@ -676,10 +714,24 @@ function renderRunsTable(runs) {
             </td>
           </tr>`).join('')}
       </tbody>
-    </table>`;
+    </table>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding-top:10px;font-size:12px;color:var(--text-muted);">
+      <div>Showing ${runs.length} of ${pagination.total} entries · Page ${pagination.page} / ${pagination.total_pages}</div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <label style="display:flex;align-items:center;gap:6px;">
+          <span>Per page</span>
+          <select id="tofu-runs-page-size" class="form-input" style="width:auto;min-width:72px;padding:4px 24px 4px 8px;font-size:12px;">
+            ${[10, 20, 50, 100].map(size => `<option value="${size}"${pagination.page_size === size ? ' selected' : ''}>${size}</option>`).join('')}
+          </select>
+        </label>
+        <button class="btn btn-secondary btn-sm" id="tofu-runs-prev"${pagination.has_prev ? '' : ' disabled'}>Prev</button>
+        <button class="btn btn-secondary btn-sm" id="tofu-runs-next"${pagination.has_next ? '' : ' disabled'}>Next</button>
+      </div>
+    </div>
+    </div>`;
 }
 
-function bindRunsEvents(runs) {
+function bindRunsEvents(runs, pagination) {
   document.querySelectorAll('.tofu-run-log').forEach(btn => {
     btn.addEventListener('click', async () => {
       const run = runs.find(r => r.id === btn.dataset.id);
@@ -689,6 +741,21 @@ function bindRunsEvents(runs) {
         showRunOutputModal(full);
       } catch (e) { _showToast(e.message, 'error'); }
     });
+  });
+  document.getElementById('tofu-runs-prev')?.addEventListener('click', () => {
+    if (!pagination.has_prev) return;
+    _runsPage = Math.max(1, pagination.page - 1);
+    refreshRunList();
+  });
+  document.getElementById('tofu-runs-next')?.addEventListener('click', () => {
+    if (!pagination.has_next) return;
+    _runsPage = pagination.page + 1;
+    refreshRunList();
+  });
+  document.getElementById('tofu-runs-page-size')?.addEventListener('change', e => {
+    _runsPageSize = Math.max(1, parseInt(e.target.value, 10) || 20);
+    _runsPage = 1;
+    refreshRunList();
   });
 }
 
@@ -1127,6 +1194,13 @@ function openWorkspaceModal(ws) {
         <div class="form-group">
           <label class="form-label">Path</label>
           <input class="form-input text-mono" id="ws-path" value="${esc(ws.path)}" required>
+        </div>
+        <div class="form-group" id="ws-move-files-group" style="display:none;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:500;">
+            <input type="checkbox" id="ws-move-files" style="width:16px;height:16px;" checked>
+            Move existing workspace files to the new path
+          </label>
+          <div class="form-hint">If enabled, Shipyard moves your current `.tf` files, state and workspace contents instead of only changing the saved path.</div>
         </div>` : `<input type="hidden" id="ws-path" value="">`}
         <div class="form-group">
           <label class="form-label">Description (optional)</label>
@@ -1185,6 +1259,17 @@ function openWorkspaceModal(ws) {
     });
   }
 
+  if (ws) {
+    const pathEl = document.getElementById('ws-path');
+    const moveGroupEl = document.getElementById('ws-move-files-group');
+    const toggleMoveHint = () => {
+      if (!pathEl || !moveGroupEl) return;
+      moveGroupEl.style.display = pathEl.value.trim() !== ws.path ? 'block' : 'none';
+    };
+    pathEl?.addEventListener('input', toggleMoveHint);
+    toggleMoveHint();
+  }
+
   document.getElementById('ws-scaffold')?.addEventListener('change', e => {
     document.getElementById('ws-scaffold-opts').style.display = e.target.checked ? 'block' : 'none';
   });
@@ -1203,8 +1288,11 @@ function openWorkspaceModal(ws) {
     btn.disabled = true;
     try {
       if (ws) {
+        const moveFiles = document.getElementById('ws-move-files-group')?.style.display !== 'none'
+          ? !!document.getElementById('ws-move-files')?.checked
+          : false;
         await _pluginApi.request(`/workspaces/${ws.id}`, {
-          method: 'PUT', body: JSON.stringify({ name, path: wPath, description: desc, env_vars }),
+          method: 'PUT', body: JSON.stringify({ name, path: wPath, description: desc, env_vars, move_files: moveFiles }),
         });
       } else {
         const { id } = await _pluginApi.request('/workspaces', {
