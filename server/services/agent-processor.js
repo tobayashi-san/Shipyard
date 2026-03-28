@@ -1,9 +1,15 @@
 const db = require('../db');
 const log = require('../utils/logger').child('agent:processor');
 
+function normalizeCollectorOutput(text) {
+  // Some runner environments can emit NUL-separated lines.
+  // Normalize to plain newlines so parsers remain stable.
+  return String(text || '').replace(/\r\n?/g, '\n').replace(/\u0000/g, '\n');
+}
+
 function parseKeyValueLines(text) {
   const out = {};
-  String(text || '').split('\n').forEach((line) => {
+  normalizeCollectorOutput(text).split('\n').forEach((line) => {
     const idx = line.indexOf('=');
     if (idx > 0) out[line.slice(0, idx).trim()] = line.slice(idx + 1).trim().replace(/^"|"$/g, '');
   });
@@ -12,12 +18,14 @@ function parseKeyValueLines(text) {
 
 function parseMeminfo(text) {
   const map = {};
-  String(text || '').split('\n').forEach((line) => {
+  normalizeCollectorOutput(text).split('\n').forEach((line) => {
     const m = line.match(/^([A-Za-z_]+):\s+(\d+)/);
     if (m) map[m[1]] = parseInt(m[2], 10);
   });
   const totalKb = map.MemTotal || 0;
-  const availKb = map.MemAvailable || map.MemFree || 0;
+  // Fallback for systems where MemAvailable is absent or parsing was partial.
+  const availFallback = (map.MemFree || 0) + (map.Buffers || 0) + (map.Cached || 0) + (map.SReclaimable || 0);
+  const availKb = map.MemAvailable || availFallback || map.MemFree || 0;
   const usedKb = Math.max(0, totalKb - availKb);
   return {
     ram_total_mb: Math.round(totalKb / 1024),
@@ -26,7 +34,7 @@ function parseMeminfo(text) {
 }
 
 function parseDfTotals(text) {
-  const lines = String(text || '').split('\n').map(s => s.trim()).filter(Boolean);
+  const lines = normalizeCollectorOutput(text).split('\n').map(s => s.trim()).filter(Boolean);
   if (lines.length < 2) return { disk_total_gb: null, disk_used_gb: null };
   let totalMb = 0;
   let usedMb = 0;
@@ -55,8 +63,10 @@ function collectorMap(report) {
 }
 
 function parseCpuStatLine(text) {
-  const line = String(text || '').trim();
-  const parts = line.split(/\s+/);
+  const line = normalizeCollectorOutput(text).split('\n').find((l) => l.trim().startsWith('cpu ')) || '';
+  const clean = line.trim();
+  if (!clean) return null;
+  const parts = clean.split(/\s+/);
   if (parts[0] !== 'cpu' || parts.length < 5) return null;
   const nums = parts.slice(1).map(n => Number.parseInt(n, 10));
   if (nums.some(n => !Number.isFinite(n))) return null;
@@ -98,13 +108,13 @@ function toServerInfo(serverId, report) {
   const mem = parseMeminfo(collectors.get('memory')?.output || '');
   const disk = parseDfTotals(collectors.get('disk')?.output || '');
   const osInfo = parseKeyValueLines(collectors.get('os_info')?.output || '');
-  const uptimeVal = Number.parseFloat((collectors.get('uptime')?.output || '').trim());
-  const cores = Number.parseInt((collectors.get('nproc')?.output || '').trim(), 10);
+  const uptimeVal = Number.parseFloat(normalizeCollectorOutput(collectors.get('uptime')?.output || '').trim());
+  const cores = Number.parseInt(normalizeCollectorOutput(collectors.get('nproc')?.output || '').trim(), 10);
   const prevCpu = getPreviousCollectorOutput(serverId, 'cpu');
   const cpuPct = computeCpuPct(prevCpu, collectors.get('cpu')?.output || '');
 
   let loadAvg = null;
-  const loadRaw = (collectors.get('load')?.output || '').trim();
+  const loadRaw = normalizeCollectorOutput(collectors.get('load')?.output || '').trim();
   if (loadRaw) {
     const parts = loadRaw.split(/\s+/);
     if (parts.length >= 3) loadAvg = `${parts[0]} ${parts[1]} ${parts[2]}`;

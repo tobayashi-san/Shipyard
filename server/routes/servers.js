@@ -307,7 +307,7 @@ router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, 
   // Agent-managed servers use cached metrics from the runner as the source of truth.
   // Do not overwrite them with classic SSH polling on read.
   if (hasActiveAgent && cached) {
-    return res.json({ ...cached, _cached: true, _source: 'agent' });
+    return res.json({ ...cached, _source: 'agent' });
   }
 
   // Serve cache immediately, refresh in background
