@@ -19,6 +19,7 @@ echo "SHIPYARD_KEY_SECRET=$(openssl rand -hex 32)" >> .env
 cat > docker-compose.yml << 'EOF'
 services:
   shipyard:
+    # "latest" points to stable releases only (no RC tags)
     image: ghcr.io/tobayashi-san/shipyard:latest
     container_name: shipyard
     restart: unless-stopped
@@ -32,6 +33,8 @@ services:
       - NODE_ENV=production
       - JWT_SECRET=${JWT_SECRET:?Create a .env file with JWT_SECRET — see README}
       - SHIPYARD_KEY_SECRET=${SHIPYARD_KEY_SECRET:?Create a .env file with SHIPYARD_KEY_SECRET — see README}
+      # Set to 1 when running behind a reverse proxy that sends X-Forwarded-* headers
+      # - TRUST_PROXY=1
 
 volumes:
   shipyard-data:
@@ -41,6 +44,7 @@ docker compose up -d
 ```
 
 Open **`https://<host-ip>`** in your browser. The setup wizard will guide you through account creation, appearance settings, and SSH key generation.
+The setup wizard appears only when no users exist; otherwise you will see the login page.
 
 HTTPS is enabled by default with a self-signed certificate — accept the browser warning once, or [bring your own certificate](https://github.com/tobayashi-san/Shipyard/wiki/Installation#custom-tls-certificate).
 
@@ -51,7 +55,8 @@ docker compose pull
 docker compose up -d
 ```
 
-Because the default image uses `:latest`, this updates Shipyard to the newest published release.
+With `:latest`, this updates Shipyard to the newest **stable** release.
+Release candidates are published as explicit tags (for example `:1.0.2-rc.20`) and do not move `latest`.
 
 ## Documentation
 
@@ -74,7 +79,7 @@ Because the default image uses `:latest`, this updates Shipyard to the newest pu
 ## Features
 
 - **Servers** — add, edit, group, bulk import/export (JSON or CSV)
-- **Monitoring** — CPU, RAM, disk, uptime, load average polled in the background
+- **Monitoring** — CPU, RAM, disk, uptime, load average via SSH polling or directly from the Shipyard Agent
 - **OS Updates** — via Ansible (`apt`, `dnf`, `pacman`, …) with live terminal output
 - **Custom Update Tasks** — track scripts or GitHub releases, shows current vs. latest
 - **Docker & Compose** — container overview, logs, restart, edit and run Compose stacks
@@ -116,6 +121,7 @@ Browser
 │  Ansible Runner  ──►  ansible-playbook   │
 │  SSH Manager  ──►  node-ssh / ssh2       │
 │  System Poller   ──►  SSH commands       │
+│  Agent Ingest    ──►  runner metrics     │
 │  Scheduler    ──►  node-cron             │
 │  Plugin Loader   ──►  /app/plugins/      │
 └──────────────────────────────────────────┘
