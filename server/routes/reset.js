@@ -78,7 +78,7 @@ router.delete('/playbooks', resetLimiter, adminOnly, (req, res) => {
 router.delete('/auth', resetLimiter, adminOnly, (req, res) => {
   try {
     db.db.prepare('DELETE FROM users').run();
-    db.settings.set('auth_password_hash', '');
+    db.db.prepare("DELETE FROM app_settings WHERE key IN ('auth_password_hash', 'auth_username', 'auth_email')").run();
     setSecret(db, 'auth_jwt_secret', crypto.randomBytes(64).toString('hex'));
     db.settings.set('onboarding_done', '');
     db.settings.set('totp_enabled', '');
@@ -100,7 +100,7 @@ router.delete('/all', resetLimiter, adminOnly, (req, res) => {
       db.db.prepare('DELETE FROM users').run();
     })();
     deleteUserPlaybooks();
-    db.settings.set('auth_password_hash', '');
+    db.db.prepare("DELETE FROM app_settings WHERE key IN ('auth_password_hash', 'auth_username', 'auth_email')").run();
     setSecret(db, 'auth_jwt_secret', crypto.randomBytes(64).toString('hex'));
     db.settings.set('totp_enabled', '');
     db.settings.set('totp_secret', '');

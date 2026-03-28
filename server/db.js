@@ -304,13 +304,14 @@ db.exec(`
   } catch (e) { log.error({ err: e }, 'Role seed error'); }
 })();
 
-// Migration: if users table is empty AND auth_password_hash exists, create admin user from settings
+// Migration: if users table is empty AND auth_password_hash contains a real hash,
+// create the legacy admin user from settings.
 (function migrateAdminUser() {
   try {
     const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
     if (userCount > 0) return;
     const hash = db.prepare("SELECT value FROM app_settings WHERE key = 'auth_password_hash'").get();
-    if (!hash) return;
+    if (!hash || !String(hash.value || '').trim()) return;
     const usernameRow = db.prepare("SELECT value FROM app_settings WHERE key = 'auth_username'").get();
     const emailRow    = db.prepare("SELECT value FROM app_settings WHERE key = 'auth_email'").get();
     const totpSecretRow  = db.prepare("SELECT value FROM app_settings WHERE key = 'totp_secret'").get();

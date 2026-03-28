@@ -97,6 +97,16 @@ describe('db.settings', () => {
   });
 });
 
+describe('legacy auth migration guards', () => {
+  test('empty auth_password_hash is ignored by startup migration guard', () => {
+    db.db.prepare('DELETE FROM users').run();
+    db.settings.set('auth_password_hash', '');
+    const hash = db.db.prepare("SELECT value FROM app_settings WHERE key = 'auth_password_hash'").get();
+    assert.equal(String(hash.value || '').trim(), '');
+    assert.equal(db.users.count(), 0);
+  });
+});
+
 // ── Audit Log ─────────────────────────────────────────────────────────────────
 
 describe('db.auditLog', () => {
