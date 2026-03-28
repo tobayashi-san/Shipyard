@@ -3,6 +3,7 @@ import { state, navigate, hasCap } from '../main.js';
 import { showToast, showConfirm } from './toast.js';
 import { t } from '../i18n.js';
 import { formatDateTimeShort, esc } from '../utils/format.js';
+import { buildAllExceptTargets, parsePlaybookTargets, describePlaybookTargets } from '../utils/playbook-targets.js';
 import { onWsMessage } from '../websocket.js';
 import { EditorView, basicSetup } from 'codemirror';
 import { yaml } from '@codemirror/lang-yaml';
@@ -274,6 +275,19 @@ function renderTemplatesHTML() {
                 <option value="localhost">localhost</option>
               </select>
             </div>
+            <div class="form-group" id="run-exclude-group">
+              <label class="form-label">${t('run.excludeServers')}</label>
+              <div class="form-hint">${t('run.excludeHint')}</div>
+              <div style="border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-panel-alt);max-height:180px;overflow-y:auto;">
+                ${state.servers.map(s => `
+                  <label style="display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:1px solid var(--border);cursor:pointer;">
+                    <input type="checkbox" class="run-exclude-cb" value="${esc(s.name)}" style="accent-color:var(--accent);">
+                    <span style="flex:1;">${esc(s.name)}</span>
+                    <span class="badge badge-${s.status === 'online' ? 'online' : 'offline'}" style="font-size:10px;">${s.status === 'online' ? t('common.online') : t('common.offline')}</span>
+                  </label>
+                `).join('')}
+              </div>
+            </div>
             <div style="padding-top:4px;">
               <button class="btn btn-primary" id="btn-run-confirm">
                 <i class="fas fa-play"></i> ${t('common.run')}
@@ -436,6 +450,18 @@ function openRunPanel(filename, description) {
   document.getElementById('run-playbook-name').textContent = description || filename;
   document.getElementById('run-output').classList.add('hidden');
   document.getElementById('run-terminal-body').innerHTML = '';
+  const targetSel = document.getElementById('run-target');
+  const excludeGroup = document.getElementById('run-exclude-group');
+  const syncExcludeVisibility = () => {
+    if (!targetSel || !excludeGroup) return;
+    const show = targetSel.value === 'all';
+    excludeGroup.classList.toggle('hidden', !show);
+    if (!show) {
+      document.querySelectorAll('.run-exclude-cb').forEach(cb => { cb.checked = false; });
+    }
+  };
+  if (targetSel) targetSel.onchange = syncExcludeVisibility;
+  syncExcludeVisibility();
 }
 
 function showTemplatePanel(which) {
@@ -515,7 +541,10 @@ function setupPlaybookEvents() {
 
   document.getElementById('btn-run-confirm')?.addEventListener('click', async () => {
     if (!currentFilename) return;
-    const target = document.getElementById('run-target').value;
+    const baseTarget = document.getElementById('run-target').value;
+    const target = baseTarget === 'all'
+      ? buildAllExceptTargets([...document.querySelectorAll('.run-exclude-cb:checked')].map(cb => cb.value))
+      : baseTarget;
     const btn = document.getElementById('btn-run-confirm');
     btn.disabled = true; btn.innerHTML = `<span class="spinner-sm"></span> ${t('run.starting')}`;
 
@@ -523,7 +552,7 @@ function setupPlaybookEvents() {
     const bodyEl = document.getElementById('run-terminal-body');
     outputEl.classList.remove('hidden');
     bodyEl.innerHTML = '';
-    document.getElementById('run-terminal-title').textContent = `ansible-playbook ${currentFilename} → ${target}`;
+    document.getElementById('run-terminal-title').textContent = `ansible-playbook ${currentFilename} → ${describePlaybookTargets(target, t)}`;
 
     const addLine = (text, cls = 'line-stdout') => {
       const span = document.createElement('span');
@@ -564,6 +593,7 @@ function renderQuickRunHTML() {
           </div>
           <div class="form-group">
             <label class="form-label">${t('qr.targets')}</label>
+            <div class="form-hint" id="qr-target-hint">${t('run.excludeHint')}</div>
             <div id="qr-server-list" style="
               border:1px solid var(--border);border-radius:var(--radius);
               background:var(--bg-panel-alt);max-height:220px;overflow-y:auto;
@@ -627,36 +657,37 @@ async function loadQuickRunPlaybooks() {
 let _qrWsCleanup = null;
 
 function setupQuickRunEvents() {
-  // "All servers" toggle: check/uncheck individual servers
   const allCb = document.getElementById('qr-all');
-  const serverCbs = () => document.querySelectorAll('.qr-server-cb');
+  const hintEl = document.getElementById('qr-target-hint');
 
-  allCb?.addEventListener('change', () => {
-    serverCbs().forEach(cb => {
-      cb.checked = false;
-      cb.disabled = allCb.checked;
-    });
-  });
+  function syncQuickRunTargetMode() {
+    const excludeMode = !!allCb?.checked;
+    const localhostCb = document.querySelector('.qr-server-cb[value="localhost"]');
+    if (hintEl) {
+      hintEl.textContent = excludeMode ? t('run.excludeHint') : t('run.includeHint');
+    }
+    if (localhostCb) {
+      localhostCb.disabled = excludeMode;
+      if (excludeMode) localhostCb.checked = false;
+      const row = localhostCb.closest('.qr-server-row');
+      if (row) row.style.opacity = excludeMode ? '0.55' : '1';
+    }
+  }
 
-  serverCbs().forEach(cb => {
-    cb.addEventListener('change', () => {
-      if (cb.checked && allCb) allCb.checked = false;
-      // Re-enable "all" if nothing individual is selected
-      const anyChecked = [...serverCbs()].some(c => c.checked);
-      if (!anyChecked && allCb) { allCb.checked = true; serverCbs().forEach(c => c.disabled = true); }
-    });
-    if (allCb?.checked) cb.disabled = true;
-  });
+  allCb?.addEventListener('change', syncQuickRunTargetMode);
+  syncQuickRunTargetMode();
 
   document.getElementById('btn-qr-run')?.addEventListener('click', async () => {
     const playbook = document.getElementById('qr-playbook').value;
     if (!playbook) { showToast(t('qr.selectPlaybook'), 'warning'); return; }
 
-    // Build targets string
     const allChecked = document.getElementById('qr-all')?.checked;
     let targets;
     if (allChecked) {
-      targets = 'all';
+      const excluded = [...document.querySelectorAll('.qr-server-cb:checked')]
+        .map(c => c.value)
+        .filter(v => v !== 'localhost');
+      targets = buildAllExceptTargets(excluded);
     } else {
       const checked = [...document.querySelectorAll('.qr-server-cb:checked')].map(c => c.value);
       if (!checked.length) { showToast(t('run.needTarget'), 'warning'); return; }
@@ -678,7 +709,7 @@ function setupQuickRunEvents() {
     emptyEl.style.display = 'none';
     bodyEl.style.display = 'block';
     bodyEl.innerHTML = '';
-    document.getElementById('qr-terminal-title').textContent = `ansible-playbook ${playbook} → ${targets}`;
+    document.getElementById('qr-terminal-title').textContent = `ansible-playbook ${playbook} → ${describePlaybookTargets(targets, t)}`;
 
     const addLine = (text, cls = 'line-stdout') => {
       const span = document.createElement('span');
@@ -1255,6 +1286,7 @@ async function openScheduleDialog(editId) {
 
   let playbooks = [];
   try { playbooks = (await api.getPlaybooks()).filter(p => !p.isInternal); } catch { }
+  const parsedTargets = parsePlaybookTargets(existing?.targets || 'all');
 
   const parsed = existing ? cronToSelectors(existing.cron_expression) : { interval: 'daily', hour: 3, minute: 0, weekday: 1, monthday: 1 };
   const parsedHour = parsed.hour ?? 3;
@@ -1290,15 +1322,21 @@ async function openScheduleDialog(editId) {
           </div>
           <div class="form-group">
             <label class="form-label">${t('sc.target')}</label>
+            <div class="form-hint" id="sched-target-hint">${parsedTargets.mode === 'all' ? t('run.excludeHint') : t('run.includeHint')}</div>
             <div id="sched-targets-box" style="border:1px solid var(--border);border-radius:var(--radius-sm);max-height:150px;overflow-y:auto;background:var(--bg-panel);">
               ${[
       { value: 'all', label: t('pb.allServers'), special: true },
       ...state.servers.map(s => ({ value: s.name, label: s.name })),
       { value: 'localhost', label: 'localhost' },
     ].map(opt => {
-      const sel = !existing ? opt.value === 'all'
-        : existing.targets === 'all' ? opt.value === 'all'
-          : existing.targets.split(',').map(x => x.trim()).includes(opt.value);
+      let sel = false;
+      if (opt.value === 'all') {
+        sel = parsedTargets.mode === 'all';
+      } else if (parsedTargets.mode === 'all') {
+        sel = parsedTargets.excluded.includes(opt.value);
+      } else {
+        sel = parsedTargets.included.includes(opt.value);
+      }
       return `<label style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);">
                   <input type="checkbox" class="sched-target-cb" value="${esc(opt.value)}"${sel ? ' checked' : ''}${opt.special ? ' id="sched-target-all"' : ''}>
                   ${opt.special ? `<span style="color:var(--text-muted);"><i class="fas fa-layer-group" style="margin-right:4px;"></i>${esc(opt.label)}</span>` : `<span>${esc(opt.label)}</span>`}
@@ -1341,15 +1379,21 @@ async function openScheduleDialog(editId) {
     </div>
   `;
 
-  // Target checkbox logic: "All" and individual servers are mutually exclusive
   const allCb = document.getElementById('sched-target-all');
-  const serverCbs = () => [...document.querySelectorAll('.sched-target-cb:not(#sched-target-all)')];
-  allCb?.addEventListener('change', () => {
-    if (allCb.checked) serverCbs().forEach(cb => { cb.checked = false; });
-  });
-  serverCbs().forEach(cb => cb.addEventListener('change', () => {
-    if (cb.checked && allCb) allCb.checked = false;
-  }));
+  const schedHint = document.getElementById('sched-target-hint');
+  function syncScheduleTargetMode() {
+    const excludeMode = !!allCb?.checked;
+    if (schedHint) schedHint.textContent = excludeMode ? t('run.excludeHint') : t('run.includeHint');
+    const localhostCb = document.querySelector('.sched-target-cb[value="localhost"]');
+    if (localhostCb) {
+      localhostCb.disabled = excludeMode;
+      if (excludeMode) localhostCb.checked = false;
+      const row = localhostCb.closest('label');
+      if (row) row.style.opacity = excludeMode ? '0.55' : '1';
+    }
+  }
+  allCb?.addEventListener('change', syncScheduleTargetMode);
+  syncScheduleTargetMode();
 
   const intervalSel = document.getElementById('sched-interval');
   const timeGroup = document.getElementById('sched-time-group');
@@ -1376,10 +1420,11 @@ async function openScheduleDialog(editId) {
     e.preventDefault();
     const name = document.getElementById('sched-name').value.trim();
     const playbook = document.getElementById('sched-playbook').value;
+    const allChecked = !!document.getElementById('sched-target-all')?.checked;
     const checkedCbs = [...document.querySelectorAll('.sched-target-cb:checked')];
-    const targets = checkedCbs.length === 0 ? 'all'
-      : checkedCbs.some(cb => cb.value === 'all') ? 'all'
-        : checkedCbs.map(cb => cb.value).join(',');
+    const targets = allChecked
+      ? buildAllExceptTargets(checkedCbs.map(cb => cb.value).filter(v => v !== 'all' && v !== 'localhost'))
+      : checkedCbs.map(cb => cb.value).filter(v => v !== 'all').join(',') || 'all';
     const interval = intervalSel.value;
     const hour = parseInt(document.getElementById('sched-hour').value) || 0;
     const minute = parseInt(document.getElementById('sched-minute').value) || 0;

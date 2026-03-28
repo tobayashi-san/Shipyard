@@ -7,6 +7,7 @@ const systemInfo = require('../services/system-info');
 const ansibleRunner = require('../services/ansible-runner');
 const { parseImageUpdateOutput } = require('../utils/parse-image-updates');
 const { serverError } = require('../utils/http-error');
+const { targetIncludesServer } = require('../utils/validate');
 
 // Deserialize JSON fields for API responses
 function parseServer(s) {
@@ -388,10 +389,7 @@ router.get('/:id/history', guardServerAccess, guard('canViewServers'), (req, res
       const allRuns = db.scheduleHistory.getAll(200);
       const serverName = server.name;
       scheduleRuns = allRuns
-        .filter(r => {
-          const targets = (r.targets || '').split(',').map(t => t.trim());
-          return targets.includes('all') || targets.includes(serverName);
-        })
+        .filter(r => targetIncludesServer(r.targets, serverName))
         .map(r => ({
           id: r.id,
           server_id: req.params.id,

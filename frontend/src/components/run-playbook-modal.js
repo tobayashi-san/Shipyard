@@ -3,6 +3,7 @@ import { state } from '../main.js';
 import { showToast } from './toast.js';
 import { t } from '../i18n.js';
 import { esc } from '../utils/format.js';
+import { buildAllExceptTargets, describePlaybookTargets } from '../utils/playbook-targets.js';
 
 /**
  * @param {Function} onClose
@@ -65,6 +66,19 @@ export async function showRunPlaybookModal(onClose, preselectedNames = []) {
                 <option value="localhost">localhost</option>
               </select>
             </div>
+            <div class="form-group" id="rp-exclude-group">
+              <label class="form-label">${t('run.excludeServers')}</label>
+              <div class="form-hint">${t('run.excludeHint')}</div>
+              <div style="border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-panel-alt);max-height:180px;overflow-y:auto;">
+                ${state.servers.map(s => `
+                  <label style="display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:1px solid var(--border);cursor:pointer;">
+                    <input type="checkbox" class="rp-exclude-cb" value="${esc(s.name)}" style="accent-color:var(--accent);">
+                    <span style="flex:1;">${esc(s.name)}</span>
+                    <span class="badge badge-${s.status === 'online' ? 'online' : 'offline'}" style="font-size:10px;">${s.status === 'online' ? t('common.online') : t('common.offline')}</span>
+                  </label>
+                `).join('')}
+              </div>
+            </div>
           `}
 
           <div class="form-group">
@@ -99,6 +113,21 @@ export async function showRunPlaybookModal(onClose, preselectedNames = []) {
   overlay.querySelector('#btn-rp-close').addEventListener('click', closeModal);
   overlay.querySelector('#btn-rp-cancel').addEventListener('click', closeModal);
   overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+
+  if (!isBulk) {
+    const targetSel = overlay.querySelector('#rp-target');
+    const excludeGroup = overlay.querySelector('#rp-exclude-group');
+    const syncExcludeVisibility = () => {
+      if (!excludeGroup || !targetSel) return;
+      const show = targetSel.value === 'all';
+      excludeGroup.classList.toggle('hidden', !show);
+      if (!show) {
+        overlay.querySelectorAll('.rp-exclude-cb').forEach(cb => { cb.checked = false; });
+      }
+    };
+    targetSel?.addEventListener('change', syncExcludeVisibility);
+    syncExcludeVisibility();
+  }
 
   // ── Bulk mode: chip removal & "add all" ──────────────────
   if (isBulk) {
@@ -148,9 +177,14 @@ export async function showRunPlaybookModal(onClose, preselectedNames = []) {
   // ── Submit ───────────────────────────────────────────────
   overlay.querySelector('#run-playbook-form').addEventListener('submit', async e => {
     e.preventDefault();
-    const target   = overlay.querySelector('#rp-target').value;
     const playbook = overlay.querySelector('#rp-file').value;
     const varsStr  = overlay.querySelector('#rp-vars').value.trim();
+    let target = overlay.querySelector('#rp-target').value;
+
+    if (!isBulk && target === 'all') {
+      const excluded = [...overlay.querySelectorAll('.rp-exclude-cb:checked')].map(cb => cb.value);
+      target = buildAllExceptTargets(excluded);
+    }
 
     if (!target) {
       showToast(t('run.needTarget'), 'error');
@@ -172,7 +206,7 @@ export async function showRunPlaybookModal(onClose, preselectedNames = []) {
 
     try {
       await api.runPlaybook(playbook, target, extraVars);
-      const targetLabel = isBulk ? `${target.split(',').length} Server` : `"${target}"`;
+      const targetLabel = describePlaybookTargets(target, t);
       showToast(t('run.started', { pb: playbook, target: targetLabel }), 'success');
       closeModal();
     } catch (error) {

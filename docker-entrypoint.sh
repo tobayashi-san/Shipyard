@@ -92,6 +92,15 @@ if [ -d /app/bundled-playbooks ] && [ -d /app/server/playbooks ]; then
     done
     chown -R shipyard:shipyard /app/server/playbooks
   fi
+
+  # Older installs intentionally skipped update.yml during seeding, which
+  # leaves the user-facing playbooks mount without the server update playbook.
+  # Backfill it when missing so it shows up consistently in mounted playbooks.
+  if [ ! -f /app/server/playbooks/update.yml ] && [ -f /app/bundled-playbooks/update.yml ]; then
+    echo "[INIT] Restoring missing starter playbook: update.yml"
+    cp /app/bundled-playbooks/update.yml /app/server/playbooks/update.yml
+    chown shipyard:shipyard /app/server/playbooks/update.yml
+  fi
 fi
 
 # Fix ownership of OpenTofu workspace directories registered by the plugin

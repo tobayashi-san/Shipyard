@@ -2,13 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { getPermissions, filterServers, can } = require('../utils/permissions');
-
-function parseTargets(targets) {
-  return String(targets || '')
-    .split(',')
-    .map(t => t.trim())
-    .filter(Boolean);
-}
+const { parseTargetExpression } = require('../utils/validate');
 
 // GET /api/schedule-history?limit=100&scheduleId=xxx
 router.get('/', (req, res) => {
@@ -34,10 +28,9 @@ router.get('/', (req, res) => {
   const filtered = all
     .filter(h => {
       if (!h.targets) return false;
-      const targets = parseTargets(h.targets);
-      if (targets.length === 0) return false;
-      if (targets.includes('all')) return false;
-      return targets.some(t => accessibleNames.has(t));
+      const parsed = parseTargetExpression(h.targets);
+      if (parsed.kind !== 'list' || parsed.included.length === 0) return false;
+      return parsed.included.some(t => accessibleNames.has(t));
     })
     .slice(0, limit);
 
@@ -58,9 +51,9 @@ router.get('/:id', (req, res) => {
     const accessibleNames = new Set(
       filterServers(db.servers.getAll(), perms).map(s => s.name)
     );
-    const targets = parseTargets(row.targets);
-    if (targets.includes('all')) return res.status(403).json({ error: 'Permission denied' });
-    if (!targets.some(t => accessibleNames.has(t))) return res.status(403).json({ error: 'Permission denied' });
+    const parsed = parseTargetExpression(row.targets);
+    if (parsed.kind !== 'list') return res.status(403).json({ error: 'Permission denied' });
+    if (!parsed.included.some(t => accessibleNames.has(t))) return res.status(403).json({ error: 'Permission denied' });
   }
 
   res.json(row);

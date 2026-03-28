@@ -198,7 +198,7 @@ app.get('/plugins/:pluginId/ui.js', (req, res) => {
 });
 
 const { getPermissions, filterServers, filterPlugins, can, guardServerAccess } = require('./utils/permissions');
-const { isValidPlaybook, validateTargets } = require('./utils/validate');
+const { isValidPlaybook, validateTargets, parseTargetExpression } = require('./utils/validate');
 
 // GET /api/dashboard – aggregated stats from DB cache (no SSH, instant)
 app.get('/api/dashboard', (req, res) => {
@@ -367,12 +367,12 @@ app.post('/api/ansible/run', async (req, res) => {
 
   // Target authorization: restricted users may only run against their accessible servers
   if (!perms.full && perms.servers !== 'all') {
-    const resolvedTargets = targets ? targets.split(',').map(t => t.trim()).filter(Boolean) : [];
-    if (resolvedTargets.length === 0 || resolvedTargets.includes('all')) {
+    const parsedTargets = parseTargetExpression(targets);
+    if (parsedTargets.kind !== 'list' || parsedTargets.included.length === 0) {
       return res.status(403).json({ error: 'Restricted users must specify individual server targets' });
     }
     const accessibleNames = new Set(filterServers(db.servers.getAll(), perms).map(s => s.name));
-    const forbidden = resolvedTargets.filter(t => !accessibleNames.has(t));
+    const forbidden = parsedTargets.included.filter(t => !accessibleNames.has(t));
     if (forbidden.length > 0) {
       return res.status(403).json({ error: `Access denied to: ${forbidden.join(', ')}` });
     }
