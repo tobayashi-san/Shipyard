@@ -297,7 +297,17 @@ export async function renderServerDetail(serverId) {
   document.getElementById('btn-back')?.addEventListener('click', () => navigate('dashboard'));
 
   document.getElementById('btn-edit-server')?.addEventListener('click', () => {
-    showAddServerModal(() => { navigate('dashboard'); }, server);
+    showAddServerModal(async (savedServer) => {
+      const normalized = {
+        ...(savedServer || {}),
+        services: typeof savedServer?.services === 'string' ? JSON.parse(savedServer.services) : (savedServer?.services || []),
+        tags: typeof savedServer?.tags === 'string' ? JSON.parse(savedServer.tags) : (savedServer?.tags || []),
+      };
+      const idx = state.servers.findIndex(s => s.id === serverId);
+      if (idx >= 0) state.servers[idx] = { ...state.servers[idx], ...normalized };
+      else if (savedServer?.id) state.servers.push(normalized);
+      await renderServerDetail(serverId);
+    }, server);
   });
 
   document.getElementById('btn-terminal')?.addEventListener('click', () => {
@@ -1242,19 +1252,24 @@ async function loadAgentTab(serverId) {
     const installed = !!status.installed;
 
     el.innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px;">
-        <div class="panel" style="padding:12px;"><div style="font-size:11px;color:var(--text-muted);">${t('det.agentMode')}</div><div style="font-size:15px;font-weight:600;">${esc(status.mode || 'legacy')}</div></div>
-        <div class="panel" style="padding:12px;"><div style="font-size:11px;color:var(--text-muted);">${t('det.agentLastSeen')}</div><div style="font-size:15px;font-weight:600;">${esc(status.lastSeen || '—')}</div></div>
-        <div class="panel" style="padding:12px;"><div style="font-size:11px;color:var(--text-muted);">${t('det.agentRunnerVersion')}</div><div style="font-size:15px;font-weight:600;">${esc(status.runnerVersion || '—')}</div></div>
-        <div class="panel" style="padding:12px;"><div style="font-size:11px;color:var(--text-muted);">${t('det.agentManifestVersion')}</div><div style="font-size:15px;font-weight:600;">${esc(String(status.manifestVersion || status.latestManifestVersion || '—'))}</div></div>
+      <div class="agent-kpi-grid">
+        <div class="agent-kpi-card"><div class="agent-kpi-label">${t('det.agentMode')}</div><div class="agent-kpi-value">${esc(status.mode || 'legacy')}</div></div>
+        <div class="agent-kpi-card"><div class="agent-kpi-label">${t('det.agentLastSeen')}</div><div class="agent-kpi-value">${esc(status.lastSeen || '—')}</div></div>
+        <div class="agent-kpi-card"><div class="agent-kpi-label">${t('det.agentRunnerVersion')}</div><div class="agent-kpi-value">${esc(status.runnerVersion || '—')}</div></div>
+        <div class="agent-kpi-card"><div class="agent-kpi-label">${t('det.agentManifestVersion')}</div><div class="agent-kpi-value">${esc(String(status.manifestVersion || status.latestManifestVersion || '—'))}</div></div>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <div class="agent-action-row">
         ${!installed ? `<button class="btn btn-primary btn-sm" id="btn-agent-install"><i class="fas fa-download"></i> ${t('det.agentInstall')}</button>` : ''}
         ${installed ? `<button class="btn btn-secondary btn-sm" id="btn-agent-update"><i class="fas fa-rotate"></i> ${t('det.agentUpdate')}</button>` : ''}
         ${installed ? `<button class="btn btn-secondary btn-sm" id="btn-agent-configure"><i class="fas fa-sliders"></i> ${t('det.agentConfigure')}</button>` : ''}
         ${installed ? `<button class="btn btn-secondary btn-sm" id="btn-agent-rotate-token"><i class="fas fa-key"></i> ${t('det.agentRotateToken')}</button>` : ''}
         ${installed ? `<button class="btn btn-danger btn-sm" id="btn-agent-remove"><i class="fas fa-trash"></i> ${t('det.agentRemove')}</button>` : ''}
       </div>
+      ${installed ? `
+      <div class="agent-action-notes">
+        <div><strong>${t('det.agentUpdate')}:</strong> ${t('det.agentUpdateHint')}</div>
+        <div><strong>${t('det.agentConfigure')}:</strong> ${t('det.agentConfigureHint')}</div>
+      </div>` : ''}
       <div style="margin-top:12px;max-width:860px;">
         <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:6px;">${t('det.agentShipyardUrl')}</label>
         <input id="agent-shipyard-url" class="form-input" type="text" value="${esc(status.shipyardUrl || window.location.origin)}" placeholder="https://shipyard.example.com" style="max-width:520px;width:100%;margin-bottom:10px;">

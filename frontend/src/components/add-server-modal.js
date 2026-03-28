@@ -104,11 +104,13 @@ export function showAddServerModal(onSuccess, editServer = null) {
     };
 
     try {
+      let savedServer = null;
       if (isEdit) {
-        await api.updateServer(editServer.id, data);
+        savedServer = await api.updateServer(editServer.id, data);
         showToast(t('add.saved', { name: data.name }), 'success');
       } else {
         const server = await api.createServer(data);
+        savedServer = server;
 
         // Deploy SSH key if password provided
         const password = document.getElementById('server-password')?.value;
@@ -132,7 +134,7 @@ export function showAddServerModal(onSuccess, editServer = null) {
 
       overlay.classList.add('hidden');
       overlay.innerHTML = '';
-      if (onSuccess) onSuccess();
+      if (onSuccess) await onSuccess(savedServer);
     } catch (error) {
       showToast(t('common.errorPrefix', { msg: error.message }), 'error');
       btn.disabled = false;

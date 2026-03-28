@@ -15,6 +15,19 @@ let collapsedGroups = new Set();
 const PAGE_SIZE = 20;
 let serverPage = 1;
 
+function normalizeServer(server) {
+  return {
+    ...server,
+    services: typeof server.services === 'string' ? JSON.parse(server.services) : server.services || [],
+    tags: typeof server.tags === 'string' ? JSON.parse(server.tags) : server.tags || [],
+  };
+}
+
+async function reloadServersState() {
+  const servers = await api.getServers();
+  state.servers = servers.map(normalizeServer);
+}
+
 export async function renderServers() {
   const main = document.querySelector('.main-content');
   if (!main) return;
@@ -156,7 +169,10 @@ function attachEvents() {
 
   ['btn-add-server', 'btn-empty-add'].forEach(id => {
     document.getElementById(id)?.addEventListener('click', () =>
-      showAddServerModal(() => navigate('servers'))
+      showAddServerModal(async () => {
+        await reloadServersState();
+        await renderServers();
+      })
     );
   });
 
@@ -401,12 +417,7 @@ function attachEvents() {
         result.created > 0 ? 'success' : 'info'
       );
       if (result.created > 0) {
-        const updated = await api.getServers();
-        state.servers = updated.map(s => ({
-          ...s,
-          services: typeof s.services === 'string' ? JSON.parse(s.services) : s.services || [],
-          tags:     typeof s.tags     === 'string' ? JSON.parse(s.tags)     : s.tags     || [],
-        }));
+        await reloadServersState();
         serverPage = 1;
         renderServers();
       }
@@ -420,12 +431,7 @@ function attachEvents() {
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner-sm"></span> ${t('common.loading')}`;
     try {
-      const servers = await api.getServers();
-      state.servers = servers.map(s => ({
-        ...s,
-        services: typeof s.services === 'string' ? JSON.parse(s.services) : s.services || [],
-        tags:     typeof s.tags     === 'string' ? JSON.parse(s.tags)     : s.tags     || [],
-      }));
+      await reloadServersState();
       renderServers();
     } catch (e) {
       showToast(t('common.errorPrefix', { msg: e.message }), 'error');
@@ -528,7 +534,12 @@ function attachEvents() {
     btn.addEventListener('click', e => {
       e.stopPropagation();
       const server = state.servers.find(s => s.id === btn.dataset.serverId);
-      if (server) showAddServerModal(() => navigate('servers'), server);
+      if (server) {
+        showAddServerModal(async () => {
+          await reloadServersState();
+          await renderServers();
+        }, server);
+      }
     });
   });
 

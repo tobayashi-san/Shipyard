@@ -1691,6 +1691,48 @@ input[type="color"].form-input::-moz-color-swatch {
   letter-spacing: 0.04em;
 }
 
+/* ── Agent Tab ───────────────────────────────────────── */
+.agent-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
+  margin: 6px 0 18px;
+}
+
+.agent-kpi-card {
+  background: var(--bg-panel-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+
+.agent-kpi-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.agent-kpi-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.agent-action-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.agent-action-notes {
+  margin-top: 10px;
+  display: grid;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 /* ── Resource Bars ──────────────────────────────────── */
 .res-block { padding: 4px 0; }
 
