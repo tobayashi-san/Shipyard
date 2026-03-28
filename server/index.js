@@ -10,6 +10,7 @@ const jwt = require('jsonwebtoken');
 const { Client: SshClient } = require('ssh2');
 const log = require('./utils/logger');
 const { serverError } = require('./utils/http-error');
+const { createComposeTempFile, buildComposeWriteOperations } = require('./utils/compose-write');
 const db = require('./db');
 const ansibleRunner = require('./services/ansible-runner');
 const sshManager = require('./services/ssh-manager');
@@ -618,27 +619,35 @@ app.post('/api/servers/:id/docker/compose/write', composeLimiter, guardServerAcc
   if (!can(getPermissions(req.user), 'canManageDockerCompose')) return res.status(403).json({ error: 'Permission denied' });
   next();
 }, async (req, res) => {
-  const { id: serverId } = req.params;
   const { path, content } = req.body;
   const server = req.server;
   if (!path || !content) return res.status(400).json({ error: 'path and content required' });
   if (!/^[a-zA-Z0-9/_.-]+$/.test(path) || path.includes('..')) return res.status(400).json({ error: 'Invalid path format' });
   if (isBlockedRemotePath(path)) return res.status(400).json({ error: 'Path not allowed: system directories are protected' });
 
+  let tempCompose;
   try {
-    // Use single-quoted paths with proper escaping to prevent shell injection
-    const safePath = path.replace(/'/g, "'\\''");
-    const b64 = Buffer.from(content).toString('base64');
+    tempCompose = createComposeTempFile(content);
+    const ops = buildComposeWriteOperations(path, tempCompose.tmpFile);
 
-    // Create directory if it doesn't exist, then write the decoded file
-    const result = await ansibleRunner.runAdHoc(
+    const ensureDir = await ansibleRunner.runAdHoc(
       server.name,
-      'shell',
-      `mkdir -p '${safePath}' && printf '%s' '${b64.replace(/'/g, "'\\''")}' | base64 -d > '${safePath}/docker-compose.yml'`,
+      ops.ensureDir.module,
+      ops.ensureDir.args,
+      () => {}
+    );
+    if (!ensureDir.success) {
+      return res.status(500).json({ error: 'Failed to create compose directory', details: ensureDir.stderr || ensureDir.stdout });
+    }
+
+    const copyResult = await ansibleRunner.runAdHoc(
+      server.name,
+      ops.copyFile.module,
+      ops.copyFile.args,
       () => {}
     );
 
-    if (result.success) {
+    if (copyResult.success) {
       // Only create a new compose project entry if this path isn't already tracked
       // (avoids phantom "root"/"dirname" entries shadowing the real project name)
       if (!db.composeProjects.getByServerAndPath(server.id, path)) {
@@ -647,10 +656,12 @@ app.post('/api/servers/:id/docker/compose/write', composeLimiter, guardServerAcc
       }
       res.json({ success: true, message: 'docker-compose.yml saved successfully' });
     } else {
-      res.status(500).json({ error: 'Failed to write docker-compose.yml', details: result.stderr || result.stdout });
+      res.status(500).json({ error: 'Failed to write docker-compose.yml', details: copyResult.stderr || copyResult.stdout });
     }
   } catch (err) {
     serverError(res, err, 'write docker-compose');
+  } finally {
+    tempCompose?.cleanup();
   }
 });
 
