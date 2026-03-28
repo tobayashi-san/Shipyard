@@ -301,6 +301,14 @@ router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, 
 
   const cached = db.serverInfo.get(req.params.id);
   const force = req.query.force === '1';
+  const agentCfg = db.agentConfig.getByServerId(req.params.id);
+  const hasActiveAgent = !!(agentCfg && agentCfg.mode && agentCfg.mode !== 'legacy');
+
+  // Agent-managed servers use cached metrics from the runner as the source of truth.
+  // Do not overwrite them with classic SSH polling on read.
+  if (hasActiveAgent && cached) {
+    return res.json({ ...cached, _cached: true, _source: 'agent' });
+  }
 
   // Serve cache immediately, refresh in background
   if (cached && !force) {

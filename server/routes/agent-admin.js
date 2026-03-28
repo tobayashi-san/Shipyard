@@ -59,8 +59,16 @@ function handleAgentBackendError(res, e, ctx) {
 }
 
 function getAgentToken(cfg) {
-  const stored = cfg?.token ? decrypt(cfg.token) : '';
-  return stored || crypto.randomBytes(32).toString('hex');
+  if (!cfg?.token) {
+    return { token: crypto.randomBytes(32).toString('hex'), generated: true };
+  }
+  const stored = decrypt(cfg.token);
+  if (!stored || String(stored).startsWith('enc:')) {
+    const err = new Error('Stored agent token cannot be decrypted. Rotate the token to recover this agent.');
+    err.status = 409;
+    throw err;
+  }
+  return { token: stored, generated: false };
 }
 
 function normalizeCaPem(input) {
@@ -192,18 +200,9 @@ router.post('/servers/:id/agent/install', async (req, res) => {
   try { caPem = await resolveCaPemForDeployment(shipyardUrl, caPem); } catch (e) { return res.status(400).json({ error: `Could not auto-load local TLS certificate: ${e.message}` }); }
 
   const token = crypto.randomBytes(32).toString('hex');
-  const encryptedToken = encrypt(token);
 
   try {
     manifestService.ensureSeeded();
-    db.agentConfig.upsert({
-      server_id: server.id,
-      mode: mode === 'auto' ? 'push' : mode,
-      token: encryptedToken,
-      shipyard_url: shipyardUrl,
-      interval,
-      installed_at: new Date().toISOString(),
-    });
 
     const result = await ansibleRunner.runPlaybook(
       'system/agent/agent-deploy.yml',
@@ -220,6 +219,15 @@ router.post('/servers/:id/agent/install', async (req, res) => {
     if (!result.success) {
       return res.status(500).json({ error: 'Agent deploy failed', stderr: result.stderr });
     }
+
+    db.agentConfig.upsert({
+      server_id: server.id,
+      mode: mode === 'auto' ? 'push' : mode,
+      token: encrypt(token),
+      shipyard_url: shipyardUrl,
+      interval,
+      installed_at: new Date().toISOString(),
+    });
 
     db.auditLog.write('agent.install', `Agent installed on ${server.name} (${mode})`, req.ip, true);
     res.json({ success: true, mode, interval });
@@ -263,10 +271,8 @@ router.put('/servers/:id/agent/config', async (req, res) => {
   }
   try { caPem = await resolveCaPemForDeployment(shipyardUrl, caPem); } catch (e) { return res.status(400).json({ error: `Could not auto-load local TLS certificate: ${e.message}` }); }
 
-  const token = getAgentToken(cfg);
   try {
-    db.agentConfig.updateModeInterval(server.id, mode, interval, shipyardUrl);
-    db.agentConfig.setToken(server.id, encrypt(token));
+    const { token, generated } = getAgentToken(cfg);
     const result = await ansibleRunner.runPlaybook(
       'system/agent/agent-configure.yml',
       server.name,
@@ -279,10 +285,13 @@ router.put('/servers/:id/agent/config', async (req, res) => {
       },
     );
     if (!result.success) return res.status(500).json({ error: 'Agent reconfigure failed', stderr: result.stderr });
+    db.agentConfig.updateModeInterval(server.id, mode, interval, shipyardUrl);
+    if (generated) db.agentConfig.setToken(server.id, encrypt(token));
     db.auditLog.write('agent.configure', `Agent configured on ${server.name} (${mode}/${interval}s)`, req.ip, true);
     res.json({ success: true, mode, interval });
   } catch (e) {
     db.auditLog.write('agent.configure', `Agent configure failed on ${server.name}`, req.ip, false);
+    if (e?.status) return res.status(e.status).json({ error: e.message });
     handleAgentBackendError(res, e, 'agent configure');
   }
 });
@@ -372,7 +381,7 @@ router.put('/agent-manifest', (req, res) => {
     res.json({ success: true, version: row.version });
   } catch (e) {
     db.auditLog.write('agent.manifest.update', 'Agent manifest update failed', req.ip, false);
-    if (e instanceof SyntaxError || /Manifest\./.test(e.message)) {
+    if (e?.status === 400 || e instanceof SyntaxError || /Manifest\./.test(e.message)) {
       return res.status(400).json({ error: e.message });
     }
     serverError(res, e, 'agent manifest update');

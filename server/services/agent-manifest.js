@@ -5,6 +5,12 @@ const db = require('../db');
 const DEFAULT_MANIFEST_PATH = path.join(__dirname, '..', 'playbooks', 'system', 'agent', 'files', 'default-manifest.json');
 const BUNDLED_MANIFEST_PATH = path.join(__dirname, '..', '..', 'bundled-playbooks', 'system', 'agent', 'files', 'default-manifest.json');
 
+function validationError(message) {
+  const err = new Error(message);
+  err.status = 400;
+  return err;
+}
+
 function validateManifest(manifest) {
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
     return 'Manifest must be a JSON object';
@@ -107,7 +113,7 @@ function getLatestParsed() {
 function createVersion({ content, createdBy, changelog }) {
   const manifest = typeof content === 'string' ? JSON.parse(content) : content;
   const err = validateManifest(manifest);
-  if (err) throw new Error(err);
+  if (err) throw validationError(err);
 
   const latest = ensureSeeded();
   const version = latest.version + 1;
