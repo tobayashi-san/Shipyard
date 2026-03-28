@@ -212,12 +212,17 @@ db.exec(`
     id TEXT PRIMARY KEY,
     action TEXT NOT NULL,
     detail TEXT,
+    user TEXT,
     ip TEXT,
     success INTEGER DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now'))
   )
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);`);
+// Migration: add user column if missing (pre-1.0.3 DBs)
+try { db.exec(`ALTER TABLE audit_log ADD COLUMN user TEXT`); } catch {}
+db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action);`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_log_user ON audit_log(user);`);
 
 
 // Schedule execution history
@@ -569,11 +574,27 @@ module.exports = {
   },
 
   auditLog: {
-    write: (action, detail, ip, success = true) => {
+    write: (action, detail, ip, success = true, user = null) => {
       const id = uuidv4();
-      db.prepare('INSERT INTO audit_log (id, action, detail, ip, success) VALUES (?, ?, ?, ?, ?)').run(id, action, detail || null, ip || null, success ? 1 : 0);
+      db.prepare('INSERT INTO audit_log (id, action, detail, user, ip, success) VALUES (?, ?, ?, ?, ?, ?)').run(id, action, detail || null, user || null, ip || null, success ? 1 : 0);
     },
     getRecent: (limit = 100) => db.prepare('SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ?').all(limit),
+    query: ({ action, user, ip, success, from, to, limit = 200, offset = 0 } = {}) => {
+      const conditions = [];
+      const params = [];
+      if (action) { conditions.push('action LIKE ?'); params.push(`${action}%`); }
+      if (user) { conditions.push('user = ?'); params.push(user); }
+      if (ip) { conditions.push('ip LIKE ?'); params.push(`%${ip}%`); }
+      if (success !== undefined && success !== '') { conditions.push('success = ?'); params.push(Number(success)); }
+      if (from) { conditions.push('created_at >= ?'); params.push(from); }
+      if (to) { conditions.push('created_at <= ?'); params.push(to); }
+      const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+      params.push(Math.min(limit, 500), offset);
+      return db.prepare(`SELECT * FROM audit_log ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...params);
+    },
+    countAll: () => db.prepare('SELECT COUNT(*) as count FROM audit_log').get().count,
+    distinctActions: () => db.prepare('SELECT DISTINCT action FROM audit_log ORDER BY action').all().map(r => r.action),
+    distinctUsers: () => db.prepare("SELECT DISTINCT user FROM audit_log WHERE user IS NOT NULL AND user != '' ORDER BY user").all().map(r => r.user),
     pruneOlderThan: (days) => db.prepare("DELETE FROM audit_log WHERE created_at < datetime('now', ?)").run(`-${days} days`),
   },
 

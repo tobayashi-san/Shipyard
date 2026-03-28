@@ -1,17 +1,7 @@
 {
   "_comment": [
-    "Dieses Manifest lebt auf dem Shipyard-Server.",
-    "Du änderst es hier, und alle Agents holen sich beim",
-    "nächsten Zyklus automatisch die neue Version.",
-    "",
-    "Jeder Collector ist ein Shell-Befehl, dessen Output",
-    "der Agent einsammelt und an Shipyard zurückschickt.",
-    "Shipyard parst den Output serverseitig.",
-    "",
-    "version  → Hochzählen bei jeder Änderung.",
-    "           Agent erkennt Änderungen daran.",
-    "interval → Sekunden zwischen Zyklen.",
-    "           Wird vom Agent dynamisch übernommen."
+    "Agent manifest — edit here, agents auto-fetch on next cycle.",
+    "version: bump on every change. interval: seconds between cycles."
   ],
 
   "version": 1,
@@ -20,63 +10,63 @@
   "collectors": [
     {
       "id": "cpu",
-      "description": "CPU-Zeile aus /proc/stat für Auslastungsberechnung",
+      "description": "CPU usage from /proc/stat",
       "cmd": "head -1 /proc/stat",
       "timeout": 3,
       "parser": "cpu_stat"
     },
     {
       "id": "memory",
-      "description": "RAM-Infos aus /proc/meminfo",
+      "description": "RAM info from /proc/meminfo",
       "cmd": "grep -E '^(MemTotal|MemAvailable|MemFree|Buffers|Cached|SwapTotal|SwapFree):' /proc/meminfo",
       "timeout": 3,
       "parser": "meminfo"
     },
     {
       "id": "disk",
-      "description": "Disk-Auslastung aller gemounteten Partitionen",
+      "description": "Disk usage of mounted partitions",
       "cmd": "df -BM -x tmpfs -x devtmpfs -x overlay",
       "timeout": 5,
       "parser": "df"
     },
     {
       "id": "load",
-      "description": "Load Average und Anzahl Prozesse",
+      "description": "Load average",
       "cmd": "cat /proc/loadavg",
       "timeout": 3,
       "parser": "loadavg"
     },
     {
       "id": "uptime",
-      "description": "Uptime in Sekunden",
+      "description": "Uptime in seconds",
       "cmd": "awk '{print $1}' /proc/uptime",
       "timeout": 3,
       "parser": "raw_number"
     },
     {
       "id": "network",
-      "description": "Netzwerk-Interfaces mit RX/TX Bytes",
+      "description": "Network interfaces RX/TX bytes",
       "cmd": "cat /proc/net/dev",
       "timeout": 3,
       "parser": "proc_net_dev"
     },
     {
       "id": "docker_ps",
-      "description": "Laufende Docker-Container (optional, scheitert leise ohne Docker)",
+      "description": "Running Docker containers (silent fail without Docker)",
       "cmd": "docker ps --format '{{.ID}}\\t{{.Names}}\\t{{.Status}}\\t{{.Image}}' 2>/dev/null",
       "timeout": 5,
       "parser": "docker_ps"
     },
     {
       "id": "os_info",
-      "description": "OS-Release Infos",
+      "description": "OS release info",
       "cmd": "cat /etc/os-release",
       "timeout": 3,
       "parser": "key_value"
     },
     {
       "id": "nproc",
-      "description": "Anzahl CPU-Kerne",
+      "description": "CPU core count",
       "cmd": "nproc",
       "timeout": 3,
       "parser": "raw_number"

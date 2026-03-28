@@ -1150,7 +1150,7 @@ async function loadPluginsList() {
         if (enable) {
           const confirmed = await showConfirm(
             t('set.pluginsEnableWarning', { name: plugin?.name || id }),
-            { title: t('set.pluginsEnableTitle'), confirmText: t('set.pluginsEnableConfirm'), danger: true }
+            { title: t('set.pluginsEnableTitle'), confirmText: t('set.pluginsEnableConfirm'), danger: true, html: true }
           );
           if (!confirmed) {
             tog.checked  = false;
@@ -1966,46 +1966,151 @@ async function loadAuditTab() {
   if (!content) return;
   content.dataset.loaded = '1';
 
+  let meta = { actions: [], users: [], count: 0 };
+  let filters = { action: '', user: '', success: '', from: '', to: '', limit: 100, offset: 0 };
+  let allRows = [];
+
+  try { meta = await api.getAuditMeta(); } catch {}
+
+  async function fetchRows(append = false) {
+    if (!append) filters.offset = 0;
+    const rows = await api.getAuditLog(filters);
+    if (append) { allRows = allRows.concat(rows); } else { allRows = rows; }
+    return rows.length;
+  }
+
+  function renderRows() {
+    const list = document.getElementById('audit-list');
+    if (!list) return;
+    if (allRows.length === 0) {
+      list.innerHTML = `
+        <div class="settings-row" style="border-bottom:none;">
+          <div style="padding:20px 0;color:var(--text-muted);font-size:13px;text-align:center;width:100%;">
+            <i class="fas fa-clipboard-list" style="opacity:.4;font-size:1.5rem;margin-bottom:8px;display:block;"></i>
+            ${t('set.auditEmpty')}
+          </div>
+        </div>`;
+      return;
+    }
+    list.innerHTML = allRows.map((r, i) => `
+      <div class="settings-row" ${i === allRows.length - 1 ? 'style="border-bottom:none;"' : ''}>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="font-size:12px;color:var(--text-primary);font-family:var(--font-mono);">${esc(r.action || '')}</span>
+            ${r.user ? `<span style="font-size:11px;padding:1px 6px;border-radius:4px;background:var(--bg-tertiary);color:var(--text-secondary);">${esc(r.user)}</span>` : ''}
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;white-space:pre-wrap;word-break:break-word;">${esc(r.detail || '—')}</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${t('set.auditIp')}: ${esc(r.ip || '—')}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
+          <span style="font-size:11px;padding:2px 8px;border-radius:999px;${r.success ? 'background:rgba(34,197,94,.14);color:#22c55e;' : 'background:rgba(239,68,68,.14);color:#ef4444;'}">${r.success ? t('set.auditStatusOk') : t('set.auditStatusFailed')}</span>
+          <span style="font-size:11px;color:var(--text-muted);">${esc(r.created_at || '')}</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
   async function renderAudit() {
-    let rows = [];
     try {
-      rows = await api.getAuditLog(250);
+      await fetchRows();
     } catch (e) {
       content.innerHTML = `<div style="padding:16px;color:var(--offline);font-size:13px;">${esc(t('set.auditLoadError'))}: ${esc(e.message)}</div>`;
       return;
     }
 
+    const actionOpts = meta.actions.map(a => `<option value="${esc(a)}" ${filters.action === a ? 'selected' : ''}>${esc(a)}</option>`).join('');
+    const userOpts = meta.users.map(u => `<option value="${esc(u)}" ${filters.user === u ? 'selected' : ''}>${esc(u)}</option>`).join('');
+
     content.innerHTML = `
-      <div class="settings-group-title" style="display:flex;align-items:center;justify-content:space-between;">
+      <div class="settings-group-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
         <span>${t('set.auditTitle')}</span>
-        <button class="btn btn-secondary btn-sm" id="btn-refresh-audit"><i class="fas fa-rotate"></i> ${t('set.auditRefresh')}</button>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:11px;color:var(--text-muted);">${t('set.auditTotal', { n: meta.count })} · ${t('set.auditRetention')}</span>
+          <button class="btn btn-secondary btn-sm" id="btn-refresh-audit"><i class="fas fa-rotate"></i> ${t('set.auditRefresh')}</button>
+        </div>
       </div>
-      <div class="settings-block" id="audit-list">
-        ${rows.length === 0 ? `
-          <div class="settings-row" style="border-bottom:none;">
-            <div style="padding:20px 0;color:var(--text-muted);font-size:13px;text-align:center;width:100%;">
-              <i class="fas fa-clipboard-list" style="opacity:.4;font-size:1.5rem;margin-bottom:8px;display:block;"></i>
-              ${t('set.auditEmpty')}
-            </div>
-          </div>` :
-          rows.map((r, i) => `
-            <div class="settings-row" ${i === rows.length - 1 ? 'style="border-bottom:none;"' : ''}>
-              <div style="flex:1;min-width:0;">
-                <div style="font-size:12px;color:var(--text-primary);font-family:var(--font-mono);">${esc(r.action || '')}</div>
-                <div style="font-size:12px;color:var(--text-muted);margin-top:2px;white-space:pre-wrap;word-break:break-word;">${esc(r.detail || '—')}</div>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${t('set.auditIp')}: ${esc(r.ip || '—')}</div>
-              </div>
-              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
-                <span style="font-size:11px;padding:2px 8px;border-radius:999px;${r.success ? 'background:rgba(34,197,94,.14);color:#22c55e;' : 'background:rgba(239,68,68,.14);color:#ef4444;'}">${r.success ? t('set.auditStatusOk') : t('set.auditStatusFailed')}</span>
-                <span style="font-size:11px;color:var(--text-muted);">${esc(r.created_at || '')}</span>
-              </div>
-            </div>
-          `).join('')
-        }
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;padding:8px 0 12px;">
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px;">${t('set.auditFilterAction')}</label>
+          <select id="audit-f-action" class="form-input" style="font-size:12px;min-width:140px;padding:4px 6px;">
+            <option value="">${t('set.auditFilterAll')}</option>
+            ${actionOpts}
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px;">${t('set.auditFilterUser')}</label>
+          <select id="audit-f-user" class="form-input" style="font-size:12px;min-width:120px;padding:4px 6px;">
+            <option value="">${t('set.auditFilterAll')}</option>
+            ${userOpts}
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px;">${t('set.auditFilterStatus')}</label>
+          <select id="audit-f-success" class="form-input" style="font-size:12px;min-width:100px;padding:4px 6px;">
+            <option value="">${t('set.auditFilterAll')}</option>
+            <option value="1" ${filters.success === '1' ? 'selected' : ''}>${t('set.auditStatusOk')}</option>
+            <option value="0" ${filters.success === '0' ? 'selected' : ''}>${t('set.auditStatusFailed')}</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px;">${t('set.auditFilterFrom')}</label>
+          <input id="audit-f-from" type="date" class="form-input" style="font-size:12px;padding:4px 6px;" value="${esc(filters.from)}">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px;">${t('set.auditFilterTo')}</label>
+          <input id="audit-f-to" type="date" class="form-input" style="font-size:12px;padding:4px 6px;" value="${esc(filters.to)}">
+        </div>
+        <button class="btn btn-secondary btn-sm" id="audit-f-reset" style="padding:4px 8px;font-size:11px;">${t('set.auditFilterReset')}</button>
       </div>
+      <div class="settings-block" id="audit-list"></div>
+      <div style="text-align:center;padding:8px 0;" id="audit-more-wrap"></div>
     `;
 
-    document.getElementById('btn-refresh-audit')?.addEventListener('click', renderAudit);
+    renderRows();
+    updateMoreBtn();
+
+    const applyFilter = async () => {
+      filters.action = document.getElementById('audit-f-action')?.value || '';
+      filters.user = document.getElementById('audit-f-user')?.value || '';
+      filters.success = document.getElementById('audit-f-success')?.value ?? '';
+      filters.from = document.getElementById('audit-f-from')?.value || '';
+      filters.to = document.getElementById('audit-f-to')?.value || '';
+      try { await fetchRows(); renderRows(); updateMoreBtn(); } catch {}
+    };
+
+    ['audit-f-action', 'audit-f-user', 'audit-f-success', 'audit-f-from', 'audit-f-to'].forEach(id => {
+      document.getElementById(id)?.addEventListener('change', applyFilter);
+    });
+
+    document.getElementById('audit-f-reset')?.addEventListener('click', () => {
+      filters = { action: '', user: '', success: '', from: '', to: '', limit: 100, offset: 0 };
+      renderAudit();
+    });
+
+    document.getElementById('btn-refresh-audit')?.addEventListener('click', async () => {
+      try { meta = await api.getAuditMeta(); } catch {}
+      renderAudit();
+    });
+
+    document.getElementById('btn-audit-more')?.addEventListener('click', loadMore);
+  }
+
+  function updateMoreBtn() {
+    const wrap = document.getElementById('audit-more-wrap');
+    if (!wrap) return;
+    wrap.innerHTML = allRows.length >= filters.offset + filters.limit
+      ? `<button class="btn btn-secondary btn-sm" id="btn-audit-more">${t('set.auditShowMore')}</button>`
+      : '';
+    document.getElementById('btn-audit-more')?.addEventListener('click', loadMore);
+  }
+
+  async function loadMore() {
+    filters.offset = allRows.length;
+    try {
+      await fetchRows(true);
+      renderRows();
+      updateMoreBtn();
+    } catch {}
   }
 
   await renderAudit();

@@ -46,7 +46,7 @@ router.post('/', adminOnly, (req, res) => {
   if (!name || !String(name).trim()) return res.status(400).json({ error: 'name required' });
   try {
     const role = db.roles.create(name.trim(), sanitizePermissions(permissions));
-    db.auditLog.write('roles.create', `Created role: ${name}`, req.ip);
+    db.auditLog.write('roles.create', `Created role: ${name}`, req.ip, true, req.user?.username);
     res.status(201).json(parse(role));
   } catch (e) {
     if (e.message?.includes('UNIQUE')) return res.status(409).json({ error: 'Role name already exists' });
@@ -63,7 +63,7 @@ router.put('/:id', adminOnly, (req, res) => {
   if (!name || !String(name).trim()) return res.status(400).json({ error: 'name required' });
   try {
     const updated = db.roles.update(req.params.id, name.trim(), sanitizePermissions(permissions));
-    db.auditLog.write('roles.update', `Updated role: ${req.params.id}`, req.ip);
+    db.auditLog.write('roles.update', `Updated role: ${req.params.id}`, req.ip, true, req.user?.username);
     res.json(parse(updated));
   } catch (e) {
     if (e.message?.includes('UNIQUE')) return res.status(409).json({ error: 'Role name already exists' });
@@ -80,7 +80,7 @@ router.delete('/:id', adminOnly, (req, res) => {
   if (inUse > 0) return res.status(400).json({ error: `Role assigned to ${inUse} user(s). Reassign them first.` });
   try {
     db.roles.delete(req.params.id);
-    db.auditLog.write('roles.delete', `Deleted role: ${req.params.id}`, req.ip);
+    db.auditLog.write('roles.delete', `Deleted role: ${req.params.id}`, req.ip, true, req.user?.username);
     res.json({ success: true });
   } catch (e) { serverError(res, e, 'delete role'); }
 });

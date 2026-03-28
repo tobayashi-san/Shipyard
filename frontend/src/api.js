@@ -161,7 +161,12 @@ class ApiClient {
 
   // Ansible / Playbooks
   getAnsibleStatus() { return this.request('/system/status'); }
-  getAuditLog(limit = 200) { return this.request(`/system/audit?limit=${encodeURIComponent(limit)}`); }
+  getAuditLog(params = {}) {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) { if (v !== undefined && v !== '') q.set(k, v); }
+    return this.request(`/system/audit?${q}`);
+  }
+  getAuditMeta() { return this.request('/system/audit/meta'); }
   getPollingConfig() { return this.request('/system/polling-config'); }
   savePollingConfig(data) { return this.request('/system/polling-config', { method: 'PUT', body: data }); }
   getPlaybooks() { return this.request('/playbooks'); }

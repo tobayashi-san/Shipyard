@@ -229,10 +229,10 @@ router.post('/servers/:id/agent/install', async (req, res) => {
       installed_at: new Date().toISOString(),
     });
 
-    db.auditLog.write('agent.install', `Agent installed on ${server.name} (${mode})`, req.ip, true);
+    db.auditLog.write('agent.install', `Agent installed on ${server.name} (${mode})`, req.ip, true, req.user?.username);
     res.json({ success: true, mode, interval });
   } catch (e) {
-    db.auditLog.write('agent.install', `Agent install failed on ${server.name}`, req.ip, false);
+    db.auditLog.write('agent.install', `Agent install failed on ${server.name}`, req.ip, false, req.user?.username);
     handleAgentBackendError(res, e, 'agent install');
   }
 });
@@ -244,10 +244,10 @@ router.post('/servers/:id/agent/update', async (req, res) => {
   try {
     const result = await ansibleRunner.runPlaybook('system/agent/agent-update.yml', server.name, {});
     if (!result.success) return res.status(500).json({ error: 'Agent update failed', stderr: result.stderr });
-    db.auditLog.write('agent.update', `Agent updated on ${server.name}`, req.ip, true);
+    db.auditLog.write('agent.update', `Agent updated on ${server.name}`, req.ip, true, req.user?.username);
     res.json({ success: true });
   } catch (e) {
-    db.auditLog.write('agent.update', `Agent update failed on ${server.name}`, req.ip, false);
+    db.auditLog.write('agent.update', `Agent update failed on ${server.name}`, req.ip, false, req.user?.username);
     handleAgentBackendError(res, e, 'agent update');
   }
 });
@@ -287,10 +287,10 @@ router.put('/servers/:id/agent/config', async (req, res) => {
     if (!result.success) return res.status(500).json({ error: 'Agent reconfigure failed', stderr: result.stderr });
     db.agentConfig.updateModeInterval(server.id, mode, interval, shipyardUrl);
     if (generated) db.agentConfig.setToken(server.id, encrypt(token));
-    db.auditLog.write('agent.configure', `Agent configured on ${server.name} (${mode}/${interval}s)`, req.ip, true);
+    db.auditLog.write('agent.configure', `Agent configured on ${server.name} (${mode}/${interval}s)`, req.ip, true, req.user?.username);
     res.json({ success: true, mode, interval });
   } catch (e) {
-    db.auditLog.write('agent.configure', `Agent configure failed on ${server.name}`, req.ip, false);
+    db.auditLog.write('agent.configure', `Agent configure failed on ${server.name}`, req.ip, false, req.user?.username);
     if (e?.status) return res.status(e.status).json({ error: e.message });
     handleAgentBackendError(res, e, 'agent configure');
   }
@@ -329,10 +329,10 @@ router.post('/servers/:id/agent/token-rotate', async (req, res) => {
       },
     );
     if (!result.success) return res.status(500).json({ error: 'Agent token rotate failed', stderr: result.stderr });
-    db.auditLog.write('agent.token.rotate', `Agent token rotated on ${server.name}`, req.ip, true);
+    db.auditLog.write('agent.token.rotate', `Agent token rotated on ${server.name}`, req.ip, true, req.user?.username);
     res.json({ success: true });
   } catch (e) {
-    db.auditLog.write('agent.token.rotate', `Agent token rotate failed on ${server.name}`, req.ip, false);
+    db.auditLog.write('agent.token.rotate', `Agent token rotate failed on ${server.name}`, req.ip, false, req.user?.username);
     handleAgentBackendError(res, e, 'agent token rotate');
   }
 });
@@ -345,10 +345,10 @@ router.delete('/servers/:id/agent', async (req, res) => {
     const result = await ansibleRunner.runPlaybook('system/agent/agent-remove.yml', server.name, {});
     if (!result.success) return res.status(500).json({ error: 'Agent remove failed', stderr: result.stderr });
     db.agentConfig.delete(server.id);
-    db.auditLog.write('agent.remove', `Agent removed from ${server.name}`, req.ip, true);
+    db.auditLog.write('agent.remove', `Agent removed from ${server.name}`, req.ip, true, req.user?.username);
     res.json({ success: true, mode: 'legacy' });
   } catch (e) {
-    db.auditLog.write('agent.remove', `Agent remove failed on ${server.name}`, req.ip, false);
+    db.auditLog.write('agent.remove', `Agent remove failed on ${server.name}`, req.ip, false, req.user?.username);
     handleAgentBackendError(res, e, 'agent remove');
   }
 });
@@ -377,10 +377,10 @@ router.put('/agent-manifest', (req, res) => {
     const changelog = String(req.body?.changelog || '').slice(0, 500);
     const content = req.body?.content;
     const row = manifestService.createVersion({ content, createdBy, changelog });
-    db.auditLog.write('agent.manifest.update', `Agent manifest updated to v${row.version}`, req.ip, true);
+    db.auditLog.write('agent.manifest.update', `Agent manifest updated to v${row.version}`, req.ip, true, req.user?.username);
     res.json({ success: true, version: row.version });
   } catch (e) {
-    db.auditLog.write('agent.manifest.update', 'Agent manifest update failed', req.ip, false);
+    db.auditLog.write('agent.manifest.update', 'Agent manifest update failed', req.ip, false, req.user?.username);
     if (e?.status === 400 || e instanceof SyntaxError || /Manifest\./.test(e.message)) {
       return res.status(400).json({ error: e.message });
     }

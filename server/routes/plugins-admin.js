@@ -3,6 +3,7 @@ const router       = express.Router();
 const pluginLoader = require('../services/plugin-loader');
 const { adminOnly } = require('../middleware/auth');
 const { getPermissions, filterPlugins } = require('../utils/permissions');
+const db = require('../db');
 const { serverError } = require('../utils/http-error');
 
 // GET /api/plugins — list plugins visible to this user
@@ -19,6 +20,8 @@ router.get('/', (req, res) => {
 router.post('/:id/:action(enable|disable)', adminOnly, (req, res) => {
   try {
     pluginLoader.setEnabled(req.params.id, req.params.action === 'enable');
+    const action = req.params.action;
+    db.auditLog.write(`plugin.${action}`, `Plugin ${req.params.id} ${action}d`, req.ip, true, req.user?.username);
     res.json({ success: true });
   } catch (e) {
     if (e.message?.includes('not loaded')) return res.status(404).json({ error: e.message });
@@ -30,6 +33,7 @@ router.post('/:id/:action(enable|disable)', adminOnly, (req, res) => {
 router.post('/reload', adminOnly, (req, res) => {
   try {
     pluginLoader.reloadAll();
+    db.auditLog.write('plugin.reload', 'All plugins reloaded', req.ip, true, req.user?.username);
     res.json({ success: true, plugins: pluginLoader.list() });
   } catch (e) {
     serverError(res, e, 'reload plugins');

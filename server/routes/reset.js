@@ -45,7 +45,7 @@ function deleteUserPlaybooks() {
 router.delete('/servers', resetLimiter, adminOnly, (req, res) => {
   try {
     db.db.transaction(deleteServerTables)();
-    db.auditLog.write('reset.servers', 'All servers and related data deleted', req.ip);
+    db.auditLog.write('reset.servers', 'All servers and related data deleted', req.ip, true, req.user?.username);
     res.json({ success: true });
   } catch (e) {
     serverError(res, e, 'reset');
@@ -56,7 +56,7 @@ router.delete('/servers', resetLimiter, adminOnly, (req, res) => {
 router.delete('/schedules', resetLimiter, adminOnly, (req, res) => {
   try {
     db.db.prepare('DELETE FROM schedules').run();
-    db.auditLog.write('reset.schedules', 'All schedules deleted', req.ip);
+    db.auditLog.write('reset.schedules', 'All schedules deleted', req.ip, true, req.user?.username);
     res.json({ success: true });
   } catch (e) {
     serverError(res, e, 'reset');
@@ -67,7 +67,7 @@ router.delete('/schedules', resetLimiter, adminOnly, (req, res) => {
 router.delete('/playbooks', resetLimiter, adminOnly, (req, res) => {
   try {
     deleteUserPlaybooks();
-    db.auditLog.write('reset.playbooks', 'All user playbooks deleted', req.ip);
+    db.auditLog.write('reset.playbooks', 'All user playbooks deleted', req.ip, true, req.user?.username);
     res.json({ success: true });
   } catch (e) {
     serverError(res, e, 'reset');
@@ -84,7 +84,7 @@ router.delete('/auth', resetLimiter, adminOnly, (req, res) => {
     db.settings.set('totp_enabled', '');
     db.settings.set('totp_secret', '');
     db.settings.set('totp_secret_pending', '');
-    db.auditLog.write('reset.auth', 'Authentication reset: all users deleted, sessions invalidated', req.ip);
+    db.auditLog.write('reset.auth', 'Authentication reset: all users deleted, sessions invalidated', req.ip, true, req.user?.username);
     res.json({ success: true });
   } catch (e) {
     serverError(res, e, 'reset');
@@ -110,7 +110,7 @@ router.delete('/all', resetLimiter, adminOnly, (req, res) => {
     db.settings.set('wl_accent_color', '');
     db.settings.set('ui_theme', 'auto');
     db.settings.set('onboarding_done', '');
-    db.auditLog.write('reset.all', 'Full factory reset performed', req.ip);
+    db.auditLog.write('reset.all', 'Full factory reset performed', req.ip, true, req.user?.username);
     res.json({ success: true });
   } catch (e) {
     serverError(res, e, 'reset');

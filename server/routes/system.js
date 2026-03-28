@@ -53,10 +53,10 @@ router.post('/key/export', adminOnly, deployLimiter, (req, res) => {
   try {
     const passphrase = typeof req.body.passphrase === 'string' ? req.body.passphrase : '';
     const key = sshManager.getPrivateKeyExport(passphrase);
-    db.auditLog.write('ssh.export', `SSH private key exported${passphrase ? ' (passphrase-protected)' : ''}`, req.ip, true);
+    db.auditLog.write('ssh.export', `SSH private key exported${passphrase ? ' (passphrase-protected)' : ''}`, req.ip, true, req.user?.username);
     res.json({ privateKey: key, success: true });
   } catch (error) {
-    db.auditLog.write('ssh.export', 'SSH private key export failed', req.ip, false);
+    db.auditLog.write('ssh.export', 'SSH private key export failed', req.ip, false, req.user?.username);
     serverError(res, error, 'export SSH key');
   }
 });
@@ -69,10 +69,10 @@ router.post('/key/import', adminOnly, (req, res) => {
       return res.status(400).json({ error: 'privateKey is required' });
     }
     const result = sshManager.importKey(privateKey, 'shipyard_imported', passphrase || '');
-    db.auditLog.write('ssh.import', 'SSH private key imported', req.ip, true);
+    db.auditLog.write('ssh.import', 'SSH private key imported', req.ip, true, req.user?.username);
     res.json(result);
   } catch (error) {
-    db.auditLog.write('ssh.import', 'SSH private key import failed', req.ip, false);
+    db.auditLog.write('ssh.import', 'SSH private key import failed', req.ip, false, req.user?.username);
     if (error.message?.includes('passphrase') || error.message?.includes('Invalid SSH')) {
       return res.status(400).json({ error: error.message });
     }
@@ -88,10 +88,10 @@ router.post('/deploy', adminOnly, deployLimiter, async (req, res) => {
       return res.status(400).json({ error: 'ip_address and password are required' });
     }
     const result = await sshManager.deployKey(ip_address, ssh_user || 'root', password, ssh_port || 22);
-    db.auditLog.write('ssh.deploy', `SSH key deployed to ${ip_address}`, req.ip, result.success !== false);
+    db.auditLog.write('ssh.deploy', `SSH key deployed to ${ip_address}`, req.ip, result.success !== false, req.user?.username);
     res.json(result);
   } catch (error) {
-    db.auditLog.write('ssh.deploy', `SSH key deploy failed for ${req.body?.ip_address}`, req.ip, false);
+    db.auditLog.write('ssh.deploy', `SSH key deploy failed for ${req.body?.ip_address}`, req.ip, false, req.user?.username);
     serverError(res, error, 'deploy SSH key');
   }
 });
@@ -127,10 +127,10 @@ router.post('/deploy-all', adminOnly, deployLimiter, async (req, res) => {
 
     const failed = results.filter(r => !r.success).length;
     const succeeded = results.length - failed;
-    db.auditLog.write('ssh.deploy_all', `SSH key deploy all: success=${succeeded} failed=${failed}`, req.ip, failed === 0);
+    db.auditLog.write('ssh.deploy_all', `SSH key deploy all: success=${succeeded} failed=${failed}`, req.ip, failed === 0, req.user?.username);
     res.json({ success: failed === 0, total: results.length, succeeded, failed, results });
   } catch (error) {
-    db.auditLog.write('ssh.deploy_all', 'Bulk SSH key deploy failed', req.ip, false);
+    db.auditLog.write('ssh.deploy_all', 'Bulk SSH key deploy failed', req.ip, false, req.user?.username);
     serverError(res, error, 'deploy SSH key to all servers');
   }
 });
@@ -232,6 +232,7 @@ router.put('/polling-config', adminOnly, (req, res) => {
   if (imageUpdates)  { save('poll_image_updates_enabled', imageUpdates.enabled ? '1' : '0'); save('poll_image_updates_interval_min', Math.max(1, parseInt(imageUpdates.intervalMin) || 360)); }
   if (customUpdates) { save('poll_custom_updates_enabled', customUpdates.enabled ? '1' : '0');save('poll_custom_updates_interval_min', Math.max(1, parseInt(customUpdates.intervalMin) || 360)); }
   scheduler.restartPolling();
+  db.auditLog.write('system.polling', 'Polling configuration updated', req.ip, true, req.user?.username);
   res.json({ success: true });
 });
 
@@ -243,7 +244,7 @@ router.post('/rotate-jwt-secret', adminOnly, (req, res) => {
       error: 'JWT_SECRET is set via environment variable. Update it there to rotate the signing key.',
     });
   }
-  db.auditLog.write('system.rotate-jwt', 'JWT secret rotated — all sessions invalidated', req.ip);
+  db.auditLog.write('system.rotate-jwt', 'JWT secret rotated — all sessions invalidated', req.ip, true, req.user?.username);
   res.json({ success: true, message: 'JWT secret rotated. All users must log in again.' });
 });
 
@@ -253,13 +254,29 @@ router.post('/onboarding-complete', adminOnly, (req, res) => {
   res.json({ success: true });
 });
 
-// GET /api/system/audit - Recent audit log entries
+// GET /api/system/audit - Recent audit log entries (with optional filters)
 router.get('/audit', adminOnly, (req, res) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit) || 100, 500);
-    res.json(db.auditLog.getRecent(limit));
+    const { action, user, ip, success, from, to } = req.query;
+    const limit = Math.min(parseInt(req.query.limit) || 200, 500);
+    const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+    const rows = db.auditLog.query({ action, user, ip, success, from, to, limit, offset });
+    res.json(rows);
   } catch (error) {
     serverError(res, error, 'audit log');
+  }
+});
+
+// GET /api/system/audit/meta - Filter options for audit log UI
+router.get('/audit/meta', adminOnly, (req, res) => {
+  try {
+    res.json({
+      actions: db.auditLog.distinctActions(),
+      users: db.auditLog.distinctUsers(),
+      count: db.auditLog.countAll(),
+    });
+  } catch (error) {
+    serverError(res, error, 'audit meta');
   }
 });
 

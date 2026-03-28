@@ -1252,6 +1252,7 @@ async function loadAgentTab(serverId) {
     const installed = !!status.installed;
 
     el.innerHTML = `
+      <p style="font-size:13px;color:var(--text-muted);margin:0 0 14px 0;line-height:1.5;">${t('det.agentDescription')}</p>
       <div class="agent-kpi-grid">
         <div class="agent-kpi-card"><div class="agent-kpi-label">${t('det.agentMode')}</div><div class="agent-kpi-value">${esc(status.mode || 'legacy')}</div></div>
         <div class="agent-kpi-card"><div class="agent-kpi-label">${t('det.agentLastSeen')}</div><div class="agent-kpi-value">${esc(status.lastSeen || '—')}</div></div>

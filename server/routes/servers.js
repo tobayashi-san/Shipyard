@@ -216,7 +216,7 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
       tags: Array.isArray(tags) ? tags.filter(t => typeof t === 'string').map(t => t.slice(0, 100)) : [],
       services: Array.isArray(services) ? services.filter(s => typeof s === 'string').map(s => s.slice(0, 100)) : [],
     });
-    db.auditLog.write('server.create', `Server "${name}" (${ip_address}) created`, req.ip);
+    db.auditLog.write('server.create', `Server "${name}" (${ip_address}) created`, req.ip, true, req.user?.username);
     res.status(201).json(parseServer(server));
   } catch (error) {
     serverError(res, error, 'create server');
@@ -251,7 +251,7 @@ router.delete('/:id', guardServerAccess, guard('canDeleteServers'), (req, res) =
   try {
     const server = req.server;
     db.servers.delete(req.params.id);
-    db.auditLog.write('server.delete', `Server "${server.name}" (${server.ip_address}) deleted`, req.ip);
+    db.auditLog.write('server.delete', `Server "${server.name}" (${server.ip_address}) deleted`, req.ip, true, req.user?.username);
     res.json({ message: 'Server deleted' });
   } catch (error) {
     serverError(res, error, 'delete server');

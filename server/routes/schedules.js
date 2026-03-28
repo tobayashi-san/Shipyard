@@ -38,6 +38,7 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
   }
   const id = db.schedules.create(name.trim(), playbook, targets, cronExpression);
   scheduler.reload(id);
+  db.auditLog.write('schedule.create', `Schedule "${name.trim()}" created (${playbook})`, req.ip, true, req.user?.username);
   res.json({ id, status: 'created' });
 });
 
@@ -75,6 +76,7 @@ router.put('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'can
 
   db.schedules.update(req.params.id, fields);
   scheduler.reload(req.params.id);
+  db.auditLog.write('schedule.update', `Schedule "${existing.name}" updated`, req.ip, true, req.user?.username);
   res.json({ status: 'updated' });
 });
 
@@ -86,6 +88,7 @@ router.post('/:id/toggle', (req, res, next) => { if (!can(getPermissions(req.use
   const newEnabled = existing.enabled ? 0 : 1;
   db.schedules.update(req.params.id, { enabled: newEnabled });
   scheduler.reload(req.params.id);
+  db.auditLog.write('schedule.toggle', `Schedule "${existing.name}" ${newEnabled ? 'enabled' : 'disabled'}`, req.ip, true, req.user?.username);
   res.json({ enabled: !!newEnabled });
 });
 
@@ -96,6 +99,7 @@ router.delete('/:id', (req, res, next) => { if (!can(getPermissions(req.user), '
 
   scheduler.unregister(req.params.id);
   db.schedules.delete(req.params.id);
+  db.auditLog.write('schedule.delete', `Schedule "${existing.name}" deleted`, req.ip, true, req.user?.username);
   res.json({ status: 'deleted' });
 });
 

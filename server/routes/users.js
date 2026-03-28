@@ -29,7 +29,7 @@ router.post('/', adminOnly, async (req, res) => {
   try {
     const hash = await bcrypt.hash(password, 12);
     const user = db.users.create(username.trim(), email || '', hash, userRole, displayName || '');
-    db.auditLog.write('users.create', `Created user: ${username}`, req.ip);
+    db.auditLog.write('users.create', `Created user: ${username}`, req.ip, true, req.user?.username);
     res.status(201).json(user);
   } catch (e) {
     if (e.message && e.message.includes('UNIQUE')) {
@@ -66,7 +66,7 @@ router.put('/:id', adminOnly, (req, res) => {
     }
     const user = db.users.update(id, fields);
     if (!user) return res.status(404).json({ error: 'User not found' });
-    db.auditLog.write('users.update', `Updated user: ${id}`, req.ip);
+    db.auditLog.write('users.update', `Updated user: ${id}`, req.ip, true, req.user?.username);
     res.json(user);
   } catch (e) {
     if (e.message && e.message.includes('UNIQUE')) {
@@ -89,7 +89,7 @@ router.put('/:id/password', adminOnly, async (req, res) => {
     const hash = await bcrypt.hash(password, 12);
     db.users.setPasswordHash(id, hash);
     db.users.incrementTokenVersion(id);
-    db.auditLog.write('users.password', `Admin reset password for user: ${id}`, req.ip);
+    db.auditLog.write('users.password', `Admin reset password for user: ${id}`, req.ip, true, req.user?.username);
     res.json({ success: true });
   } catch (e) {
     serverError(res, e, 'reset user password');
@@ -106,7 +106,7 @@ router.put('/:id/totp-disable', adminOnly, (req, res) => {
     db.users.setTotp(id, '', false);
     db.users.setPendingTotp(id, '');
     db.users.incrementTokenVersion(id);
-    db.auditLog.write('users.totp.disable', `Admin disabled 2FA for user: ${id}`, req.ip);
+    db.auditLog.write('users.totp.disable', `Admin disabled 2FA for user: ${id}`, req.ip, true, req.user?.username);
     res.json({ success: true });
   } catch (e) {
     serverError(res, e, 'admin disable user totp');

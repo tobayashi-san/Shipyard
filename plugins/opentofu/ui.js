@@ -294,7 +294,7 @@ function renderDashboard(content) {
           </button>
         </div>
       </div>
-      ${!_status.installed ? setupGuidePanel() : ''}
+      ${!_status.installed ? `<div style="margin-top:16px;">${setupGuidePanel()}</div>` : ''}
     `;
     document.getElementById('dash-btn-new')?.addEventListener('click', () => openWorkspaceModal(null));
     initInstallPanel();
@@ -466,8 +466,11 @@ async function initInstallPanel() {
 // ── Tab: Workspaces ───────────────────────────────────────────────────────
 function renderWorkspacesTab(content) {
   if (_workspaces.length === 0) {
-    content.innerHTML = `<div class="panel"><div class="empty-state" style="padding:40px;">
-      <p>No workspaces. <button class="btn btn-primary btn-sm" id="ws-btn-new"><i class="fas fa-plus"></i> Create</button></p>
+    content.innerHTML = `<div class="panel"><div class="empty-state" style="padding:48px;">
+      <div class="empty-state-icon"><i class="fas fa-layer-group"></i></div>
+      <h3>No workspaces</h3>
+      <p>Create a workspace to start managing your OpenTofu infrastructure.</p>
+      <button class="btn btn-primary" id="ws-btn-new"><i class="fas fa-plus"></i> Create Workspace</button>
     </div></div>`;
     document.getElementById('ws-btn-new')?.addEventListener('click', () => openWorkspaceModal(null));
     return;

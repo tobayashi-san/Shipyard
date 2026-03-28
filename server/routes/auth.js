@@ -90,7 +90,7 @@ router.put('/profile', authMiddleware, (req, res) => {
     }
   }
 
-  db.auditLog.write('auth.profile', 'Profile updated', req.ip);
+  db.auditLog.write('auth.profile', 'Profile updated', req.ip, true, req.user?.username);
   res.json({ success: true });
 });
 
@@ -107,7 +107,7 @@ router.post('/setup', async (req, res) => {
   const hash = await bcrypt.hash(password, 12);
   const user = db.users.create(username, '', hash, 'admin');
 
-  db.auditLog.write('auth.setup', `Initial admin user created: ${username}`, req.ip);
+  db.auditLog.write('auth.setup', `Initial admin user created: ${username}`, req.ip, true, username);
   res.json({ token: makeToken(user) });
 });
 
@@ -138,7 +138,7 @@ router.post('/login', loginLimiter, async (req, res) => {
 
   const valid = await bcrypt.compare(password, user.password_hash || DUMMY_HASH);
   if (!valid) {
-    db.auditLog.write('auth.login', `Failed login attempt for ${user.username}`, req.ip, false);
+    db.auditLog.write('auth.login', `Failed login attempt for ${user.username}`, req.ip, false, user.username);
     return res.status(401).json({ error: 'Incorrect credentials' });
   }
 
@@ -148,7 +148,7 @@ router.post('/login', loginLimiter, async (req, res) => {
     return res.json({ requires2FA: true, tempToken });
   }
 
-  db.auditLog.write('auth.login', `Successful login: ${user.username}`, req.ip);
+  db.auditLog.write('auth.login', `Successful login: ${user.username}`, req.ip, true, user.username);
   res.json({ token: makeToken(user) });
 });
 
@@ -170,7 +170,7 @@ router.post('/change', changeLimiter, authMiddleware, async (req, res) => {
   db.users.setPasswordHash(req.user.id, newHash);
   // Increment per-user token version to invalidate only this user's tokens
   db.users.incrementTokenVersion(req.user.id);
-  db.auditLog.write('auth.change', `Password changed for ${req.user.username}, user tokens invalidated`, req.ip);
+  db.auditLog.write('auth.change', `Password changed for ${req.user.username}, user tokens invalidated`, req.ip, true, req.user.username);
   // Issue a fresh token so the user isn't logged out
   const updatedUser = db.users.getById(req.user.id);
   res.json({ success: true, token: makeToken(updatedUser) });
@@ -198,10 +198,10 @@ router.post('/totp/login', loginLimiter, (req, res) => {
   const secret = user.totp_secret;
   if (!secret) return res.status(400).json({ error: '2FA not configured' });
   if (!verifyTotp(code, secret)) {
-    db.auditLog.write('auth.totp', 'Invalid TOTP code', req.ip, false);
+    db.auditLog.write('auth.totp', 'Invalid TOTP code', req.ip, false, user.username);
     return res.status(401).json({ error: 'Invalid authenticator code' });
   }
-  db.auditLog.write('auth.login', `Successful login (2FA): ${user.username}`, req.ip);
+  db.auditLog.write('auth.login', `Successful login (2FA): ${user.username}`, req.ip, true, user.username);
   res.json({ token: makeToken(user) });
 });
 
@@ -240,7 +240,7 @@ router.post('/totp/confirm', authMiddleware, (req, res) => {
   db.users.setTotp(req.user.id, secret, true);
   db.users.setPendingTotp(req.user.id, '');
 
-  db.auditLog.write('auth.totp', '2FA enabled', req.ip);
+  db.auditLog.write('auth.totp', '2FA enabled', req.ip, true, req.user?.username);
   res.json({ success: true });
 });
 
@@ -257,7 +257,7 @@ router.delete('/totp', authMiddleware, async (req, res) => {
   if (!valid) return res.status(401).json({ error: 'Incorrect password' });
   db.users.setTotp(req.user.id, '', false);
 
-  db.auditLog.write('auth.totp', '2FA disabled', req.ip);
+  db.auditLog.write('auth.totp', '2FA disabled', req.ip, true, req.user?.username);
   res.json({ success: true });
 });
 
