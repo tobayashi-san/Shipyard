@@ -9,6 +9,10 @@ test('validateTargets accepts all-except syntax', () => {
   assert.equal(validateTargets('all:!web-1:!db-1'), null);
 });
 
+test('validateTargets rejects blank targets', () => {
+  assert.equal(validateTargets('   '), 'targets is required');
+});
+
 test('parseTargetExpression parses all-except syntax', () => {
   assert.deepEqual(parseTargetExpression('all:!web-1:!db-1'), {
     kind: 'all_except',

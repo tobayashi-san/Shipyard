@@ -19,11 +19,12 @@ function isValidPlaybook(name) {
 
 /**
  * Returns an error string if targets is invalid, or null if valid.
- * Undefined/null is accepted (callers default to 'all').
+ * Undefined/null is accepted for callers that intentionally default elsewhere.
  */
 function validateTargets(targets) {
   if (targets === undefined || targets === null) return null;
   if (typeof targets !== 'string') return 'targets must be a string';
+  if (!targets.trim()) return 'targets is required';
   if (targets.length > 500) return 'targets too long (max 500)';
   if (!TARGETS_RE.test(targets)) return 'targets contains invalid characters';
   return null;

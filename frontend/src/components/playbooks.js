@@ -270,6 +270,7 @@ function renderTemplatesHTML() {
             <div class="form-group">
               <label class="form-label">${t('pb.target')}</label>
               <select class="form-input" id="run-target">
+                <option value="">${t('run.selectTarget')}</option>
                 <option value="all">${t('pb.allServers')}</option>
                 ${state.servers.map(s => `<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('')}
                 <option value="localhost">localhost</option>
@@ -451,6 +452,7 @@ function openRunPanel(filename, description) {
   document.getElementById('run-output').classList.add('hidden');
   document.getElementById('run-terminal-body').innerHTML = '';
   const targetSel = document.getElementById('run-target');
+  if (targetSel) targetSel.value = '';
   const excludeGroup = document.getElementById('run-exclude-group');
   const syncExcludeVisibility = () => {
     if (!targetSel || !excludeGroup) return;
@@ -541,7 +543,19 @@ function setupPlaybookEvents() {
 
   document.getElementById('btn-run-confirm')?.addEventListener('click', async () => {
     if (!currentFilename) return;
-    const baseTarget = document.getElementById('run-target').value;
+    const baseTarget = document.getElementById('run-target').value.trim();
+    if (!baseTarget) {
+      showToast(t('run.needTarget'), 'warning');
+      return;
+    }
+    if (baseTarget === 'all') {
+      const confirmed = await showConfirm(t('run.confirmAllServersMessage'), {
+        title: t('run.confirmAllServersTitle'),
+        confirmText: t('common.run'),
+        danger: true,
+      });
+      if (!confirmed) return;
+    }
     const target = baseTarget === 'all'
       ? buildAllExceptTargets([...document.querySelectorAll('.run-exclude-cb:checked')].map(cb => cb.value))
       : baseTarget;
@@ -593,13 +607,13 @@ function renderQuickRunHTML() {
           </div>
           <div class="form-group">
             <label class="form-label">${t('qr.targets')}</label>
-            <div class="form-hint" id="qr-target-hint">${t('run.excludeHint')}</div>
+            <div class="form-hint" id="qr-target-hint">${t('run.includeHint')}</div>
             <div id="qr-server-list" style="
               border:1px solid var(--border);border-radius:var(--radius);
               background:var(--bg-panel-alt);max-height:220px;overflow-y:auto;
             ">
               <label style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);cursor:pointer;">
-                <input type="checkbox" id="qr-all" value="all" checked style="accent-color:var(--accent);">
+                <input type="checkbox" id="qr-all" value="all" style="accent-color:var(--accent);">
                 <span style="font-weight:500;">${t('pb.allServers')}</span>
               </label>
               ${state.servers.map(s => `
@@ -674,7 +688,10 @@ function setupQuickRunEvents() {
     }
   }
 
-  allCb?.addEventListener('change', syncQuickRunTargetMode);
+  allCb?.addEventListener('change', () => {
+    document.querySelectorAll('.qr-server-cb').forEach(cb => { cb.checked = false; });
+    syncQuickRunTargetMode();
+  });
   syncQuickRunTargetMode();
 
   document.getElementById('btn-qr-run')?.addEventListener('click', async () => {
@@ -684,6 +701,12 @@ function setupQuickRunEvents() {
     const allChecked = document.getElementById('qr-all')?.checked;
     let targets;
     if (allChecked) {
+      const confirmed = await showConfirm(t('run.confirmAllServersMessage'), {
+        title: t('run.confirmAllServersTitle'),
+        confirmText: t('common.run'),
+        danger: true,
+      });
+      if (!confirmed) return;
       const excluded = [...document.querySelectorAll('.qr-server-cb:checked')]
         .map(c => c.value)
         .filter(v => v !== 'localhost');

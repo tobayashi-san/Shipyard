@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { state } from '../main.js';
-import { showToast } from './toast.js';
+import { showToast, showConfirm } from './toast.js';
 import { t } from '../i18n.js';
 import { esc } from '../utils/format.js';
 import { buildAllExceptTargets, describePlaybookTargets } from '../utils/playbook-targets.js';
@@ -59,6 +59,7 @@ export async function showRunPlaybookModal(onClose, preselectedNames = []) {
             <div class="form-group">
               <label class="form-label">${t('run.targetGroup')}</label>
               <select class="form-input" id="rp-target" required>
+                <option value="">${t('run.selectTarget')}</option>
                 <option value="all">${t('pb.allServers')}</option>
                 <optgroup label="Server">
                   ${state.servers.map(s => `<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('')}
@@ -179,16 +180,23 @@ export async function showRunPlaybookModal(onClose, preselectedNames = []) {
     e.preventDefault();
     const playbook = overlay.querySelector('#rp-file').value;
     const varsStr  = overlay.querySelector('#rp-vars').value.trim();
-    let target = overlay.querySelector('#rp-target').value;
-
-    if (!isBulk && target === 'all') {
-      const excluded = [...overlay.querySelectorAll('.rp-exclude-cb:checked')].map(cb => cb.value);
-      target = buildAllExceptTargets(excluded);
-    }
+    const rawTarget = overlay.querySelector('#rp-target').value.trim();
+    let target = rawTarget;
 
     if (!target) {
       showToast(t('run.needTarget'), 'error');
       return;
+    }
+
+    if (!isBulk && rawTarget === 'all') {
+      const confirmed = await showConfirm(t('run.confirmAllServersMessage'), {
+        title: t('run.confirmAllServersTitle'),
+        confirmText: t('common.run'),
+        danger: true,
+      });
+      if (!confirmed) return;
+      const excluded = [...overlay.querySelectorAll('.rp-exclude-cb:checked')].map(cb => cb.value);
+      target = buildAllExceptTargets(excluded);
     }
 
     let extraVars = {};

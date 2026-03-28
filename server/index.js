@@ -364,10 +364,12 @@ app.post('/api/ansible/run', async (req, res) => {
 
   const targetsErr = validateTargets(targets);
   if (targetsErr) return res.status(400).json({ error: targetsErr });
+  const normalizedTargets = typeof targets === 'string' ? targets.trim() : targets;
+  if (!normalizedTargets) return res.status(400).json({ error: 'targets is required' });
 
   // Target authorization: restricted users may only run against their accessible servers
   if (!perms.full && perms.servers !== 'all') {
-    const parsedTargets = parseTargetExpression(targets);
+    const parsedTargets = parseTargetExpression(normalizedTargets);
     if (parsedTargets.kind !== 'list' || parsedTargets.included.length === 0) {
       return res.status(403).json({ error: 'Restricted users must specify individual server targets' });
     }
@@ -386,10 +388,10 @@ app.post('/api/ansible/run', async (req, res) => {
   }
 
   const historyId = db.updateHistory.create(
-    targets || 'all',
+    normalizedTargets,
     `ansible:${playbook}`
   );
-  const schedHistId = db.scheduleHistory.create(null, 'Quick Run', playbook, targets || 'all');
+  const schedHistId = db.scheduleHistory.create(null, 'Quick Run', playbook, normalizedTargets);
 
   res.json({ historyId, status: 'started' });
 
@@ -400,7 +402,7 @@ app.post('/api/ansible/run', async (req, res) => {
   try {
     const result = await ansibleRunner.runPlaybook(
       playbook,
-      targets || 'all',
+      normalizedTargets,
       extraVars || {},
       (type, data) => {
         broadcast({ type: 'ansible_output', historyId, stream: type, data });
@@ -411,12 +413,12 @@ app.post('/api/ansible/run', async (req, res) => {
     const output = result.stdout + result.stderr;
     db.updateHistory.updateStatus(historyId, status, output);
     db.scheduleHistory.complete(schedHistId, status, output);
-    db.auditLog.write('ansible.run', `playbook=${playbook} targets=${targets || 'all'} status=${status}`, req.ip, result.success, req.user?.username);
+    db.auditLog.write('ansible.run', `playbook=${playbook} targets=${normalizedTargets} status=${status}`, req.ip, result.success, req.user?.username);
     broadcast({ type: 'ansible_complete', historyId, success: result.success });
   } catch (error) {
     db.updateHistory.updateStatus(historyId, 'failed', error.message);
     db.scheduleHistory.complete(schedHistId, 'failed', error.message);
-    db.auditLog.write('ansible.run', `playbook=${playbook} targets=${targets || 'all'} error=${error.message}`, req.ip, false, req.user?.username);
+    db.auditLog.write('ansible.run', `playbook=${playbook} targets=${normalizedTargets} error=${error.message}`, req.ip, false, req.user?.username);
     broadcast({ type: 'ansible_error', historyId, error: error.message });
     if (db.settings.get('notify_playbook_failed') !== '0') notify(`Playbook failed: ${playbook}`, error.message, false).catch(() => {});
   }
