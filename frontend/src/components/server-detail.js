@@ -52,6 +52,7 @@ export async function renderServerDetail(serverId) {
       <div class="page-header-actions">
         ${hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm" id="btn-edit-server"><i class="fas fa-edit"></i> ${t('common.edit')}</button>` : ''}
         ${hasCap('canUseTerminal') ? `<button class="btn btn-secondary btn-sm" id="btn-terminal"><i class="fas fa-terminal"></i> ${t('common.terminal')}</button>` : ''}
+        ${hasCap('canUseTerminal') ? `<button class="btn btn-secondary btn-sm" id="btn-reset-host-key" title="Remove stale SSH host key"><i class="fas fa-key"></i> Reset Host Key</button>` : ''}
         ${hasCap('canRunUpdates') ? `<button class="btn btn-secondary btn-sm" id="btn-update-server"><i class="fas fa-arrow-up"></i> ${t('det.updates')}</button>` : ''}
         ${hasCap('canRebootServers') ? `<button class="btn btn-danger btn-sm" id="btn-reboot-server"><i class="fas fa-power-off"></i> ${t('det.reboot')}</button>` : ''}
       </div>
@@ -312,6 +313,28 @@ export async function renderServerDetail(serverId) {
 
   document.getElementById('btn-terminal')?.addEventListener('click', () => {
     openSshTerminal(server);
+  });
+
+  document.getElementById('btn-reset-host-key')?.addEventListener('click', async () => {
+    if (!await showConfirm(`Remove stored SSH host keys for ${server.name}? Use this after rebuilding a VM with the same IP/hostname.`, {
+      title: 'Reset Host Key',
+      confirmText: 'Reset',
+      danger: true,
+    })) return;
+
+    const btn = document.getElementById('btn-reset-host-key');
+    btn.disabled = true;
+    try {
+      const result = await api.resetServerHostKey(serverId);
+      const removed = Array.isArray(result.removed) && result.removed.length > 0
+        ? result.removed.join(', ')
+        : 'no matching entries';
+      showToast(`Host key reset completed: ${removed}`, 'success');
+    } catch (e) {
+      showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   document.getElementById('btn-update-server')?.addEventListener('click', async () => {

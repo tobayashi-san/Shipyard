@@ -273,6 +273,24 @@ router.post('/:id/test', guardServerAccess, guard('canUseTerminal'), async (req,
   }
 });
 
+// POST /api/servers/:id/reset-host-key - Remove stale known_hosts entries
+router.post('/:id/reset-host-key', guardServerAccess, guard('canUseTerminal'), (req, res) => {
+  try {
+    const server = req.server;
+    const result = sshManager.removeKnownHostEntries([server.ip_address, server.hostname]);
+    db.auditLog.write(
+      'server.reset_host_key',
+      `server="${server.name}" removed=${result.removed.join(',') || '-'} missing=${result.missing.join(',') || '-'}`,
+      req.ip,
+      true,
+      req.user?.username
+    );
+    res.json(result);
+  } catch (error) {
+    serverError(res, error, 'reset host key');
+  }
+});
+
 // GET /api/servers/:id/notes
 router.get('/:id/notes', guardServerAccess, guard('canViewServers'), (req, res) => {
   try {

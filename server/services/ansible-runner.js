@@ -50,6 +50,13 @@ class AnsibleRunner {
 
     // Strip any characters that could break Ansible INI format or inject extra lines
     const safe = (v) => String(v ?? '').replace(/[\r\n\s=\[\]#;]/g, '_');
+    const safeGroup = (v) => {
+      const normalized = String(v ?? '')
+        .replace(/[^a-zA-Z0-9_]/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '');
+      return normalized || 'group';
+    };
 
     let inventory = '[all]\n';
     servers.forEach(server => {
@@ -62,14 +69,15 @@ class AnsibleRunner {
       let tags = [];
       try { tags = JSON.parse(server.tags || '[]'); } catch {}
       tags.forEach(tag => {
-        if (!tagGroups[tag]) tagGroups[tag] = [];
-        tagGroups[tag].push(server.name);
+        const group = safeGroup(tag);
+        if (!tagGroups[group]) tagGroups[group] = new Set();
+        tagGroups[group].add(server.name);
       });
     });
 
     for (const [tag, members] of Object.entries(tagGroups)) {
       inventory += `\n[${safe(tag)}]\n`;
-      members.forEach(name => { inventory += `${safe(name)}\n`; });
+      [...members].sort().forEach(name => { inventory += `${safe(name)}\n`; });
     }
 
     const inventoryPath = path.join(DATA_DIR, `inventory-${crypto.randomUUID()}.ini`);

@@ -112,3 +112,27 @@ describe('getPrivateKeyExport', () => {
     }
   });
 });
+
+describe('removeKnownHostEntries', () => {
+  it('removes matching hosts from known_hosts and reports missing ones', () => {
+    const knownHostsPath = sshManager.getKnownHostsPath();
+    fs.mkdirSync(path.dirname(knownHostsPath), { recursive: true });
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'known-hosts-'));
+    const keyFile = path.join(tmpDir, 'hostkey');
+    execFileSync('ssh-keygen', ['-t', 'ed25519', '-f', keyFile, '-N', '', '-C', 'test-host'], { stdio: 'pipe' });
+    const pub = fs.readFileSync(`${keyFile}.pub`, 'utf8').trim();
+
+    fs.writeFileSync(knownHostsPath, `10.30.1.200 ${pub}\nubuntu-server-01 ${pub}\n`, 'utf8');
+
+    const result = sshManager.removeKnownHostEntries(['10.30.1.200', 'missing-host']);
+
+    const after = fs.readFileSync(knownHostsPath, 'utf8');
+    assert.deepEqual(result.removed, ['10.30.1.200']);
+    assert.deepEqual(result.missing, ['missing-host']);
+    assert.ok(!after.includes('10.30.1.200'));
+    assert.ok(after.includes('ubuntu-server-01'));
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+});

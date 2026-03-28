@@ -12,6 +12,7 @@ const IDLE_TIMEOUT_MS  = 5 * 60 * 1000; // 5 minutes
 const CLEANUP_INTERVAL = 60 * 1000;     // check every minute
 
 const SSH_DIR = path.join(__dirname, '..', 'data', 'ssh');
+const KNOWN_HOSTS_PATH = path.join(__dirname, '..', 'data', 'known_hosts');
 const ALGORITHM = 'aes-256-gcm';
 
 function getMasterKey() {
@@ -188,6 +189,50 @@ class SSHManager {
    */
   getPrivateKey() {
     return readPrivateKey(this.getPrivateKeyPath());
+  }
+
+  getKnownHostsPath() {
+    return KNOWN_HOSTS_PATH;
+  }
+
+  removeKnownHostEntries(hosts = []) {
+    const hostList = [...new Set(
+      (Array.isArray(hosts) ? hosts : [hosts])
+        .filter(h => typeof h === 'string')
+        .map(h => h.trim())
+        .filter(Boolean)
+    )];
+
+    if (hostList.length === 0) return { removed: [], missing: [] };
+    if (!fs.existsSync(KNOWN_HOSTS_PATH)) {
+      return { removed: [], missing: hostList };
+    }
+
+    const removed = [];
+    const missing = [];
+
+    for (const host of hostList) {
+      try {
+        const out = execFileSync('ssh-keygen', ['-F', host, '-f', KNOWN_HOSTS_PATH], {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        if (!String(out || '').trim()) {
+          missing.push(host);
+          continue;
+        }
+      } catch {
+        missing.push(host);
+        continue;
+      }
+
+      execFileSync('ssh-keygen', ['-R', host, '-f', KNOWN_HOSTS_PATH], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      removed.push(host);
+    }
+
+    return { removed, missing };
   }
 
   /**

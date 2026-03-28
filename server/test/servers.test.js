@@ -16,6 +16,7 @@ const express = require('express');
 const { router: authRouter } = require('../routes/auth');
 const authMiddleware = require('../middleware/auth');
 const serversRouter = require('../routes/servers');
+const sshManager = require('../services/ssh-manager');
 
 const app = express();
 app.use(express.json());
@@ -152,6 +153,21 @@ test('PUT /api/servers/:id/notes saves and GET reads notes', async () => {
     .set('Authorization', `Bearer ${token}`);
   assert.equal(getRes.status, 200);
   assert.equal(getRes.body.notes, 'This is a test note.');
+});
+
+test('POST /api/servers/:id/reset-host-key removes stale known_hosts entries', async () => {
+  const original = sshManager.removeKnownHostEntries;
+  sshManager.removeKnownHostEntries = (hosts) => ({ removed: hosts.filter(Boolean), missing: [] });
+  try {
+    const res = await request(app)
+      .post(`/api/servers/${serverId}/reset-host-key`)
+      .set('Authorization', `Bearer ${token}`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.missing, []);
+    assert.ok(res.body.removed.includes('192.168.1.99'));
+  } finally {
+    sshManager.removeKnownHostEntries = original;
+  }
 });
 
 // ── Delete ────────────────────────────────────────────────────────────────────
