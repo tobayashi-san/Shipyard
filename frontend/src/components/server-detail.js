@@ -63,7 +63,7 @@ export async function renderServerDetail(serverId) {
       ${hasCap('canViewDocker') ? `<button class="tab-btn" data-tab="docker">${t('det.tabDocker')}</button>` : ''}
       ${(hasCap('canViewUpdates') || hasCap('canRunUpdates') || hasCap('canRebootServers') || hasCap('canViewCustomUpdates') || hasCap('canRunCustomUpdates') || hasCap('canEditCustomUpdates') || hasCap('canDeleteCustomUpdates')) ? `<button class="tab-btn" data-tab="updates">${t('det.tabUpdates')}</button>` : ''}
       <button class="tab-btn" data-tab="history">${t('det.tabHistory')}</button>
-      ${state.user?.role === 'admin' ? `<button class="tab-btn" data-tab="agent">${t('det.tabAgent')}</button>` : ''}
+      ${state.user?.role === 'admin' && state.whiteLabel?.agentEnabled ? `<button class="tab-btn" data-tab="agent">${t('det.tabAgent')}</button>` : ''}
       <button class="tab-btn" data-tab="notes">
         <i class="fas fa-sticky-note" style="margin-right:5px;"></i>${t('det.tabNotes')}
         ${server.notes?.trim() ? '<span class="nav-item-badge" style="margin-left:6px;" aria-label="has notes">●</span>' : ''}
@@ -237,7 +237,7 @@ export async function renderServerDetail(serverId) {
       </div>
 
       <!-- Agent tab -->
-      ${state.user?.role === 'admin' ? `<div class="tab-panel" id="tab-agent">
+      ${state.user?.role === 'admin' && state.whiteLabel?.agentEnabled ? `<div class="tab-panel" id="tab-agent">
         <div class="panel">
           <div class="section-header">
             <h3><i class="fas fa-robot"></i> ${t('det.tabAgent')}</h3>

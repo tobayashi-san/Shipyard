@@ -877,6 +877,11 @@ server.listen(PORT, () => {
   // Prune audit log entries older than 90 days
   try { db.auditLog.pruneOlderThan(90); } catch {}
 
+  // Auto-enable agent feature if agents are already configured (migration for existing installs)
+  if (!db.settings.get('agent_enabled') && db.agentConfig.getAll().length > 0) {
+    db.settings.set('agent_enabled', '1');
+  }
+
   // Start scheduler and background polling after server is listening
   const scheduler = require('./services/scheduler');
   scheduler.init(broadcast);

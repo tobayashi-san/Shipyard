@@ -160,6 +160,10 @@ async function resolveCaPemForDeployment(shipyardUrl, providedCaPem) {
 }
 
 router.use(adminOnly);
+router.use((req, res, next) => {
+  if (db.settings.get('agent_enabled') !== '1') return res.status(403).json({ error: 'Agent feature is disabled' });
+  next();
+});
 
 router.get('/servers/:id/agent/status', (req, res) => {
   const server = requireServer(req.params.id, res);

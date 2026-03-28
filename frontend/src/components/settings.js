@@ -86,9 +86,9 @@ export async function renderSettings() {
       <button class="tab-btn" data-tab="system">
         <i class="fas fa-wrench"></i> ${t('set.tabSystem')}
       </button>
-      <button class="tab-btn" data-tab="agent-manifest">
+      ${state.whiteLabel?.agentEnabled ? `<button class="tab-btn" data-tab="agent-manifest">
         <i class="fas fa-robot"></i> ${t('set.tabAgentManifest')}
-      </button>
+      </button>` : ''}
       <button class="tab-btn" data-tab="notifications">
         <i class="fas fa-bell"></i> Notifications
       </button>
@@ -234,6 +234,22 @@ export async function renderSettings() {
         <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px 0;padding:0 4px;">${t('set.pollingHint')}</p>
         <div class="settings-block" id="polling-config-content">
           <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
+        </div>
+
+        <div class="settings-group-title">${t('set.agentFeature')}</div>
+        <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px 0;padding:0 4px;">${t('set.agentFeatureHint')}</p>
+        <div class="settings-block">
+          <div class="settings-row" style="border-bottom:none;">
+            <div class="settings-row-label">
+              <span>${t('set.agentFeatureToggle')}</span>
+            </div>
+            <div class="settings-row-control">
+              <label class="toggle">
+                <input type="checkbox" id="agent-enabled-toggle" ${state.whiteLabel?.agentEnabled ? 'checked' : ''}>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -494,6 +510,7 @@ export async function renderSettings() {
   loadSSHKey();
   loadAnsibleStatus();
   loadPollingConfig();
+  setupAgentToggle();
   setupSettingsEvents(wl);
   setupNotificationsEvents();
   setupDangerZone();
@@ -1005,6 +1022,24 @@ async function loadPollingConfig() {
   } catch (err) {
     el.innerHTML = `<div style="padding:16px;color:var(--offline);font-size:13px;">${esc(err.message)}</div>`;
   }
+}
+
+// ============================================================
+// Agent Feature Toggle
+// ============================================================
+function setupAgentToggle() {
+  const toggle = document.getElementById('agent-enabled-toggle');
+  if (!toggle) return;
+  toggle.addEventListener('change', async () => {
+    try {
+      await api.saveSettings({ agentEnabled: toggle.checked });
+      state.whiteLabel = { ...state.whiteLabel, agentEnabled: toggle.checked };
+      showToast(t('set.agentFeatureSaved'), 'success');
+    } catch (e) {
+      toggle.checked = !toggle.checked;
+      showToast(e.message, 'error');
+    }
+  });
 }
 
 // ============================================================

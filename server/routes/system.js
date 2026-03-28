@@ -145,6 +145,7 @@ router.get('/settings', adminOnly, (req, res) => {
       accentColor:          raw.wl_accent_color || '',
       theme:                raw.ui_theme        || 'auto',
       timeFormat:           raw.ui_time_format  || '24h',
+      agentEnabled:         raw.agent_enabled   === '1',
       webhookUrl:           raw.webhook_url     || '',
       webhookSecret:        raw.webhook_secret  ? '••••••••' : '',
       smtpHost:             raw.smtp_host       || '',
@@ -164,7 +165,7 @@ router.get('/settings', adminOnly, (req, res) => {
 router.put('/settings', adminOnly, (req, res) => {
   try {
     const { appName, appTagline, accentColor, theme, timeFormat,
-            webhookUrl, webhookSecret,
+            agentEnabled, webhookUrl, webhookSecret,
             smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom, smtpTo,
             notifPlaybookFailed, notifUpdateFailed } = req.body;
     const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
@@ -173,6 +174,7 @@ router.put('/settings', adminOnly, (req, res) => {
     if (accentColor   !== undefined) db.settings.set('wl_accent_color', str(accentColor, 20));
     if (theme         !== undefined) db.settings.set('ui_theme',        str(theme, 20));
     if (timeFormat    !== undefined) db.settings.set('ui_time_format',  str(timeFormat, 10));
+    if (agentEnabled  !== undefined) db.settings.set('agent_enabled',   agentEnabled ? '1' : '0');
     if (webhookUrl    !== undefined) db.settings.set('webhook_url',     str(webhookUrl, 1000));
     if (webhookSecret !== undefined) setSecret(db, 'webhook_secret',  str(webhookSecret, 500));
     if (smtpHost      !== undefined) db.settings.set('smtp_host',       str(smtpHost, 255));

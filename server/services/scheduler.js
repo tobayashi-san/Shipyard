@@ -175,8 +175,9 @@ async function pollSystemInfo() {
   lastInfoPollTime = Date.now();
   try {
     const servers = db.servers.getAll();
+    const agentEnabled = db.settings.get('agent_enabled') === '1';
     await Promise.allSettled(servers.map(async server => {
-      const agentCfg = db.agentConfig.getByServerId(server.id);
+      const agentCfg = agentEnabled ? db.agentConfig.getByServerId(server.id) : null;
       if (agentCfg?.mode === 'push') {
         const intervalSec = Math.max(5, parseInt(agentCfg.interval, 10) || 30);
         const lastSeenMs = agentCfg.last_seen ? new Date(agentCfg.last_seen).getTime() : 0;

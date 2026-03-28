@@ -29,6 +29,7 @@ function wipeDb() {
   for (const t of tables) {
     try { db.db.prepare(`DELETE FROM ${t}`).run(); } catch {}
   }
+  db.settings.set('agent_enabled', '1');
 }
 
 function makeApp() {
