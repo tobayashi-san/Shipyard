@@ -1,7 +1,9 @@
 const { spawn, execFileSync } = require('child_process');
 const fs   = require('fs');
+const net  = require('net');
 const path = require('path');
 const { randomUUID } = require('crypto');
+const log = require('../../server/utils/logger').child('plugins:opentofu');
 
 let _gitSync = null;
 function getGitSync() {
@@ -26,6 +28,58 @@ function tofuGitDir(workspaceName) {
 
 // Patterns that are never synced to git regardless of workspace .gitignore
 const NEVER_SYNC = ['.tfvars', '.tfvars.json', '.auto.tfvars', '.tfstate', '.tfstate.backup'];
+const SERVER_TYPE_HINTS = ['server', 'instance', 'vm', 'machine', 'droplet', 'compute', 'node', 'guest'];
+const DIRECT_IP_KEYS = [
+  'shipyard_ip',
+  'ip_address',
+  'ip',
+  'default_ipv4_address',
+  'primary_ipv4_address',
+  'public_ip',
+  'private_ip',
+  'ipv4_address',
+  'access_ip_v4',
+  'main_ip',
+];
+const DIRECT_NAME_KEYS = ['shipyard_name', 'name', 'vm_name', 'hostname', 'host'];
+const DIRECT_SSH_USER_KEYS = ['shipyard_ssh_user', 'ssh_user', 'default_user', 'admin_user', 'username'];
+const DIRECT_SSH_PORT_KEYS = ['shipyard_ssh_port', 'ssh_port', 'port'];
+const APPLY_SYNC_MAX_WAIT_MS = Math.max(0, parseInt(process.env.TOFU_SYNC_MAX_WAIT_MS || '90000', 10) || 90000);
+const APPLY_SYNC_RETRY_MS = Math.max(1000, parseInt(process.env.TOFU_SYNC_RETRY_MS || '5000', 10) || 5000);
+const SHIPYARD_OUTPUT_BLOCK_START = '# BEGIN SHIPYARD MANAGED OUTPUT';
+const SHIPYARD_OUTPUT_BLOCK_END = '# END SHIPYARD MANAGED OUTPUT';
+const SHIPYARD_OUTPUT_GENERATORS = {
+  proxmox_virtual_environment_vm: {
+    providerTag: 'proxmox',
+    sshUser: 'root',
+    nameExpr: (address, name) => `try(${address}.name, ${JSON.stringify(name)})`,
+    ipExpr: (address) => `try(${address}.ipv4_addresses[1][0], ${address}.ipv4_addresses[0][0], null)`,
+  },
+  hcloud_server: {
+    providerTag: 'hcloud',
+    sshUser: 'root',
+    nameExpr: (address, name) => `try(${address}.name, ${JSON.stringify(name)})`,
+    ipExpr: (address) => `try(${address}.ipv4_address, null)`,
+  },
+  digitalocean_droplet: {
+    providerTag: 'digitalocean',
+    sshUser: 'root',
+    nameExpr: (address, name) => `try(${address}.name, ${JSON.stringify(name)})`,
+    ipExpr: (address) => `try(${address}.ipv4_address, null)`,
+  },
+  aws_instance: {
+    providerTag: 'aws',
+    sshUser: 'ec2-user',
+    nameExpr: (address, name) => `try(${address}.tags["Name"], ${JSON.stringify(name)})`,
+    ipExpr: (address) => `try(${address}.public_ip, ${address}.private_ip, null)`,
+  },
+  google_compute_instance: {
+    providerTag: 'gcp',
+    sshUser: 'root',
+    nameExpr: (address, name) => `try(${address}.name, ${JSON.stringify(name)})`,
+    ipExpr: (address) => `try(${address}.network_interface[0].access_config[0].nat_ip, ${address}.network_interface[0].network_ip, null)`,
+  },
+};
 
 function syncOneToGit(name, wsPath) {
   if (!fs.existsSync(wsPath)) return;
@@ -57,6 +111,541 @@ function syncAllToGit(workspaces) {
 
 function syncAllFromGit(workspaces) {
   for (const ws of workspaces) syncOneFromGit(ws.name, ws.path);
+}
+
+function isPlainObject(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function uniqueStrings(...lists) {
+  const seen = new Set();
+  const out = [];
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    for (const item of list) {
+      if (typeof item !== 'string') continue;
+      const trimmed = item.trim();
+      if (!trimmed || seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      out.push(trimmed);
+    }
+  }
+  return out;
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function parseJsonArray(raw) {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function firstNumber(...values) {
+  for (const value of values) {
+    const num = Number.parseInt(value, 10);
+    if (Number.isInteger(num) && num >= 1 && num <= 65535) return num;
+  }
+  return null;
+}
+
+function normalizeIp(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const direct = trimmed.split('/')[0].trim();
+  if (net.isIP(direct)) return direct;
+
+  const match = trimmed.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/);
+  if (match && net.isIP(match[0])) return match[0];
+
+  const ipv6Match = trimmed.match(/\b(?:[a-f0-9]{0,4}:){2,7}[a-f0-9]{0,4}\b/i);
+  if (ipv6Match && net.isIP(ipv6Match[0])) return ipv6Match[0];
+
+  return null;
+}
+
+function findFirstIp(value, depth = 0) {
+  if (depth > 5 || value == null) return null;
+  if (typeof value === 'string') return normalizeIp(value);
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const ip = findFirstIp(item, depth + 1);
+      if (ip) return ip;
+    }
+    return null;
+  }
+  if (!isPlainObject(value)) return null;
+
+  for (const key of DIRECT_IP_KEYS) {
+    if (key in value) {
+      const ip = findFirstIp(value[key], depth + 1);
+      if (ip) return ip;
+    }
+  }
+
+  for (const [key, nested] of Object.entries(value)) {
+    if (!/ip|addr|address|network/i.test(key)) continue;
+    const ip = findFirstIp(nested, depth + 1);
+    if (ip) return ip;
+  }
+
+  for (const nested of Object.values(value)) {
+    const ip = findFirstIp(nested, depth + 1);
+    if (ip) return ip;
+  }
+
+  return null;
+}
+
+function normalizeServerCandidate(candidate, {
+  resourceKey,
+  workspaceName,
+  fallbackName = null,
+  defaultTags = [],
+} = {}) {
+  const base = typeof candidate === 'string'
+    ? { ip_address: candidate, name: fallbackName || candidate }
+    : candidate;
+
+  if (!isPlainObject(base)) return null;
+
+  const tags = uniqueStrings(
+    Array.isArray(base.tags) ? base.tags : [],
+    defaultTags,
+    ['opentofu', `opentofu:${workspaceName}`]
+  );
+
+  const ipAddress = firstNonEmptyString(
+    ...DIRECT_IP_KEYS.map(key => typeof base[key] === 'string' ? base[key] : null)
+  ) || findFirstIp(base);
+  const normalizedIp = normalizeIp(ipAddress);
+  if (!normalizedIp) return null;
+
+  const name = firstNonEmptyString(
+    ...DIRECT_NAME_KEYS.map(key => typeof base[key] === 'string' ? base[key] : null),
+    fallbackName,
+    normalizedIp
+  );
+  if (!name) return null;
+
+  const hostname = firstNonEmptyString(base.hostname, base.host, name, normalizedIp) || normalizedIp;
+  const sshUser = firstNonEmptyString(...DIRECT_SSH_USER_KEYS.map(key => base[key])) || 'root';
+  const sshPort = firstNumber(...DIRECT_SSH_PORT_KEYS.map(key => base[key])) || 22;
+
+  return {
+    resource_key: resourceKey,
+    name,
+    hostname,
+    ip_address: normalizedIp,
+    ssh_user: sshUser,
+    ssh_port: sshPort,
+    tags,
+    services: Array.isArray(base.services) ? uniqueStrings(base.services) : [],
+  };
+}
+
+function flattenStateResources(moduleNode, out = []) {
+  if (!moduleNode || typeof moduleNode !== 'object') return out;
+  if (Array.isArray(moduleNode.resources)) out.push(...moduleNode.resources);
+  if (Array.isArray(moduleNode.child_modules)) {
+    for (const child of moduleNode.child_modules) flattenStateResources(child, out);
+  }
+  return out;
+}
+
+function resourceLooksLikeServer(resource) {
+  const type = String(resource?.type || '').toLowerCase();
+  if (SERVER_TYPE_HINTS.some(hint => type.includes(hint))) return true;
+
+  const values = resource?.values;
+  if (!isPlainObject(values)) return false;
+  if (values.shipyard_managed === true) return true;
+  return !!findFirstIp(values) && !!firstNonEmptyString(values.name, values.hostname, values.vm_name);
+}
+
+function extractServersFromOutputs(outputs, workspaceName) {
+  const extracted = [];
+  const pushCandidate = (candidate, baseKey, fallbackName = null) => {
+    const stableId = isPlainObject(candidate)
+      ? firstNonEmptyString(candidate.id, candidate.name, candidate.hostname, fallbackName, baseKey)
+      : fallbackName || baseKey;
+    const normalized = normalizeServerCandidate(candidate, {
+      resourceKey: `${baseKey}:${stableId}`,
+      workspaceName,
+      fallbackName,
+      defaultTags: ['managed-by-output'],
+    });
+    if (normalized) extracted.push(normalized);
+  };
+
+  if (Object.prototype.hasOwnProperty.call(outputs || {}, 'shipyard_server')) {
+    pushCandidate(outputs.shipyard_server?.value, 'output:shipyard_server');
+  }
+
+  if (Object.prototype.hasOwnProperty.call(outputs || {}, 'shipyard_servers')) {
+    const value = outputs.shipyard_servers?.value;
+    if (Array.isArray(value)) {
+      value.forEach((entry, index) => pushCandidate(entry, 'output:shipyard_servers', `server-${index + 1}`));
+    } else if (isPlainObject(value)) {
+      for (const [key, entry] of Object.entries(value)) {
+        pushCandidate(entry, 'output:shipyard_servers', key);
+      }
+    } else if (value != null) {
+      pushCandidate(value, 'output:shipyard_servers');
+    }
+  }
+
+  return extracted;
+}
+
+function extractServersFromResources(state, workspaceName) {
+  const resources = flattenStateResources(state?.values?.root_module);
+  const extracted = [];
+
+  for (const resource of resources) {
+    if (!resourceLooksLikeServer(resource)) continue;
+    const normalized = normalizeServerCandidate(resource.values || {}, {
+      resourceKey: `resource:${resource.address || resource.type || randomUUID()}`,
+      workspaceName,
+      fallbackName: firstNonEmptyString(resource.values?.name, resource.values?.hostname, resource.name, resource.address),
+      defaultTags: [resource.type || 'resource-managed'],
+    });
+    if (normalized) extracted.push(normalized);
+  }
+
+  return extracted;
+}
+
+function extractManagedServersFromState(state, workspaceName) {
+  const outputs = state?.values?.outputs || {};
+  const hasExplicitOutputs =
+    Object.prototype.hasOwnProperty.call(outputs, 'shipyard_server') ||
+    Object.prototype.hasOwnProperty.call(outputs, 'shipyard_servers');
+
+  if (hasExplicitOutputs) {
+    const rawValues = [];
+    if (Object.prototype.hasOwnProperty.call(outputs, 'shipyard_server')) rawValues.push(outputs.shipyard_server?.value);
+    if (Object.prototype.hasOwnProperty.call(outputs, 'shipyard_servers')) rawValues.push(outputs.shipyard_servers?.value);
+    const hasNonEmptyRaw = rawValues.some(value => {
+      if (value == null) return false;
+      if (Array.isArray(value)) return value.length > 0;
+      if (isPlainObject(value)) return Object.keys(value).length > 0;
+      if (typeof value === 'string') return value.trim() !== '';
+      return true;
+    });
+    const servers = extractServersFromOutputs(outputs, workspaceName);
+    return {
+      authoritative: servers.length > 0 || !hasNonEmptyRaw,
+      source: 'outputs',
+      servers,
+    };
+  }
+
+  return {
+    authoritative: false,
+    source: 'state',
+    servers: extractServersFromResources(state, workspaceName),
+  };
+}
+
+function buildServerPayload(existingServer, desiredServer, workspace) {
+  return {
+    name: desiredServer.name,
+    hostname: desiredServer.hostname || desiredServer.name,
+    ip_address: desiredServer.ip_address,
+    ssh_port: desiredServer.ssh_port || existingServer?.ssh_port || 22,
+    ssh_user: desiredServer.ssh_user || existingServer?.ssh_user || 'root',
+    tags: uniqueStrings(
+      parseJsonArray(existingServer?.tags),
+      desiredServer.tags || [],
+      ['opentofu', `opentofu:${workspace.name}`]
+    ),
+    services: uniqueStrings(parseJsonArray(existingServer?.services), desiredServer.services || []),
+  };
+}
+
+function findReusableServer(allServers, trackedServerIds, desiredServer) {
+  const exactIp = allServers.find(server =>
+    server.ip_address === desiredServer.ip_address && !trackedServerIds.has(server.id)
+  );
+  if (exactIp) return exactIp;
+
+  return allServers.find(server =>
+    server.name === desiredServer.name && !trackedServerIds.has(server.id)
+  ) || null;
+}
+
+async function reconcileManagedServers({ db, workspace, desiredServers, logMeta = {} }) {
+  ensureManagedServersTable(db);
+  const mappings = db.db.prepare('SELECT * FROM tofu_managed_servers WHERE workspace_id = ?').all(workspace.id);
+  const mappingsByKey = new Map(mappings.map(mapping => [mapping.resource_key, mapping]));
+  const trackedMappings = db.db.prepare('SELECT * FROM tofu_managed_servers').all();
+  const trackedServerIds = new Set(trackedMappings.map(mapping => mapping.server_id));
+
+  const existingServers = db.servers.getAll();
+  const desiredKeys = new Set(desiredServers.map(server => server.resource_key));
+  const upsertMapping = db.db.prepare(`
+    INSERT INTO tofu_managed_servers (id, workspace_id, resource_key, server_id, created_by_plugin)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(workspace_id, resource_key) DO UPDATE SET
+      server_id = excluded.server_id,
+      created_by_plugin = excluded.created_by_plugin,
+      updated_at = datetime('now')
+  `);
+  const deleteMapping = db.db.prepare('DELETE FROM tofu_managed_servers WHERE workspace_id = ? AND resource_key = ?');
+
+  let created = 0;
+  let updated = 0;
+  let deleted = 0;
+  let untracked = 0;
+
+  for (const desiredServer of desiredServers) {
+    const mapping = mappingsByKey.get(desiredServer.resource_key);
+    let targetServer = mapping ? db.servers.getById(mapping.server_id) : null;
+    let createdByPlugin = mapping ? !!mapping.created_by_plugin : false;
+
+    if (!targetServer) {
+      targetServer = findReusableServer(existingServers, trackedServerIds, desiredServer);
+      createdByPlugin = false;
+    }
+
+    const payload = buildServerPayload(targetServer, desiredServer, workspace);
+
+    if (targetServer) {
+      db.servers.update(targetServer.id, payload);
+      updated++;
+    } else {
+      targetServer = db.servers.create(payload);
+      existingServers.push(targetServer);
+      trackedServerIds.add(targetServer.id);
+      createdByPlugin = true;
+      created++;
+    }
+
+    upsertMapping.run(randomUUID(), workspace.id, desiredServer.resource_key, targetServer.id, createdByPlugin ? 1 : 0);
+    trackedServerIds.add(targetServer.id);
+  }
+
+  for (const mapping of mappings) {
+    if (desiredKeys.has(mapping.resource_key)) continue;
+    if (mapping.created_by_plugin) {
+      const existing = db.servers.getById(mapping.server_id);
+      if (existing) {
+        db.servers.delete(mapping.server_id);
+        deleted++;
+      }
+    } else {
+      untracked++;
+    }
+    deleteMapping.run(workspace.id, mapping.resource_key);
+  }
+
+  if (created || updated || deleted || untracked) {
+    db.auditLog.write(
+      'tofu.server_sync',
+      `workspace=${workspace.name} created=${created} updated=${updated} deleted=${deleted} untracked=${untracked}`,
+      logMeta.ip || null,
+      true,
+      logMeta.user || null
+    );
+  }
+
+  return { created, updated, deleted, untracked };
+}
+
+function cleanupManagedServersForWorkspace({ db, workspace, logMeta = {} }) {
+  ensureManagedServersTable(db);
+  const mappings = db.db.prepare('SELECT * FROM tofu_managed_servers WHERE workspace_id = ?').all(workspace.id);
+  let deleted = 0;
+  let untracked = 0;
+
+  for (const mapping of mappings) {
+    if (mapping.created_by_plugin) {
+      const existing = db.servers.getById(mapping.server_id);
+      if (existing) {
+        db.servers.delete(mapping.server_id);
+        deleted++;
+      }
+    } else {
+      untracked++;
+    }
+  }
+
+  db.db.prepare('DELETE FROM tofu_managed_servers WHERE workspace_id = ?').run(workspace.id);
+
+  if (deleted || untracked) {
+    db.auditLog.write(
+      'tofu.server_cleanup',
+      `workspace=${workspace.name} deleted=${deleted} untracked=${untracked}`,
+      logMeta.ip || null,
+      true,
+      logMeta.user || null
+    );
+  }
+
+  return { deleted, untracked };
+}
+
+async function loadWorkspaceState({ binary, workspace, env }) {
+  const { stdout } = await execFileAsync(binary, ['show', '-json'], {
+    cwd: workspace.path,
+    env,
+    timeout: 15000,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  return JSON.parse(stdout);
+}
+
+function ensureManagedServersTable(db) {
+  db.db.prepare(`
+    CREATE TABLE IF NOT EXISTS tofu_managed_servers (
+      id                TEXT PRIMARY KEY,
+      workspace_id      TEXT NOT NULL,
+      resource_key      TEXT NOT NULL,
+      server_id         TEXT NOT NULL,
+      created_by_plugin INTEGER NOT NULL DEFAULT 1,
+      created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at        TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(workspace_id, resource_key)
+    )
+  `).run();
+}
+
+async function waitForManagedServers({
+  loadState,
+  workspaceName,
+  maxWaitMs = APPLY_SYNC_MAX_WAIT_MS,
+  retryMs = APPLY_SYNC_RETRY_MS,
+  sleepFn = sleep,
+}) {
+  const startedAt = Date.now();
+  let attempts = 0;
+  let lastSync = { authoritative: false, source: 'state', servers: [] };
+
+  while (true) {
+    attempts++;
+    const state = await loadState();
+    lastSync = extractManagedServersFromState(state, workspaceName);
+
+    if (lastSync.servers.length > 0) {
+      return { ...lastSync, attempts, waitedMs: Date.now() - startedAt, timedOut: false };
+    }
+
+    if (lastSync.source === 'outputs' && !lastSync.authoritative) {
+      return { ...lastSync, attempts, waitedMs: Date.now() - startedAt, timedOut: false };
+    }
+
+    const elapsed = Date.now() - startedAt;
+    if (elapsed >= maxWaitMs) {
+      return { ...lastSync, attempts, waitedMs: elapsed, timedOut: true };
+    }
+
+    await sleepFn(Math.min(retryMs, Math.max(0, maxWaitMs - elapsed)));
+  }
+}
+
+function readTerraformFiles(wsPath) {
+  if (!fs.existsSync(wsPath)) return [];
+  return fs.readdirSync(wsPath)
+    .filter(name => name.endsWith('.tf'))
+    .sort()
+    .map(name => ({
+      name,
+      path: path.join(wsPath, name),
+      content: fs.readFileSync(path.join(wsPath, name), 'utf8'),
+    }));
+}
+
+function detectTerraformResources(files) {
+  const resources = [];
+  const seen = new Set();
+  const pattern = /resource\s+"([^"]+)"\s+"([^"]+)"\s*\{/g;
+
+  for (const file of files) {
+    let match;
+    while ((match = pattern.exec(file.content)) !== null) {
+      const type = match[1];
+      const name = match[2];
+      const key = `${type}.${name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      resources.push({ type, name, address: `${type}.${name}`, file: file.name });
+    }
+  }
+
+  return resources;
+}
+
+function supportedTerraformResources(resources) {
+  return resources.filter(resource => !!SHIPYARD_OUTPUT_GENERATORS[resource.type]);
+}
+
+function generateShipyardOutputsBlock(resources) {
+  const supported = supportedTerraformResources(resources);
+  if (supported.length === 0) {
+    throw new Error(`No supported VM resources found. Supported types: ${Object.keys(SHIPYARD_OUTPUT_GENERATORS).join(', ')}`);
+  }
+
+  const lines = [
+    SHIPYARD_OUTPUT_BLOCK_START,
+    '# Managed by Shipyard / OpenTofu',
+    '# Adjust ssh_user or ssh_port below if your image uses different defaults.',
+    'output "shipyard_servers" {',
+    '  value = {',
+  ];
+
+  for (const resource of supported) {
+    const config = SHIPYARD_OUTPUT_GENERATORS[resource.type];
+    lines.push(`    ${JSON.stringify(resource.name)} = {`);
+    lines.push(`      name       = ${config.nameExpr(resource.address, resource.name)}`);
+    lines.push(`      hostname   = ${config.nameExpr(resource.address, resource.name)}`);
+    lines.push(`      ip_address = ${config.ipExpr(resource.address)}`);
+    lines.push(`      ssh_user   = ${JSON.stringify(config.sshUser)}`);
+    lines.push('      ssh_port   = 22');
+    lines.push(`      tags       = [${JSON.stringify(config.providerTag)}]`);
+    lines.push('    }');
+  }
+
+  lines.push('  }');
+  lines.push('}');
+  lines.push(SHIPYARD_OUTPUT_BLOCK_END);
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+function upsertManagedShipyardOutputs(existingContent, generatedBlock) {
+  const markerRe = new RegExp(
+    `${escapeRegExp(SHIPYARD_OUTPUT_BLOCK_START)}[\\s\\S]*?${escapeRegExp(SHIPYARD_OUTPUT_BLOCK_END)}\\n?`,
+    'm'
+  );
+
+  if (markerRe.test(existingContent)) {
+    return existingContent.replace(markerRe, generatedBlock);
+  }
+
+  const trimmed = existingContent.trimEnd();
+  if (!trimmed) return generatedBlock;
+  return `${trimmed}\n\n${generatedBlock}`;
 }
 
 const https = require('https');
@@ -137,6 +726,8 @@ function register({ router, db, broadcast }) {
       completed_at TEXT
     )
   `).run();
+
+  ensureManagedServersTable(db);
 
   syncPathsFile();
 
@@ -582,6 +1173,7 @@ override.tf.json
     if (['plan','apply','destroy'].includes(action)) args.push('-input=false');
 
     const env = { ...process.env, ...workspace.env_vars };
+    const logMeta = { ip: req.ip, user: req.user?.username };
 
     res.json({ runId, dbRunId, status: 'started' });
 
@@ -603,6 +1195,11 @@ override.tf.json
       _running.set(runId, proc);
 
       let output = '';
+      const emitMeta = (message) => {
+        const text = message.endsWith('\n') ? message : `${message}\n`;
+        output += text;
+        broadcast({ type: 'tofu_output', runId, workspaceId: workspace.id, stream: 'meta', data: text });
+      };
       proc.stdout.on('data', d => {
         const s = d.toString();
         output += s;
@@ -616,10 +1213,56 @@ override.tf.json
       proc.on('close', code => {
         _running.delete(runId);
         const success = code === 0;
-        const status  = success ? 'success' : 'failed';
-        db.db.prepare("UPDATE tofu_runs SET status=?, output=?, completed_at=datetime('now') WHERE id=?")
-          .run(status, output, dbRunId);
-        broadcast({ type: 'tofu_done', runId, workspaceId: workspace.id, success, exitCode: code, dbRunId });
+        const finish = async () => {
+          if (success && action === 'apply') {
+            try {
+              const sync = await waitForManagedServers({
+                loadState: () => loadWorkspaceState({ binary, workspace, env }),
+                workspaceName: workspace.name,
+              });
+              if (sync.source === 'outputs' && !sync.authoritative && sync.servers.length === 0) {
+                emitMeta('[Shipyard] Output "shipyard_server(s)" is present but invalid. Skipping server sync to avoid deleting existing entries.');
+              } else if (!sync.authoritative && sync.servers.length === 0) {
+                const waited = Math.round(sync.waitedMs / 1000);
+                emitMeta(`[Shipyard] No manageable servers found in state after waiting ${waited}s. Define output "shipyard_servers" for explicit sync.`);
+              } else {
+                const result = await reconcileManagedServers({
+                  db,
+                  workspace,
+                  desiredServers: sync.servers,
+                  logMeta,
+                });
+                const waitedSuffix = sync.attempts > 1 ? ` after waiting ${Math.round(sync.waitedMs / 1000)}s for DHCP/state updates` : '';
+                emitMeta(`[Shipyard] Server sync complete: ${result.created} created, ${result.updated} updated, ${result.deleted} deleted.${waitedSuffix}`);
+              }
+            } catch (err) {
+              log.error({ err, workspace: workspace.name }, 'OpenTofu apply server sync failed');
+              emitMeta(`[Shipyard] Server sync failed: ${err.message}`);
+            }
+          }
+
+          if (success && action === 'destroy') {
+            try {
+              const result = cleanupManagedServersForWorkspace({ db, workspace, logMeta });
+              emitMeta(`[Shipyard] Removed ${result.deleted} managed server entries${result.untracked ? ` and untracked ${result.untracked} reused entries` : ''}.`);
+            } catch (err) {
+              log.error({ err, workspace: workspace.name }, 'OpenTofu destroy cleanup failed');
+              emitMeta(`[Shipyard] Managed server cleanup failed: ${err.message}`);
+            }
+          }
+
+          const status  = success ? 'success' : 'failed';
+          db.db.prepare("UPDATE tofu_runs SET status=?, output=?, completed_at=datetime('now') WHERE id=?")
+            .run(status, output, dbRunId);
+          broadcast({ type: 'tofu_done', runId, workspaceId: workspace.id, success, exitCode: code, dbRunId });
+        };
+
+        finish().catch(err => {
+          log.error({ err, workspace: workspace.name }, 'OpenTofu run finalization failed');
+          db.db.prepare("UPDATE tofu_runs SET status='failed', output=?, completed_at=datetime('now') WHERE id=?")
+            .run(`${output}\n[Shipyard] Finalization failed: ${err.message}\n`, dbRunId);
+          broadcast({ type: 'tofu_done', runId, workspaceId: workspace.id, success: false, exitCode: code, error: err.message, dbRunId });
+        });
       });
       proc.on('error', err => {
         _running.delete(runId);
@@ -717,6 +1360,41 @@ override.tf.json
     }
   });
 
+  router.post('/workspaces/:id/generate-shipyard-output', (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+
+    const mkdirErr = ensureWorkspacePath(workspace);
+    if (mkdirErr) return res.status(400).json({ error: `Path "${workspace.path}" could not be created: ${mkdirErr.message}` });
+    if (!fs.existsSync(workspace.path)) return res.status(400).json({ error: 'Path not found in container' });
+
+    try {
+      const files = readTerraformFiles(workspace.path);
+      const resources = detectTerraformResources(files);
+      const supported = supportedTerraformResources(resources);
+      const outputPath = path.join(workspace.path, 'outputs.tf');
+      const generatedBlock = generateShipyardOutputsBlock(resources);
+      const existingContent = fs.existsSync(outputPath) ? fs.readFileSync(outputPath, 'utf8') : '';
+      const nextContent = upsertManagedShipyardOutputs(existingContent, generatedBlock);
+      fs.writeFileSync(outputPath, nextContent, 'utf8');
+
+      res.json({
+        success: true,
+        path: 'outputs.tf',
+        resources: supported,
+        content: generatedBlock,
+      });
+
+      const gs = getGitSync();
+      if (gs && gs.isConfigured()) {
+        syncOneToGit(workspace.name, workspace.path);
+        gs.autoPush(`Generate tofu/${workspace.name}/outputs.tf shipyard output`).catch(() => {});
+      }
+    } catch (e) {
+      res.status(400).json({ error: permissionError(e, workspace.path), code: e.code });
+    }
+  });
+
   // ── Routes: State ─────────────────────────────────────────────────────────
 
   router.get('/workspaces/:id/state', (req, res) => {
@@ -789,4 +1467,16 @@ override.tf.json
 
 }
 
-module.exports = { register };
+module.exports = {
+  register,
+  _test: {
+    extractManagedServersFromState,
+    reconcileManagedServers,
+    cleanupManagedServersForWorkspace,
+    normalizeServerCandidate,
+    waitForManagedServers,
+    detectTerraformResources,
+    generateShipyardOutputsBlock,
+    upsertManagedShipyardOutputs,
+  },
+};

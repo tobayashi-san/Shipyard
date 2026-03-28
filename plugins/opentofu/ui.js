@@ -877,6 +877,7 @@ async function loadFilesTab(el, ws) {
         <div class="section-header">
           <h3><i class="fas fa-folder-open"></i> Files</h3>
           <div style="display:flex;gap:4px;">
+            <button class="btn btn-secondary btn-sm" id="tofu-btn-generate-output" title="Generate shipyard_servers output"><i class="fas fa-wand-magic"></i></button>
             <button class="btn btn-secondary btn-sm" id="tofu-btn-new-file" title="New file"><i class="fas fa-plus"></i></button>
             <button class="btn btn-secondary btn-sm" id="tofu-btn-reload-tree" title="Reload"><i class="fas fa-rotate"></i></button>
           </div>
@@ -896,6 +897,30 @@ async function loadFilesTab(el, ws) {
 
   document.getElementById('tofu-btn-reload-tree').addEventListener('click', () => loadFileTree(ws));
   document.getElementById('tofu-btn-new-file').addEventListener('click', () => newFileDialog(ws));
+  document.getElementById('tofu-btn-generate-output').addEventListener('click', async () => {
+    const btn = document.getElementById('tofu-btn-generate-output');
+    if (!btn) return;
+    if (_openFile?.path === 'outputs.tf' && _openFile?.dirty) {
+      const discard = await _showConfirm('Discard unsaved changes in outputs.tf and regenerate the Shipyard output block?', {
+        title: 'Regenerate outputs.tf',
+        confirmText: 'Regenerate',
+        danger: true,
+      });
+      if (!discard) return;
+    }
+
+    btn.disabled = true;
+    try {
+      const result = await _pluginApi.request(`/workspaces/${ws.id}/generate-shipyard-output`, { method: 'POST' });
+      await loadFileTree(ws);
+      await openFileEditor(ws, 'outputs.tf');
+      _showToast(`Generated shipyard_servers output for ${result.resources.length} resource(s).`, 'success');
+    } catch (e) {
+      _showToast(e.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   await loadFileTree(ws);
 }
