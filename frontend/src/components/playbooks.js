@@ -332,11 +332,10 @@ async function loadPlaybookList() {
       return;
     }
 
-    // Internal playbooks (system/agent/*, update.yml, …) are operated from
-    // the Server Detail > Agent tab — hide them here to avoid confusion.
     const user = filtered.filter(p => !p.isInternal);
+    const internal = filtered.filter(p => !!p.isInternal);
 
-    // Group by category
+    // Group user playbooks by category
     const categoryMap = {};
     user.forEach(p => {
       const cat = p.category || 'Custom';
@@ -345,12 +344,15 @@ async function loadPlaybookList() {
     });
 
     let html = '';
-    if (user.length === 0) {
+    if (user.length === 0 && internal.length === 0) {
       html = `<div class="empty-state empty-state-sm"><p>${t('pb.noPlaybooks')}.</p></div>`;
     } else {
       Object.keys(categoryMap).sort().forEach(cat => {
         html += renderPlaybookGroup(cat, categoryMap[cat], false);
       });
+      if (internal.length > 0) {
+        html += renderPlaybookGroup(t('pb.internal'), internal, true);
+      }
     }
     listEl.innerHTML = html;
     wirePlaybookItems();
@@ -397,7 +399,7 @@ function renderPlaybookGroup(label, playbooks, isInternal) {
           <div class="playbook-item" data-filename="${esc(p.filename)}" data-internal="${isInternal}">
             <i class="fas fa-file-code pb-file-icon"></i>
             <span class="playbook-item-name" title="${esc(p.filename)}">${esc(p.description)}</span>
-            ${hasCap('canRunPlaybooks') ? `<button class="btn btn-secondary btn-sm btn-run-playbook pb-run-btn" data-filename="${esc(p.filename)}"
+            ${hasCap('canRunPlaybooks') && !isInternal ? `<button class="btn btn-secondary btn-sm btn-run-playbook pb-run-btn" data-filename="${esc(p.filename)}"
               data-description="${esc(p.description)}" title="${t('common.run')}">
               <i class="fas fa-play"></i>
             </button>` : ''}

@@ -29,9 +29,8 @@ function resolveReadPlaybookPath(raw) {
   return { filename: normalized, filepath };
 }
 
-function resolveBundledSystemReadPath(raw) {
+function resolveBundledReadPath(raw) {
   const normalized = String(raw || '').replace(/\\/g, '/');
-  if (!normalized.startsWith('system/')) return null;
   if (!normalized.endsWith('.yml') && !normalized.endsWith('.yaml')) return null;
   const base = path.resolve(BUNDLED_PLAYBOOKS_DIR);
   const filepath = path.resolve(base, normalized);
@@ -69,7 +68,7 @@ router.get('/:filename', (req, res, next) => { if (!can(getPermissions(req.user)
     if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
     let { filepath } = resolved;
     if (!fs.existsSync(filepath)) {
-      const bundled = resolveBundledSystemReadPath(req.params.filename);
+      const bundled = resolveBundledReadPath(req.params.filename);
       if (bundled && fs.existsSync(bundled.filepath)) {
         filepath = bundled.filepath;
       } else {
