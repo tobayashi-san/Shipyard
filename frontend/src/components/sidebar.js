@@ -8,6 +8,15 @@ export function renderSidebar() {
   const sidebar = document.getElementById('sidebar');
   const perms = state.user?.permissions;
   const onlineCount = state.servers.filter(s => s.status === 'online').length;
+  const username = state.user?.username || 'profile';
+  const profileName = state.user?.displayName || username;
+  const profileSub = state.user?.displayName ? `@${username}` : (state.user?.role === 'admin' ? 'Admin' : 'User');
+  const initials = String(profileName)
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() || '')
+    .join('') || 'U';
   // Plugins that are enabled, have a sidebar entry, and user has permission
   const allSidebarPlugins = (state.plugins || []).filter(p => p.enabled && p.sidebar);
   const sidebarPlugins = (!perms || perms.full || perms.plugins === 'all')
@@ -63,9 +72,13 @@ export function renderSidebar() {
         <span class="nav-item-icon"><i class="fas fa-cog"></i></span>
         <span>${t('nav.settings')}</span>
       </div>` : ''}
-      <div class="nav-item" id="sidebar-profile-btn">
-        <span class="nav-item-icon"><i class="fas fa-user-circle"></i></span>
-        <span>${esc(state.user?.displayName || state.user?.username || 'Profile')}</span>
+      <div class="nav-item nav-item-profile" id="sidebar-profile-btn" role="button" aria-label="Open profile menu">
+        <span class="nav-profile-avatar">${esc(initials)}</span>
+        <span class="nav-profile-meta">
+          <span class="nav-profile-name">${esc(profileName)}</span>
+          <span class="nav-profile-sub">${esc(profileSub)}</span>
+        </span>
+        <span class="nav-profile-chevron"><i class="fas fa-chevron-up"></i></span>
       </div>
     </div>
 
@@ -73,7 +86,7 @@ export function renderSidebar() {
 
   sidebar.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', () => {
-      const view     = item.dataset.view;
+      const view = item.dataset.view;
       const pluginId = item.dataset.pluginId;
       if (view) navigate(view, { serverId: item.dataset.serverId, pluginId });
     });
