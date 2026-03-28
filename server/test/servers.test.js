@@ -17,6 +17,7 @@ const { router: authRouter } = require('../routes/auth');
 const authMiddleware = require('../middleware/auth');
 const serversRouter = require('../routes/servers');
 const sshManager = require('../services/ssh-manager');
+const ansibleRunner = require('../services/ansible-runner');
 
 const app = express();
 app.use(express.json());
@@ -167,6 +168,30 @@ test('POST /api/servers/:id/reset-host-key removes stale known_hosts entries', a
     assert.ok(res.body.removed.includes('192.168.1.99'));
   } finally {
     sshManager.removeKnownHostEntries = original;
+  }
+});
+
+test('GET /api/servers/:id/docker/:container/logs uses become-enabled ansible access', async () => {
+  const original = ansibleRunner.runAdHoc;
+  let captured = null;
+  ansibleRunner.runAdHoc = async (targets, module, args, onOutput, options) => {
+    captured = { targets, module, args, options };
+    return { success: true, stdout: 'my-server | CHANGED | rc=0 >>\nlog line 1\nlog line 2\n', stderr: '' };
+  };
+  try {
+    const res = await request(app)
+      .get(`/api/servers/${serverId}/docker/app-1/logs?tail=50`)
+      .set('Authorization', `Bearer ${token}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.logs, 'log line 1\nlog line 2\n');
+    assert.deepEqual(captured, {
+      targets: 'renamed-server',
+      module: 'shell',
+      args: '$(command -v docker 2>/dev/null || command -v podman 2>/dev/null) logs --tail 50 --timestamps app-1 2>&1',
+      options: { become: true },
+    });
+  } finally {
+    ansibleRunner.runAdHoc = original;
   }
 });
 

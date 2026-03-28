@@ -552,7 +552,8 @@ app.post('/api/servers/:id/docker/:container/restart', guardServerAccess, contai
       `$(command -v docker 2>/dev/null || command -v podman 2>/dev/null) restart ${container}`,
       (type, data) => {
         broadcast({ type: 'update_output', serverId, historyId, stream: type, data });
-      }
+      },
+      { become: true }
     );
 
     db.updateHistory.updateStatus(historyId, result.success ? 'success' : 'failed', result.stdout + result.stderr);

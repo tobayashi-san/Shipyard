@@ -521,11 +521,22 @@ router.get('/:id/docker/:container/logs', guardServerAccess, guard('canViewDocke
   const tail = Math.max(1, Math.min(Number.isFinite(tailRaw) ? tailRaw : 200, 2000));
 
   try {
-    const result = await sshManager.execCommand(
-      server,
-      `$(command -v docker 2>/dev/null || command -v podman 2>/dev/null) logs --tail ${tail} --timestamps ${container} 2>&1`
+    const result = await ansibleRunner.runAdHoc(
+      server.name,
+      'shell',
+      `$(command -v docker 2>/dev/null || command -v podman 2>/dev/null) logs --tail ${tail} --timestamps ${container} 2>&1`,
+      () => {},
+      { become: true }
     );
-    res.json({ logs: result.stdout || '' });
+    if (!result.success) {
+      return res.status(500).json({ error: 'Failed to get container logs' });
+    }
+    let logs = result.stdout || '';
+    const match = logs.match(/rc=\d+\s*>>\n([\s\S]*)/);
+    if (match) {
+      logs = match[1];
+    }
+    res.json({ logs });
   } catch (error) {
     serverError(res, error, 'get container logs');
   }
