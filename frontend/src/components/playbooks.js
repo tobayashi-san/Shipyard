@@ -34,9 +34,10 @@ const cmTheme = EditorView.theme({
     minWidth: '40px',
   },
   '.cm-activeLineGutter': { background: 'var(--bg-row-hover)' },
-  '.cm-activeLine': { background: 'var(--bg-row-hover)' },
+  '.cm-activeLine': { background: 'rgba(128,128,128,0.06)' },
   '.cm-selectionBackground': { background: 'rgba(99,102,241,0.25) !important' },
-  '&.cm-focused .cm-selectionBackground': { background: 'rgba(99,102,241,0.35) !important' },
+  '&.cm-focused .cm-selectionBackground': { background: 'rgba(99,102,241,0.40) !important' },
+  '&.cm-focused .cm-activeLine .cm-selectionBackground': { background: 'rgba(99,102,241,0.45) !important' },
   '.cm-matchingBracket': { background: 'var(--accent-light)', color: 'var(--accent) !important', fontWeight: 'bold' },
   '.cm-foldPlaceholder': { background: 'var(--accent-light)', border: 'none', color: 'var(--accent)' },
 });
@@ -69,10 +70,10 @@ let activeTab = 'templates';
 
 function allowedTabs() {
   const tabs = ['templates'];
-  if (hasCap('canRunPlaybooks'))    tabs.push('run');
-  if (hasCap('canViewVars'))        tabs.push('vars');
-  if (hasCap('canViewSchedules'))   tabs.push('schedules');
-  if (hasCap('canViewAudit'))       tabs.push('history');
+  if (hasCap('canRunPlaybooks')) tabs.push('run');
+  if (hasCap('canViewVars')) tabs.push('vars');
+  if (hasCap('canViewSchedules')) tabs.push('schedules');
+  if (hasCap('canViewAudit')) tabs.push('history');
   return tabs;
 }
 
@@ -153,7 +154,7 @@ async function initGitWidget() {
     const cfg = await api.request('/playbooks-git/config');
     const branch = document.getElementById('pb-git-branch');
     if (branch) branch.textContent = cfg.repoUrl ? (cfg.branch || 'main') : 'not configured';
-  } catch {}
+  } catch { }
 
   document.getElementById('pb-git-pull-btn')?.addEventListener('click', async (e) => {
     const btn = e.currentTarget;
@@ -177,7 +178,7 @@ async function initGitWidget() {
       await api.request('/playbooks-git/push', { method: 'POST' });
       showToast(t('git.pushed'), 'success');
     } catch (e) { showToast(t('git.pushFailed', { msg: e.message }), 'error'); }
-    finally { document.getElementById('pb-git-push-btn')&&(document.getElementById('pb-git-push-btn').disabled=false); }
+    finally { document.getElementById('pb-git-push-btn') && (document.getElementById('pb-git-push-btn').disabled = false); }
   });
 
   document.getElementById('pb-git-settings-link')?.addEventListener('click', () => {
@@ -188,10 +189,10 @@ async function initGitWidget() {
 function renderTabContent(tab) {
   switch (tab) {
     case 'templates': return renderTemplatesHTML();
-    case 'run':       return renderQuickRunHTML();
-    case 'vars':      return renderVarsHTML();
+    case 'run': return renderQuickRunHTML();
+    case 'vars': return renderVarsHTML();
     case 'schedules': return renderSchedulesHTML();
-    case 'history':   return renderHistoryHTML();
+    case 'history': return renderHistoryHTML();
     default: return '';
   }
 }
@@ -199,10 +200,10 @@ function renderTabContent(tab) {
 async function initTab(tab) {
   switch (tab) {
     case 'templates': await loadPlaybookList(); setupPlaybookEvents(); break;
-    case 'run':       await loadQuickRunPlaybooks(); setupQuickRunEvents(); break;
-    case 'vars':      await loadVarsList(); setupVarsEvents(); break;
+    case 'run': await loadQuickRunPlaybooks(); setupQuickRunEvents(); break;
+    case 'vars': await loadVarsList(); setupVarsEvents(); break;
     case 'schedules': await loadScheduleList(); setupScheduleEvents(); break;
-    case 'history':   await loadHistoryList(); break;
+    case 'history': await loadHistoryList(); break;
   }
 }
 
@@ -322,9 +323,9 @@ async function loadPlaybookList() {
     const q = query.toLowerCase().trim();
     const filtered = q
       ? allPlaybooks.filter(p =>
-          p.description.toLowerCase().includes(q) ||
-          p.filename.toLowerCase().includes(q) ||
-          (p.category || '').toLowerCase().includes(q))
+        p.description.toLowerCase().includes(q) ||
+        p.filename.toLowerCase().includes(q) ||
+        (p.category || '').toLowerCase().includes(q))
       : allPlaybooks;
 
     if (filtered.length === 0) {
@@ -482,7 +483,7 @@ function setupPlaybookEvents() {
     const content = getEditorContent().trim();
     const filename = currentFilename || (filenameInput.value.trim() + '.yml');
     if (!filename) { showToast(t('pb.needFilename'), 'error'); return; }
-    if (!content)  { showToast(t('pb.needContent'), 'error'); return; }
+    if (!content) { showToast(t('pb.needContent'), 'error'); return; }
 
     const btn = document.getElementById('btn-save-playbook');
     btn.disabled = true; btn.innerHTML = `<span class="spinner-sm"></span> ${t('common.save')}…`;
@@ -620,7 +621,7 @@ async function loadQuickRunPlaybooks() {
       opts += user.map(p => `<option value="${esc(p.filename)}">${esc(p.description)}</option>`).join('');
     }
     sel.innerHTML = opts;
-  } catch {}
+  } catch { }
 }
 
 let _qrWsCleanup = null;
@@ -873,11 +874,11 @@ function setupVarsEvents() {
 // Tab: Schedules
 // ============================================================
 const INTERVALS = [
-  { value: 'daily',    labelKey: 'sc.daily',    needsTime: true,  needsWeekday: false, needsMonthday: false },
-  { value: 'weekly',   labelKey: 'sc.weekly',   needsTime: true,  needsWeekday: true,  needsMonthday: false },
-  { value: 'monthly',  labelKey: 'sc.monthly',  needsTime: true,  needsWeekday: false, needsMonthday: true  },
-  { value: 'every_6h', labelKey: 'sc.every6h',  needsTime: false, needsWeekday: false, needsMonthday: false },
-  { value: 'every_12h',labelKey: 'sc.every12h', needsTime: false, needsWeekday: false, needsMonthday: false },
+  { value: 'daily', labelKey: 'sc.daily', needsTime: true, needsWeekday: false, needsMonthday: false },
+  { value: 'weekly', labelKey: 'sc.weekly', needsTime: true, needsWeekday: true, needsMonthday: false },
+  { value: 'monthly', labelKey: 'sc.monthly', needsTime: true, needsWeekday: false, needsMonthday: true },
+  { value: 'every_6h', labelKey: 'sc.every6h', needsTime: false, needsWeekday: false, needsMonthday: false },
+  { value: 'every_12h', labelKey: 'sc.every12h', needsTime: false, needsWeekday: false, needsMonthday: false },
 ];
 
 const WEEKDAYS = [
@@ -891,8 +892,8 @@ const WEEKDAYS = [
 ];
 
 function cronToSelectors(cron) {
-  if (cron === '0 */6 * * *')  return { interval: 'every_6h',  hour: 3,  minute: 0, weekday: 1, monthday: 1 };
-  if (cron === '0 */12 * * *') return { interval: 'every_12h', hour: 3,  minute: 0, weekday: 1, monthday: 1 };
+  if (cron === '0 */6 * * *') return { interval: 'every_6h', hour: 3, minute: 0, weekday: 1, monthday: 1 };
+  if (cron === '0 */12 * * *') return { interval: 'every_12h', hour: 3, minute: 0, weekday: 1, monthday: 1 };
   const monthly = cron.match(/^(\d+) (\d+) (\d+) \* \*$/);
   if (monthly) return { interval: 'monthly', minute: parseInt(monthly[1]), hour: parseInt(monthly[2]), weekday: 1, monthday: parseInt(monthly[3]) };
   const daily = cron.match(/^(\d+) (\d+) \* \* \*$/);
@@ -905,12 +906,12 @@ function cronToSelectors(cron) {
 function selectorsToCron(interval, hour, minute, weekday, monthday) {
   const m = minute ?? 0;
   switch (interval) {
-    case 'daily':     return `${m} ${hour} * * *`;
-    case 'weekly':    return `${m} ${hour} * * ${weekday}`;
-    case 'monthly':   return `${m} ${hour} ${monthday} * *`;
-    case 'every_6h':  return `${m} */6 * * *`;
+    case 'daily': return `${m} ${hour} * * *`;
+    case 'weekly': return `${m} ${hour} * * ${weekday}`;
+    case 'monthly': return `${m} ${hour} ${monthday} * *`;
+    case 'every_6h': return `${m} */6 * * *`;
     case 'every_12h': return `${m} */12 * * *`;
-    default:          return `${m} ${hour} * * *`;
+    default: return `${m} ${hour} * * *`;
   }
 }
 
@@ -969,8 +970,8 @@ async function loadScheduleList() {
                 <span><i class="fas fa-server" style="opacity:.6;margin-right:3px;"></i>${esc(s.targets || 'all')}</span>
                 <span><i class="fas fa-clock" style="opacity:.6;margin-right:3px;"></i>${cronLabel(s.cron_expression)}</span>
                 ${s.last_run
-                  ? `<span><span class="badge badge-${s.last_status === 'success' ? 'online' : 'offline'}" style="font-size:10px;">${s.last_status}</span> <span style="opacity:.7;">${formatDateTimeShort(s.last_run)}</span></span>`
-                  : ''}
+        ? `<span><span class="badge badge-${s.last_status === 'success' ? 'online' : 'offline'}" style="font-size:10px;">${s.last_status}</span> <span style="opacity:.7;">${formatDateTimeShort(s.last_run)}</span></span>`
+        : ''}
               </div>
             </div>
             <div style="display:flex;gap:4px;flex-shrink:0;">
@@ -1076,9 +1077,9 @@ async function loadHistoryList(scheduleId = null) {
             <tr>
               <td style="font-weight:500;">
                 ${h.schedule_id === null
-                  ? `<span class="badge" style="background:var(--accent-light);color:var(--accent);font-size:11px;">${esc(h.schedule_name)}</span>`
-                  : esc(h.schedule_name)
-                }
+        ? `<span class="badge" style="background:var(--accent-light);color:var(--accent);font-size:11px;">${esc(h.schedule_name)}</span>`
+        : esc(h.schedule_name)
+      }
               </td>
               <td class="text-mono" style="font-size:12px;">${esc(h.playbook)}</td>
               <td>${esc(h.targets || 'all')}</td>
@@ -1253,13 +1254,13 @@ async function openScheduleDialog(editId) {
   }
 
   let playbooks = [];
-  try { playbooks = (await api.getPlaybooks()).filter(p => !p.isInternal); } catch {}
+  try { playbooks = (await api.getPlaybooks()).filter(p => !p.isInternal); } catch { }
 
   const parsed = existing ? cronToSelectors(existing.cron_expression) : { interval: 'daily', hour: 3, minute: 0, weekday: 1, monthday: 1 };
-  const parsedHour   = parsed.hour ?? 3;
+  const parsedHour = parsed.hour ?? 3;
   const parsedMinute = parsed.minute ?? 0;
-  const hourOptions   = Array.from({length:24},(_,i)=>`<option value="${i}"${i===parsedHour?' selected':''}>${String(i).padStart(2,'0')}</option>`).join('');
-  const minuteOptions = Array.from({length:12},(_,i)=>i*5).map(m=>`<option value="${m}"${m===parsedMinute?' selected':''}>${String(m).padStart(2,'0')}</option>`).join('');
+  const hourOptions = Array.from({ length: 24 }, (_, i) => `<option value="${i}"${i === parsedHour ? ' selected' : ''}>${String(i).padStart(2, '0')}</option>`).join('');
+  const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5).map(m => `<option value="${m}"${m === parsedMinute ? ' selected' : ''}>${String(m).padStart(2, '0')}</option>`).join('');
 
   const intervalOptions = INTERVALS.map(i =>
     `<option value="${i.value}" ${parsed.interval === i.value ? 'selected' : ''}>${t(i.labelKey)}</option>`
@@ -1291,18 +1292,18 @@ async function openScheduleDialog(editId) {
             <label class="form-label">${t('sc.target')}</label>
             <div id="sched-targets-box" style="border:1px solid var(--border);border-radius:var(--radius-sm);max-height:150px;overflow-y:auto;background:var(--bg-panel);">
               ${[
-                { value: 'all',       label: t('pb.allServers'), special: true },
-                ...state.servers.map(s => ({ value: s.name, label: s.name })),
-                { value: 'localhost', label: 'localhost' },
-              ].map(opt => {
-                const sel = !existing ? opt.value === 'all'
-                  : existing.targets === 'all' ? opt.value === 'all'
-                  : existing.targets.split(',').map(x=>x.trim()).includes(opt.value);
-                return `<label style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);">
+      { value: 'all', label: t('pb.allServers'), special: true },
+      ...state.servers.map(s => ({ value: s.name, label: s.name })),
+      { value: 'localhost', label: 'localhost' },
+    ].map(opt => {
+      const sel = !existing ? opt.value === 'all'
+        : existing.targets === 'all' ? opt.value === 'all'
+          : existing.targets.split(',').map(x => x.trim()).includes(opt.value);
+      return `<label style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);">
                   <input type="checkbox" class="sched-target-cb" value="${esc(opt.value)}"${sel ? ' checked' : ''}${opt.special ? ' id="sched-target-all"' : ''}>
                   ${opt.special ? `<span style="color:var(--text-muted);"><i class="fas fa-layer-group" style="margin-right:4px;"></i>${esc(opt.label)}</span>` : `<span>${esc(opt.label)}</span>`}
                 </label>`;
-              }).join('')}
+    }).join('')}
             </div>
           </div>
           <div class="form-row">
@@ -1378,9 +1379,9 @@ async function openScheduleDialog(editId) {
     const checkedCbs = [...document.querySelectorAll('.sched-target-cb:checked')];
     const targets = checkedCbs.length === 0 ? 'all'
       : checkedCbs.some(cb => cb.value === 'all') ? 'all'
-      : checkedCbs.map(cb => cb.value).join(',');
+        : checkedCbs.map(cb => cb.value).join(',');
     const interval = intervalSel.value;
-    const hour   = parseInt(document.getElementById('sched-hour').value)   || 0;
+    const hour = parseInt(document.getElementById('sched-hour').value) || 0;
     const minute = parseInt(document.getElementById('sched-minute').value) || 0;
     const weekday = parseInt(document.getElementById('sched-weekday').value);
     const monthday = Math.min(28, Math.max(1, parseInt(document.getElementById('sched-monthday').value) || 1));

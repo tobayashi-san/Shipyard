@@ -186,6 +186,7 @@ function setupGlobalTerminal() {
 // ============================================================
 async function boot() {
   setupComposeModal();
+  document.documentElement.dataset.density = localStorage.getItem('shipyard_density') || 'cozy';
   applyWhiteLabel();
   setupGlobalTerminal();
 

@@ -179,7 +179,7 @@ function renderTotp(tempToken, onSuccess) {
     const code = codeInput.value.replace(/[^0-9]/g, '');
     if (code.length < 6) return;
 
-    const btn  = document.getElementById('totp-btn');
+    const btn = document.getElementById('totp-btn');
     const errEl = document.getElementById('totp-error');
     errEl.classList.add('hidden');
     btn.disabled = true;

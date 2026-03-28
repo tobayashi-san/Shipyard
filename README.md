@@ -94,11 +94,12 @@ Release candidates are published as explicit tags (for example `:1.0.2-rc.20`) a
 ## Development
 
 ```bash
-npm install
-npm run dev
-```
+# Backend (port 3001)
+cd server && npm install && npm run dev
 
-Starts the backend on port `3001` and the Vite dev server on port `5173` simultaneously.
+# Frontend (port 5173) — in a second terminal
+cd frontend && npm install && npm run dev
+```
 
 ```bash
 # Run backend tests

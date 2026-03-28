@@ -399,9 +399,9 @@ function renderServerInfo(info) {
   const resEl = document.getElementById('res-content');
   if (!resEl) return;
 
-  const ramPct  = info.ram_total_mb  ? Math.round((info.ram_used_mb  / info.ram_total_mb)  * 100) : 0;
+  const ramPct = info.ram_total_mb ? Math.round((info.ram_used_mb / info.ram_total_mb) * 100) : 0;
   const diskPct = info.disk_total_gb ? Math.round((info.disk_used_gb / info.disk_total_gb) * 100) : 0;
-  const cpuPct  = info.cpu_usage_pct ?? null;
+  const cpuPct = info.cpu_usage_pct ?? null;
 
   const bar = (pct) => {
     const cls = pct > 90 ? 'critical' : pct > 70 ? 'high' : '';
@@ -409,14 +409,14 @@ function renderServerInfo(info) {
   };
 
   // RAM labels
-  const ramUsedLabel  = info.ram_total_mb ? (info.ram_used_mb  >= 1024 ? (info.ram_used_mb  / 1024).toFixed(1) + ' GB' : Math.round(info.ram_used_mb)  + ' MB') : null;
+  const ramUsedLabel = info.ram_total_mb ? (info.ram_used_mb >= 1024 ? (info.ram_used_mb / 1024).toFixed(1) + ' GB' : Math.round(info.ram_used_mb) + ' MB') : null;
   const ramTotalLabel = info.ram_total_mb ? (info.ram_total_mb >= 1024 ? (info.ram_total_mb / 1024).toFixed(1) + ' GB' : Math.round(info.ram_total_mb) + ' MB') : null;
-  const ramAbsolute   = ramUsedLabel ? `${ramUsedLabel} / ${ramTotalLabel}` : '—';
+  const ramAbsolute = ramUsedLabel ? `${ramUsedLabel} / ${ramTotalLabel}` : '—';
 
   // Disk labels
-  const diskUsedLabel  = info.disk_total_gb ? info.disk_used_gb.toFixed(1)  + ' GB' : null;
+  const diskUsedLabel = info.disk_total_gb ? info.disk_used_gb.toFixed(1) + ' GB' : null;
   const diskTotalLabel = info.disk_total_gb ? info.disk_total_gb.toFixed(1) + ' GB' : null;
-  const diskAbsolute   = diskUsedLabel ? `${diskUsedLabel} / ${diskTotalLabel}` : '—';
+  const diskAbsolute = diskUsedLabel ? `${diskUsedLabel} / ${diskTotalLabel}` : '—';
 
   resEl.innerHTML = `
     <div class="res-block">
@@ -524,7 +524,7 @@ async function loadServerInfo(serverId) {
     if (info._cached) {
       api.getServerInfo(serverId, true)
         .then(fresh => { if (fresh && document.getElementById('inf-status')) renderServerInfo(fresh); })
-        .catch(() => {});
+        .catch(() => { });
     }
 
     // Reload button for Resources
@@ -715,7 +715,7 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
           const el = document.getElementById('docker-content');
           if (el && el.dataset.serverId === serverId) renderDockerData(serverId, fresh, imageUpdateMaps[serverId] || {});
         })
-        .catch(() => {})
+        .catch(() => { })
         .finally(() => { refreshBtn.disabled = false; refreshBtn.querySelector('i').classList.remove('fa-spin'); });
     });
   }
@@ -745,7 +745,7 @@ async function loadDockerContainers(serverId) {
           const el = document.getElementById('docker-content');
           if (el && el.dataset.serverId === serverId) renderDockerData(serverId, fresh, imageUpdateMaps[serverId] || {});
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   } catch (error) {
     const el = document.getElementById('docker-content');
@@ -762,10 +762,10 @@ function renderContainerRow(c, imageUpdateMap = {}) {
   const updateCell = updateStatus === 'update_available'
     ? `<span class="badge badge-warning" style="font-size:10px;"><i class="fas fa-arrow-up"></i> ${t('det.imageUpdateAvail')}</span>`
     : updateStatus === 'updated'
-    ? `<span class="badge badge-online" style="font-size:10px;"><i class="fas fa-check"></i> ${t('det.imageUpdated')}</span>`
-    : updateStatus === 'up_to_date'
-    ? `<span style="font-size:11px;color:var(--text-muted);"><i class="fas fa-check"></i> ${t('det.imageUpToDate')}</span>`
-    : `<span style="font-size:11px;color:var(--text-muted);">—</span>`;
+      ? `<span class="badge badge-online" style="font-size:10px;"><i class="fas fa-check"></i> ${t('det.imageUpdated')}</span>`
+      : updateStatus === 'up_to_date'
+        ? `<span style="font-size:11px;color:var(--text-muted);"><i class="fas fa-check"></i> ${t('det.imageUpToDate')}</span>`
+        : `<span style="font-size:11px;color:var(--text-muted);">—</span>`;
   return `
     <tr class="no-hover" style="padding-left:20px;">
       <td style="padding-left:24px;"><span class="status-dot ${dotCls}"></span></td>
@@ -899,7 +899,7 @@ function renderUpdatesData(updates, customTasks = [], serverId = null) {
     renderCustomTasksPanel(customTasks, serverId);
     return;
   }
-  const real   = clean.filter(u => !u.phased);
+  const real = clean.filter(u => !u.phased);
   const phased = clean.filter(u => u.phased);
   el.innerHTML = `
     ${real.length > 0 ? `
@@ -939,8 +939,8 @@ function renderCustomTasksPanel(customTasks, serverId) {
     const statusCell = task.has_update
       ? `<span class="badge badge-warning" style="font-size:10px;"><i class="fas fa-arrow-up"></i> ${t('det.imageUpdateAvail')}</span>`
       : task.last_checked_at
-      ? `<span style="font-size:11px;color:var(--online);"><i class="fas fa-check"></i> ${t('det.imageUpToDate')}</span>`
-      : `<span style="font-size:11px;color:var(--text-muted);">—</span>`;
+        ? `<span style="font-size:11px;color:var(--online);"><i class="fas fa-check"></i> ${t('det.imageUpToDate')}</span>`
+        : `<span style="font-size:11px;color:var(--text-muted);">—</span>`;
     const typeLabel = task.type === 'github'
       ? `<span style="font-size:11px;color:var(--text-muted);"><i class="fab fa-github"></i> GitHub</span>`
       : `<span style="font-size:11px;color:var(--text-muted);">Script</span>`;
@@ -1134,7 +1134,7 @@ async function loadUpdates(serverId) {
     if (updates?.length > 0 && updates[0]?._cached) {
       api.getServerUpdates(serverId, true)
         .then(fresh => { if (document.getElementById('updates-content')) renderUpdatesData(fresh, customTasks, serverId); })
-        .catch(() => {});
+        .catch(() => { });
     }
   } catch (e) {
     el.innerHTML = `<div class="empty-state"><p style="color:var(--offline);">${esc(e.message)}</p></div>`;
@@ -1155,7 +1155,7 @@ async function loadHistory(serverId) {
   function renderHistoryPage() {
     const total = Math.max(1, Math.ceil(history.length / HIST_PAGE_SIZE));
     if (histPage > total) histPage = total;
-    const from  = (histPage - 1) * HIST_PAGE_SIZE;
+    const from = (histPage - 1) * HIST_PAGE_SIZE;
     const items = history.slice(from, from + HIST_PAGE_SIZE);
 
     let pages = '';
@@ -1185,12 +1185,12 @@ async function loadHistory(serverId) {
         </thead>
         <tbody>
           ${items.map(h => {
-            const statusCls = h.status === 'success' ? 'online' : h.status === 'failed' ? 'offline' : 'warning';
-            const isSchedule = h._type === 'schedule';
-            const trigger = isSchedule
-              ? `<span style="display:inline-flex;align-items:center;gap:5px;"><i class="fas fa-calendar-alt" style="color:var(--accent);font-size:11px;"></i> ${esc(h.triggered_by || 'schedule')}</span>`
-              : `<span style="color:var(--text-muted);font-size:11px;">${esc(h.triggered_by || 'system')}</span>`;
-            return `
+      const statusCls = h.status === 'success' ? 'online' : h.status === 'failed' ? 'offline' : 'warning';
+      const isSchedule = h._type === 'schedule';
+      const trigger = isSchedule
+        ? `<span style="display:inline-flex;align-items:center;gap:5px;"><i class="fas fa-calendar-alt" style="color:var(--accent);font-size:11px;"></i> ${esc(h.triggered_by || 'schedule')}</span>`
+        : `<span style="color:var(--text-muted);font-size:11px;">${esc(h.triggered_by || 'system')}</span>`;
+      return `
               <tr class="no-hover">
                 <td class="mono" style="display:flex;align-items:center;gap:6px;">
                   ${isSchedule ? '<span class="badge" style="font-size:10px;padding:1px 6px;background:var(--accent-light);color:var(--accent);border:1px solid var(--accent);flex-shrink:0;">Playbook</span>' : ''}
@@ -1202,7 +1202,7 @@ async function loadHistory(serverId) {
                 <td class="mono" style="font-size:11px;color:var(--text-muted);">${formatDate(h.completed_at)}</td>
               </tr>
             `;
-          }).join('')}
+    }).join('')}
         </tbody>
       </table>
       ${pagination}
