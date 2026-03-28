@@ -78,47 +78,55 @@ class AnsibleRunner {
   }
 
   /**
-   * List available playbooks in the playbooks directory
+   * List available playbooks.
+   * User playbooks come from PLAYBOOKS_DIR (bind-mounted ./playbooks).
+   * System/internal playbooks come exclusively from BUNDLED_PLAYBOOKS_DIR.
    */
   getAvailablePlaybooks() {
     try {
-      if (!fs.existsSync(PLAYBOOKS_DIR)) return [];
       const out = [];
       const seen = new Set();
-      const walk = (dir, prefix = '') => {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const ent of entries) {
-          if (ent.name.startsWith('.')) continue;
-          const fullPath = path.join(dir, ent.name);
-          const relPath = prefix ? `${prefix}/${ent.name}` : ent.name;
-          if (ent.isDirectory()) {
-            walk(fullPath, relPath);
-            continue;
-          }
-          if (!relPath.endsWith('.yml') && !relPath.endsWith('.yaml')) continue;
-          if (seen.has(relPath)) continue;
 
-          const content = fs.readFileSync(fullPath, 'utf8');
-          const lines = content.split('\n').slice(0, 6);
-          const nameMatch = content.match(/-\s*name:\s*(.+)/);
-          const description = nameMatch ? nameMatch[1].trim() : relPath;
-          const catLine = lines.find(l => /^#\s*category:/i.test(l));
-          const category = catLine ? catLine.replace(/^#\s*category:\s*/i, '').trim() : null;
-
-          const internalRoot = ['update.yml', 'gather-docker.yml', 'check-image-updates.yml', 'reboot.yml', 'setup-ssh.yml'];
-          const isInternal = relPath.startsWith('system/') || internalRoot.includes(relPath);
-          seen.add(relPath);
-          out.push({ filename: relPath, description, isInternal, category });
-        }
+      const readMeta = (fullPath, relPath) => {
+        const content = fs.readFileSync(fullPath, 'utf8');
+        const lines = content.split('\n').slice(0, 6);
+        const nameMatch = content.match(/-\s*name:\s*(.+)/);
+        const description = nameMatch ? nameMatch[1].trim() : relPath;
+        const catLine = lines.find(l => /^#\s*category:/i.test(l));
+        const category = catLine ? catLine.replace(/^#\s*category:\s*/i, '').trim() : null;
+        return { description, category };
       };
 
-      walk(PLAYBOOKS_DIR, '');
-      // Also walk the full bundled-playbooks dir so shipped playbooks remain
-      // visible even when the user bind-mounts their own ./playbooks directory.
-      // The `seen` set prevents duplicates when both directories overlap.
+      // 1) User playbooks: root-level .yml files in PLAYBOOKS_DIR only (no subdirs)
+      if (fs.existsSync(PLAYBOOKS_DIR)) {
+        for (const ent of fs.readdirSync(PLAYBOOKS_DIR, { withFileTypes: true })) {
+          if (ent.isDirectory() || ent.name.startsWith('.')) continue;
+          if (!ent.name.endsWith('.yml') && !ent.name.endsWith('.yaml')) continue;
+          const fullPath = path.join(PLAYBOOKS_DIR, ent.name);
+          const { description, category } = readMeta(fullPath, ent.name);
+          seen.add(ent.name);
+          out.push({ filename: ent.name, description, isInternal: false, category });
+        }
+      }
+
+      // 2) System playbooks: everything in BUNDLED_PLAYBOOKS_DIR
       if (fs.existsSync(BUNDLED_PLAYBOOKS_DIR)) {
+        const walk = (dir, prefix = '') => {
+          for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+            if (ent.name.startsWith('.')) continue;
+            const fullPath = path.join(dir, ent.name);
+            const relPath = prefix ? `${prefix}/${ent.name}` : ent.name;
+            if (ent.isDirectory()) { walk(fullPath, relPath); continue; }
+            if (!relPath.endsWith('.yml') && !relPath.endsWith('.yaml')) continue;
+            if (seen.has(relPath)) continue;
+            const { description, category } = readMeta(fullPath, relPath);
+            seen.add(relPath);
+            out.push({ filename: relPath, description, isInternal: true, category });
+          }
+        };
         walk(BUNDLED_PLAYBOOKS_DIR, '');
       }
+
       out.sort((a, b) => a.filename.localeCompare(b.filename));
       return out;
     } catch (e) {
@@ -150,29 +158,44 @@ class AnsibleRunner {
   }
 
   /**
-   * Run an Ansible playbook with live output streaming
+   * Run an Ansible playbook with live output streaming.
+   * System playbooks (system/*) resolve from BUNDLED_PLAYBOOKS_DIR only.
+   * User playbooks resolve from PLAYBOOKS_DIR first, then BUNDLED_PLAYBOOKS_DIR.
    */
   async runPlaybook(playbookName, targets = 'all', extraVars = {}, onOutput = null) {
     const { keyPath, cleanup } = this._resolveSshKey();
     let inventoryPath;
     try {
       inventoryPath = this.generateInventory(keyPath);
-      const basePlaybooks = path.resolve(PLAYBOOKS_DIR);
-      const playbookPath = path.resolve(basePlaybooks, playbookName);
 
-      if (!playbookPath.startsWith(basePlaybooks + path.sep)) {
-        throw new Error(`Invalid playbook path: ${playbookName}`);
-      }
+      let resolvedPlaybook;
+      const isSystem = playbookName.startsWith('system/');
 
-      let resolvedPlaybook = playbookPath;
-      if (!fs.existsSync(resolvedPlaybook)) {
-        // Fall back to bundled-playbooks (survives bind mounts of ./playbooks)
+      if (isSystem) {
+        // System playbooks live exclusively in bundled-playbooks
         const bundledBase = path.resolve(BUNDLED_PLAYBOOKS_DIR);
         const bundledPath = path.resolve(bundledBase, playbookName);
-        if (bundledPath.startsWith(bundledBase + path.sep) && fs.existsSync(bundledPath)) {
-          resolvedPlaybook = bundledPath;
+        if (!bundledPath.startsWith(bundledBase + path.sep) || !fs.existsSync(bundledPath)) {
+          throw new Error(`System playbook not found: ${playbookName}`);
+        }
+        resolvedPlaybook = bundledPath;
+      } else {
+        // User playbooks: try user dir first, then bundled fallback
+        const userBase = path.resolve(PLAYBOOKS_DIR);
+        const userPath = path.resolve(userBase, playbookName);
+        if (!userPath.startsWith(userBase + path.sep)) {
+          throw new Error(`Invalid playbook path: ${playbookName}`);
+        }
+        if (fs.existsSync(userPath)) {
+          resolvedPlaybook = userPath;
         } else {
-          throw new Error(`Playbook not found: ${playbookName}`);
+          const bundledBase = path.resolve(BUNDLED_PLAYBOOKS_DIR);
+          const bundledPath = path.resolve(bundledBase, playbookName);
+          if (bundledPath.startsWith(bundledBase + path.sep) && fs.existsSync(bundledPath)) {
+            resolvedPlaybook = bundledPath;
+          } else {
+            throw new Error(`Playbook not found: ${playbookName}`);
+          }
         }
       }
 

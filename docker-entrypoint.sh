@@ -72,12 +72,26 @@ if [ -d /app/bundled-plugins ]; then
   done
 fi
 
-# Ensure internal system playbooks are always present, even when
-# /app/server/playbooks is bind-mounted from the host.
-if [ -d /app/bundled-playbooks/system ]; then
-  mkdir -p /app/server/playbooks/system
-  cp -r /app/bundled-playbooks/system/. /app/server/playbooks/system/
-  chown -R shipyard:shipyard /app/server/playbooks/system
+# System playbooks (agent deploy, internal polling) live exclusively in
+# /app/bundled-playbooks and are never copied into the user-facing mount.
+# On first run, seed the user playbooks directory with starter playbooks.
+if [ -d /app/bundled-playbooks ] && [ -d /app/server/playbooks ]; then
+  # Remove legacy system/ directory from user mount (pre-v1.0.3 installs)
+  rm -rf /app/server/playbooks/system
+
+  # Seed starter playbooks if directory is empty (first run)
+  yml_count=$(find /app/server/playbooks -maxdepth 1 -name '*.yml' -o -name '*.yaml' 2>/dev/null | wc -l)
+  if [ "$yml_count" = "0" ]; then
+    echo "[INIT] Seeding starter playbooks into ./playbooks/"
+    for f in /app/bundled-playbooks/*.yml /app/bundled-playbooks/*.yaml; do
+      [ -f "$f" ] || continue
+      bn=$(basename "$f")
+      # Skip internal system playbooks — they run from bundled-playbooks only
+      case "$bn" in update.yml|gather-docker.yml|check-image-updates.yml|reboot.yml|setup-ssh.yml) continue ;; esac
+      cp "$f" "/app/server/playbooks/$bn"
+    done
+    chown -R shipyard:shipyard /app/server/playbooks
+  fi
 fi
 
 # Fix ownership of OpenTofu workspace directories registered by the plugin

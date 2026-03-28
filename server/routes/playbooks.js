@@ -169,12 +169,10 @@ router.post('/:filename/restore/:version', (req, res, next) => { if (!can(getPer
   }
 });
 
-// DELETE /api/playbooks/:filename - Delete a playbook
+// DELETE /api/playbooks/:filename - Delete a user playbook
 router.delete('/:filename', (req, res, next) => { if (!can(getPermissions(req.user), 'canDeletePlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
     const filename = path.basename(req.params.filename);
-    const INTERNAL = ['update.yml', 'gather-docker.yml', 'check-image-updates.yml', 'reboot.yml', 'setup-ssh.yml'];
-    if (INTERNAL.includes(filename)) return res.status(403).json({ error: 'Cannot delete internal playbook' });
     const filepath = path.join(PLAYBOOKS_DIR, filename);
     if (!filepath.startsWith(RESOLVED_PLAYBOOKS_DIR + path.sep)) {
       return res.status(400).json({ error: 'Invalid path' });

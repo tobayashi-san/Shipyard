@@ -2,8 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const db = require('../db');
 
-const DEFAULT_MANIFEST_PATH = path.join(__dirname, '..', 'playbooks', 'system', 'agent', 'files', 'default-manifest.json');
+// System playbooks live exclusively in bundled-playbooks; fall back to source tree for dev
 const BUNDLED_MANIFEST_PATH = path.join(__dirname, '..', '..', 'bundled-playbooks', 'system', 'agent', 'files', 'default-manifest.json');
+const SOURCE_MANIFEST_PATH = path.join(__dirname, '..', 'playbooks', 'system', 'agent', 'files', 'default-manifest.json');
 
 function validationError(message) {
   const err = new Error(message);
@@ -49,7 +50,7 @@ function _isMinimalFallback(manifest) {
 }
 
 function _readDefaultManifest() {
-  const manifestPath = fs.existsSync(DEFAULT_MANIFEST_PATH) ? DEFAULT_MANIFEST_PATH : BUNDLED_MANIFEST_PATH;
+  const manifestPath = fs.existsSync(BUNDLED_MANIFEST_PATH) ? BUNDLED_MANIFEST_PATH : SOURCE_MANIFEST_PATH;
   const content = fs.readFileSync(manifestPath, 'utf8');
   return JSON.parse(content);
 }

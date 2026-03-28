@@ -18,7 +18,6 @@ const resetLimiter = rateLimit({
 });
 
 const PLAYBOOKS_DIR = path.join(__dirname, '..', 'playbooks');
-const INTERNAL_PLAYBOOKS = ['update.yml', 'gather-docker.yml', 'check-image-updates.yml', 'reboot.yml', 'setup-ssh.yml'];
 
 function deleteServerTables() {
   db.db.prepare('DELETE FROM server_info').run();
@@ -35,7 +34,7 @@ function deleteServerTables() {
 function deleteUserPlaybooks() {
   if (!fs.existsSync(PLAYBOOKS_DIR)) return;
   for (const f of fs.readdirSync(PLAYBOOKS_DIR)) {
-    if (!INTERNAL_PLAYBOOKS.includes(f) && f.endsWith('.yml')) {
+    if (f.endsWith('.yml') || f.endsWith('.yaml')) {
       fs.unlinkSync(path.join(PLAYBOOKS_DIR, f));
     }
   }
