@@ -144,3 +144,35 @@ test('agent parser tolerates NUL-separated collector output and avoids bogus 100
   assert.equal(info.disk_used_gb, 102.5);
   assert.equal(info.load_avg, '0.89 0.91 0.94');
 });
+
+test('agent parser tolerates replacement-char separators in os_info/memory payloads', () => {
+  wipeDb();
+  const server = db.servers.create({ name: 'agent-badsep', hostname: 'agent-badsep', ip_address: '10.0.0.52' });
+  db.agentConfig.upsert({ server_id: server.id, mode: 'push', token: 'tok', interval: 30 });
+
+  const sep = '\uFFFD';
+  processIncomingReport({
+    serverId: server.id,
+    report: {
+      timestamp: 3000,
+      manifest_version: 1,
+      runner_version: '3.0.0',
+      collectors: [
+        { id: 'memory', output: `MemTotal: 6291456 kB${sep}MemFree: 4724864 kB${sep}Buffers: 300000 kB${sep}Cached: 286617 kB` },
+        { id: 'disk', output: `Filesystem 1M-blocks Used Available Use% Mounted on\n/dev/sda1 150000 105000 45000 70% /` },
+        { id: 'load', output: '0.74 0.78 0.85 1/100 4321' },
+        { id: 'uptime', output: '643749.00' },
+        { id: 'os_info', output: `PRETTY_NAME="Debian GNU/Linux 13 (trixie)"${sep}NAME="Debian GNU/Linux"${sep}VERSION_ID="13"` },
+        { id: 'nproc', output: '4' },
+      ],
+    },
+  });
+
+  const info = db.serverInfo.get(server.id);
+  assert.equal(info.os, 'Debian GNU/Linux 13 (trixie)');
+  assert.equal(info.ram_total_mb, 6144);
+  assert.equal(info.ram_used_mb, 957);
+  assert.equal(info.disk_total_gb, 146.5);
+  assert.equal(info.disk_used_gb, 102.5);
+  assert.equal(info.load_avg, '0.74 0.78 0.85');
+});

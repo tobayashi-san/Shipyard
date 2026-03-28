@@ -4,7 +4,20 @@ const log = require('../utils/logger').child('agent:processor');
 function normalizeCollectorOutput(text) {
   // Some runner environments can emit NUL-separated lines.
   // Normalize to plain newlines so parsers remain stable.
-  return String(text || '').replace(/\r\n?/g, '\n').replace(/\u0000/g, '\n');
+  return String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\\u0000/gi, '\n')
+    .replace(/\\0/g, '\n')
+    .replace(/\u0000/g, '\n')
+    .replace(/\uFFFD/g, '\n')
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '\n');
+}
+
+function extractOsValue(text, key) {
+  const src = normalizeCollectorOutput(text);
+  const re = new RegExp(`(?:^|\\n)${key}=(?:"([^"\\n]+)"|([^\\n]+))`);
+  const m = src.match(re);
+  return (m?.[1] || m?.[2] || '').trim() || null;
 }
 
 function parseKeyValueLines(text) {
@@ -105,9 +118,12 @@ function getPreviousCollectorOutput(serverId, collectorId) {
 function toServerInfo(serverId, report) {
   const collectors = collectorMap(report);
   const existing = db.serverInfo.get(serverId) || {};
+  const osInfoRaw = collectors.get('os_info')?.output || '';
   const mem = parseMeminfo(collectors.get('memory')?.output || '');
   const disk = parseDfTotals(collectors.get('disk')?.output || '');
-  const osInfo = parseKeyValueLines(collectors.get('os_info')?.output || '');
+  const osInfo = parseKeyValueLines(osInfoRaw);
+  const prettyOs = extractOsValue(osInfoRaw, 'PRETTY_NAME') || osInfo.PRETTY_NAME || null;
+  const nameOs = extractOsValue(osInfoRaw, 'NAME') || osInfo.NAME || null;
   const uptimeVal = Number.parseFloat(normalizeCollectorOutput(collectors.get('uptime')?.output || '').trim());
   const cores = Number.parseInt(normalizeCollectorOutput(collectors.get('nproc')?.output || '').trim(), 10);
   const prevCpu = getPreviousCollectorOutput(serverId, 'cpu');
@@ -121,7 +137,7 @@ function toServerInfo(serverId, report) {
   }
 
   return {
-    os: osInfo.PRETTY_NAME || osInfo.NAME || existing.os || null,
+    os: prettyOs || nameOs || existing.os || null,
     kernel: existing.kernel || null,
     cpu: existing.cpu || null,
     cpu_cores: Number.isFinite(cores) ? cores : (existing.cpu_cores ?? null),
