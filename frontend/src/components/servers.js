@@ -37,7 +37,7 @@ export async function renderServers() {
   const allTags = [...new Set(state.servers.flatMap(s => s.tags || []))].sort();
   const filtered = activeTag ? state.servers.filter(s => (s.tags || []).includes(activeTag)) : state.servers;
 
-  const onlineCount  = state.servers.filter(s => s.status === 'online').length;
+  const onlineCount = state.servers.filter(s => s.status === 'online').length;
   const offlineCount = state.servers.filter(s => s.status === 'offline').length;
   const tagBar = allTags.length > 0 ? `
     <div class="tag-filter-bar">
@@ -272,7 +272,7 @@ function attachEvents() {
       if (posX < 8) posX = 8;
       if (posX + 180 > window.innerWidth - 8) posX = window.innerWidth - 180 - 8;
       dropdown.style.left = posX + 'px';
-      
+
       document.body.appendChild(dropdown);
       // After render, decide: open up or down
       const ddH = dropdown.offsetHeight;
@@ -511,7 +511,7 @@ function attachEvents() {
   document.getElementById('btn-bulk-playbook')?.addEventListener('click', () => {
     const names = getSelectedNames();
     if (!names.length) return;
-    showRunPlaybookModal(() => {}, names);
+    showRunPlaybookModal(() => { }, names);
   });
 
   // ── Pagination ────────────────────────────────────────────
@@ -590,7 +590,7 @@ function parseCsvServers(text) {
     const obj = {};
     headers.forEach((h, i) => { obj[h] = (fields[i] ?? ''); });
     // Parse JSON arrays back
-    try { obj.tags     = JSON.parse(obj.tags     || '[]'); } catch { obj.tags     = []; }
+    try { obj.tags = JSON.parse(obj.tags || '[]'); } catch { obj.tags = []; }
     try { obj.services = JSON.parse(obj.services || '[]'); } catch { obj.services = []; }
     obj.ssh_port = parseInt(obj.ssh_port) || 22;
     return obj;
@@ -600,7 +600,7 @@ function parseCsvServers(text) {
 function renderPagination(current, total, totalItems) {
   if (total <= 1) return '';
   const from = (current - 1) * PAGE_SIZE + 1;
-  const to   = Math.min(current * PAGE_SIZE, totalItems);
+  const to = Math.min(current * PAGE_SIZE, totalItems);
   let pages = '';
   for (let i = 1; i <= total; i++) {
     if (total > 7 && Math.abs(i - current) > 2 && i !== 1 && i !== total) {
@@ -631,7 +631,7 @@ function closeMoveDropdowns() {
   document.querySelectorAll('.move-dropdown').forEach(d => d.remove());
 }
 
-const PRESET_COLORS = ['#6366f1','#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316'];
+const PRESET_COLORS = ['#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f97316'];
 
 function showGroupDialog({ title = '', confirmText = '', groups = [], defaultName = '', defaultColor = '#6366f1', defaultParentId = null, editId = null } = {}) {
   return new Promise((resolve) => {
@@ -814,7 +814,7 @@ function renderGroupedBody(servers, groups) {
 }
 
 function updateBulkBar() {
-  const bar   = document.getElementById('bulk-bar');
+  const bar = document.getElementById('bulk-bar');
   const count = document.getElementById('bulk-count');
   if (!bar) return;
   const n = selectedIds.size;
@@ -827,11 +827,11 @@ function updateBulkBar() {
 }
 
 function renderRow(server, depth = 0, folderColor = null) {
-  const dotCls  = server.status === 'online' ? 'online' : server.status === 'offline' ? 'offline' : 'unknown';
+  const dotCls = server.status === 'online' ? 'online' : server.status === 'offline' ? 'offline' : 'unknown';
   const lastSeen = server.last_seen ? formatRelativeTime(server.last_seen) : '—';
-  const checked  = selectedIds.has(server.id) ? 'checked' : '';
+  const checked = selectedIds.has(server.id) ? 'checked' : '';
   const borderStyle = folderColor ? `border-left:3px solid ${folderColor};` : '';
-  const nameIndent  = folderColor ? 14 + (depth - 1) * 14 : 14;
+  const nameIndent = folderColor ? 14 + (depth - 1) * 14 : 14;
   return `
     <tr class="server-row" data-server-id="${server.id}" draggable="true">
       <td class="checkbox-cell" style="padding-right:6px;${borderStyle}">
@@ -842,27 +842,27 @@ function renderRow(server, depth = 0, folderColor = null) {
         <span style="font-weight:600;color:var(--text-primary);">${esc(server.name)}</span>
         ${(server.tags || []).map(tag => `<span class="server-tag">${esc(tag)}</span>`).join('')}
       </td>
-      <td class="mono" style="color:var(--text-muted);font-size:12px;">${esc(server.ip_address || '—')}</td>
-      <td id="os-${server.id}" class="mono" style="color:var(--text-muted);">—</td>
+      <td class="mono ${server.ip_address ? '' : 'empty-value'}" style="color:var(--text-muted);font-size:12px;">${esc(server.ip_address || '—')}</td>
+      <td id="os-${server.id}" class="mono empty-value" style="color:var(--text-muted);">—</td>
       <td id="cpu-${server.id}">
         <div style="display:flex;align-items:center;gap:6px;">
           <div class="progress-track" style="height:6px;"><div class="progress-fill" style="width:0%" id="cpu-bar-${server.id}"></div></div>
-          <span class="text-mono" id="cpu-val-${server.id}" style="width:32px;text-align:right;">—</span>
+          <span class="text-mono empty-value" id="cpu-val-${server.id}" style="width:32px;text-align:right;">—</span>
         </div>
       </td>
       <td id="ram-${server.id}">
         <div style="display:flex;align-items:center;gap:6px;">
           <div class="progress-track" style="height:6px;"><div class="progress-fill" style="width:0%" id="ram-bar-${server.id}"></div></div>
-          <span class="text-mono" id="ram-val-${server.id}" style="width:32px;text-align:right;">—</span>
+          <span class="text-mono empty-value" id="ram-val-${server.id}" style="width:32px;text-align:right;">—</span>
         </div>
       </td>
       <td id="disk-${server.id}">
         <div style="display:flex;align-items:center;gap:6px;">
           <div class="progress-track" style="height:6px;"><div class="progress-fill" style="width:0%" id="disk-bar-${server.id}"></div></div>
-          <span class="text-mono" id="disk-val-${server.id}" style="width:32px;text-align:right;">—</span>
+          <span class="text-mono empty-value" id="disk-val-${server.id}" style="width:32px;text-align:right;">—</span>
         </div>
       </td>
-      <td class="text-mono" style="color:var(--text-muted);font-size:11px;">${lastSeen}</td>
+      <td class="text-mono ${lastSeen === '—' ? 'empty-value' : ''}" style="color:var(--text-muted);font-size:11px;">${lastSeen}</td>
       <td class="row-actions" style="white-space:nowrap;">
         ${serverGroups.length > 0 && hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm btn-move-server" data-server-id="${server.id}" title="${t('srv.moveTo')}"><i class="fas fa-folder-open"></i></button>` : ''}
         ${hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm btn-edit-server" data-server-id="${server.id}" title="${t('srv.edit')}">
@@ -887,26 +887,39 @@ async function loadServerInfo(serverId) {
     const info = await api.getServerInfo(serverId);
     if (!info) return;
     const osEl = document.getElementById(`os-${serverId}`);
-    if (osEl) osEl.textContent = (info.os || '').split(' ')[0] || '—';
+    if (osEl) {
+      const os = (info.os || '').split(' ')[0] || '—';
+      osEl.textContent = os;
+      osEl.classList.toggle('empty-value', os === '—');
+    }
     if (info.cpu_usage_pct != null) {
       const pct = info.cpu_usage_pct;
       updateBar(`cpu-bar-${serverId}`, pct);
       const el = document.getElementById(`cpu-val-${serverId}`);
-      if (el) el.textContent = pct + '%';
+      if (el) {
+        el.textContent = pct + '%';
+        el.classList.remove('empty-value');
+      }
     }
     if (info.ram_total_mb) {
       const pct = Math.round((info.ram_used_mb / info.ram_total_mb) * 100);
       updateBar(`ram-bar-${serverId}`, pct);
       const el = document.getElementById(`ram-val-${serverId}`);
-      if (el) el.textContent = pct + '%';
+      if (el) {
+        el.textContent = pct + '%';
+        el.classList.remove('empty-value');
+      }
     }
     if (info.disk_total_gb) {
       const pct = Math.round((info.disk_used_gb / info.disk_total_gb) * 100);
       updateBar(`disk-bar-${serverId}`, pct);
       const el = document.getElementById(`disk-val-${serverId}`);
-      if (el) el.textContent = pct + '%';
+      if (el) {
+        el.textContent = pct + '%';
+        el.classList.remove('empty-value');
+      }
     }
-  } catch {}
+  } catch { }
 }
 
 function updateBar(id, pct) {
@@ -920,8 +933,8 @@ function formatRelativeTime(dateStr) {
   // SQLite datetime('now') is UTC but has no 'Z' suffix — add it explicitly
   const utc = dateStr && !dateStr.endsWith('Z') ? dateStr.replace(' ', 'T') + 'Z' : dateStr;
   const diff = Math.floor((Date.now() - new Date(utc)) / 1000);
-  if (diff < 60)    return t('dash.justNow');
-  if (diff < 3600)  return Math.floor(diff / 60) + 'm';
+  if (diff < 60) return t('dash.justNow');
+  if (diff < 3600) return Math.floor(diff / 60) + 'm';
   if (diff < 86400) return Math.floor(diff / 3600) + 'h';
   return Math.floor(diff / 86400) + 'd';
 }

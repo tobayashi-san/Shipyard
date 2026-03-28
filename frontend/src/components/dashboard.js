@@ -52,7 +52,7 @@ export async function renderDashboard() {
     renderDashboardData(data);
   } catch (e) {
     document.getElementById('dash-content').innerHTML = sanitizeHTML(
-      `<div class="empty-state"><p style="color:var(--offline);">${t('common.errorPrefix', { msg: esc(e.message) })}</p></div>`
+      `<div class="empty-state"><p class="inline-error-text">${t('common.errorPrefix', { msg: esc(e.message) })}</p></div>`
     );
   }
 }
@@ -65,10 +65,10 @@ function renderDashboardData(data) {
   const alerts = [];
   servers.forEach(s => {
     if (s.status === 'offline') alerts.push({ level: 'error', icon: 'fa-times-circle', text: `<strong>${esc(s.name)}</strong> ${t('dash.alertOffline', { name: '' }).replace(esc(s.name) + ' ', '')}`, serverId: s.id, name: s.name });
-    if (s.reboot_required)     alerts.push({ level: 'warning', icon: 'fa-redo', text: `<strong>${esc(s.name)}</strong> ${t('dash.alertReboot', { name: '' }).replace(esc(s.name) + ' ', '')}`, serverId: s.id, name: s.name });
-    if (s.disk_pct >= 85)      alerts.push({ level: 'warning', icon: 'fa-hdd', text: `<strong>${esc(s.name)}</strong> ${t('dash.alertDisk', { name: '', pct: s.disk_pct }).replace(esc(s.name) + ' ', '')}`, serverId: s.id, name: s.name });
-    if (s.ram_pct >= 90)       alerts.push({ level: 'warning', icon: 'fa-memory', text: `<strong>${esc(s.name)}</strong> ${t('dash.alertRam', { name: '', pct: s.ram_pct }).replace(esc(s.name) + ' ', '')}`, serverId: s.id, name: s.name });
-    if (s.updates_count > 0)        alerts.push({ level: 'info', icon: 'fa-arrow-up', text: `<strong>${esc(s.name)}</strong> – ${t('dash.alertUpdates', { name: '', count: s.updates_count }).replace(' – ', '')}`, serverId: s.id, name: s.name });
+    if (s.reboot_required) alerts.push({ level: 'warning', icon: 'fa-redo', text: `<strong>${esc(s.name)}</strong> ${t('dash.alertReboot', { name: '' }).replace(esc(s.name) + ' ', '')}`, serverId: s.id, name: s.name });
+    if (s.disk_pct >= 85) alerts.push({ level: 'warning', icon: 'fa-hdd', text: `<strong>${esc(s.name)}</strong> ${t('dash.alertDisk', { name: '', pct: s.disk_pct }).replace(esc(s.name) + ' ', '')}`, serverId: s.id, name: s.name });
+    if (s.ram_pct >= 90) alerts.push({ level: 'warning', icon: 'fa-memory', text: `<strong>${esc(s.name)}</strong> ${t('dash.alertRam', { name: '', pct: s.ram_pct }).replace(esc(s.name) + ' ', '')}`, serverId: s.id, name: s.name });
+    if (s.updates_count > 0) alerts.push({ level: 'info', icon: 'fa-arrow-up', text: `<strong>${esc(s.name)}</strong> – ${t('dash.alertUpdates', { name: '', count: s.updates_count }).replace(' – ', '')}`, serverId: s.id, name: s.name });
     if (s.image_updates_count > 0) alerts.push({ level: 'info', icon: 'fa-cube', text: `<strong>${esc(s.name)}</strong> – ${t('dash.alertImageUpdates', { name: '', count: s.image_updates_count }).replace(' – ', '')}`, serverId: s.id, name: s.name });
     if (s.custom_updates_count > 0) alerts.push({ level: 'info', icon: 'fa-cog', text: `<strong>${esc(s.name)}</strong> – ${t('dash.alertCustomUpdates', { name: '', count: s.custom_updates_count }).replace(' – ', '')}`, serverId: s.id, name: s.name });
   });
@@ -219,7 +219,7 @@ function serverHealthRow(s) {
       <td>${ramBar}</td>
       <td>${diskBar}</td>
       <td>${cpuBar}</td>
-      <td><span style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">${esc(uptime)}</span></td>
+      <td><span class="${uptime === '—' ? 'empty-value' : ''}" style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">${esc(uptime)}</span></td>
       <td>${updatesCell(s)}</td>
     </tr>
   `;
@@ -236,7 +236,7 @@ function agentBadge(s) {
 }
 
 function miniBar(pct) {
-  if (pct === null || pct === undefined) return '<span style="color:var(--text-muted);font-size:12px;">—</span>';
+  if (pct === null || pct === undefined) return '<span class="empty-value" style="font-size:12px;">—</span>';
   const cls = pct > 90 ? ' critical' : pct > 70 ? ' high' : '';
   return `
     <div style="display:flex;align-items:center;gap:6px;">
