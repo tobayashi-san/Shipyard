@@ -244,7 +244,7 @@ export async function renderSettings() {
               <span>${t('set.agentFeatureToggle')}</span>
             </div>
             <div class="settings-row-control">
-              <label class="toggle">
+              <label class="toggle-switch">
                 <input type="checkbox" id="agent-enabled-toggle" ${state.whiteLabel?.agentEnabled ? 'checked' : ''}>
                 <span class="toggle-slider"></span>
               </label>
