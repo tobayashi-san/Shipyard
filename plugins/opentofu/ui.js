@@ -15,7 +15,7 @@ let _openFile    = null;   // { path, content, dirty }
 let _fileTree    = null;
 let _status      = null;
 let _runsPage    = 1;
-let _runsPageSize = 20;
+let _runsPageSize = 10;
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 function esc(s) {
@@ -640,14 +640,9 @@ async function loadRunsTab(el, ws) {
         </div>
         <div class="terminal" style="border:none;border-radius:0 0 var(--radius) var(--radius);">
           <div class="terminal-header">
-            <div class="terminal-dots">
-              <div class="terminal-dot red"></div>
-              <div class="terminal-dot yellow"></div>
-              <div class="terminal-dot green"></div>
-            </div>
             <span class="terminal-title">${esc(ws.name)}</span>
           </div>
-          <div class="terminal-body" id="tofu-terminal-body" style="min-height:220px;"></div>
+          <div class="terminal-body" id="tofu-terminal-body" style="min-height:360px;"></div>
         </div>
       </div>
 
@@ -753,7 +748,7 @@ function bindRunsEvents(runs, pagination) {
     refreshRunList();
   });
   document.getElementById('tofu-runs-page-size')?.addEventListener('change', e => {
-    _runsPageSize = Math.max(1, parseInt(e.target.value, 10) || 20);
+    _runsPageSize = Math.max(1, parseInt(e.target.value, 10) || 10);
     _runsPage = 1;
     refreshRunList();
   });
@@ -769,9 +764,7 @@ function showRunOutputModal(run) {
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">${esc(fmt(run.started_at))}</div>
       <div class="terminal" style="max-height:60vh;">
         <div class="terminal-header">
-          <div class="terminal-dots">
-            <div class="terminal-dot red"></div><div class="terminal-dot yellow"></div><div class="terminal-dot green"></div>
-          </div>
+          <span class="terminal-title">${esc(run.action || 'Run output')}</span>
         </div>
         <div class="terminal-body" style="white-space:pre-wrap;">${esc(run.output || '(no output)')}</div>
       </div>
@@ -1182,15 +1175,7 @@ function openWorkspaceModal(ws) {
   overlay.classList.remove('hidden');
   const vars = ws?.env_vars || {};
   const envLines = Object.entries(vars).map(([k,v]) => `${k}=${v}`).join('\n');
-  overlay.innerHTML = `
-    <div class="modal" style="max-width:520px;width:95%;">
-      <h2>${ws ? '<i class="fas fa-edit"></i> Edit Workspace' : '<i class="fas fa-plus"></i> New Workspace'}</h2>
-      <div class="form-body">
-        <div class="form-group">
-          <label class="form-label">Name</label>
-          <input class="form-input" id="ws-name" value="${esc(ws?.name||'')}" placeholder="production" required>
-        </div>
-        ${ws ? `
+  const pathSection = ws ? `
         <div class="form-group">
           <label class="form-label">Path</label>
           <input class="form-input text-mono" id="ws-path" value="${esc(ws.path)}" required>
@@ -1200,20 +1185,9 @@ function openWorkspaceModal(ws) {
             <input type="checkbox" id="ws-move-files" style="width:16px;height:16px;" checked>
             Move existing workspace files to the new path
           </label>
-          <div class="form-hint">If enabled, Shipyard moves your current `.tf` files, state and workspace contents instead of only changing the saved path.</div>
-        </div>` : `<input type="hidden" id="ws-path" value="">`}
-        <div class="form-group">
-          <label class="form-label">Description (optional)</label>
-          <input class="form-input" id="ws-desc" value="${esc(ws?.description||'')}" placeholder="Production infrastructure">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Environment Variables</label>
-          <textarea class="form-input text-mono" id="ws-env"
-            style="min-height:100px;resize:vertical;font-size:12px;"
-            placeholder="AWS_ACCESS_KEY_ID=AKIA...\nTF_VAR_region=eu-central-1"
-          >${esc(envLines)}</textarea>
-        </div>
-        ${!ws ? `
+          <div class="form-hint">If enabled, Shipyard moves your current workspace files and state instead of only changing the saved path.</div>
+        </div>` : `<input type="hidden" id="ws-path" value="">`;
+  const scaffoldSection = !ws ? `
         <div class="form-group" style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px;">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:500;">
             <input type="checkbox" id="ws-scaffold" style="width:16px;height:16px;">
@@ -1233,7 +1207,28 @@ function openWorkspaceModal(ws) {
             </select>
             <div class="form-hint">Creates main.tf, variables.tf, outputs.tf and (if provider selected) providers.tf</div>
           </div>
-        </div>` : ''}
+        </div>` : '';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:520px;width:95%;">
+      <h2>${ws ? '<i class="fas fa-edit"></i> Edit Workspace' : '<i class="fas fa-plus"></i> New Workspace'}</h2>
+      <div class="form-body">
+        <div class="form-group">
+          <label class="form-label">Name</label>
+          <input class="form-input" id="ws-name" value="${esc(ws?.name||'')}" placeholder="production" required>
+        </div>
+        ${pathSection}
+        <div class="form-group">
+          <label class="form-label">Description (optional)</label>
+          <input class="form-input" id="ws-desc" value="${esc(ws?.description||'')}" placeholder="Production infrastructure">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Environment Variables</label>
+          <textarea class="form-input text-mono" id="ws-env"
+            style="min-height:100px;resize:vertical;font-size:12px;"
+            placeholder="AWS_ACCESS_KEY_ID=AKIA...\nTF_VAR_region=eu-central-1"
+          >${esc(envLines)}</textarea>
+        </div>
+        ${scaffoldSection}
         <div class="form-actions">
           <button class="btn btn-secondary" id="ws-cancel">Cancel</button>
           <button class="btn btn-primary" id="ws-save">${ws ? 'Save' : 'Create'}</button>
