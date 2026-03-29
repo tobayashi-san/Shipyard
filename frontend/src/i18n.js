@@ -190,6 +190,9 @@ const translations = {
     'srv.newSubfolderIn': 'Neuer Unterordner in "{parent}"',
     'srv.import': 'Import',
     'srv.export': 'Export',
+    'srv.autoGroupFromTags': 'Tags → Ordner',
+    'srv.autoGroupDone': '{moved} Server verschoben ({matched} Treffer)',
+    'srv.autoGroupNone': 'Keine passenden Ordner-Tags gefunden',
 
     // ── Server Detail ─────────────────────────────────────────
     'det.tabOverview': 'Übersicht',
@@ -1016,6 +1019,9 @@ const translations = {
     'srv.newSubfolderIn': 'New subfolder in "{parent}"',
     'srv.import': 'Import',
     'srv.export': 'Export',
+    'srv.autoGroupFromTags': 'Tags → Folder',
+    'srv.autoGroupDone': '{moved} servers moved ({matched} matched)',
+    'srv.autoGroupNone': 'No matching folder tags found',
 
     // ── Server Detail ─────────────────────────────────────────
     'det.tabOverview': 'Overview',

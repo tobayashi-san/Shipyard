@@ -56,6 +56,14 @@ function initEditor() {
   });
 }
 
+function ensureEditor() {
+  const container = document.getElementById('cm-editor-container');
+  if (!container) return false;
+  if (cmEditor && container.contains(cmEditor.dom)) return true;
+  initEditor();
+  return !!cmEditor;
+}
+
 function getEditorContent() {
   return cmEditor ? cmEditor.state.doc.toString() : '';
 }
@@ -212,6 +220,7 @@ async function initTab(tab) {
 // Tab: Templates
 // ============================================================
 let currentFilename = null;
+let activeTemplatePanel = 'none';
 
 function renderTemplatesHTML() {
   return `
@@ -375,11 +384,45 @@ async function loadPlaybookList() {
   }
 
   renderList('');
+  await restoreTemplateState(allPlaybooks);
 
   const searchEl = document.getElementById('pb-search');
   if (searchEl) {
     searchEl.addEventListener('input', () => renderList(searchEl.value));
   }
+}
+
+function markSelectedPlaybook() {
+  document.querySelectorAll('.playbook-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.filename === currentFilename);
+  });
+}
+
+async function restoreTemplateState(allPlaybooks) {
+  if (!currentFilename) {
+    showTemplatePanel('none');
+    return;
+  }
+
+  const selected = allPlaybooks.find(playbook => playbook.filename === currentFilename);
+  if (!selected) {
+    currentFilename = null;
+    showTemplatePanel('none');
+    return;
+  }
+
+  if (activeTemplatePanel === 'editor') {
+    await selectPlaybook(selected.filename, !!selected.isInternal);
+    return;
+  }
+
+  if (activeTemplatePanel === 'run') {
+    openRunPanel(selected.filename, selected.description);
+    markSelectedPlaybook();
+    return;
+  }
+
+  markSelectedPlaybook();
 }
 
 function wirePlaybookItems() {
@@ -442,11 +485,12 @@ async function selectPlaybook(filename, isInternal) {
   } catch (e) {
     setEditorContent(t('pb.editorLoadError', { msg: e.message }));
   }
-  document.querySelectorAll('.playbook-item').forEach(i => i.classList.toggle('active', i.dataset.filename === filename));
+  markSelectedPlaybook();
 }
 
 function openRunPanel(filename, description) {
   currentFilename = filename;
+  activeTemplatePanel = 'run';
   showTemplatePanel('run');
   document.getElementById('run-playbook-name').textContent = description || filename;
   document.getElementById('run-output').classList.add('hidden');
@@ -467,10 +511,11 @@ function openRunPanel(filename, description) {
 }
 
 function showTemplatePanel(which) {
+  activeTemplatePanel = which;
   document.getElementById('playbook-editor-panel').classList.toggle('hidden', which !== 'editor');
   document.getElementById('playbook-run-panel').classList.toggle('hidden', which !== 'run');
   document.getElementById('playbook-welcome').classList.toggle('hidden', which !== 'none');
-  if (which === 'editor' && !cmEditor) initEditor();
+  if (which === 'editor') ensureEditor();
 }
 
 function setupPlaybookEvents() {
@@ -480,20 +525,22 @@ function setupPlaybookEvents() {
     document.getElementById('editor-title').textContent = t('pb.new');
     document.getElementById('filename-group').classList.remove('hidden');
     document.getElementById('btn-delete-playbook').classList.add('hidden');
+    document.getElementById('btn-playbook-history')?.classList.add('hidden');
     document.getElementById('playbook-filename').value = '';
     setEditorContent(`---\n- name: My New Playbook\n  hosts: all\n  become: yes\n  tasks:\n    - name: Ping all hosts\n      ping:\n`);
-    document.querySelectorAll('.playbook-item').forEach(i => i.classList.remove('active'));
+    markSelectedPlaybook();
   });
 
   document.getElementById('btn-cancel-edit')?.addEventListener('click', () => {
     showTemplatePanel('none');
     currentFilename = null;
-    document.querySelectorAll('.playbook-item').forEach(i => i.classList.remove('active'));
+    markSelectedPlaybook();
   });
 
   document.getElementById('btn-cancel-run')?.addEventListener('click', () => {
     showTemplatePanel('none');
-    document.querySelectorAll('.playbook-item').forEach(i => i.classList.remove('active'));
+    currentFilename = null;
+    markSelectedPlaybook();
   });
 
   document.getElementById('btn-playbook-history')?.addEventListener('click', async () => {
@@ -519,6 +566,7 @@ function setupPlaybookEvents() {
       const result = await api.savePlaybook(filename, content);
       showToast(t('pb.saved', { name: result.filename }), 'success');
       currentFilename = result.filename;
+      activeTemplatePanel = 'editor';
       await loadPlaybookList();
     } catch (e) {
       showToast(t('common.errorPrefix', { msg: e.message }), 'error');

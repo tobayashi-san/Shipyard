@@ -212,14 +212,59 @@ async function getStatus() {
   };
 }
 
-async function getLog() {
-  if (!await isGitRepo()) return [];
-  const r = await runGit(['log', '--oneline', '-20', '--format=%H|%s|%an|%ar']);
-  if (!r.success) return [];
-  return r.stdout.split('\n').filter(Boolean).map(line => {
+async function getLog({ page = 1, limit = 10 } = {}) {
+  const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
+  const safePage = Math.max(1, parseInt(page, 10) || 1);
+  const empty = {
+    items: [],
+    pagination: {
+      page: 1,
+      limit: safeLimit,
+      total: 0,
+      total_pages: 1,
+      has_prev: false,
+      has_next: false,
+    },
+  };
+
+  if (!await isGitRepo()) return empty;
+
+  const totalResult = await runGit(['rev-list', '--count', 'HEAD']);
+  const total = totalResult.success ? Math.max(0, parseInt(totalResult.stdout, 10) || 0) : 0;
+  if (!total) return empty;
+
+  const totalPages = Math.max(1, Math.ceil(total / safeLimit));
+  const currentPage = Math.min(safePage, totalPages);
+  const skip = (currentPage - 1) * safeLimit;
+  const r = await runGit(['log', `-${safeLimit}`, `--skip=${skip}`, '--format=%H|%s|%an|%ar']);
+  if (!r.success) {
+    return {
+      ...empty,
+      pagination: {
+        ...empty.pagination,
+        total,
+        total_pages: totalPages,
+        page: currentPage,
+      },
+    };
+  }
+
+  const items = r.stdout.split('\n').filter(Boolean).map(line => {
     const [hash, message, author, date] = line.split('|');
     return { hash: (hash || '').slice(0, 8), message, author, date };
   });
+
+  return {
+    items,
+    pagination: {
+      page: currentPage,
+      limit: safeLimit,
+      total,
+      total_pages: totalPages,
+      has_prev: currentPage > 1,
+      has_next: currentPage < totalPages,
+    },
+  };
 }
 
 async function getBranches() {

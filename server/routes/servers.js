@@ -54,6 +54,31 @@ function normalizeStorageMounts(value) {
   });
 }
 
+function normalizeGroupMatchKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function extractGroupTagCandidates(tag) {
+  const raw = String(tag || '').trim();
+  if (!raw) return [];
+  const prefixed = raw.match(/^(?:group|folder):(.+)$/i);
+  return prefixed ? [prefixed[1].trim(), raw] : [raw];
+}
+
+function resolveGroupIdByTags(tags, groups) {
+  if (!Array.isArray(tags) || tags.length === 0 || !Array.isArray(groups) || groups.length === 0) return null;
+  const groupMap = new Map(groups.map(group => [normalizeGroupMatchKey(group.name), group.id]));
+
+  for (const tag of tags) {
+    for (const candidate of extractGroupTagCandidates(tag)) {
+      const groupId = groupMap.get(normalizeGroupMatchKey(candidate));
+      if (groupId) return groupId;
+    }
+  }
+
+  return null;
+}
+
 const { getPermissions, filterServers, can, guardServerAccess } = require('../utils/permissions');
 
 function guard(cap) {
@@ -123,6 +148,7 @@ router.post('/import', guard('canExportImportServers'), (req, res) => {
       return res.status(400).json({ error: 'No server data found' });
     }
 
+    const allGroups = db.serverGroups.getAll();
     const existingAll = db.servers.getAll();
     const existing    = new Set(existingAll.map(s => s.name));
     const existingIPs = new Set(existingAll.map(s => s.ip_address));
@@ -139,16 +165,19 @@ router.post('/import', guard('canExportImportServers'), (req, res) => {
         continue;
       }
       try {
-        db.servers.create({
+        const normalizedTags = Array.isArray(s.tags) ? s.tags : [];
+        const created = db.servers.create({
           name:      String(s.name).slice(0, 100),
           hostname:  String(s.hostname  || s.ip_address).slice(0, 255),
           ip_address: String(s.ip_address).slice(0, 45),
           ssh_port:  parseInt(s.ssh_port) || 22,
           ssh_user:  String(s.ssh_user || 'root').slice(0, 100),
-          tags:      Array.isArray(s.tags)     ? s.tags     : [],
+          tags:      normalizedTags,
           services:  Array.isArray(s.services) ? s.services : [],
           storage_mounts: normalizeStorageMounts(s.storage_mounts || []),
         });
+        const autoGroupId = resolveGroupIdByTags(normalizedTags, allGroups);
+        if (autoGroupId) db.serverGroups.setServerGroup(created.id, autoGroupId);
         existing.add(s.name);
         existingIPs.add(s.ip_address);
         results.created++;
@@ -230,6 +259,32 @@ router.put('/:id/group', guardServerAccess, guard('canEditServers'), (req, res) 
   res.json({ success: true });
 });
 
+// POST /api/servers/auto-group-by-tags
+router.post('/auto-group-by-tags', guard('canEditServers'), (req, res) => {
+  try {
+    const perms = getPermissions(req.user);
+    const allGroups = db.serverGroups.getAll();
+    const servers = filterServers(db.servers.getAll(), perms);
+    let matched = 0;
+    let moved = 0;
+
+    for (const server of servers) {
+      const tags = JSON.parse(server.tags || '[]');
+      const groupId = resolveGroupIdByTags(tags, allGroups);
+      if (!groupId) continue;
+      matched++;
+      if (groupId !== server.group_id) {
+        db.serverGroups.setServerGroup(server.id, groupId);
+        moved++;
+      }
+    }
+
+    res.json({ matched, moved, unchanged: matched - moved });
+  } catch (error) {
+    serverError(res, error, 'auto group servers by tags');
+  }
+});
+
 // GET /api/servers/:id - Get single server
 router.get('/:id', guardServerAccess, guard('canViewServers'), (req, res) => {
   try {
@@ -250,17 +305,24 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
     if (ip_address.length > 45) return res.status(400).json({ error: 'IP address too long (max 45)' });
     if (hostname && (typeof hostname !== 'string' || hostname.length > 255)) return res.status(400).json({ error: 'Hostname too long (max 255)' });
     if (ssh_user && (typeof ssh_user !== 'string' || ssh_user.length > 100)) return res.status(400).json({ error: 'SSH user too long (max 100)' });
+    const allGroups = db.serverGroups.getAll();
     const normalizedStorageMounts = normalizeStorageMounts(storage_mounts || []);
+    const normalizedTags = Array.isArray(tags) ? tags.filter(t => typeof t === 'string').map(t => t.slice(0, 100)) : [];
     const server = db.servers.create({
       name: name.slice(0, 100),
       hostname: (hostname || ip_address).slice(0, 255),
       ip_address: ip_address.slice(0, 45),
       ssh_port: Math.min(65535, Math.max(1, parseInt(ssh_port) || 22)),
       ssh_user: (ssh_user || 'root').slice(0, 100),
-      tags: Array.isArray(tags) ? tags.filter(t => typeof t === 'string').map(t => t.slice(0, 100)) : [],
+      tags: normalizedTags,
       services: Array.isArray(services) ? services.filter(s => typeof s === 'string').map(s => s.slice(0, 100)) : [],
       storage_mounts: normalizedStorageMounts,
     });
+    const autoGroupId = resolveGroupIdByTags(normalizedTags, allGroups);
+    if (autoGroupId) {
+      db.serverGroups.setServerGroup(server.id, autoGroupId);
+      server.group_id = autoGroupId;
+    }
     db.auditLog.write('server.create', `Server "${name}" (${ip_address}) created`, req.ip, true, req.user?.username);
     res.status(201).json(parseServer(server));
   } catch (error) {
@@ -273,6 +335,7 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
 router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
   try {
     const existing = req.server;
+    const allGroups = db.serverGroups.getAll();
 
     const { name, hostname, ip_address, ssh_port, ssh_user, tags, services, storage_mounts } = req.body;
     const sName   = name !== undefined ? String(name).slice(0, 100) : existing.name;
@@ -288,6 +351,13 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
       ssh_port: sPort, ssh_user: sUser, tags: sTags, services: sSvcs,
       storage_mounts: sMounts,
     });
+    if (tags !== undefined) {
+      const autoGroupId = resolveGroupIdByTags(sTags, allGroups);
+      if (autoGroupId && autoGroupId !== existing.group_id) {
+        db.serverGroups.setServerGroup(req.params.id, autoGroupId);
+        server.group_id = autoGroupId;
+      }
+    }
     res.json(parseServer(server));
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });

@@ -86,8 +86,11 @@ export async function renderServers() {
         </label>` : ''}
         ${hasCap('canAddServers') ? `<button class="btn btn-secondary btn-sm" id="btn-create-group">
           <i class="fas fa-folder-plus"></i> ${t('srv.folder')}
-        </button>
-        <button class="btn btn-primary btn-sm" id="btn-add-server">
+        </button>` : ''}
+        ${hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm" id="btn-auto-group-tags">
+          <i class="fas fa-tags"></i> ${t('srv.autoGroupFromTags')}
+        </button>` : ''}
+        ${hasCap('canAddServers') ? `<button class="btn btn-primary btn-sm" id="btn-add-server">
           <i class="fas fa-plus"></i> ${t('srv.add')}
         </button>` : ''}
       </div>
@@ -185,6 +188,24 @@ function attachEvents() {
       showToast(t('srv.folderCreated'), 'success');
       renderServers();
     } catch (e) { showToast(t('common.errorPrefix', { msg: e.message }), 'error'); }
+  });
+
+  document.getElementById('btn-auto-group-tags')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-auto-group-tags');
+    if (!btn) return;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-sm"></span> ${t('common.loading')}`;
+    try {
+      const result = await api.autoGroupServersByTags();
+      await reloadServersState();
+      await renderServers();
+      if (result.moved > 0) showToast(t('srv.autoGroupDone', { moved: result.moved, matched: result.matched }), 'success');
+      else showToast(t('srv.autoGroupNone'), 'info');
+    } catch (e) {
+      showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+      btn.disabled = false;
+      btn.innerHTML = `<i class="fas fa-tags"></i> ${t('srv.autoGroupFromTags')}`;
+    }
   });
 
   // ── Unterordner erstellen ─────────────────────────────────
@@ -592,6 +613,7 @@ function parseCsvServers(text) {
     // Parse JSON arrays back
     try { obj.tags = JSON.parse(obj.tags || '[]'); } catch { obj.tags = []; }
     try { obj.services = JSON.parse(obj.services || '[]'); } catch { obj.services = []; }
+    try { obj.storage_mounts = JSON.parse(obj.storage_mounts || '[]'); } catch { obj.storage_mounts = []; }
     obj.ssh_port = parseInt(obj.ssh_port) || 22;
     return obj;
   }).filter(o => o.name && o.ip_address);

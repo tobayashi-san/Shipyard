@@ -253,6 +253,7 @@ app.get('/api/dashboard', (req, res) => {
         id: s.id,
         name: s.name,
         ip_address: s.ip_address,
+        tags: JSON.parse(s.tags || '[]'),
         status: s.status,
         last_seen: s.last_seen,
         os: info?.os || null,

@@ -93,7 +93,9 @@ router.get('/status', async (req, res) => {
 
 // GET /api/playbooks-git/log
 router.get('/log', async (req, res) => {
-  try { res.json(await gitSync.getLog()); }
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 10));
+  try { res.json(await gitSync.getLog({ page, limit })); }
   catch (e) { serverError(res, e, 'git log'); }
 });
 

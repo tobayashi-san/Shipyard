@@ -98,6 +98,7 @@ class ApiClient {
   deleteServer(id) { return this.request(`/servers/${id}`, { method: 'DELETE' }); }
   testConnection(id) { return this.request(`/servers/${id}/test`, { method: 'POST' }); }
   resetServerHostKey(id) { return this.request(`/servers/${id}/reset-host-key`, { method: 'POST' }); }
+  autoGroupServersByTags() { return this.request('/servers/auto-group-by-tags', { method: 'POST' }); }
   setServerGroup(serverId, groupId) { return this.request(`/servers/${serverId}/group`, { method: 'PUT', body: { group_id: groupId } }); }
   getServerGroups() { return this.request('/servers/groups'); }
   createServerGroup(name, color, parentId) { return this.request('/servers/groups', { method: 'POST', body: { name, color, parent_id: parentId || null } }); }

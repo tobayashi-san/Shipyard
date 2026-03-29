@@ -12,6 +12,7 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
 const express = require('express');
+const db = require('../db');
 
 const { router: authRouter } = require('../routes/auth');
 const authMiddleware = require('../middleware/auth');
@@ -66,6 +67,7 @@ test('POST /api/servers rejects missing name', async () => {
 });
 
 let serverId;
+let productionGroupId;
 
 test('POST /api/servers creates server with defaults', async () => {
   const res = await request(app)
@@ -103,6 +105,24 @@ test('POST /api/servers respects custom ssh_port and ssh_user', async () => {
   assert.equal(res.body.ssh_user, 'admin');
 });
 
+test('POST /api/servers/groups creates a folder for tag auto-grouping', async () => {
+  const res = await request(app)
+    .post('/api/servers/groups')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ name: 'production', color: '#ff0000' });
+  assert.equal(res.status, 200);
+  productionGroupId = res.body.id;
+});
+
+test('POST /api/servers auto-assigns group from matching tag', async () => {
+  const res = await request(app)
+    .post('/api/servers')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ name: 'tagged-server', ip_address: '10.0.0.55', tags: ['production'] });
+  assert.equal(res.status, 201);
+  assert.equal(res.body.group_id, productionGroupId);
+});
+
 // ── List ──────────────────────────────────────────────────────────────────────
 
 test('GET /api/servers returns all created servers', async () => {
@@ -111,7 +131,7 @@ test('GET /api/servers returns all created servers', async () => {
     .set('Authorization', `Bearer ${token}`);
   assert.equal(res.status, 200);
   assert.ok(Array.isArray(res.body));
-  assert.equal(res.body.length, 2);
+  assert.equal(res.body.length, 3);
 });
 
 // ── Get by ID ─────────────────────────────────────────────────────────────────
@@ -160,6 +180,30 @@ test('POST /api/servers rejects invalid storage mount path', async () => {
     });
   assert.equal(res.status, 400);
   assert.match(res.body.error, /invalid/i);
+});
+
+test('POST /api/servers/auto-group-by-tags moves existing matching servers into folders', async () => {
+  const opsGroup = await request(app)
+    .post('/api/servers/groups')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ name: 'ops', color: '#00ff00' });
+  assert.equal(opsGroup.status, 200);
+
+  const stray = db.servers.create({
+    name: 'stray-server',
+    hostname: 'stray.local',
+    ip_address: '10.0.0.88',
+    tags: ['ops'],
+    services: [],
+  });
+  assert.equal(db.servers.getById(stray.id).group_id, null);
+
+  const res = await request(app)
+    .post('/api/servers/auto-group-by-tags')
+    .set('Authorization', `Bearer ${token}`);
+  assert.equal(res.status, 200);
+  assert.equal(res.body.moved >= 1, true);
+  assert.equal(db.servers.getById(stray.id).group_id, opsGroup.body.id);
 });
 
 test('PUT /api/servers/:id returns 404 for unknown id', async () => {

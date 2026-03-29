@@ -16,7 +16,7 @@ let _openFile    = null;   // { path, content, dirty }
 let _fileTree    = null;
 let _status      = null;
 let _runsPage    = 1;
-let _runsPageSize = 10;
+let _runsPageSize = 5;
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 function esc(s) {
@@ -722,7 +722,7 @@ function renderRunsTable(runs, pagination) {
         <label style="display:flex;align-items:center;gap:6px;">
           <span>Per page</span>
           <select id="tofu-runs-page-size" class="form-input" style="width:auto;min-width:72px;padding:4px 24px 4px 8px;font-size:12px;">
-            ${[10, 20, 50, 100].map(size => `<option value="${size}"${pagination.page_size === size ? ' selected' : ''}>${size}</option>`).join('')}
+            ${[5, 10, 20, 50, 100].map(size => `<option value="${size}"${pagination.page_size === size ? ' selected' : ''}>${size}</option>`).join('')}
           </select>
         </label>
         <button class="btn btn-secondary btn-sm" id="tofu-runs-prev"${pagination.has_prev ? '' : ' disabled'}>Prev</button>
@@ -812,11 +812,10 @@ function isSecretKey(k) { return SECRET_KEY_RE.test(k); }
 
 function renderVarRows(vars) {
   const entries = Object.entries(vars);
-  if (!entries.length) return '<p style="color:var(--text-muted);font-size:13px;margin:0;">No variables yet. Add one below.</p>';
-  return entries.map(([k, v]) => {
+  const rows = entries.map(([k, v]) => {
     const secret = isSecretKey(k);
     return `
-      <div class="tofu-var-row" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+      <div class="tofu-var-row" data-draft="false" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
         <input class="form-input text-mono var-key" value="${esc(k)}" placeholder="KEY"
           style="flex:0 0 220px;font-size:12px;" spellcheck="false">
         <div style="position:relative;flex:1;display:flex;align-items:center;">
@@ -832,10 +831,137 @@ function renderVarRows(vars) {
         </button>
       </div>`;
   }).join('');
+
+  return `
+    ${entries.length ? '' : '<p style="color:var(--text-muted);font-size:13px;margin:0 0 10px;">No variables yet. Start typing below.</p>'}
+    ${rows}
+    <div class="tofu-var-row tofu-var-draft" data-draft="true" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+      <input class="form-input text-mono" id="tofu-new-key" placeholder="NEW_VARIABLE"
+        style="flex:0 0 220px;font-size:12px;" spellcheck="false">
+      <input class="form-input text-mono" id="tofu-new-val" placeholder="value"
+        style="flex:1;font-size:12px;" spellcheck="false">
+      <div style="flex-shrink:0;width:38px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);">
+        <i class="fas fa-plus"></i>
+      </div>
+    </div>`;
 }
 
 function loadVariablesTab(el, ws) {
   let vars = { ...(ws.env_vars || {}) };
+  let draft = { key: '', value: '' };
+  let saveTimer = null;
+  let isSaving = false;
+  let queuedVars = null;
+  let lastSavedJson = JSON.stringify(vars);
+
+  function setStatus(message, tone = 'muted') {
+    const status = document.getElementById('tofu-vars-status');
+    if (!status) return;
+    const colors = {
+      muted: 'var(--text-muted)',
+      success: 'var(--online)',
+      error: 'var(--offline)',
+    };
+    status.textContent = message;
+    status.style.color = colors[tone] || colors.muted;
+  }
+
+  function getDraftState() {
+    return {
+      key: document.getElementById('tofu-new-key')?.value ?? draft.key,
+      value: document.getElementById('tofu-new-val')?.value ?? draft.value,
+    };
+  }
+
+  function collectExistingVars() {
+    const nextVars = {};
+    const duplicates = new Set();
+    el.querySelectorAll('.tofu-var-row[data-draft="false"]').forEach(row => {
+      const key = row.querySelector('.var-key')?.value.trim() || '';
+      const value = row.querySelector('.var-val')?.value || '';
+      if (!key) return;
+      if (Object.prototype.hasOwnProperty.call(nextVars, key)) duplicates.add(key);
+      nextVars[key] = value;
+    });
+    if (duplicates.size) {
+      setStatus(`Duplicate key: ${[...duplicates][0]}`, 'error');
+      return null;
+    }
+    return nextVars;
+  }
+
+  async function persistVars(nextVars) {
+    const serialized = JSON.stringify(nextVars);
+    if (serialized === lastSavedJson) {
+      setStatus('All changes saved.', 'success');
+      return;
+    }
+
+    if (isSaving) {
+      queuedVars = nextVars;
+      setStatus('Saving...', 'muted');
+      return;
+    }
+
+    isSaving = true;
+    setStatus('Saving...', 'muted');
+    try {
+      await _pluginApi.request(`/workspaces/${ws.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ name: ws.name, path: ws.path, description: ws.description, env_vars: nextVars }),
+      });
+      vars = { ...nextVars };
+      ws.env_vars = vars;
+      _workspaces = _workspaces.map(w => w.id === ws.id ? { ...w, env_vars: vars } : w);
+      lastSavedJson = serialized;
+      setStatus('All changes saved.', 'success');
+    } catch (e) {
+      setStatus(`Save failed: ${e.message}`, 'error');
+    } finally {
+      isSaving = false;
+      if (queuedVars) {
+        const pending = queuedVars;
+        queuedVars = null;
+        persistVars(pending);
+      }
+    }
+  }
+
+  function scheduleSave(nextVars, delay = 700) {
+    if (saveTimer) clearTimeout(saveTimer);
+    setStatus('Saving...', 'muted');
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      persistVars(nextVars);
+    }, delay);
+  }
+
+  function flushSave(nextVars) {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    persistVars(nextVars);
+  }
+
+  function commitDraftAndSave(immediate = false) {
+    draft = getDraftState();
+    const key = draft.key.trim();
+    if (!key) return false;
+    const nextVars = collectExistingVars();
+    if (!nextVars) return false;
+    if (Object.prototype.hasOwnProperty.call(nextVars, key)) {
+      setStatus(`Duplicate key: ${key}`, 'error');
+      return false;
+    }
+    nextVars[key] = draft.value;
+    vars = nextVars;
+    draft = { key: '', value: '' };
+    render();
+    if (immediate) flushSave(nextVars);
+    else scheduleSave(nextVars, 0);
+    return true;
+  }
 
   function render() {
     el.innerHTML = `
@@ -845,17 +971,15 @@ function loadVariablesTab(el, ws) {
           Use <code>AWS_*</code> / <code>TF_VAR_*</code> for credentials and tofu variables.
           <span style="color:var(--warning);"><i class="fas fa-lock" style="font-size:11px;"></i> Secret values are masked.</span>
         </p>
-        <button class="btn btn-primary btn-sm" id="tofu-btn-save-vars" style="flex-shrink:0;margin-left:16px;">
-          <i class="fas fa-save"></i> Save
-        </button>
+        <div id="tofu-vars-status" style="flex-shrink:0;margin-left:16px;font-size:12px;color:var(--text-muted);">
+          Changes save automatically.
+        </div>
       </div>
       <div id="tofu-var-list">${renderVarRows(vars)}</div>
-      <div style="display:flex;gap:8px;margin-top:10px;">
-        <input class="form-input text-mono" id="tofu-new-key" placeholder="NEW_VARIABLE" style="flex:0 0 220px;font-size:12px;" spellcheck="false">
-        <input class="form-input text-mono" id="tofu-new-val" placeholder="value" style="flex:1;font-size:12px;" spellcheck="false">
-        <button class="btn btn-secondary btn-sm" id="tofu-btn-add-var"><i class="fas fa-plus"></i> Add</button>
-      </div>
     `;
+
+    document.getElementById('tofu-new-key').value = draft.key;
+    document.getElementById('tofu-new-val').value = draft.value;
 
     // Show/hide toggles
     el.querySelectorAll('.var-toggle-vis').forEach(btn => {
@@ -870,51 +994,64 @@ function loadVariablesTab(el, ws) {
     // Delete row
     el.querySelectorAll('.var-delete').forEach(btn => {
       btn.addEventListener('click', () => {
+        draft = getDraftState();
+        const nextVars = collectExistingVars();
+        if (!nextVars) return;
         const row = btn.closest('.tofu-var-row');
-        const key = row.querySelector('.var-key').value;
-        delete vars[key];
+        const key = row.querySelector('.var-key').value.trim();
+        delete nextVars[key];
+        vars = nextVars;
         render();
+        flushSave(nextVars);
       });
     });
 
-    // Add new variable
-    document.getElementById('tofu-btn-add-var').addEventListener('click', () => {
-      const k = document.getElementById('tofu-new-key').value.trim();
-      const v = document.getElementById('tofu-new-val').value;
-      if (!k) return;
-      vars[k] = v;
-      render();
-    });
-    document.getElementById('tofu-new-key').addEventListener('keydown', e => {
-      if (e.key === 'Enter') document.getElementById('tofu-btn-add-var').click();
+    // Auto-save existing rows
+    el.querySelectorAll('.tofu-var-row[data-draft="false"]').forEach(row => {
+      const onInput = () => {
+        draft = getDraftState();
+        const nextVars = collectExistingVars();
+        if (!nextVars) return;
+        scheduleSave(nextVars);
+      };
+      row.querySelector('.var-key')?.addEventListener('input', onInput);
+      row.querySelector('.var-val')?.addEventListener('input', onInput);
+      row.addEventListener('focusout', () => {
+        window.setTimeout(() => {
+          if (row.contains(document.activeElement)) return;
+          draft = getDraftState();
+          const nextVars = collectExistingVars();
+          if (!nextVars) return;
+          if (!row.querySelector('.var-key')?.value.trim()) {
+            vars = nextVars;
+            render();
+            flushSave(nextVars);
+            return;
+          }
+          flushSave(nextVars);
+        }, 0);
+      });
     });
 
-    // Save
-    document.getElementById('tofu-btn-save-vars').addEventListener('click', async () => {
-      // Collect current state from DOM (user may have edited values in-place)
-      const newVars = {};
-      el.querySelectorAll('.tofu-var-row').forEach(row => {
-        const k = row.querySelector('.var-key').value.trim();
-        const v = row.querySelector('.var-val').value;
-        if (k) newVars[k] = v;
+    const draftKey = document.getElementById('tofu-new-key');
+    const draftVal = document.getElementById('tofu-new-val');
+    const draftRow = el.querySelector('.tofu-var-draft');
+    [draftKey, draftVal].forEach(input => {
+      input?.addEventListener('input', () => {
+        draft = getDraftState();
+        setStatus(draft.key.trim() ? 'Press Enter or leave the row to create this variable.' : 'Changes save automatically.', 'muted');
       });
-      vars = newVars;
-      const btn = document.getElementById('tofu-btn-save-vars');
-      btn.disabled = true;
-      try {
-        await _pluginApi.request(`/workspaces/${ws.id}`, {
-          method: 'PUT',
-          body: JSON.stringify({ name: ws.name, path: ws.path, description: ws.description, env_vars: vars }),
-        });
-        ws.env_vars = vars;
-        _workspaces = _workspaces.map(w => w.id === ws.id ? { ...w, env_vars: vars } : w);
-        _showToast('Variables saved', 'success');
-        render();
-      } catch (e) {
-        _showToast(e.message, 'error');
-      } finally {
-        btn.disabled = false;
-      }
+      input?.addEventListener('keydown', e => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        commitDraftAndSave(true);
+      });
+    });
+    draftRow?.addEventListener('focusout', () => {
+      window.setTimeout(() => {
+        if (draftRow.contains(document.activeElement)) return;
+        commitDraftAndSave(true);
+      }, 0);
     });
   }
 

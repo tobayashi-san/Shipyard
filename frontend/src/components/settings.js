@@ -2154,6 +2154,9 @@ async function loadAuditTab() {
 // ============================================================
 // Git Settings Tab
 // ============================================================
+let gitLogPage = 1;
+let gitLogLimit = 10;
+
 export async function loadGitSettingsTab() {
   const content = document.getElementById('git-settings-content');
   if (!content) return;
@@ -2351,10 +2354,21 @@ function renderGitDashboardPanel(cfg) {
 
     <div class="settings-group-title" style="margin-top:24px;">Recent Commits</div>
     <div class="settings-block">
-      <div class="settings-row" style="justify-content:flex-end;padding:8px 16px;">
+      <div class="settings-row" style="justify-content:space-between;padding:8px 16px;gap:12px;flex-wrap:wrap;">
+        <div id="git-log-meta" style="font-size:12px;color:var(--text-muted);">Loading commits…</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);">
+            <span>Per page</span>
+            <select id="git-log-limit" class="form-input" style="width:auto;min-width:72px;padding:4px 24px 4px 8px;font-size:12px;">
+              ${[10, 20, 50].map(size => `<option value="${size}"${gitLogLimit === size ? ' selected' : ''}>${size}</option>`).join('')}
+            </select>
+          </label>
+          <button id="btn-git-log-prev" class="btn btn-secondary btn-sm" disabled>Prev</button>
+          <button id="btn-git-log-next" class="btn btn-secondary btn-sm" disabled>Next</button>
         <button id="btn-git-refresh-log" class="btn btn-secondary btn-sm">
           <i class="fas fa-rotate"></i> Refresh
         </button>
+        </div>
       </div>
       <div id="git-log-list" style="padding:0 20px 12px;font-family:var(--font-mono);font-size:12px;color:var(--text-muted);line-height:1.8;">
         <div class="loading-state" style="padding:16px;"><div class="loader"></div></div>
@@ -2364,11 +2378,40 @@ function renderGitDashboardPanel(cfg) {
 
 async function _loadGitLog(panel) {
   const el = panel.querySelector('#git-log-list');
+  const meta = panel.querySelector('#git-log-meta');
+  const prevBtn = panel.querySelector('#btn-git-log-prev');
+  const nextBtn = panel.querySelector('#btn-git-log-next');
+  const limitSel = panel.querySelector('#git-log-limit');
   if (!el) return;
+  if (meta) meta.textContent = 'Loading commits…';
+  if (prevBtn) prevBtn.disabled = true;
+  if (nextBtn) nextBtn.disabled = true;
   try {
-    const commits = await api.request('/playbooks-git/log');
-    if (!Array.isArray(commits) || !commits.length) { el.textContent = 'No commits yet.'; return; }
-    el.innerHTML = commits.slice(0, 20).map(c => `
+    const data = await api.request(`/playbooks-git/log?page=${gitLogPage}&limit=${gitLogLimit}`);
+    const commits = Array.isArray(data?.items) ? data.items : [];
+    const pagination = data?.pagination || {
+      page: gitLogPage,
+      limit: gitLogLimit,
+      total: commits.length,
+      total_pages: 1,
+      has_prev: false,
+      has_next: false,
+    };
+    gitLogPage = pagination.page || 1;
+    gitLogLimit = pagination.limit || gitLogLimit;
+    if (limitSel) limitSel.value = String(gitLogLimit);
+    if (meta) {
+      if (!pagination.total) meta.textContent = 'No commits yet.';
+      else {
+        const start = (gitLogPage - 1) * gitLogLimit + 1;
+        const end = start + commits.length - 1;
+        meta.textContent = `Showing ${start}-${end} of ${pagination.total} commits`;
+      }
+    }
+    if (prevBtn) prevBtn.disabled = !pagination.has_prev;
+    if (nextBtn) nextBtn.disabled = !pagination.has_next;
+    if (!commits.length) { el.textContent = 'No commits yet.'; return; }
+    el.innerHTML = commits.map(c => `
       <div style="display:flex;align-items:flex-start;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);">
         <code style="color:var(--accent);flex-shrink:0;font-size:11px;">${esc(c.hash)}</code>
         <div style="flex:1;min-width:0;">
@@ -2379,6 +2422,7 @@ async function _loadGitLog(panel) {
         </div>
       </div>`).join('');
   } catch (e) {
+    if (meta) meta.textContent = 'Could not load commits.';
     el.textContent = 'Could not load log: ' + e.message;
   }
 }
@@ -2465,6 +2509,19 @@ function _setupGitDashboardEvents(panel) {
   });
 
   panel.querySelector('#btn-git-refresh-log')?.addEventListener('click', () => _loadGitLog(panel));
+  panel.querySelector('#btn-git-log-prev')?.addEventListener('click', () => {
+    gitLogPage = Math.max(1, gitLogPage - 1);
+    _loadGitLog(panel);
+  });
+  panel.querySelector('#btn-git-log-next')?.addEventListener('click', () => {
+    gitLogPage += 1;
+    _loadGitLog(panel);
+  });
+  panel.querySelector('#git-log-limit')?.addEventListener('change', (e) => {
+    gitLogLimit = Math.max(1, parseInt(e.target.value, 10) || 10);
+    gitLogPage = 1;
+    _loadGitLog(panel);
+  });
 
   panel.querySelector('#btn-git-save-settings')?.addEventListener('click', async () => {
     try {

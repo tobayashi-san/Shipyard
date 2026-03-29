@@ -205,6 +205,8 @@ function serverHealthRow(s) {
   const diskBar = miniBar(s.disk_pct);
   const cpuBar = miniBar(s.cpu_pct);
   const uptime = formatUptime(s.uptime_seconds);
+  const tags = Array.isArray(s.tags) ? s.tags : [];
+  const visibleTags = tags.slice(0, 3);
 
   return `
     <tr class="server-health-row" data-server-id="${s.id}" style="cursor:pointer;">
@@ -215,6 +217,12 @@ function serverHealthRow(s) {
           ${agentBadge(s)}
           <span style="font-size:11.5px;color:var(--text-muted);font-family:var(--font-mono);">${esc(s.ip_address)}</span>
         </div>
+        ${visibleTags.length > 0 ? `
+          <div class="server-tags-inline" style="margin-top:4px;">
+            ${visibleTags.map(tag => `<span class="server-tag">${esc(tag)}</span>`).join('')}
+            ${tags.length > visibleTags.length ? `<span class="server-tag">+${tags.length - visibleTags.length}</span>` : ''}
+          </div>
+        ` : ''}
       </td>
       <td>${ramBar}</td>
       <td>${diskBar}</td>

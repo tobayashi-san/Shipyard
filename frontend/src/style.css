@@ -1409,6 +1409,16 @@ input[type=number] {
   vertical-align: middle;
 }
 
+.server-tags-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.server-tags-inline .server-tag {
+  margin-left: 0;
+}
+
 .updates-list {
   display: flex;
   flex-direction: column;
