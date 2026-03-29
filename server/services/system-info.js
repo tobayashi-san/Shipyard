@@ -1,4 +1,9 @@
 const sshManager = require('./ssh-manager');
+const { collectStorageMountMetrics, parseConfiguredStorageMounts } = require('../utils/storage-mounts');
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
 
 class SystemInfoService {
   /**
@@ -6,6 +11,11 @@ class SystemInfoService {
    */
   async getSystemInfo(server) {
     try {
+      const configuredMounts = parseConfiguredStorageMounts(server?.storage_mounts);
+      const storageMountCmd = configuredMounts.length > 0
+        ? `for target in ${configuredMounts.map(mount => shellQuote(mount.path)).join(' ')}; do df -BG "$target" 2>/dev/null; done`
+        : 'echo';
+
       // All info in a single SSH call – one channel, one round-trip
       const script = [
         "grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d'\"' -f2 || echo N/A",
@@ -20,6 +30,7 @@ class SystemInfoService {
         "if [ -f /var/run/reboot-required ]; then echo 1; elif command -v needs-restarting >/dev/null 2>&1 && ! needs-restarting -r >/dev/null 2>&1; then echo 1; else echo 0; fi",
         // Two-sample CPU usage: pipe both /proc/stat reads into awk – no variable passing, no quoting issues
         "(grep '^cpu ' /proc/stat; sleep 1; grep '^cpu ' /proc/stat) | awk 'NR==1{for(i=2;i<=NF;i++)a[i]=$i} NR==2{t=0;for(i=2;i<=NF;i++)t+=$i-a[i];print(t>0?int(100*(t-($5-a[5]))/t):0)}' || echo 0",
+        `${storageMountCmd} || true`,
       ].join('; echo "---SEP---"; ');
 
       const result = await sshManager.execCommand(server, script);
@@ -37,6 +48,7 @@ class SystemInfoService {
         hostname:  parts[8] || server.hostname,
         reboot:    parts[9] || '0',
         cpu_usage: parts[10] || '0',
+        storage_mounts: parts[11] || '',
       };
 
       const [ramTotal, ramUsed] = (results.ram || '0 0').split(' ').map(Number);
@@ -51,6 +63,7 @@ class SystemInfoService {
         ram_used_mb: ramUsed,
         disk_total_gb: diskTotal,
         disk_used_gb: diskUsed,
+        storage_mount_metrics: collectStorageMountMetrics(configuredMounts, results.storage_mounts),
         uptime_seconds: Math.floor(parseFloat(results.uptime) || 0),
         load_avg: results.load || '0 0 0',
         hostname: results.hostname || server.hostname,

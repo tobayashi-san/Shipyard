@@ -1,5 +1,6 @@
 const db = require('../db');
 const log = require('../utils/logger').child('agent:processor');
+const { collectStorageMountMetrics, parseConfiguredStorageMounts } = require('../utils/storage-mounts');
 
 function normalizeCollectorOutput(text) {
   // Some runner environments can emit NUL-separated lines.
@@ -46,7 +47,7 @@ function parseMeminfo(text) {
   };
 }
 
-function parseDfTotals(text) {
+function parseDfTotals(text, excludedPaths = new Set()) {
   const lines = normalizeCollectorOutput(text).split('\n').map(s => s.trim()).filter(Boolean);
   if (lines.length < 2) return { disk_total_gb: null, disk_used_gb: null };
   let totalMb = 0;
@@ -54,6 +55,8 @@ function parseDfTotals(text) {
   for (const line of lines.slice(1)) {
     const cols = line.split(/\s+/);
     if (cols.length < 6) continue;
+    const mountPath = cols.slice(5).join(' ');
+    if (excludedPaths.has(mountPath)) continue;
     const total = parseInt(String(cols[1]).replace(/M$/, ''), 10);
     const used = parseInt(String(cols[2]).replace(/M$/, ''), 10);
     if (Number.isFinite(total)) totalMb += total;
@@ -118,9 +121,12 @@ function getPreviousCollectorOutput(serverId, collectorId) {
 function toServerInfo(serverId, report) {
   const collectors = collectorMap(report);
   const existing = db.serverInfo.get(serverId) || {};
+  const server = db.servers.getById(serverId);
+  const configuredMounts = parseConfiguredStorageMounts(server?.storage_mounts);
   const osInfoRaw = collectors.get('os_info')?.output || '';
   const mem = parseMeminfo(collectors.get('memory')?.output || '');
-  const disk = parseDfTotals(collectors.get('disk')?.output || '');
+  const disk = parseDfTotals(collectors.get('disk')?.output || '', new Set(configuredMounts.map(mount => mount.path)));
+  const storageMountMetrics = collectStorageMountMetrics(configuredMounts, collectors.get('disk')?.output || '');
   const osInfo = parseKeyValueLines(osInfoRaw);
   const prettyOs = extractOsValue(osInfoRaw, 'PRETTY_NAME') || osInfo.PRETTY_NAME || null;
   const nameOs = extractOsValue(osInfoRaw, 'NAME') || osInfo.NAME || null;
@@ -145,6 +151,7 @@ function toServerInfo(serverId, report) {
     ram_used_mb: Number.isFinite(mem.ram_used_mb) ? mem.ram_used_mb : (existing.ram_used_mb ?? null),
     disk_total_gb: disk.disk_total_gb || existing.disk_total_gb || null,
     disk_used_gb: Number.isFinite(disk.disk_used_gb) ? disk.disk_used_gb : (existing.disk_used_gb ?? null),
+    storage_mount_metrics: storageMountMetrics,
     uptime_seconds: Number.isFinite(uptimeVal) ? Math.floor(uptimeVal) : (existing.uptime_seconds ?? null),
     load_avg: loadAvg || existing.load_avg || null,
     reboot_required: existing.reboot_required || false,

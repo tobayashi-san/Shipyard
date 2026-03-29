@@ -18,6 +18,7 @@ const authMiddleware = require('../middleware/auth');
 const serversRouter = require('../routes/servers');
 const sshManager = require('../services/ssh-manager');
 const ansibleRunner = require('../services/ansible-runner');
+const systemInfo = require('../services/system-info');
 
 const app = express();
 app.use(express.json());
@@ -70,13 +71,24 @@ test('POST /api/servers creates server with defaults', async () => {
   const res = await request(app)
     .post('/api/servers')
     .set('Authorization', `Bearer ${token}`)
-    .send({ name: 'my-server', ip_address: '192.168.1.50' });
+    .send({
+      name: 'my-server',
+      ip_address: '192.168.1.50',
+      storage_mounts: [
+        { name: 'Media', path: '/mnt/media' },
+        { name: 'Backups', path: '/mnt/backups' },
+      ],
+    });
   assert.equal(res.status, 201);
   assert.equal(res.body.name, 'my-server');
   assert.equal(res.body.ip_address, '192.168.1.50');
   assert.equal(res.body.ssh_port, 22);
   assert.equal(res.body.ssh_user, 'root');
   assert.deepEqual(res.body.tags, []);
+  assert.deepEqual(res.body.storage_mounts, [
+    { name: 'Media', path: '/mnt/media' },
+    { name: 'Backups', path: '/mnt/backups' },
+  ]);
   assert.ok(typeof res.body.id === 'string');
   serverId = res.body.id;
 });
@@ -126,10 +138,28 @@ test('PUT /api/servers/:id updates name and ip', async () => {
   const res = await request(app)
     .put(`/api/servers/${serverId}`)
     .set('Authorization', `Bearer ${token}`)
-    .send({ name: 'renamed-server', ip_address: '192.168.1.99' });
+    .send({
+      name: 'renamed-server',
+      ip_address: '192.168.1.99',
+      storage_mounts: [{ name: 'Archive', path: '/srv/archive' }],
+    });
   assert.equal(res.status, 200);
   assert.equal(res.body.name, 'renamed-server');
   assert.equal(res.body.ip_address, '192.168.1.99');
+  assert.deepEqual(res.body.storage_mounts, [{ name: 'Archive', path: '/srv/archive' }]);
+});
+
+test('POST /api/servers rejects invalid storage mount path', async () => {
+  const res = await request(app)
+    .post('/api/servers')
+    .set('Authorization', `Bearer ${token}`)
+    .send({
+      name: 'bad-mount-server',
+      ip_address: '10.0.0.60',
+      storage_mounts: [{ name: 'Bad', path: 'relative/path' }],
+    });
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /invalid/i);
 });
 
 test('PUT /api/servers/:id returns 404 for unknown id', async () => {
@@ -154,6 +184,56 @@ test('PUT /api/servers/:id/notes saves and GET reads notes', async () => {
     .set('Authorization', `Bearer ${token}`);
   assert.equal(getRes.status, 200);
   assert.equal(getRes.body.notes, 'This is a test note.');
+});
+
+test('GET /api/servers/:id/info returns configured storage mount metrics', async () => {
+  const original = systemInfo.getSystemInfo;
+  systemInfo.getSystemInfo = async () => ({
+    os: 'Debian 12',
+    kernel: '6.1.0',
+    cpu: 'Intel Test CPU',
+    cpu_cores: 4,
+    ram_total_mb: 4096,
+    ram_used_mb: 1024,
+    disk_total_gb: 120,
+    disk_used_gb: 48,
+    storage_mount_metrics: [
+      {
+        name: 'Archive',
+        path: '/srv/archive',
+        filesystem: '10.0.0.10:/archive',
+        total_gb: 2000,
+        used_gb: 750,
+        available_gb: 1250,
+        usage_pct: 38,
+        mounted: true,
+      },
+    ],
+    uptime_seconds: 1234,
+    load_avg: '0.10 0.20 0.30',
+    reboot_required: false,
+    cpu_usage_pct: 12,
+  });
+  try {
+    const res = await request(app)
+      .get(`/api/servers/${serverId}/info?force=1`)
+      .set('Authorization', `Bearer ${token}`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.storage_mount_metrics, [
+      {
+        name: 'Archive',
+        path: '/srv/archive',
+        filesystem: '10.0.0.10:/archive',
+        total_gb: 2000,
+        used_gb: 750,
+        available_gb: 1250,
+        usage_pct: 38,
+        mounted: true,
+      },
+    ]);
+  } finally {
+    systemInfo.getSystemInfo = original;
+  }
 });
 
 test('POST /api/servers/:id/reset-host-key removes stale known_hosts entries', async () => {

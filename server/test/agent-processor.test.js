@@ -27,7 +27,12 @@ after(() => {
 
 test('agent reports populate RAM, disk, load and derive CPU usage from previous cpu collector', () => {
   wipeDb();
-  const server = db.servers.create({ name: 'agent-srv', hostname: 'agent-srv', ip_address: '10.0.0.50' });
+  const server = db.servers.create({
+    name: 'agent-srv',
+    hostname: 'agent-srv',
+    ip_address: '10.0.0.50',
+    storage_mounts: [{ name: 'Media', path: '/mnt/media' }],
+  });
   db.agentConfig.upsert({ server_id: server.id, mode: 'push', token: 'tok', interval: 30 });
 
   db.serverInfo.upsert(server.id, {
@@ -54,7 +59,7 @@ test('agent reports populate RAM, disk, load and derive CPU usage from previous 
       collectors: [
         { id: 'cpu', output: 'cpu  100 0 100 700 50 0 0 0 0 0' },
         { id: 'memory', output: 'MemTotal: 1048576\nMemAvailable: 524288\n' },
-        { id: 'disk', output: 'Filesystem 1M-blocks Used Available Use% Mounted on\n/dev/sda1 1000 250 750 25% /\n' },
+        { id: 'disk', output: 'Filesystem 1M-blocks Used Available Use% Mounted on\n/dev/sda1 1000 250 750 25% /\n10.0.0.10:/media 5000 1000 4000 20% /mnt/media\n' },
         { id: 'load', output: '0.10 0.20 0.30 1/100 999' },
         { id: 'uptime', output: '12345.67' },
         { id: 'os_info', output: 'PRETTY_NAME=\"Debian 12\"\n' },
@@ -72,7 +77,7 @@ test('agent reports populate RAM, disk, load and derive CPU usage from previous 
       collectors: [
         { id: 'cpu', output: 'cpu  130 0 120 730 60 0 0 0 0 0' },
         { id: 'memory', output: 'MemTotal: 1048576\nMemAvailable: 262144\n' },
-        { id: 'disk', output: 'Filesystem 1M-blocks Used Available Use% Mounted on\n/dev/sda1 1000 400 600 40% /\n' },
+        { id: 'disk', output: 'Filesystem 1M-blocks Used Available Use% Mounted on\n/dev/sda1 1000 400 600 40% /\n10.0.0.10:/media 5000 1500 3500 30% /mnt/media\n' },
         { id: 'load', output: '0.40 0.50 0.60 2/100 1000' },
         { id: 'uptime', output: '12400.00' },
         { id: 'os_info', output: 'PRETTY_NAME=\"Debian 12\"\n' },
@@ -90,6 +95,16 @@ test('agent reports populate RAM, disk, load and derive CPU usage from previous 
   assert.equal(info.ram_used_mb, 768);
   assert.equal(info.disk_total_gb, 1);
   assert.equal(info.disk_used_gb, 0.4);
+  assert.deepEqual(info.storage_mount_metrics, [{
+    name: 'Media',
+    path: '/mnt/media',
+    filesystem: '10.0.0.10:/media',
+    total_gb: 4.9,
+    used_gb: 1.5,
+    available_gb: 3.4,
+    usage_pct: 30,
+    mounted: true,
+  }]);
   assert.equal(info.uptime_seconds, 12400);
   assert.equal(info.load_avg, '0.40 0.50 0.60');
   assert.equal(info.cpu_usage_pct, 56);

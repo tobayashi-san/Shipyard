@@ -5,6 +5,17 @@ const log = require('./utils/logger').child('db');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'shipyard.db');
 
+function parseJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 // Ensure data directory exists
 const fs = require('fs');
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
@@ -26,6 +37,7 @@ db.exec(`
     ssh_user TEXT DEFAULT 'root',
     tags TEXT DEFAULT '[]',
     services TEXT DEFAULT '[]',
+    storage_mounts TEXT DEFAULT '[]',
     status TEXT DEFAULT 'unknown',
     last_seen TEXT,
     notes TEXT NOT NULL DEFAULT '',
@@ -44,6 +56,7 @@ db.exec(`
     ram_used_mb INTEGER,
     disk_total_gb REAL,
     disk_used_gb REAL,
+    storage_mount_metrics TEXT DEFAULT '[]',
     uptime_seconds INTEGER,
     load_avg TEXT,
     reboot_required BOOLEAN DEFAULT 0,
@@ -146,6 +159,7 @@ db.exec(`
     check_command TEXT,
     github_repo TEXT,
     update_command TEXT NOT NULL,
+    trigger_output TEXT,
     last_version TEXT,
     current_version TEXT,
     has_update INTEGER DEFAULT 0,
@@ -197,6 +211,9 @@ db.exec(`
 
 // Forward-compatible additive migrations for existing installs
 try { db.exec('ALTER TABLE agent_config ADD COLUMN shipyard_url TEXT'); } catch {}
+try { db.exec('ALTER TABLE servers ADD COLUMN storage_mounts TEXT DEFAULT \'[]\''); } catch {}
+try { db.exec('ALTER TABLE server_info ADD COLUMN storage_mount_metrics TEXT DEFAULT \'[]\''); } catch {}
+try { db.exec('ALTER TABLE custom_update_tasks ADD COLUMN trigger_output TEXT'); } catch {}
 
 // App settings table
 db.exec(`
@@ -341,11 +358,11 @@ const serverQueries = {
   getAll: db.prepare('SELECT * FROM servers ORDER BY name'),
   getById: db.prepare('SELECT * FROM servers WHERE id = ?'),
   insert: db.prepare(`
-    INSERT INTO servers (id, name, hostname, ip_address, ssh_port, ssh_user, tags, services)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO servers (id, name, hostname, ip_address, ssh_port, ssh_user, tags, services, storage_mounts)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `),
   update: db.prepare(`
-    UPDATE servers SET name = ?, hostname = ?, ip_address = ?, ssh_port = ?, ssh_user = ?, tags = ?, services = ?, updated_at = datetime('now')
+    UPDATE servers SET name = ?, hostname = ?, ip_address = ?, ssh_port = ?, ssh_user = ?, tags = ?, services = ?, storage_mounts = ?, updated_at = datetime('now')
     WHERE id = ?
   `),
   delete: db.prepare('DELETE FROM servers WHERE id = ?'),
@@ -357,12 +374,13 @@ const serverQueries = {
 const infoQueries = {
   get: db.prepare('SELECT * FROM server_info WHERE server_id = ?'),
   upsert: db.prepare(`
-    INSERT INTO server_info (server_id, os, kernel, cpu, cpu_cores, ram_total_mb, ram_used_mb, disk_total_gb, disk_used_gb, uptime_seconds, load_avg, reboot_required, cpu_usage_pct, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    INSERT INTO server_info (server_id, os, kernel, cpu, cpu_cores, ram_total_mb, ram_used_mb, disk_total_gb, disk_used_gb, storage_mount_metrics, uptime_seconds, load_avg, reboot_required, cpu_usage_pct, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(server_id) DO UPDATE SET
       os = excluded.os, kernel = excluded.kernel, cpu = excluded.cpu, cpu_cores = excluded.cpu_cores,
       ram_total_mb = excluded.ram_total_mb, ram_used_mb = excluded.ram_used_mb,
       disk_total_gb = excluded.disk_total_gb, disk_used_gb = excluded.disk_used_gb,
+      storage_mount_metrics = excluded.storage_mount_metrics,
       uptime_seconds = excluded.uptime_seconds, load_avg = excluded.load_avg,
       reboot_required = excluded.reboot_required,
       cpu_usage_pct = excluded.cpu_usage_pct,
@@ -463,11 +481,31 @@ module.exports = {
     getById: (id) => serverQueries.getById.get(id),
     create: (server) => {
       const id = uuidv4();
-      serverQueries.insert.run(id, server.name, server.hostname, server.ip_address, server.ssh_port || 22, server.ssh_user || 'root', JSON.stringify(server.tags || []), JSON.stringify(server.services || []));
+      serverQueries.insert.run(
+        id,
+        server.name,
+        server.hostname,
+        server.ip_address,
+        server.ssh_port || 22,
+        server.ssh_user || 'root',
+        JSON.stringify(server.tags || []),
+        JSON.stringify(server.services || []),
+        JSON.stringify(server.storage_mounts || [])
+      );
       return serverQueries.getById.get(id);
     },
     update: (id, server) => {
-      serverQueries.update.run(server.name, server.hostname, server.ip_address, server.ssh_port || 22, server.ssh_user || 'root', JSON.stringify(server.tags || []), JSON.stringify(server.services || []), id);
+      serverQueries.update.run(
+        server.name,
+        server.hostname,
+        server.ip_address,
+        server.ssh_port || 22,
+        server.ssh_user || 'root',
+        JSON.stringify(server.tags || []),
+        JSON.stringify(server.services || []),
+        JSON.stringify(server.storage_mounts || []),
+        id
+      );
       return serverQueries.getById.get(id);
     },
     delete: (id) => serverQueries.delete.run(id),
@@ -478,9 +516,28 @@ module.exports = {
     setNotes: (id, notes) => db.prepare("UPDATE servers SET notes = ? WHERE id = ?").run(notes, id),
   },
   serverInfo: {
-    get: (serverId) => infoQueries.get.get(serverId),
+    get: (serverId) => {
+      const row = infoQueries.get.get(serverId);
+      if (!row) return row;
+      return { ...row, storage_mount_metrics: parseJsonArray(row.storage_mount_metrics) };
+    },
     upsert: (serverId, info) => {
-      infoQueries.upsert.run(serverId, info.os, info.kernel, info.cpu, info.cpu_cores, info.ram_total_mb, info.ram_used_mb, info.disk_total_gb, info.disk_used_gb, info.uptime_seconds, info.load_avg, info.reboot_required ? 1 : 0, info.cpu_usage_pct ?? null);
+      infoQueries.upsert.run(
+        serverId,
+        info.os,
+        info.kernel,
+        info.cpu,
+        info.cpu_cores,
+        info.ram_total_mb,
+        info.ram_used_mb,
+        info.disk_total_gb,
+        info.disk_used_gb,
+        JSON.stringify(info.storage_mount_metrics || []),
+        info.uptime_seconds,
+        info.load_avg,
+        info.reboot_required ? 1 : 0,
+        info.cpu_usage_pct ?? null
+      );
     },
   },
   updateHistory: {
@@ -667,13 +724,13 @@ module.exports = {
     getById: (id) => db.prepare('SELECT * FROM custom_update_tasks WHERE id = ?').get(id),
     create: (serverId, fields) => {
       const id = uuidv4();
-      db.prepare(`INSERT INTO custom_update_tasks (id, server_id, name, type, check_command, github_repo, update_command) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-        .run(id, serverId, fields.name, fields.type, fields.check_command || null, fields.github_repo || null, fields.update_command);
+      db.prepare(`INSERT INTO custom_update_tasks (id, server_id, name, type, check_command, github_repo, update_command, trigger_output) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(id, serverId, fields.name, fields.type, fields.check_command || null, fields.github_repo || null, fields.update_command || '', fields.trigger_output || null);
       return db.prepare('SELECT * FROM custom_update_tasks WHERE id = ?').get(id);
     },
     update: (id, fields) => {
-      db.prepare(`UPDATE custom_update_tasks SET name = ?, type = ?, check_command = ?, github_repo = ?, update_command = ? WHERE id = ?`)
-        .run(fields.name, fields.type, fields.check_command || null, fields.github_repo || null, fields.update_command, id);
+      db.prepare(`UPDATE custom_update_tasks SET name = ?, type = ?, check_command = ?, github_repo = ?, update_command = ?, trigger_output = ? WHERE id = ?`)
+        .run(fields.name, fields.type, fields.check_command || null, fields.github_repo || null, fields.update_command || '', fields.trigger_output || null, id);
       return db.prepare('SELECT * FROM custom_update_tasks WHERE id = ?').get(id);
     },
     delete: (id) => db.prepare('DELETE FROM custom_update_tasks WHERE id = ?').run(id),

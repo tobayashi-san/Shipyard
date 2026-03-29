@@ -24,10 +24,20 @@ describe('db.servers', () => {
   let serverId;
 
   test('create returns server with generated ID', () => {
-    const s = db.servers.create({ name: 'test-srv', hostname: 'test.local', ip_address: '10.0.0.1', ssh_port: 22, ssh_user: 'root', tags: ['web'], services: [] });
+    const s = db.servers.create({
+      name: 'test-srv',
+      hostname: 'test.local',
+      ip_address: '10.0.0.1',
+      ssh_port: 22,
+      ssh_user: 'root',
+      tags: ['web'],
+      services: [],
+      storage_mounts: [{ name: 'Media', path: '/mnt/media' }],
+    });
     assert.ok(s.id);
     assert.equal(s.name, 'test-srv');
     assert.equal(s.ip_address, '10.0.0.1');
+    assert.equal(s.storage_mounts, '[{"name":"Media","path":"/mnt/media"}]');
     serverId = s.id;
   });
 
@@ -46,10 +56,20 @@ describe('db.servers', () => {
   });
 
   test('update modifies fields', () => {
-    const s = db.servers.update(serverId, { name: 'updated-srv', hostname: 'test.local', ip_address: '10.0.0.2', ssh_port: 2222, ssh_user: 'admin', tags: ['db'], services: ['mysql'] });
+    const s = db.servers.update(serverId, {
+      name: 'updated-srv',
+      hostname: 'test.local',
+      ip_address: '10.0.0.2',
+      ssh_port: 2222,
+      ssh_user: 'admin',
+      tags: ['db'],
+      services: ['mysql'],
+      storage_mounts: [{ name: 'Backups', path: '/srv/backups' }],
+    });
     assert.equal(s.name, 'updated-srv');
     assert.equal(s.ip_address, '10.0.0.2');
     assert.equal(s.ssh_port, 2222);
+    assert.equal(s.storage_mounts, '[{"name":"Backups","path":"/srv/backups"}]');
   });
 
   test('updateStatus sets status', () => {
@@ -118,6 +138,36 @@ describe('db.auditLog', () => {
     const latest = logs[0];
     assert.equal(latest.action, 'test.fail');
     assert.equal(latest.success, 0);
+  });
+});
+
+describe('db.customUpdateTasks', () => {
+  const server = db.servers.create({ name: 'custom-task-srv', hostname: 'custom-task.local', ip_address: '10.0.0.200' });
+  let taskId;
+
+  test('create stores trigger task fields', () => {
+    const task = db.customUpdateTasks.create(server.id, {
+      name: 'TrueNAS Updates',
+      type: 'trigger',
+      check_command: 'midclt call update.check_available',
+      trigger_output: 'AVAILABLE',
+      update_command: '',
+    });
+    taskId = task.id;
+    assert.equal(task.type, 'trigger');
+    assert.equal(task.trigger_output, 'AVAILABLE');
+    assert.equal(task.update_command, '');
+  });
+
+  test('update persists trigger output changes', () => {
+    const task = db.customUpdateTasks.update(taskId, {
+      name: 'TrueNAS Updates',
+      type: 'trigger',
+      check_command: 'midclt call update.check_available',
+      trigger_output: 'UNAVAILABLE',
+      update_command: '',
+    });
+    assert.equal(task.trigger_output, 'UNAVAILABLE');
   });
 });
 

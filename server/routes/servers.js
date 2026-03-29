@@ -8,10 +8,50 @@ const ansibleRunner = require('../services/ansible-runner');
 const { parseImageUpdateOutput } = require('../utils/parse-image-updates');
 const { serverError } = require('../utils/http-error');
 const { targetIncludesServer } = require('../utils/validate');
+const { isValidStorageMountPath, parseConfiguredStorageMounts } = require('../utils/storage-mounts');
 
 // Deserialize JSON fields for API responses
 function parseServer(s) {
-  return { ...s, tags: JSON.parse(s.tags || '[]'), services: JSON.parse(s.services || '[]') };
+  return {
+    ...s,
+    tags: JSON.parse(s.tags || '[]'),
+    services: JSON.parse(s.services || '[]'),
+    storage_mounts: parseConfiguredStorageMounts(s.storage_mounts),
+  };
+}
+
+function normalizeStorageMounts(value) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    const err = new Error('Storage mounts must be an array');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const seenPaths = new Set();
+  return value.map((mount, index) => {
+    if (!mount || typeof mount !== 'object') {
+      const err = new Error(`Storage mount #${index + 1} is invalid`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const path = String(mount.path || '').trim();
+    if (!isValidStorageMountPath(path)) {
+      const err = new Error(`Storage mount path "${path || `#${index + 1}`}" is invalid`);
+      err.statusCode = 400;
+      throw err;
+    }
+    if (seenPaths.has(path)) {
+      const err = new Error(`Storage mount path "${path}" is duplicated`);
+      err.statusCode = 400;
+      throw err;
+    }
+    seenPaths.add(path);
+
+    const name = String(mount.name || path).trim().slice(0, 100) || path;
+    return { name, path };
+  });
 }
 
 const { getPermissions, filterServers, can, guardServerAccess } = require('../utils/permissions');
@@ -45,6 +85,7 @@ router.get('/export', guard('canExportImportServers'), (req, res) => {
       ssh_user:    s.ssh_user,
       tags:        JSON.parse(s.tags     || '[]'),
       services:    JSON.parse(s.services || '[]'),
+      storage_mounts: parseConfiguredStorageMounts(s.storage_mounts),
     }));
 
     const format = (req.query.format || 'json').toLowerCase();
@@ -56,10 +97,10 @@ router.get('/export', guard('canExportImportServers'), (req, res) => {
         return s.includes(',') || s.includes('"') || s.includes('\n')
           ? `"${s.replace(/"/g, '""')}"` : s;
       };
-      const header = 'name,hostname,ip_address,ssh_port,ssh_user,tags,services';
+      const header = 'name,hostname,ip_address,ssh_port,ssh_user,tags,services,storage_mounts';
       const rows = servers.map(s =>
         [s.name, s.hostname, s.ip_address, s.ssh_port, s.ssh_user,
-         JSON.stringify(s.tags), JSON.stringify(s.services)].map(escape).join(',')
+         JSON.stringify(s.tags), JSON.stringify(s.services), JSON.stringify(s.storage_mounts)].map(escape).join(',')
       );
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', 'attachment; filename="servers.csv"');
@@ -106,6 +147,7 @@ router.post('/import', guard('canExportImportServers'), (req, res) => {
           ssh_user:  String(s.ssh_user || 'root').slice(0, 100),
           tags:      Array.isArray(s.tags)     ? s.tags     : [],
           services:  Array.isArray(s.services) ? s.services : [],
+          storage_mounts: normalizeStorageMounts(s.storage_mounts || []),
         });
         existing.add(s.name);
         existingIPs.add(s.ip_address);
@@ -200,7 +242,7 @@ router.get('/:id', guardServerAccess, guard('canViewServers'), (req, res) => {
 // POST /api/servers - Add a new server
 router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAddServers')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
-    const { name, hostname, ip_address, ssh_port, ssh_user, tags, services } = req.body;
+    const { name, hostname, ip_address, ssh_port, ssh_user, tags, services, storage_mounts } = req.body;
     if (!name || typeof name !== 'string' || !ip_address || typeof ip_address !== 'string') {
       return res.status(400).json({ error: 'Name and IP address are required' });
     }
@@ -208,6 +250,7 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
     if (ip_address.length > 45) return res.status(400).json({ error: 'IP address too long (max 45)' });
     if (hostname && (typeof hostname !== 'string' || hostname.length > 255)) return res.status(400).json({ error: 'Hostname too long (max 255)' });
     if (ssh_user && (typeof ssh_user !== 'string' || ssh_user.length > 100)) return res.status(400).json({ error: 'SSH user too long (max 100)' });
+    const normalizedStorageMounts = normalizeStorageMounts(storage_mounts || []);
     const server = db.servers.create({
       name: name.slice(0, 100),
       hostname: (hostname || ip_address).slice(0, 255),
@@ -216,10 +259,12 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
       ssh_user: (ssh_user || 'root').slice(0, 100),
       tags: Array.isArray(tags) ? tags.filter(t => typeof t === 'string').map(t => t.slice(0, 100)) : [],
       services: Array.isArray(services) ? services.filter(s => typeof s === 'string').map(s => s.slice(0, 100)) : [],
+      storage_mounts: normalizedStorageMounts,
     });
     db.auditLog.write('server.create', `Server "${name}" (${ip_address}) created`, req.ip, true, req.user?.username);
     res.status(201).json(parseServer(server));
   } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
     serverError(res, error, 'create server');
   }
 });
@@ -229,7 +274,7 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
   try {
     const existing = req.server;
 
-    const { name, hostname, ip_address, ssh_port, ssh_user, tags, services } = req.body;
+    const { name, hostname, ip_address, ssh_port, ssh_user, tags, services, storage_mounts } = req.body;
     const sName   = name !== undefined ? String(name).slice(0, 100) : existing.name;
     const sHost   = hostname !== undefined ? String(hostname).slice(0, 255) : existing.hostname;
     const sIp     = ip_address !== undefined ? String(ip_address).slice(0, 45) : existing.ip_address;
@@ -237,12 +282,15 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
     const sUser   = ssh_user !== undefined ? String(ssh_user).slice(0, 100) : existing.ssh_user;
     const sTags   = Array.isArray(tags) ? tags.filter(t => typeof t === 'string').map(t => t.slice(0, 100)) : JSON.parse(existing.tags || '[]');
     const sSvcs   = Array.isArray(services) ? services.filter(s => typeof s === 'string').map(s => s.slice(0, 100)) : JSON.parse(existing.services || '[]');
+    const sMounts = storage_mounts !== undefined ? normalizeStorageMounts(storage_mounts) : parseConfiguredStorageMounts(existing.storage_mounts);
     const server = db.servers.update(req.params.id, {
       name: sName, hostname: sHost, ip_address: sIp,
       ssh_port: sPort, ssh_user: sUser, tags: sTags, services: sSvcs,
+      storage_mounts: sMounts,
     });
     res.json(parseServer(server));
   } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
     serverError(res, error, 'update server');
   }
 });

@@ -574,6 +574,9 @@ app.post('/api/servers/:id/custom-updates/:taskId/run', guardServerAccess, custo
   const server = req.server;
   const task = db.customUpdateTasks.getById(req.params.taskId);
   if (!task || task.server_id !== server.id) return res.status(404).json({ error: 'Task not found' });
+  if (!String(task.update_command || '').trim()) {
+    return res.status(400).json({ error: 'No update command configured for this task' });
+  }
 
   const historyId = db.updateHistory.create(server.id, `custom_update:${task.name}`);
   res.json({ historyId, status: 'started' });

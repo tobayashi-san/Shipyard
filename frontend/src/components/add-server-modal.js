@@ -54,6 +54,15 @@ export function showAddServerModal(onSuccess, editServer = null) {
             <div class="form-hint">${t('add.tagsHint')}</div>
           </div>
 
+          <div class="form-group">
+            <label class="form-label">${t('add.storageMounts')}</label>
+            <div class="form-hint" style="margin-bottom:10px;">${t('add.storageMountsHint')}</div>
+            <div id="storage-mount-list" class="storage-mount-list"></div>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-add-storage-mount">
+              <i class="fas fa-plus"></i> ${t('add.storageMountAdd')}
+            </button>
+          </div>
+
           ${!isEdit ? `
             <div class="form-group" style="padding:14px;background:var(--bg-row-alt);border-radius:var(--radius-sm);border:1px solid var(--border);">
               <label class="form-label" style="margin-bottom:6px;"><i class="fas fa-key"></i> ${t('add.sshKeySection')}</label>
@@ -86,6 +95,36 @@ export function showAddServerModal(onSuccess, editServer = null) {
     }
   });
 
+  const storageMountList = document.getElementById('storage-mount-list');
+
+  function addStorageMountRow(mount = {}) {
+    const row = document.createElement('div');
+    row.className = 'storage-mount-row';
+    row.innerHTML = `
+      <div class="form-row storage-mount-fields">
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">${t('add.storageMountName')}</label>
+          <input class="form-input storage-mount-name" type="text" placeholder="${t('add.storageMountNamePlaceholder')}" value="${esc(mount.name || '')}">
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">${t('add.storageMountPath')}</label>
+          <input class="form-input storage-mount-path" type="text" placeholder="/mnt/media" value="${esc(mount.path || '')}">
+        </div>
+      </div>
+      <div class="storage-mount-actions">
+        <button type="button" class="btn btn-secondary btn-sm btn-remove-storage-mount">
+          <i class="fas fa-trash"></i> ${t('common.delete')}
+        </button>
+      </div>
+    `;
+    row.querySelector('.btn-remove-storage-mount')?.addEventListener('click', () => row.remove());
+    storageMountList.appendChild(row);
+  }
+
+  (editServer?.storage_mounts || []).forEach(addStorageMountRow);
+  if (!editServer?.storage_mounts?.length) addStorageMountRow();
+  document.getElementById('btn-add-storage-mount')?.addEventListener('click', () => addStorageMountRow());
+
   // Submit
   document.getElementById('server-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -101,6 +140,10 @@ export function showAddServerModal(onSuccess, editServer = null) {
       ssh_port: Math.min(65535, Math.max(1, parseInt(document.getElementById('server-port').value) || 22)),
       services: document.getElementById('server-services').value.split(',').map(s => s.trim()).filter(Boolean),
       tags: document.getElementById('server-tags').value.split(',').map(s => s.trim()).filter(Boolean),
+      storage_mounts: Array.from(document.querySelectorAll('.storage-mount-row')).map((row) => ({
+        name: row.querySelector('.storage-mount-name')?.value.trim() || '',
+        path: row.querySelector('.storage-mount-path')?.value.trim() || '',
+      })).filter((mount) => mount.path),
     };
 
     try {

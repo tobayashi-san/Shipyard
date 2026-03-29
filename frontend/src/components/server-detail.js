@@ -419,6 +419,7 @@ export async function renderServerDetail(serverId) {
 // ============================================================
 function renderServerInfo(info) {
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || '—'; };
+  const formatStorageGb = (value) => Number.isFinite(value) ? `${value.toFixed(1)} GB` : '—';
 
   const statusEl = document.getElementById('inf-status');
   if (statusEl) statusEl.innerHTML = info._cached
@@ -444,6 +445,7 @@ function renderServerInfo(info) {
   const ramPct = info.ram_total_mb ? Math.round((info.ram_used_mb / info.ram_total_mb) * 100) : 0;
   const diskPct = info.disk_total_gb ? Math.round((info.disk_used_gb / info.disk_total_gb) * 100) : 0;
   const cpuPct = info.cpu_usage_pct ?? null;
+  const storageMountMetrics = Array.isArray(info.storage_mount_metrics) ? info.storage_mount_metrics : [];
 
   const bar = (pct) => {
     const cls = pct > 90 ? 'critical' : pct > 70 ? 'high' : '';
@@ -459,6 +461,25 @@ function renderServerInfo(info) {
   const diskUsedLabel = info.disk_total_gb ? info.disk_used_gb.toFixed(1) + ' GB' : null;
   const diskTotalLabel = info.disk_total_gb ? info.disk_total_gb.toFixed(1) + ' GB' : null;
   const diskAbsolute = diskUsedLabel ? `${diskUsedLabel} / ${diskTotalLabel}` : '—';
+  const storageMountsHtml = storageMountMetrics.length > 0 ? `
+      <div class="res-subsection">${t('det.storageMounts')}</div>
+      ${storageMountMetrics.map((mount) => {
+        const pct = mount.usage_pct ?? 0;
+        const valueClass = mount.usage_pct > 90 ? 'res-critical' : mount.usage_pct > 70 ? 'res-warn' : '';
+        const absolute = Number.isFinite(mount.used_gb) && Number.isFinite(mount.total_gb)
+          ? `${formatStorageGb(mount.used_gb)} / ${formatStorageGb(mount.total_gb)}`
+          : t('det.storageUnavailable');
+        const meta = mount.filesystem ? ` · ${esc(mount.filesystem)}` : '';
+        return `
+        <div class="res-row" style="margin-bottom:0;">
+          <div class="res-header">
+            <span class="res-label">${esc(mount.name || mount.path)} <span class="res-path">${esc(mount.path)}${meta}</span></span>
+            <span class="res-value ${valueClass}">${absolute}${mount.usage_pct != null ? ` <span style="opacity:.6;font-size:11px;">(${mount.usage_pct}%)</span>` : ''}</span>
+          </div>
+          ${mount.usage_pct != null ? bar(pct) : '<div class="progress-bar-thick progress-bar-empty"></div>'}
+        </div>`;
+      }).join('')}
+  ` : '';
 
   resEl.innerHTML = `
     <div class="res-block">
@@ -484,6 +505,7 @@ function renderServerInfo(info) {
         </div>
         ${bar(diskPct)}
       </div>
+      ${storageMountsHtml}
     </div>
   `;
 }
@@ -985,17 +1007,20 @@ function renderCustomTasksPanel(customTasks, serverId) {
         : `<span style="font-size:11px;color:var(--text-muted);">—</span>`;
     const typeLabel = task.type === 'github'
       ? `<span style="font-size:11px;color:var(--text-muted);"><i class="fab fa-github"></i> GitHub</span>`
-      : `<span style="font-size:11px;color:var(--text-muted);">Script</span>`;
+      : task.type === 'trigger'
+        ? `<span style="font-size:11px;color:var(--text-muted);"><i class="fas fa-wave-square"></i> ${t('det.taskTypeTriggerShort')}</span>`
+        : `<span style="font-size:11px;color:var(--text-muted);">Script</span>`;
+    const latestValue = task.type === 'trigger' ? (task.trigger_output || task.last_version || '—') : (task.last_version || '—');
     return `
       <tr class="no-hover">
         <td><strong>${esc(task.name)}</strong></td>
         <td>${typeLabel}</td>
         <td class="mono" style="font-size:11px;">${esc(task.current_version || '—')}</td>
-        <td class="mono" style="font-size:11px;">${esc(task.last_version || '—')}</td>
+        <td class="mono" style="font-size:11px;">${esc(latestValue)}</td>
         <td>${statusCell}</td>
         <td style="white-space:nowrap;">
           ${hasCap('canRunCustomUpdates') ? `<button class="btn btn-secondary btn-sm custom-task-check" data-id="${esc(task.id)}" title="${t('det.checkNow')}"><i class="fas fa-sync-alt"></i></button>` : ''}
-          ${hasCap('canRunCustomUpdates') ? `<button class="btn btn-primary btn-sm custom-task-run" data-id="${esc(task.id)}" data-name="${esc(task.name)}" title="${t('det.runUpdate')}"><i class="fas fa-play"></i></button>` : ''}
+          ${hasCap('canRunCustomUpdates') && task.update_command ? `<button class="btn btn-primary btn-sm custom-task-run" data-id="${esc(task.id)}" data-name="${esc(task.name)}" title="${t('det.runUpdate')}"><i class="fas fa-play"></i></button>` : ''}
           ${hasCap('canEditCustomUpdates') ? `<button class="btn btn-secondary btn-sm custom-task-edit" data-id="${esc(task.id)}" title="${t('common.edit')}"><i class="fas fa-edit"></i></button>` : ''}
           ${hasCap('canDeleteCustomUpdates') ? `<button class="btn btn-danger btn-sm custom-task-delete" data-id="${esc(task.id)}" data-name="${esc(task.name)}" title="${t('common.delete')}"><i class="fas fa-trash"></i></button>` : ''}
         </td>
@@ -1100,9 +1125,10 @@ function showCustomTaskModal(serverId, task) {
           <select class="form-input" id="ctm-type">
             <option value="script" ${(!task || task.type === 'script') ? 'selected' : ''}>${t('det.taskTypeScript')}</option>
             <option value="github" ${task?.type === 'github' ? 'selected' : ''}>${t('det.taskTypeGithub')}</option>
+            <option value="trigger" ${task?.type === 'trigger' ? 'selected' : ''}>${t('det.taskTypeTrigger')}</option>
           </select>
           <div id="ctm-type-desc" style="margin-top:6px;font-size:12px;color:var(--text-muted);line-height:1.4;">
-            ${task?.type === 'github' ? t('det.taskTypeGithubDesc') : t('det.taskTypeScriptDesc')}
+            ${task?.type === 'github' ? t('det.taskTypeGithubDesc') : task?.type === 'trigger' ? t('det.taskTypeTriggerDesc') : t('det.taskTypeScriptDesc')}
           </div>
         </div>
         <div class="form-group" id="ctm-github-row" style="${task?.type === 'github' ? '' : 'display:none;'}">
@@ -1110,15 +1136,20 @@ function showCustomTaskModal(serverId, task) {
           <input class="form-input mono" id="ctm-github-repo" value="${esc(task?.github_repo || '')}" placeholder="immich-app/immich">
           <div style="margin-top:4px;font-size:11px;color:var(--text-muted);">${t('det.taskGithubRepoHint')}</div>
         </div>
+        <div class="form-group" id="ctm-trigger-row" style="${task?.type === 'trigger' ? '' : 'display:none;'}">
+          <label class="form-label">${t('det.taskTriggerOutput')}</label>
+          <input class="form-input mono" id="ctm-trigger-output" value="${esc(task?.trigger_output || '')}" placeholder="AVAILABLE">
+          <div style="margin-top:4px;font-size:11px;color:var(--text-muted);">${t('det.taskTriggerOutputHint')}</div>
+        </div>
         <div class="form-group">
           <label class="form-label">${t('det.taskCheckCommand')}</label>
           <input class="form-input mono" id="ctm-check-cmd" value="${esc(task?.check_command || '')}" placeholder="immich --version">
-          <div style="margin-top:4px;font-size:11px;color:var(--text-muted);">${t('det.taskCheckCommandHint')}</div>
+          <div id="ctm-check-hint" style="margin-top:4px;font-size:11px;color:var(--text-muted);">${task?.type === 'trigger' ? t('det.taskCheckCommandHintTrigger') : t('det.taskCheckCommandHint')}</div>
         </div>
         <div class="form-group">
-          <label class="form-label">${t('det.taskUpdateCommand')} <span style="color:var(--danger);font-size:11px;">*</span></label>
+          <label class="form-label">${t('det.taskUpdateCommand')} <span id="ctm-update-required" style="color:var(--danger);font-size:11px;${task?.type === 'trigger' ? 'display:none;' : ''}">*</span></label>
           <input class="form-input mono" id="ctm-update-cmd" value="${esc(task?.update_command || '')}" placeholder="https://get.glennr.nl/unifi/update/unifi-update.sh">
-          <div style="margin-top:4px;font-size:11px;color:var(--text-muted);">${t('det.taskUpdateCommandHint')}</div>
+          <div id="ctm-update-hint" style="margin-top:4px;font-size:11px;color:var(--text-muted);">${task?.type === 'trigger' ? t('det.taskUpdateCommandOptionalHint') : t('det.taskUpdateCommandHint')}</div>
         </div>
       </div>
       <div class="modal-footer">
@@ -1129,11 +1160,23 @@ function showCustomTaskModal(serverId, task) {
 
   document.body.appendChild(overlay);
 
-  document.getElementById('ctm-type').addEventListener('change', e => {
-    const isGithub = e.target.value === 'github';
+  function syncCustomTaskTypeUi(type) {
+    const isGithub = type === 'github';
+    const isTrigger = type === 'trigger';
     document.getElementById('ctm-github-row').style.display = isGithub ? '' : 'none';
-    document.getElementById('ctm-type-desc').textContent = isGithub ? t('det.taskTypeGithubDesc') : t('det.taskTypeScriptDesc');
-  });
+    document.getElementById('ctm-trigger-row').style.display = isTrigger ? '' : 'none';
+    document.getElementById('ctm-type-desc').textContent = isGithub
+      ? t('det.taskTypeGithubDesc')
+      : isTrigger
+        ? t('det.taskTypeTriggerDesc')
+        : t('det.taskTypeScriptDesc');
+    document.getElementById('ctm-check-hint').textContent = isTrigger ? t('det.taskCheckCommandHintTrigger') : t('det.taskCheckCommandHint');
+    document.getElementById('ctm-update-hint').textContent = isTrigger ? t('det.taskUpdateCommandOptionalHint') : t('det.taskUpdateCommandHint');
+    document.getElementById('ctm-update-required').style.display = isTrigger ? 'none' : '';
+  }
+
+  document.getElementById('ctm-type').addEventListener('change', e => syncCustomTaskTypeUi(e.target.value));
+  syncCustomTaskTypeUi(task?.type || 'script');
 
   const close = () => overlay.remove();
   document.getElementById('ctm-close').addEventListener('click', close);
@@ -1147,9 +1190,18 @@ function showCustomTaskModal(serverId, task) {
       github_repo: document.getElementById('ctm-github-repo').value.trim() || null,
       check_command: document.getElementById('ctm-check-cmd').value.trim() || null,
       update_command: document.getElementById('ctm-update-cmd').value.trim(),
+      trigger_output: document.getElementById('ctm-trigger-output').value.trim() || null,
     };
-    if (!data.name || !data.update_command) {
+    if (!data.name) {
+      showToast(t('common.errorPrefix', { msg: t('det.taskNameRequired') }), 'error');
+      return;
+    }
+    if ((data.type === 'script' || data.type === 'github') && !data.update_command) {
       showToast(t('common.errorPrefix', { msg: t('common.nameAndCmdRequired') }), 'error');
+      return;
+    }
+    if (data.type === 'trigger' && (!data.check_command || !data.trigger_output)) {
+      showToast(t('common.errorPrefix', { msg: t('det.taskTriggerRequired') }), 'error');
       return;
     }
     try {

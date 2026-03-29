@@ -1078,6 +1078,26 @@ input[type=number] {
   background: var(--bg-row-alt);
 }
 
+.storage-mount-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.storage-mount-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: var(--bg-row-alt);
+}
+
+.storage-mount-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
 /* ============================================
    Terminal
    ============================================ */
@@ -2289,6 +2309,15 @@ input[type="color"].form-input::-moz-color-swatch {
   margin-bottom: 2px;
 }
 
+.res-subsection {
+  padding: 12px 16px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 .res-header {
   display: flex;
   justify-content: space-between;
@@ -2300,6 +2329,14 @@ input[type="color"].form-input::-moz-color-swatch {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
+}
+
+.res-path {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
 }
 
 .res-value {
@@ -2343,6 +2380,10 @@ input[type="color"].form-input::-moz-color-swatch {
 
 .progress-bar-fill.critical {
   background: var(--offline);
+}
+
+.progress-bar-empty {
+  opacity: 0.5;
 }
 
 /* Server table wrapper */

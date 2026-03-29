@@ -289,6 +289,7 @@ async function pollImageUpdates() {
 async function checkCustomTask(server, task) {
   let lastVersion = task.last_version;
   let currentVersion = task.current_version;
+  let hasUpdate = false;
 
   if (task.type === 'github' && task.github_repo) {
     try {
@@ -313,8 +314,16 @@ async function checkCustomTask(server, task) {
     }
   }
 
-  const normalize = v => v ? v.trim().replace(/^v/i, '') : v;
-  const hasUpdate = !!(lastVersion && currentVersion && normalize(lastVersion) !== normalize(currentVersion));
+  if (task.type === 'trigger') {
+    lastVersion = task.trigger_output || null;
+    hasUpdate = typeof currentVersion === 'string'
+      && typeof task.trigger_output === 'string'
+      && currentVersion.trim() === task.trigger_output.trim();
+  } else {
+    const normalize = v => v ? v.trim().replace(/^v/i, '') : v;
+    hasUpdate = !!(lastVersion && currentVersion && normalize(lastVersion) !== normalize(currentVersion));
+  }
+
   db.customUpdateTasks.setVersionInfo(task.id, currentVersion, lastVersion, hasUpdate);
 }
 
