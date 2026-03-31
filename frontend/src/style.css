@@ -579,7 +579,7 @@ button:focus-visible,
   background: var(--accent-hover);
   border-color: var(--accent-hover);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.3);
+  box-shadow: none;
 }
 
 .btn-primary:active {
@@ -1321,7 +1321,11 @@ input[type=number] {
   transition: opacity 0.15s;
 }
 
-.group-row:hover .group-header-actions {
+.servers-edit-on .group-header-actions {
+  opacity: 1;
+}
+
+.servers-edit-on .group-row:hover .group-header-actions {
   opacity: 1;
 }
 
@@ -3553,6 +3557,14 @@ input[type="color"].form-input::-moz-color-swatch {
   background: var(--bg-panel);
   margin-top: 16px;
   overflow: hidden;
+}
+
+.rf-actions {
+  display: flex;
+  gap: 8px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
 }
 
 .rf-form-title {

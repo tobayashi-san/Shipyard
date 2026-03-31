@@ -1464,9 +1464,11 @@ async function loadRolesTab() {
       <div class="rf-form-card">
         <div class="rf-form-title">${isEdit ? `<i class="fas fa-shield-halved"></i> Edit: ${esc(role.name)}` : '<i class="fas fa-plus"></i> New Role'}</div>
 
-        <div class="form-group" style="margin-bottom:20px;">
-          <label class="form-label">Role Name</label>
-          <input class="form-input" type="text" id="rf-name" value="${esc(role?.name || '')}" style="max-width:280px;" placeholder="e.g. Ops Team">
+        <div class="rf-section">
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Role Name</label>
+            <input class="form-input" type="text" id="rf-name" value="${esc(role?.name || '')}" style="max-width:280px;" placeholder="e.g. Ops Team">
+          </div>
         </div>
 
         <!-- Servers -->
@@ -1553,7 +1555,7 @@ async function loadRolesTab() {
           ], p)}
         </div>
 
-        <div style="display:flex;gap:8px;padding:16px 0 4px;">
+        <div class="rf-actions">
           <button class="btn btn-primary btn-sm" id="rf-save"><i class="fas fa-save"></i> ${isEdit ? 'Save' : 'Create Role'}</button>
           <button class="btn btn-secondary btn-sm" id="rf-cancel">Cancel</button>
         </div>

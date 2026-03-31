@@ -12,6 +12,48 @@ let activeTag = null;
 let serverGroups = [];
 let collapsedGroups = new Set();
 
+const STORAGE_KEY_COLLAPSED_SERVER_GROUPS = 'shipyard.ui.servers.collapsedGroups';
+const STORAGE_KEY_SERVERS_EDIT_MODE = 'shipyard.ui.servers.editMode';
+let serversEditMode = loadServersEditMode();
+
+function loadServersEditMode() {
+  try {
+    return localStorage.getItem(STORAGE_KEY_SERVERS_EDIT_MODE) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function saveServersEditMode() {
+  try {
+    localStorage.setItem(STORAGE_KEY_SERVERS_EDIT_MODE, serversEditMode ? '1' : '0');
+  } catch {
+    // ignore
+  }
+}
+
+function loadCollapsedGroups() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_COLLAPSED_SERVER_GROUPS);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return new Set();
+    return new Set(arr.filter(v => typeof v === 'string'));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveCollapsedGroups() {
+  try {
+    localStorage.setItem(STORAGE_KEY_COLLAPSED_SERVER_GROUPS, JSON.stringify([...collapsedGroups]));
+  } catch {
+    // ignore storage quota / privacy mode
+  }
+}
+
+collapsedGroups = loadCollapsedGroups();
+
 const PAGE_SIZE = 20;
 let serverPage = 1;
 
@@ -33,6 +75,13 @@ export async function renderServers() {
   if (!main) return;
 
   try { serverGroups = await api.getServerGroups(); } catch { serverGroups = []; }
+  // prune collapsed ids that no longer exist
+  if (collapsedGroups.size > 0 && serverGroups.length > 0) {
+    const valid = new Set(serverGroups.map(g => g.id));
+    const before = collapsedGroups.size;
+    collapsedGroups.forEach(id => { if (!valid.has(id)) collapsedGroups.delete(id); });
+    if (collapsedGroups.size !== before) saveCollapsedGroups();
+  }
 
   const allTags = [...new Set(state.servers.flatMap(s => s.tags || []))].sort();
   const filtered = activeTag ? state.servers.filter(s => (s.tags || []).includes(activeTag)) : state.servers;
@@ -72,6 +121,9 @@ export async function renderServers() {
         <button class="btn btn-secondary btn-sm" id="btn-refresh-all">
           <i class="fas fa-sync-alt"></i> ${t('common.refresh')}
         </button>
+        ${serverGroups.length > 0 && hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm" id="btn-toggle-edit" title="Toggle folder edit mode">
+          <i class="fas ${serversEditMode ? 'fa-lock-open' : 'fa-lock'}"></i> ${serversEditMode ? 'Done' : 'Edit'}
+        </button>` : ''}
         ${hasCap('canExportImportServers') ? `<div class="btn-group" id="btn-export-wrap">
           <button class="btn btn-secondary btn-sm" id="btn-export-json" title="${t('srv.export')} JSON">
             <i class="fas fa-file-export"></i> JSON
@@ -112,7 +164,7 @@ export async function renderServers() {
       </button>
     </div>
 
-    <div class="page-content">
+    <div class="page-content ${serversEditMode ? 'servers-edit-on' : ''}">
       <div class="panel server-table-wrapper">
         ${tagBar}
         ${state.servers.length === 0 ? `
@@ -208,6 +260,12 @@ function attachEvents() {
     }
   });
 
+  document.getElementById('btn-toggle-edit')?.addEventListener('click', () => {
+    serversEditMode = !serversEditMode;
+    saveServersEditMode();
+    renderServers();
+  });
+
   // ── Unterordner erstellen ─────────────────────────────────
   document.querySelectorAll('.create-subgroup-btn').forEach(btn => {
     btn.addEventListener('click', async e => {
@@ -230,6 +288,7 @@ function attachEvents() {
     row.addEventListener('click', e => {
       if (e.target.closest('.group-header-actions')) return;
       collapsedGroups.has(groupId) ? collapsedGroups.delete(groupId) : collapsedGroups.add(groupId);
+      saveCollapsedGroups();
       renderServers();
     });
   });
@@ -336,65 +395,67 @@ function attachEvents() {
     row.addEventListener('dragend', () => row.classList.remove('dragging'));
   });
 
-  document.querySelectorAll('.group-row[draggable]').forEach(row => {
-    row.addEventListener('dragstart', e => {
-      e.stopPropagation();
-      e.dataTransfer.setData('text/plain', 'group:' + row.dataset.groupId);
-      e.dataTransfer.effectAllowed = 'move';
-      row.classList.add('dragging');
+  if (serversEditMode) {
+    document.querySelectorAll('.group-row[draggable]').forEach(row => {
+      row.addEventListener('dragstart', e => {
+        e.stopPropagation();
+        e.dataTransfer.setData('text/plain', 'group:' + row.dataset.groupId);
+        e.dataTransfer.effectAllowed = 'move';
+        row.classList.add('dragging');
+      });
+      row.addEventListener('dragend', () => row.classList.remove('dragging'));
     });
-    row.addEventListener('dragend', () => row.classList.remove('dragging'));
-  });
 
-  document.querySelectorAll('.group-row').forEach(row => {
-    row.addEventListener('dragover', e => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      row.classList.add('drag-over');
-    });
-    row.addEventListener('dragleave', e => {
-      if (!row.contains(e.relatedTarget)) row.classList.remove('drag-over');
-    });
-    row.addEventListener('drop', async e => {
-      e.preventDefault();
-      row.classList.remove('drag-over');
-      const raw = e.dataTransfer.getData('text/plain');
-      if (!raw) return;
-      const targetGroupId = row.dataset.groupId || null;
+    document.querySelectorAll('.group-row').forEach(row => {
+      row.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        row.classList.add('drag-over');
+      });
+      row.addEventListener('dragleave', e => {
+        if (!row.contains(e.relatedTarget)) row.classList.remove('drag-over');
+      });
+      row.addEventListener('drop', async e => {
+        e.preventDefault();
+        row.classList.remove('drag-over');
+        const raw = e.dataTransfer.getData('text/plain');
+        if (!raw) return;
+        const targetGroupId = row.dataset.groupId || null;
 
-      if (raw.startsWith('server:')) {
-        const serverId = raw.slice(7);
-        try {
-          await api.setServerGroup(serverId, targetGroupId);
-          const srv = state.servers.find(s => s.id === serverId);
-          if (srv) srv.group_id = targetGroupId;
-          renderServers();
-        } catch (err) { showToast(t('common.errorPrefix', { msg: err.message }), 'error'); }
-      } else if (raw.startsWith('group:')) {
-        const groupId = raw.slice(6);
-        if (groupId === targetGroupId) return;
-        // Prevent circular: don't drop onto self or descendants
-        const getDescIds = (id) => {
-          const ids = new Set([id]);
-          const addChildren = (pid) => serverGroups.filter(g => g.parent_id === pid).forEach(g => {
-            if (!ids.has(g.id)) { ids.add(g.id); addChildren(g.id); }
-          });
-          addChildren(id);
-          return ids;
-        };
-        if (targetGroupId && getDescIds(groupId).has(targetGroupId)) {
-          showToast(t('srv.cantMoveToChild'), 'warning');
-          return;
+        if (raw.startsWith('server:')) {
+          const serverId = raw.slice(7);
+          try {
+            await api.setServerGroup(serverId, targetGroupId);
+            const srv = state.servers.find(s => s.id === serverId);
+            if (srv) srv.group_id = targetGroupId;
+            renderServers();
+          } catch (err) { showToast(t('common.errorPrefix', { msg: err.message }), 'error'); }
+        } else if (raw.startsWith('group:')) {
+          const groupId = raw.slice(6);
+          if (groupId === targetGroupId) return;
+          // Prevent circular: don't drop onto self or descendants
+          const getDescIds = (id) => {
+            const ids = new Set([id]);
+            const addChildren = (pid) => serverGroups.filter(g => g.parent_id === pid).forEach(g => {
+              if (!ids.has(g.id)) { ids.add(g.id); addChildren(g.id); }
+            });
+            addChildren(id);
+            return ids;
+          };
+          if (targetGroupId && getDescIds(groupId).has(targetGroupId)) {
+            showToast(t('srv.cantMoveToChild'), 'warning');
+            return;
+          }
+          try {
+            await api.setGroupParent(groupId, targetGroupId);
+            const grp = serverGroups.find(g => g.id === groupId);
+            if (grp) grp.parent_id = targetGroupId;
+            renderServers();
+          } catch (err) { showToast(t('common.errorPrefix', { msg: err.message }), 'error'); }
         }
-        try {
-          await api.setGroupParent(groupId, targetGroupId);
-          const grp = serverGroups.find(g => g.id === groupId);
-          if (grp) grp.parent_id = targetGroupId;
-          renderServers();
-        } catch (err) { showToast(t('common.errorPrefix', { msg: err.message }), 'error'); }
-      }
+      });
     });
-  });
+  }
 
   // ── Export ────────────────────────────────────────────────
   document.getElementById('btn-export-json')?.addEventListener('click', async () => {
@@ -762,7 +823,7 @@ function renderGroupNode(node, depth, serversByGroup) {
   const indent = depth * 20;
   const color = node.color || '#6366f1';
 
-  let html = `<tr class="group-row" data-group-id="${node.id}" draggable="true">
+  let html = `<tr class="group-row" data-group-id="${node.id}" ${serversEditMode ? 'draggable="true"' : ''}>
     <td colspan="10" style="border-left:3px solid ${color};">
       <div class="group-header-inner" style="padding-left:${11 + indent}px;">
         <i class="fas fa-chevron-${collapsed ? 'right' : 'down'}" style="font-size:11px;color:var(--text-muted);width:14px;flex-shrink:0;"></i>
@@ -815,17 +876,19 @@ function renderGroupedBody(servers, groups) {
 
   let html = '';
 
-  // Ungrouped / root drop zone — always shown so folders can be dragged to top level
-  html += `<tr class="group-row ungrouped-group-row">
-    <td colspan="10">
-      <div class="group-header-inner">
-        <i class="fas fa-server" style="color:var(--text-muted);font-size:12px;"></i>
-        <span style="color:var(--text-muted);">${t('srv.moveToRoot')}</span>
-        ${ungrouped.length > 0 ? `<span class="group-badge">${ungrouped.length}</span>` : ''}
-      </div>
-    </td>
-  </tr>`;
-  html += ungrouped.map(s => renderRow(s)).join('');
+  // Ungrouped (only show when there are servers without a folder)
+  if (ungrouped.length > 0) {
+    html += `<tr class="group-row ungrouped-group-row">
+      <td colspan="10">
+        <div class="group-header-inner">
+          <i class="fas fa-server" style="color:var(--text-muted);font-size:12px;"></i>
+          <span style="color:var(--text-muted);">${t('srv.moveToRoot')}</span>
+          <span class="group-badge">${ungrouped.length}</span>
+        </div>
+      </td>
+    </tr>`;
+    html += ungrouped.map(s => renderRow(s)).join('');
+  }
 
   // Build tree and render
   const tree = buildGroupTree(groups);

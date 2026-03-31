@@ -1286,9 +1286,11 @@ async function loadHistory(serverId) {
         : `<span style="color:var(--text-muted);font-size:11px;">${esc(h.triggered_by || 'system')}</span>`;
       return `
               <tr class="no-hover">
-                <td class="mono" style="display:flex;align-items:center;gap:6px;">
-                  ${isSchedule ? '<span class="badge" style="font-size:10px;padding:1px 6px;background:var(--accent-light);color:var(--accent);border:1px solid var(--accent);flex-shrink:0;">Playbook</span>' : ''}
-                  ${esc(h.action)}
+                <td class="mono">
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    ${isSchedule ? '<span class="badge" style="font-size:10px;padding:1px 6px;background:var(--accent-light);color:var(--accent);border:1px solid var(--accent);flex-shrink:0;">Playbook</span>' : ''}
+                    ${esc(h.action)}
+                  </div>
                 </td>
                 <td>${trigger}</td>
                 <td><span class="badge badge-${statusCls}">${h.status}</span></td>

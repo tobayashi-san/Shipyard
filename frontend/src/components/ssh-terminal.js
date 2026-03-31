@@ -71,6 +71,7 @@ export function openSshTerminal(server) {
   // Double rAF ensures the browser has painted and FitAddon can measure correctly
   requestAnimationFrame(() => requestAnimationFrame(() => {
     fitAddon.fit();
+    term.focus();
     connectSsh();
   }));
 

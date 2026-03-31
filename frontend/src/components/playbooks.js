@@ -77,6 +77,29 @@ function setEditorContent(content) {
 // ── Tab state ─────────────────────────────────────────────────
 let activeTab = 'templates';
 
+const STORAGE_KEY_COLLAPSED_PLAYBOOK_CATEGORIES = 'shipyard.ui.playbooks.collapsedCategories';
+let collapsedCategories = loadCollapsedPlaybookCategories();
+
+function loadCollapsedPlaybookCategories() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_COLLAPSED_PLAYBOOK_CATEGORIES);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return new Set();
+    return new Set(arr.filter(v => typeof v === 'string'));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveCollapsedPlaybookCategories() {
+  try {
+    localStorage.setItem(STORAGE_KEY_COLLAPSED_PLAYBOOK_CATEGORIES, JSON.stringify([...collapsedCategories]));
+  } catch {
+    // ignore storage quota / privacy mode
+  }
+}
+
 function allowedTabs() {
   const tabs = ['templates'];
   if (hasCap('canRunPlaybooks')) tabs.push('run');
@@ -429,7 +452,14 @@ function wirePlaybookItems() {
   const listEl = document.getElementById('playbook-list');
   if (!listEl) return;
   listEl.querySelectorAll('.pb-category-header').forEach(header => {
-    header.addEventListener('click', () => header.classList.toggle('collapsed'));
+    header.addEventListener('click', () => {
+      header.classList.toggle('collapsed');
+      const key = header.dataset.categoryKey;
+      if (!key) return;
+      if (header.classList.contains('collapsed')) collapsedCategories.add(key);
+      else collapsedCategories.delete(key);
+      saveCollapsedPlaybookCategories();
+    });
   });
   listEl.querySelectorAll('.playbook-item').forEach(item => {
     if (!hasCap('canEditPlaybooks') && !hasCap('canDeletePlaybooks')) return;
@@ -445,9 +475,11 @@ function wirePlaybookItems() {
 }
 
 function renderPlaybookGroup(label, playbooks, isInternal) {
+  const key = `${isInternal ? 'internal' : 'user'}:${label}`;
+  const collapsed = collapsedCategories.has(key);
   return `
     <div class="pb-category">
-      <div class="pb-category-header">
+      <div class="pb-category-header ${collapsed ? 'collapsed' : ''}" data-category-key="${esc(key)}">
         <i class="fas fa-chevron-down pb-chevron"></i>
         <i class="fas ${isInternal ? 'fa-folder-gear' : 'fa-folder'} pb-folder-icon"></i>
         <span>${esc(label)}</span>
