@@ -199,7 +199,7 @@ app.get('/plugins/:pluginId/ui.js', (req, res) => {
 });
 
 const { getPermissions, filterServers, filterPlugins, can, guardServerAccess } = require('./utils/permissions');
-const { isValidPlaybook, validateTargets, parseTargetExpression } = require('./utils/validate');
+const { isValidPlaybook, validateTargets, parseTargetExpression, resolveTargets } = require('./utils/validate');
 
 // GET /api/dashboard – aggregated stats from DB cache (no SSH, instant)
 app.get('/api/dashboard', (req, res) => {
@@ -393,7 +393,8 @@ app.post('/api/ansible/run', async (req, res) => {
     normalizedTargets,
     `ansible:${playbook}`
   );
-  const schedHistId = db.scheduleHistory.create(null, 'Quick Run', playbook, normalizedTargets);
+  const resolvedTargets = resolveTargets(normalizedTargets, db.servers.getAll());
+  const schedHistId = db.scheduleHistory.create(null, 'Quick Run', playbook, resolvedTargets);
 
   res.json({ historyId, status: 'started' });
 
@@ -416,6 +417,10 @@ app.post('/api/ansible/run', async (req, res) => {
     db.updateHistory.updateStatus(historyId, status, output);
     db.scheduleHistory.complete(schedHistId, status, output);
     db.auditLog.write('ansible.run', `playbook=${playbook} targets=${normalizedTargets} status=${status}`, req.ip, result.success, req.user?.username);
+    // Invalidate update cache for targeted servers
+    for (const s of db.servers.getAll()) {
+      if (resolvedTargets.split(',').includes(s.name)) db.updatesCache.delete(s.id);
+    }
     broadcast({ type: 'ansible_complete', historyId, success: result.success });
   } catch (error) {
     db.updateHistory.updateStatus(historyId, 'failed', error.message);
@@ -451,6 +456,7 @@ app.post('/api/servers/:id/update', guardServerAccess, (req, res, next) => {
     const status = result.success ? 'success' : 'failed';
     db.updateHistory.updateStatus(historyId, status, result.stdout + result.stderr);
     db.auditLog.write('server.update', `server=${server.name} status=${status}`, req.ip, result.success, req.user?.username);
+    db.updatesCache.delete(serverId);
     broadcast({ type: 'update_complete', serverId, historyId, success: result.success });
   } catch (error) {
     db.updateHistory.updateStatus(historyId, 'failed', error.message);

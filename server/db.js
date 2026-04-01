@@ -767,6 +767,9 @@ module.exports = {
         ON CONFLICT(server_id) DO UPDATE SET updates_json = excluded.updates_json, updated_at = datetime('now')
       `).run(serverId, JSON.stringify(updates));
     },
+    delete: (serverId) => {
+      db.prepare('DELETE FROM server_updates_cache WHERE server_id = ?').run(serverId);
+    },
   },
 
   scheduleHistory: {

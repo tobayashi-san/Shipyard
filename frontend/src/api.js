@@ -135,6 +135,7 @@ class ApiClient {
   restartServerDocker(id, container) { return this.request(`/servers/${id}/docker/${container}/restart`, { method: 'POST' }); }
   getContainerLogs(id, container, tail = 200) { return this.request(`/servers/${id}/docker/${encodeURIComponent(container)}/logs?tail=${tail}`); }
   checkImageUpdates(id) { return this.request(`/servers/${id}/docker/image-updates`); }
+  getCachedImageUpdates(id) { return this.request(`/servers/${id}/docker/image-updates/cached`); }
 
   // Custom Update Tasks
   getCustomUpdateTasks(serverId) { return this.request(`/servers/${serverId}/custom-updates`); }
@@ -255,7 +256,7 @@ class ApiClient {
   createUser(data)                 { return this.request('/users', { method: 'POST', body: data }); }
   updateUser(id, data)             { return this.request(`/users/${id}`, { method: 'PUT', body: data }); }
   resetUserPassword(id, password)  { return this.request(`/users/${id}/password`, { method: 'PUT', body: { password } }); }
-  disableUserTotp(id)              { return this.request(`/users/${id}/totp-disable`, { method: 'PUT' }); }
+  disableUserTotp(id)              { return this.request(`/users/${id}/totp-disable`, { method: 'PUT', body: {} }); }
   deleteUser(id)                   { return this.request(`/users/${id}`, { method: 'DELETE' }); }
 
   // Role management

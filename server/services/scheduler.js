@@ -6,6 +6,7 @@ const systemInfo = require('./system-info');
 const sshManager = require('./ssh-manager');
 const { parseImageUpdateOutput } = require('../utils/parse-image-updates');
 const gitSync = require('./git-sync');
+const { resolveTargets } = require('../utils/validate');
 const pullModeManager = require('./pull-mode-manager');
 
 // In-memory map: scheduleId -> cron task
@@ -112,7 +113,8 @@ function register(schedule) {
     // Sync playbooks from git before running
     await gitSync.autoPull();
 
-    const histId = db.scheduleHistory.create(schedule.id, schedule.name, schedule.playbook, schedule.targets);
+    const resolvedTargets = resolveTargets(schedule.targets, db.servers.getAll());
+    const histId = db.scheduleHistory.create(schedule.id, schedule.name, schedule.playbook, resolvedTargets);
     const outputLines = [];
 
     try {

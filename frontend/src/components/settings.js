@@ -1707,9 +1707,9 @@ async function loadUsersTab() {
                 <button class="btn btn-secondary btn-sm btn-reset-pw" data-id="${esc(u.id)}" data-username="${esc(u.username)}" title="Reset Password">
                   <i class="fas fa-key"></i>
                 </button>
-                <button class="btn btn-secondary btn-sm btn-disable-2fa" data-id="${esc(u.id)}" data-username="${esc(u.username)}" title="Disable 2FA" ${u.totp_enabled ? '' : 'disabled'}>
+                ${u.totp_enabled ? `<button class="btn btn-secondary btn-sm btn-disable-2fa" data-id="${esc(u.id)}" data-username="${esc(u.username)}" title="Disable 2FA">
                   <i class="fas fa-shield-xmark"></i>
-                </button>
+                </button>` : ''}
                 <button class="btn btn-danger btn-sm btn-del-user" data-id="${esc(u.id)}" data-username="${esc(u.username)}" title="Delete" ${isSelf ? 'style="visibility:hidden;"' : ''}>
                   <i class="fas fa-trash"></i>
                 </button>

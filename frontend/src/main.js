@@ -1,6 +1,6 @@
 import { renderSidebar } from './components/sidebar.js';
 import { renderDashboard, refreshDashboardData } from './components/dashboard.js';
-import { renderServerDetail } from './components/server-detail.js';
+import { renderServerDetail, loadUpdates, loadHistory } from './components/server-detail.js';
 import { renderSettings, applyWhiteLabel } from './components/settings.js';
 import { renderPlaybooks } from './components/playbooks.js';
 import { renderServers, refreshServersInPlace } from './components/servers.js';
@@ -294,6 +294,11 @@ async function boot() {
     } else if (msg.type === 'update_complete' || msg.type === 'ansible_complete' ||
                msg.type === 'bulk_update_complete') {
       appendGlobalTerminal(msg.success ? t('ws.completed') : t('ws.failed'), msg.success ? 'success' : 'stderr');
+      // Reload updates & history on server-detail after a run finishes
+      if (state.currentView === 'server-detail' && state.selectedServerId) {
+        loadUpdates(state.selectedServerId);
+        loadHistory(state.selectedServerId);
+      }
     } else if (msg.type === 'update_error' || msg.type === 'compose_error' ||
                msg.type === 'ansible_error' || msg.type === 'bulk_update_error') {
       appendGlobalTerminal(t('ws.error', { msg: msg.error || msg.message }), 'stderr');

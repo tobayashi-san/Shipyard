@@ -760,7 +760,20 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
       openGlobalTerminal(`compose ${action.toUpperCase()}: ${project}`);
       try {
         await api.runDockerComposeAction(serverId, dir, action);
-        setTimeout(() => loadDockerContainers(serverId), 4000);
+        setTimeout(async () => {
+          await loadDockerContainers(serverId);
+          // Re-check image updates after pull/up to reflect new state
+          if (action === 'pull' || action === 'up') {
+            api.checkImageUpdates(serverId)
+              .then(results => {
+                const map = {};
+                results.forEach(r => { map[r.image] = r.status; });
+                imageUpdateMaps[serverId] = map;
+                loadDockerContainers(serverId);
+              })
+              .catch(() => {});
+          }
+        }, 4000);
       } catch (err) {
         showToast(t('common.errorPrefix', { msg: err.message }), 'error');
       }
@@ -798,6 +811,19 @@ async function loadDockerContainers(serverId) {
   const content = document.getElementById('docker-content');
   if (!content) return;
   content.dataset.serverId = serverId;
+
+  // Load cached image update status if not already in memory
+  if (!imageUpdateMaps[serverId]) {
+    try {
+      const cached = await api.getCachedImageUpdates(serverId);
+      if (cached?.results?.length) {
+        const map = {};
+        cached.results.forEach(r => { map[r.image] = r.status; });
+        imageUpdateMaps[serverId] = map;
+      }
+    } catch { /* ignore – proceed without cached status */ }
+  }
+
   try {
     const containers = await api.getServerDocker(serverId);
     const el = document.getElementById('docker-content');
@@ -1513,4 +1539,4 @@ async function setupNotesTab(serverId) {
 
 // Kept for legacy compat
 function showTerminal(title) { openGlobalTerminal(title); }
-export { showTerminal };
+export { showTerminal, loadUpdates, loadHistory };

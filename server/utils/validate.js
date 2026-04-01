@@ -64,10 +64,27 @@ function targetIncludesServer(targets, serverName) {
   return false;
 }
 
+/**
+ * Resolve 'all' / 'all:!excluded' targets to the concrete server name list
+ * that exists right now, so history records are pinned to actual servers.
+ */
+function resolveTargets(targets, allServers) {
+  const parsed = parseTargetExpression(targets);
+  if (parsed.kind === 'all') {
+    return allServers.map(s => s.name).join(',');
+  }
+  if (parsed.kind === 'all_except') {
+    const excluded = new Set(parsed.excluded);
+    return allServers.map(s => s.name).filter(n => !excluded.has(n)).join(',');
+  }
+  return targets;
+}
+
 module.exports = {
   isValidPlaybook,
   validateTargets,
   parseTargetExpression,
   targetIncludesServer,
+  resolveTargets,
   PLAYBOOK_RE,
 };

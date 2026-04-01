@@ -660,6 +660,12 @@ router.get('/:id/docker/:container/logs', guardServerAccess, guard('canViewDocke
   }
 });
 
+// GET /api/servers/:id/docker/image-updates/cached - Return cached image update results (no SSH)
+router.get('/:id/docker/image-updates/cached', guardServerAccess, guard('canPullDocker'), (req, res) => {
+  const cached = db.dockerImageUpdatesCache.getWithMeta(req.params.id);
+  res.json(cached ? { results: cached.results, updated_at: cached.updated_at } : { results: [], updated_at: null });
+});
+
 // GET /api/servers/:id/docker/image-updates - Check for image updates
 router.get('/:id/docker/image-updates', guardServerAccess, guard('canPullDocker'), async (req, res) => {
   const server = req.server;
