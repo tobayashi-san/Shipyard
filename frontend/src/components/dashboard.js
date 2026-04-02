@@ -94,7 +94,7 @@ function renderDashboardData(data) {
         <div class="dash-section-title" style="justify-content:space-between;">
           <span>${t('dash.serverHealth')}</span>
           ${(() => { const attCount = servers.filter(needsAttention).length; return attCount > 0 ? `
-            <button class="btn btn-secondary btn-sm" id="btn-todo-filter" style="font-size:11px;padding:3px 10px;">
+            <button class="btn btn-secondary btn-sm active" id="btn-todo-filter" style="font-size:11px;padding:3px 10px;">
               <i class="fas fa-filter" style="margin-right:4px;"></i>${t('dash.needsAttention')}
               <span class="nav-item-badge" style="margin-left:5px;">${attCount}</span>
             </button>` : ''; })()
@@ -122,7 +122,7 @@ function renderDashboardData(data) {
                 <th style="width:130px;">${t('dash.colUpdates')}</th>
               </tr></thead>
               <tbody>
-                ${servers.map(s => serverHealthRow(s)).join('')}
+                ${(() => { const hasAtt = servers.some(needsAttention); return servers.map(s => serverHealthRow(s, hasAtt)).join(''); })()}
               </tbody>
             </table>
           `}
@@ -222,7 +222,7 @@ function statCard(icon, value, label, color) {
   `;
 }
 
-function serverHealthRow(s) {
+function serverHealthRow(s, filterActive) {
   const dotCls = s.status === 'online' ? 'online' : s.status === 'offline' ? 'offline' : 'unknown';
   const ramBar = miniBar(s.ram_pct);
   const diskBar = miniBar(s.disk_pct);
@@ -232,7 +232,7 @@ function serverHealthRow(s) {
   const visibleTags = tags.slice(0, 3);
 
   return `
-    <tr class="server-health-row" data-server-id="${s.id}" data-needs-attention="${needsAttention(s) ? '1' : '0'}" style="cursor:pointer;">
+    <tr class="server-health-row" data-server-id="${s.id}" data-needs-attention="${needsAttention(s) ? '1' : '0'}" style="cursor:pointer;${filterActive && !needsAttention(s) ? 'display:none;' : ''}">
       <td><span class="status-dot ${dotCls}"></span></td>
       <td>
         <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
