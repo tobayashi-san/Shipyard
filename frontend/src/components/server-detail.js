@@ -474,7 +474,7 @@ function renderServerInfo(info) {
       }).join('')}
   ` : '';
 
-  // ── ZFS pools ──────────────────────────────────────────────
+  // ── ZFS pools (pool-level only, no individual datasets) ────
   const zfsPools = Array.isArray(info.zfs_pools) ? info.zfs_pools : [];
   const zfsHtml = zfsPools.length > 0 ? `
       <div class="res-subsection"><i class="fas fa-database" style="margin-right:6px;opacity:.6;"></i>ZFS Pools</div>
@@ -484,9 +484,8 @@ function renderServerInfo(info) {
         const healthClass = pool.health === 'ONLINE' ? 'badge-online' : pool.health === 'DEGRADED' ? 'badge-warning' : pool.health === 'FAULTED' ? 'badge-error' : 'badge-unknown';
         const poolAbsolute = pool.size_gb != null ? `${formatStorageGb(pool.alloc_gb)} / ${formatStorageGb(pool.size_gb)}` : '—';
         const scrubInfo = pool.scrub ? `<span class="res-path" style="margin-left:8px;">scrub: ${esc(pool.scrub.length > 60 ? pool.scrub.slice(0, 60) + '…' : pool.scrub)}</span>` : '';
-        const datasets = Array.isArray(pool.datasets) ? pool.datasets.filter(d => d.name !== pool.name) : [];
         return `
-        <div class="res-row" style="margin-bottom:${datasets.length ? '2px' : '0'};">
+        <div class="res-row" style="margin-bottom:0;">
           <div class="res-header">
             <span class="res-label">
               <span class="badge ${healthClass}" style="font-size:10px;padding:1px 6px;margin-right:6px;">${esc(pool.health)}</span>
@@ -495,25 +494,7 @@ function renderServerInfo(info) {
             <span class="res-value ${poolValueClass}">${poolAbsolute} <span style="opacity:.6;font-size:11px;">(${poolPct}%)</span></span>
           </div>
           ${bar(poolPct)}
-        </div>
-        ${datasets.length > 0 ? `<div style="padding-left:18px;">
-          ${datasets.map(ds => {
-            const dsTotal = (ds.used_gb || 0) + (ds.avail_gb || 0);
-            const dsPct = dsTotal > 0 ? Math.round((ds.used_gb / dsTotal) * 100) : 0;
-            const dsValueClass = dsPct > 90 ? 'res-critical' : dsPct > 70 ? 'res-warn' : '';
-            const shortName = ds.name.startsWith(pool.name + '/') ? ds.name.slice(pool.name.length + 1) : ds.name;
-            const mountLabel = ds.mountpoint && ds.mountpoint !== '-' && ds.mountpoint !== 'none' ? ` <span class="res-path">${esc(ds.mountpoint)}</span>` : '';
-            const typeLabel = ds.type && ds.type !== 'filesystem' ? ` <span class="res-path">${esc(ds.type)}</span>` : '';
-            return `
-            <div class="res-row" style="margin-bottom:0;">
-              <div class="res-header">
-                <span class="res-label" style="font-size:12px;">${esc(shortName)}${typeLabel}${mountLabel}</span>
-                <span class="res-value ${dsValueClass}" style="font-size:12px;">${formatStorageGb(ds.used_gb)} / ${formatStorageGb(dsTotal)}${dsTotal > 0 ? ` <span style="opacity:.6;font-size:11px;">(${dsPct}%)</span>` : ''}</span>
-              </div>
-              ${dsTotal > 0 ? bar(dsPct) : ''}
-            </div>`;
-          }).join('')}
-        </div>` : ''}`;
+        </div>`;
       }).join('')}
   ` : '';
 
