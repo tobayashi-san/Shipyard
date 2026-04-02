@@ -91,7 +91,15 @@ function renderDashboardData(data) {
 
       <!-- Server Health -->
       <div class="dash-col-main">
-        <div class="dash-section-title">${t('dash.serverHealth')}</div>
+        <div class="dash-section-title" style="justify-content:space-between;">
+          <span>${t('dash.serverHealth')}</span>
+          ${(() => { const attCount = servers.filter(needsAttention).length; return attCount > 0 ? `
+            <button class="btn btn-secondary btn-sm" id="btn-todo-filter" style="font-size:11px;padding:3px 10px;">
+              <i class="fas fa-filter" style="margin-right:4px;"></i>${t('dash.needsAttention')}
+              <span class="nav-item-badge" style="margin-left:5px;">${attCount}</span>
+            </button>` : ''; })()
+          }
+        </div>
         <div class="panel">
           ${servers.length === 0 ? `
             <div class="empty-state">
@@ -163,6 +171,21 @@ function renderDashboardData(data) {
     </div>
   `);
 
+  // TODO filter toggle
+  const filterBtn = document.getElementById('btn-todo-filter');
+  if (filterBtn) {
+    filterBtn.addEventListener('click', () => {
+      const active = filterBtn.classList.toggle('active');
+      content.querySelectorAll('.server-health-row').forEach(row => {
+        if (active && row.dataset.needsAttention !== '1') {
+          row.style.display = 'none';
+        } else {
+          row.style.display = '';
+        }
+      });
+    });
+  }
+
   // Server-Row click
   content.querySelectorAll('.server-health-row').forEach(row => {
     row.addEventListener('click', () => navigate('server-detail', { serverId: row.dataset.serverId }));
@@ -209,7 +232,7 @@ function serverHealthRow(s) {
   const visibleTags = tags.slice(0, 3);
 
   return `
-    <tr class="server-health-row" data-server-id="${s.id}" style="cursor:pointer;">
+    <tr class="server-health-row" data-server-id="${s.id}" data-needs-attention="${needsAttention(s) ? '1' : '0'}" style="cursor:pointer;">
       <td><span class="status-dot ${dotCls}"></span></td>
       <td>
         <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
@@ -256,8 +279,20 @@ function miniBar(pct) {
   `;
 }
 
+function needsAttention(s) {
+  return s.status === 'offline' ||
+    s.reboot_required ||
+    s.updates_count > 0 ||
+    s.image_updates_count > 0 ||
+    s.custom_updates_count > 0 ||
+    s.disk_pct >= 85 ||
+    s.ram_pct >= 90;
+}
+
 function updatesCell(s) {
   const parts = [];
+  if (s.reboot_required)
+    parts.push(`<span title="${t('dash.needsReboot')}" style="white-space:nowrap;"><i class="fas fa-redo" style="font-size:10px;margin-right:3px;"></i></span>`);
   if (s.updates_count > 0)
     parts.push(`<span title="${t('dash.colUpdates')}" style="white-space:nowrap;"><i class="fas fa-box" style="font-size:10px;margin-right:3px;"></i>${s.updates_count}</span>`);
   if (s.image_updates_count > 0)

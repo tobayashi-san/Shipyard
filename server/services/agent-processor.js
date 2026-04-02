@@ -1,6 +1,7 @@
 const db = require('../db');
 const log = require('../utils/logger').child('agent:processor');
 const { collectStorageMountMetrics, parseConfiguredStorageMounts } = require('../utils/storage-mounts');
+const { parseZfsData } = require('../utils/zfs');
 
 function normalizeCollectorOutput(text) {
   // Some runner environments can emit NUL-separated lines.
@@ -156,6 +157,11 @@ function toServerInfo(serverId, report) {
     load_avg: loadAvg || existing.load_avg || null,
     reboot_required: existing.reboot_required || false,
     cpu_usage_pct: cpuPct ?? existing.cpu_usage_pct ?? null,
+    zfs_pools: parseZfsData(
+      normalizeCollectorOutput(collectors.get('zpool_list')?.output || ''),
+      normalizeCollectorOutput(collectors.get('zpool_status')?.output || ''),
+      normalizeCollectorOutput(collectors.get('zfs_list')?.output || ''),
+    ),
   };
 }
 

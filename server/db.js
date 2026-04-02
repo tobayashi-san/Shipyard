@@ -61,6 +61,7 @@ db.exec(`
     load_avg TEXT,
     reboot_required BOOLEAN DEFAULT 0,
     cpu_usage_pct REAL DEFAULT NULL,
+    zfs_pools TEXT DEFAULT '[]',
     updated_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
   );
@@ -214,6 +215,7 @@ try { db.exec('ALTER TABLE agent_config ADD COLUMN shipyard_url TEXT'); } catch 
 try { db.exec('ALTER TABLE servers ADD COLUMN storage_mounts TEXT DEFAULT \'[]\''); } catch {}
 try { db.exec('ALTER TABLE server_info ADD COLUMN storage_mount_metrics TEXT DEFAULT \'[]\''); } catch {}
 try { db.exec('ALTER TABLE custom_update_tasks ADD COLUMN trigger_output TEXT'); } catch {}
+try { db.exec('ALTER TABLE server_info ADD COLUMN zfs_pools TEXT DEFAULT \'[]\''); } catch {}
 
 // App settings table
 db.exec(`
@@ -374,8 +376,8 @@ const serverQueries = {
 const infoQueries = {
   get: db.prepare('SELECT * FROM server_info WHERE server_id = ?'),
   upsert: db.prepare(`
-    INSERT INTO server_info (server_id, os, kernel, cpu, cpu_cores, ram_total_mb, ram_used_mb, disk_total_gb, disk_used_gb, storage_mount_metrics, uptime_seconds, load_avg, reboot_required, cpu_usage_pct, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    INSERT INTO server_info (server_id, os, kernel, cpu, cpu_cores, ram_total_mb, ram_used_mb, disk_total_gb, disk_used_gb, storage_mount_metrics, uptime_seconds, load_avg, reboot_required, cpu_usage_pct, zfs_pools, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(server_id) DO UPDATE SET
       os = excluded.os, kernel = excluded.kernel, cpu = excluded.cpu, cpu_cores = excluded.cpu_cores,
       ram_total_mb = excluded.ram_total_mb, ram_used_mb = excluded.ram_used_mb,
@@ -384,6 +386,7 @@ const infoQueries = {
       uptime_seconds = excluded.uptime_seconds, load_avg = excluded.load_avg,
       reboot_required = excluded.reboot_required,
       cpu_usage_pct = excluded.cpu_usage_pct,
+      zfs_pools = excluded.zfs_pools,
       updated_at = datetime('now')
   `),
 };
@@ -519,7 +522,11 @@ module.exports = {
     get: (serverId) => {
       const row = infoQueries.get.get(serverId);
       if (!row) return row;
-      return { ...row, storage_mount_metrics: parseJsonArray(row.storage_mount_metrics) };
+      return {
+        ...row,
+        storage_mount_metrics: parseJsonArray(row.storage_mount_metrics),
+        zfs_pools: parseJsonArray(row.zfs_pools),
+      };
     },
     upsert: (serverId, info) => {
       infoQueries.upsert.run(
@@ -536,7 +543,8 @@ module.exports = {
         info.uptime_seconds,
         info.load_avg,
         info.reboot_required ? 1 : 0,
-        info.cpu_usage_pct ?? null
+        info.cpu_usage_pct ?? null,
+        JSON.stringify(info.zfs_pools || [])
       );
     },
   },

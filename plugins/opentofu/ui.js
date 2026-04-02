@@ -716,7 +716,7 @@ function renderRunsTable(runs, pagination) {
           </tr>`).join('')}
       </tbody>
     </table>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding-top:10px;font-size:12px;color:var(--text-muted);">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:10px 0 0;font-size:12px;color:var(--text-muted);">
       <div>Showing ${runs.length} of ${pagination.total} entries · Page ${pagination.page} / ${pagination.total_pages}</div>
       <div style="display:flex;align-items:center;gap:8px;">
         <label style="display:flex;align-items:center;gap:6px;">

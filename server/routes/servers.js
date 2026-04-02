@@ -410,7 +410,7 @@ router.post('/:id/reset-host-key', guardServerAccess, guard('canUseTerminal'), (
 });
 
 // GET /api/servers/:id/notes
-router.get('/:id/notes', guardServerAccess, guard('canViewServers'), (req, res) => {
+router.get('/:id/notes', guardServerAccess, guard('canViewNotes'), (req, res) => {
   try {
     res.json({ notes: req.server.notes || '' });
   } catch (error) {
@@ -419,7 +419,7 @@ router.get('/:id/notes', guardServerAccess, guard('canViewServers'), (req, res) 
 });
 
 // PUT /api/servers/:id/notes
-router.put('/:id/notes', guardServerAccess, guard('canEditServers'), (req, res) => {
+router.put('/:id/notes', guardServerAccess, guard('canEditNotes'), (req, res) => {
   try {
     if (typeof req.body.notes === 'string' && req.body.notes.length > 5000) {
       return res.status(400).json({ error: 'Notes too long (max 5000 characters)' });

@@ -70,6 +70,27 @@
       "cmd": "nproc",
       "timeout": 3,
       "parser": "raw_number"
+    },
+    {
+      "id": "zpool_list",
+      "description": "ZFS pool list (skipped if ZFS not installed)",
+      "cmd": "if command -v zpool >/dev/null 2>&1; then zpool list -Hp -o name,size,alloc,free,health; fi",
+      "timeout": 5,
+      "parser": "raw"
+    },
+    {
+      "id": "zpool_status",
+      "description": "ZFS pool status with scrub info",
+      "cmd": "if command -v zpool >/dev/null 2>&1; then zpool status; fi",
+      "timeout": 5,
+      "parser": "raw"
+    },
+    {
+      "id": "zfs_list",
+      "description": "ZFS dataset list",
+      "cmd": "if command -v zfs >/dev/null 2>&1; then zfs list -Hp -o name,used,avail,refer,mountpoint,type; fi",
+      "timeout": 5,
+      "parser": "raw"
     }
   ]
 }

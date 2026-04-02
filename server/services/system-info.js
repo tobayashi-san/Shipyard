@@ -1,5 +1,6 @@
 const sshManager = require('./ssh-manager');
 const { collectStorageMountMetrics, parseConfiguredStorageMounts } = require('../utils/storage-mounts');
+const { parseZfsData } = require('../utils/zfs');
 
 function shellQuote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
@@ -31,6 +32,10 @@ class SystemInfoService {
         // Two-sample CPU usage: pipe both /proc/stat reads into awk – no variable passing, no quoting issues
         "(grep '^cpu ' /proc/stat; sleep 1; grep '^cpu ' /proc/stat) | awk 'NR==1{for(i=2;i<=NF;i++)a[i]=$i} NR==2{t=0;for(i=2;i<=NF;i++)t+=$i-a[i];print(t>0?int(100*(t-($5-a[5]))/t):0)}' || echo 0",
         `${storageMountCmd} || true`,
+        // ZFS: pool list (tab-separated), pool status (scrub + health), dataset list
+        "if command -v zpool >/dev/null 2>&1; then zpool list -Hp -o name,size,alloc,free,health 2>/dev/null; else echo __NO_ZFS__; fi",
+        "if command -v zpool >/dev/null 2>&1; then zpool status 2>/dev/null; else echo __NO_ZFS__; fi",
+        "if command -v zfs >/dev/null 2>&1; then zfs list -Hp -o name,used,avail,refer,mountpoint,type 2>/dev/null; else echo __NO_ZFS__; fi",
       ].join('; echo "---SEP---"; ');
 
       const result = await sshManager.execCommand(server, script);
@@ -49,6 +54,9 @@ class SystemInfoService {
         reboot:    parts[9] || '0',
         cpu_usage: parts[10] || '0',
         storage_mounts: parts[11] || '',
+        zpool_list:   parts[12] || '',
+        zpool_status: parts[13] || '',
+        zfs_list:     parts[14] || '',
       };
 
       const [ramTotal, ramUsed] = (results.ram || '0 0').split(' ').map(Number);
@@ -69,6 +77,7 @@ class SystemInfoService {
         hostname: results.hostname || server.hostname,
         reboot_required: (results.reboot && results.reboot.trim() === '1'),
         cpu_usage_pct: Math.min(100, Math.max(0, parseInt(results.cpu_usage) || 0)),
+        zfs_pools: parseZfsData(results.zpool_list, results.zpool_status, results.zfs_list),
       };
     } catch (error) {
       throw new Error(`Failed to gather system info: ${error.message}`);

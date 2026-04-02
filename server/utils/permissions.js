@@ -44,6 +44,9 @@ const USER_DEFAULTS = {
   canRunCustomUpdates:     true,
   canEditCustomUpdates:    true,
   canDeleteCustomUpdates:  true,
+  // Notes
+  canViewNotes:  true,
+  canEditNotes:  true,
   // Misc
   canViewAudit: true,
 };

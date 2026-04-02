@@ -5,6 +5,8 @@ import { showAddServerModal } from './add-server-modal.js';
 import { openSshTerminal } from './ssh-terminal.js';
 import { t } from '../i18n.js';
 import { formatDateTimeFull, esc } from '../utils/format.js';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 // Docker returns CreatedAt as "2025-01-15 10:23:45 +0000 UTC" which new Date() can't parse
 function parseContainerDate(d) {
@@ -69,12 +71,11 @@ export async function renderServerDetail(serverId) {
       <button class="tab-btn active" data-tab="overview">${t('det.tabOverview')}</button>
       ${hasCap('canViewDocker') ? `<button class="tab-btn" data-tab="docker">${t('det.tabDocker')}</button>` : ''}
       ${(hasCap('canViewUpdates') || hasCap('canRunUpdates') || hasCap('canRebootServers') || hasCap('canViewCustomUpdates') || hasCap('canRunCustomUpdates') || hasCap('canEditCustomUpdates') || hasCap('canDeleteCustomUpdates')) ? `<button class="tab-btn" data-tab="updates">${t('det.tabUpdates')}</button>` : ''}
-      <button class="tab-btn" data-tab="history">${t('det.tabHistory')}</button>
       ${state.user?.role === 'admin' && state.whiteLabel?.agentEnabled ? `<button class="tab-btn" data-tab="agent">${t('det.tabAgent')}</button>` : ''}
-      <button class="tab-btn" data-tab="notes">
+      ${hasCap('canViewNotes') ? `<button class="tab-btn" data-tab="notes">
         <i class="fas fa-sticky-note" style="margin-right:5px;"></i>${t('det.tabNotes')}
         ${server.notes?.trim() ? '<span class="nav-item-badge" style="margin-left:6px;" aria-label="has notes">●</span>' : ''}
-      </button>
+      </button>` : ''}
     </div>
 
     <!-- Tab panels -->
@@ -231,18 +232,6 @@ export async function renderServerDetail(serverId) {
         </div>` : ''}
       </div>
 
-      <!-- History tab -->
-      <div class="tab-panel" id="tab-history">
-        <div class="panel">
-          <div class="section-header">
-            <h3><i class="fas fa-history"></i> ${t('det.history')}</h3>
-          </div>
-          <div id="history-content">
-            <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
-          </div>
-        </div>
-      </div>
-
       <!-- Agent tab -->
       ${state.user?.role === 'admin' && state.whiteLabel?.agentEnabled ? `<div class="tab-panel" id="tab-agent">
         <div class="panel">
@@ -256,21 +245,28 @@ export async function renderServerDetail(serverId) {
       </div>` : ''}
 
       <!-- Notes tab -->
-      <div class="tab-panel" id="tab-notes">
+      ${hasCap('canViewNotes') ? `<div class="tab-panel" id="tab-notes">
         <div class="notes-layout">
           <div class="panel" style="flex:1;display:flex;flex-direction:column;min-height:0;">
             <div class="section-header">
               <h3><i class="fas fa-sticky-note"></i> ${t('det.tabNotes')}</h3>
-              <span class="notes-saved-indicator" id="notes-status"></span>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="notes-saved-indicator" id="notes-status"></span>
+                ${hasCap('canEditNotes') ? `<button class="btn btn-secondary btn-sm" id="notes-toggle-edit">
+                  <i class="fas fa-edit"></i> ${t('det.notesEdit')}
+                </button>` : ''}
+              </div>
             </div>
+            <div class="notes-view markdown-body" id="notes-view"></div>
             <textarea
               class="notes-editor"
               id="notes-textarea"
               placeholder="${t('det.notesPlaceholder')}"
+              style="display:none;"
             ></textarea>
           </div>
         </div>
-      </div>
+      </div>` : ''}
     </div>
   `;
 
@@ -280,7 +276,6 @@ export async function renderServerDetail(serverId) {
 
   let dockerLoaded = false;
   let updatesLoaded = false;
-  let historyLoaded = false;
   let agentLoaded = false;
   let notesLoaded = false;
 
@@ -294,7 +289,6 @@ export async function renderServerDetail(serverId) {
       // Lazy load on first switch
       if (btn.dataset.tab === 'docker' && !dockerLoaded) { loadDockerContainers(serverId); dockerLoaded = true; }
       if (btn.dataset.tab === 'updates' && !updatesLoaded) { loadUpdates(serverId); updatesLoaded = true; }
-      if (btn.dataset.tab === 'history' && !historyLoaded) { loadHistory(serverId); historyLoaded = true; }
       if (btn.dataset.tab === 'agent' && !agentLoaded) { loadAgentTab(serverId); agentLoaded = true; }
       if (btn.dataset.tab === 'notes' && !notesLoaded) { setupNotesTab(serverId); notesLoaded = true; }
     });
@@ -351,7 +345,6 @@ export async function renderServerDetail(serverId) {
     try {
       await api.runUpdate(serverId);
       showToast(t('det.updateStarted'), 'success');
-      loadHistory(serverId);
     } catch (e) {
       showToast(t('common.errorPrefix', { msg: e.message }), 'error');
     } finally {
@@ -481,6 +474,49 @@ function renderServerInfo(info) {
       }).join('')}
   ` : '';
 
+  // ── ZFS pools ──────────────────────────────────────────────
+  const zfsPools = Array.isArray(info.zfs_pools) ? info.zfs_pools : [];
+  const zfsHtml = zfsPools.length > 0 ? `
+      <div class="res-subsection"><i class="fas fa-database" style="margin-right:6px;opacity:.6;"></i>ZFS Pools</div>
+      ${zfsPools.map(pool => {
+        const poolPct = pool.size_gb ? Math.round((pool.alloc_gb / pool.size_gb) * 100) : 0;
+        const poolValueClass = poolPct > 90 ? 'res-critical' : poolPct > 70 ? 'res-warn' : '';
+        const healthClass = pool.health === 'ONLINE' ? 'badge-online' : pool.health === 'DEGRADED' ? 'badge-warning' : pool.health === 'FAULTED' ? 'badge-error' : 'badge-unknown';
+        const poolAbsolute = pool.size_gb != null ? `${formatStorageGb(pool.alloc_gb)} / ${formatStorageGb(pool.size_gb)}` : '—';
+        const scrubInfo = pool.scrub ? `<span class="res-path" style="margin-left:8px;">scrub: ${esc(pool.scrub.length > 60 ? pool.scrub.slice(0, 60) + '…' : pool.scrub)}</span>` : '';
+        const datasets = Array.isArray(pool.datasets) ? pool.datasets.filter(d => d.name !== pool.name) : [];
+        return `
+        <div class="res-row" style="margin-bottom:${datasets.length ? '2px' : '0'};">
+          <div class="res-header">
+            <span class="res-label">
+              <span class="badge ${healthClass}" style="font-size:10px;padding:1px 6px;margin-right:6px;">${esc(pool.health)}</span>
+              ${esc(pool.name)}${scrubInfo}
+            </span>
+            <span class="res-value ${poolValueClass}">${poolAbsolute} <span style="opacity:.6;font-size:11px;">(${poolPct}%)</span></span>
+          </div>
+          ${bar(poolPct)}
+        </div>
+        ${datasets.length > 0 ? `<div style="padding-left:18px;">
+          ${datasets.map(ds => {
+            const dsTotal = (ds.used_gb || 0) + (ds.avail_gb || 0);
+            const dsPct = dsTotal > 0 ? Math.round((ds.used_gb / dsTotal) * 100) : 0;
+            const dsValueClass = dsPct > 90 ? 'res-critical' : dsPct > 70 ? 'res-warn' : '';
+            const shortName = ds.name.startsWith(pool.name + '/') ? ds.name.slice(pool.name.length + 1) : ds.name;
+            const mountLabel = ds.mountpoint && ds.mountpoint !== '-' && ds.mountpoint !== 'none' ? ` <span class="res-path">${esc(ds.mountpoint)}</span>` : '';
+            const typeLabel = ds.type && ds.type !== 'filesystem' ? ` <span class="res-path">${esc(ds.type)}</span>` : '';
+            return `
+            <div class="res-row" style="margin-bottom:0;">
+              <div class="res-header">
+                <span class="res-label" style="font-size:12px;">${esc(shortName)}${typeLabel}${mountLabel}</span>
+                <span class="res-value ${dsValueClass}" style="font-size:12px;">${formatStorageGb(ds.used_gb)} / ${formatStorageGb(dsTotal)}${dsTotal > 0 ? ` <span style="opacity:.6;font-size:11px;">(${dsPct}%)</span>` : ''}</span>
+              </div>
+              ${dsTotal > 0 ? bar(dsPct) : ''}
+            </div>`;
+          }).join('')}
+        </div>` : ''}`;
+      }).join('')}
+  ` : '';
+
   resEl.innerHTML = `
     <div class="res-block">
       ${cpuPct !== null ? `
@@ -506,6 +542,7 @@ function renderServerInfo(info) {
         ${bar(diskPct)}
       </div>
       ${storageMountsHtml}
+      ${zfsHtml}
     </div>
   `;
 }
@@ -1503,40 +1540,88 @@ function formatDate(dateStr) {
 // ============================================================
 // Notes Tab
 // ============================================================
+function renderMarkdown(raw) {
+  return DOMPurify.sanitize(marked.parse(raw || '', { breaks: true }));
+}
+
 async function setupNotesTab(serverId) {
   const textarea = document.getElementById('notes-textarea');
+  const viewEl = document.getElementById('notes-view');
+  const toggleBtn = document.getElementById('notes-toggle-edit');
   const status = document.getElementById('notes-status');
-  if (!textarea) return;
+  if (!viewEl) return;
+
+  let notesText = '';
+  let editing = false;
+
+  const showView = () => {
+    editing = false;
+    if (viewEl) {
+      viewEl.innerHTML = notesText.trim()
+        ? renderMarkdown(notesText)
+        : `<p class="notes-empty">${esc(t('det.notesEmpty'))}</p>`;
+      viewEl.style.display = '';
+    }
+    if (textarea) textarea.style.display = 'none';
+    if (toggleBtn) {
+      toggleBtn.innerHTML = `<i class="fas fa-edit"></i> ${t('det.notesEdit')}`;
+    }
+  };
+
+  const showEdit = () => {
+    editing = true;
+    if (textarea) { textarea.value = notesText; textarea.style.display = ''; textarea.focus(); }
+    if (viewEl) viewEl.style.display = 'none';
+    if (toggleBtn) {
+      toggleBtn.innerHTML = `<i class="fas fa-eye"></i> ${t('det.notesView')}`;
+    }
+  };
 
   // Load from server
   try {
     const { notes } = await api.getServerNotes(serverId);
-    textarea.value = notes;
+    notesText = notes || '';
   } catch {
     if (status) { status.textContent = t('common.loadFailed'); status.className = 'notes-saved-indicator error'; }
   }
-  textarea.focus();
 
-  let debounceTimer = null;
+  showView();
 
-  textarea.addEventListener('input', () => {
-    if (status) { status.textContent = ''; status.className = 'notes-saved-indicator'; }
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(async () => {
-      try {
-        await api.saveServerNotes(serverId, textarea.value);
-        if (status) {
-          status.textContent = t('det.notesSaved');
-          status.className = 'notes-saved-indicator saved';
-          setTimeout(() => { if (status) status.textContent = ''; }, 2000);
-        }
-      } catch {
-        if (status) { status.textContent = t('det.notesError'); status.className = 'notes-saved-indicator error'; }
+  // Toggle button
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', () => {
+      if (editing) {
+        notesText = textarea?.value || '';
+        showView();
+      } else {
+        showEdit();
       }
-    }, 800);
-  });
+    });
+  }
+
+  // Auto-save on edit
+  if (textarea) {
+    let debounceTimer = null;
+    textarea.addEventListener('input', () => {
+      if (status) { status.textContent = ''; status.className = 'notes-saved-indicator'; }
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(async () => {
+        notesText = textarea.value;
+        try {
+          await api.saveServerNotes(serverId, notesText);
+          if (status) {
+            status.textContent = t('det.notesSaved');
+            status.className = 'notes-saved-indicator saved';
+            setTimeout(() => { if (status) status.textContent = ''; }, 2000);
+          }
+        } catch {
+          if (status) { status.textContent = t('det.notesError'); status.className = 'notes-saved-indicator error'; }
+        }
+      }, 800);
+    });
+  }
 }
 
 // Kept for legacy compat
 function showTerminal(title) { openGlobalTerminal(title); }
-export { showTerminal, loadUpdates, loadHistory };
+export { showTerminal, loadUpdates };

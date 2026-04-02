@@ -1481,6 +1481,8 @@ async function loadRolesTab() {
             { key: 'canEditServers',         label: 'Edit' },
             { key: 'canDeleteServers',       label: 'Delete' },
             { key: 'canUseTerminal',         label: 'SSH Terminal' },
+            { key: 'canViewNotes',           label: 'View Notes' },
+            { key: 'canEditNotes',           label: 'Edit Notes' },
             { key: 'canExportImportServers', label: 'Export / Import' },
           ], p)}
           <div class="rf-subsection-label">Docker</div>

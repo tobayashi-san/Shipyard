@@ -13,6 +13,14 @@ function getGitSync() {
   return _gitSync;
 }
 
+let _sshManager = null;
+function getSshManager() {
+  if (!_sshManager) {
+    try { _sshManager = require('../../server/services/ssh-manager'); } catch {}
+  }
+  return _sshManager;
+}
+
 // Map of currently running processes: runId -> ChildProcess
 const _running = new Map();
 
@@ -486,6 +494,23 @@ async function reconcileManagedServers({ db, workspace, desiredServers, logMeta 
 
     upsertMapping.run(randomUUID(), workspace.id, desiredServer.resource_key, targetServer.id, createdByPlugin ? 1 : 0);
     trackedServerIds.add(targetServer.id);
+  }
+
+  // Auto-reset stale SSH host keys for all synced IPs so re-deployed VMs
+  // on the same IP don't cause host key verification failures.
+  const syncedIps = desiredServers.map(s => s.ip_address).filter(Boolean);
+  if (syncedIps.length > 0) {
+    try {
+      const ssh = getSshManager();
+      if (ssh) {
+        const result = ssh.removeKnownHostEntries(syncedIps);
+        if (result.removed.length > 0) {
+          log.info({ removed: result.removed }, 'Auto-cleared stale SSH host keys after apply');
+        }
+      }
+    } catch (err) {
+      log.warn({ err }, 'Failed to auto-clear SSH host keys');
+    }
   }
 
   for (const mapping of mappings) {
