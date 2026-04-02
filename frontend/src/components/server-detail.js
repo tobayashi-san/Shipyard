@@ -71,6 +71,7 @@ export async function renderServerDetail(serverId) {
       <button class="tab-btn active" data-tab="overview">${t('det.tabOverview')}</button>
       ${hasCap('canViewDocker') ? `<button class="tab-btn" data-tab="docker">${t('det.tabDocker')}</button>` : ''}
       ${(hasCap('canViewUpdates') || hasCap('canRunUpdates') || hasCap('canRebootServers') || hasCap('canViewCustomUpdates') || hasCap('canRunCustomUpdates') || hasCap('canEditCustomUpdates') || hasCap('canDeleteCustomUpdates')) ? `<button class="tab-btn" data-tab="updates">${t('det.tabUpdates')}</button>` : ''}
+      <button class="tab-btn" data-tab="history">${t('det.tabHistory')}</button>
       ${state.user?.role === 'admin' && state.whiteLabel?.agentEnabled ? `<button class="tab-btn" data-tab="agent">${t('det.tabAgent')}</button>` : ''}
       ${hasCap('canViewNotes') ? `<button class="tab-btn" data-tab="notes">
         <i class="fas fa-sticky-note" style="margin-right:5px;"></i>${t('det.tabNotes')}
@@ -134,16 +135,6 @@ export async function renderServerDetail(serverId) {
               </table>
             </div>
 
-            <!-- Recent Activity -->
-            <div class="panel">
-              <div class="section-header">
-                <h3><i class="fas fa-history"></i> ${t('det.tabHistory')}</h3>
-                <span style="font-size:11px;color:var(--text-muted);">${t('det.recent')}</span>
-              </div>
-              <div id="recent-activity-content">
-                <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
-              </div>
-            </div>
           </div>
 
           <!-- Resources + Network -->
@@ -232,6 +223,18 @@ export async function renderServerDetail(serverId) {
         </div>` : ''}
       </div>
 
+      <!-- History tab -->
+      <div class="tab-panel" id="tab-history">
+        <div class="panel">
+          <div class="section-header">
+            <h3><i class="fas fa-history"></i> ${t('det.tabHistory')}</h3>
+          </div>
+          <div id="history-content">
+            <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Agent tab -->
       ${state.user?.role === 'admin' && state.whiteLabel?.agentEnabled ? `<div class="tab-panel" id="tab-agent">
         <div class="panel">
@@ -276,6 +279,7 @@ export async function renderServerDetail(serverId) {
 
   let dockerLoaded = false;
   let updatesLoaded = false;
+  let historyLoaded = false;
   let agentLoaded = false;
   let notesLoaded = false;
 
@@ -289,6 +293,7 @@ export async function renderServerDetail(serverId) {
       // Lazy load on first switch
       if (btn.dataset.tab === 'docker' && !dockerLoaded) { loadDockerContainers(serverId); dockerLoaded = true; }
       if (btn.dataset.tab === 'updates' && !updatesLoaded) { loadUpdates(serverId); updatesLoaded = true; }
+      if (btn.dataset.tab === 'history' && !historyLoaded) { loadHistory(serverId); historyLoaded = true; }
       if (btn.dataset.tab === 'agent' && !agentLoaded) { loadAgentTab(serverId); agentLoaded = true; }
       if (btn.dataset.tab === 'notes' && !notesLoaded) { setupNotesTab(serverId); notesLoaded = true; }
     });
@@ -401,7 +406,6 @@ export async function renderServerDetail(serverId) {
       if (state.currentView !== 'server-detail' || state.selectedServerId !== serverId) return;
       loadDockerContainers(serverId);
       loadServerInfo(serverId);
-      loadRecentActivity(serverId);
     }, delayMs);
   };
   document.addEventListener('shipyard:compose-changed', _composeChangedListener);
@@ -534,7 +538,6 @@ async function loadServerInfo(serverId) {
     const info = await api.getServerInfo(serverId);
     if (!info) return;
     renderServerInfo(info);
-    loadRecentActivity(serverId);
 
     // Accurate latency: 3 rapid pings to /api/ping, average the results
     (async () => {
@@ -1605,4 +1608,4 @@ async function setupNotesTab(serverId) {
 
 // Kept for legacy compat
 function showTerminal(title) { openGlobalTerminal(title); }
-export { showTerminal, loadUpdates };
+export { showTerminal, loadUpdates, loadHistory };

@@ -1,6 +1,6 @@
 import { renderSidebar } from './components/sidebar.js';
 import { renderDashboard, refreshDashboardData } from './components/dashboard.js';
-import { renderServerDetail, loadUpdates } from './components/server-detail.js';
+import { renderServerDetail, loadUpdates, loadHistory } from './components/server-detail.js';
 import { renderSettings, applyWhiteLabel } from './components/settings.js';
 import { renderPlaybooks } from './components/playbooks.js';
 import { renderServers, refreshServersInPlace } from './components/servers.js';
@@ -297,6 +297,7 @@ async function boot() {
       // Reload updates & history on server-detail after a run finishes
       if (state.currentView === 'server-detail' && state.selectedServerId) {
         loadUpdates(state.selectedServerId);
+        loadHistory(state.selectedServerId);
       }
     } else if (msg.type === 'update_error' || msg.type === 'compose_error' ||
                msg.type === 'ansible_error' || msg.type === 'bulk_update_error') {
