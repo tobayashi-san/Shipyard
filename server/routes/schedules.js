@@ -68,7 +68,10 @@ router.put('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'can
     }
     fields.cronExpression = cronExpression;
   }
-  if (enabled !== undefined) fields.enabled = enabled ? 1 : 0;
+  if (enabled !== undefined) {
+    if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be a boolean' });
+    fields.enabled = enabled ? 1 : 0;
+  }
 
   if (Object.keys(fields).length === 0) {
     return res.status(400).json({ error: 'No fields to update' });

@@ -524,8 +524,10 @@ router.get('/:id/history', guardServerAccess, guard('canViewServers'), (req, res
     if (server) {
       const allRuns = db.scheduleHistory.getAll(200);
       const serverName = server.name;
+      const createdAt = server.created_at ? new Date(server.created_at) : null;
       scheduleRuns = allRuns
-        .filter(r => targetIncludesServer(r.targets, serverName))
+        .filter(r => targetIncludesServer(r.targets, serverName) &&
+          (!createdAt || new Date(r.started_at) >= createdAt))
         .map(r => ({
           id: r.id,
           server_id: req.params.id,

@@ -11,6 +11,7 @@
     "vite": "^6.2.2"
   },
   "dependencies": {
+    "@fortawesome/fontawesome-free": "^6.6.0",
     "@babel/core": "^7.29.0",
     "@codemirror/lang-yaml": "^6.1.2",
     "@lezer/highlight": "^1.2.3",

@@ -69,7 +69,7 @@
   --kpi-value-size-compact: 24px;
 
   /* Typography */
-  --font: 'Inter', system-ui, 'Segoe UI', sans-serif;
+  --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
 
   /* Misc */
@@ -545,6 +545,47 @@ button:focus-visible,
 }
 
 .tab-panel.active {
+  display: block;
+}
+
+.sub-tab-bar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+}
+
+.sub-tab-btn {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: -1px;
+}
+
+.sub-tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.sub-tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.sub-tab-panel {
+  display: none;
+}
+
+.sub-tab-panel.active {
   display: block;
 }
 
@@ -2625,7 +2666,7 @@ input[type="color"].form-input::-moz-color-swatch {
 #btn-todo-filter.active {
   background: var(--bg-hover);
   color: var(--text-primary);
-  border-color: var(--border-color);
+  border-color: var(--border);
 }
 
 .dash-alert {

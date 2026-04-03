@@ -174,7 +174,10 @@ router.put('/settings', adminOnly, (req, res) => {
     if (accentColor   !== undefined) db.settings.set('wl_accent_color', str(accentColor, 20));
     if (theme         !== undefined) db.settings.set('ui_theme',        str(theme, 20));
     if (timeFormat    !== undefined) db.settings.set('ui_time_format',  str(timeFormat, 10));
-    if (agentEnabled  !== undefined) db.settings.set('agent_enabled',   agentEnabled ? '1' : '0');
+    if (agentEnabled !== undefined) {
+      if (typeof agentEnabled !== 'boolean') return res.status(400).json({ error: 'agentEnabled must be a boolean' });
+      db.settings.set('agent_enabled', agentEnabled ? '1' : '0');
+    }
     if (webhookUrl    !== undefined) db.settings.set('webhook_url',     str(webhookUrl, 1000));
     if (webhookSecret !== undefined) setSecret(db, 'webhook_secret',  str(webhookSecret, 500));
     if (smtpHost      !== undefined) db.settings.set('smtp_host',       str(smtpHost, 255));
@@ -183,8 +186,14 @@ router.put('/settings', adminOnly, (req, res) => {
     if (smtpPass      !== undefined) setSecret(db, 'smtp_pass',       str(smtpPass, 500));
     if (smtpFrom      !== undefined) db.settings.set('smtp_from',       str(smtpFrom, 256));
     if (smtpTo               !== undefined) db.settings.set('smtp_to',                  str(smtpTo, 256));
-    if (notifPlaybookFailed  !== undefined) db.settings.set('notify_playbook_failed',   notifPlaybookFailed  ? '1' : '0');
-    if (notifUpdateFailed    !== undefined) db.settings.set('notify_update_failed',     notifUpdateFailed    ? '1' : '0');
+    if (notifPlaybookFailed !== undefined) {
+      if (typeof notifPlaybookFailed !== 'boolean') return res.status(400).json({ error: 'notifPlaybookFailed must be a boolean' });
+      db.settings.set('notify_playbook_failed', notifPlaybookFailed ? '1' : '0');
+    }
+    if (notifUpdateFailed !== undefined) {
+      if (typeof notifUpdateFailed !== 'boolean') return res.status(400).json({ error: 'notifUpdateFailed must be a boolean' });
+      db.settings.set('notify_update_failed', notifUpdateFailed ? '1' : '0');
+    }
     res.json({ success: true });
   } catch (error) {
     serverError(res, error, 'save settings');
@@ -229,6 +238,12 @@ router.get('/polling-config', (req, res) => {
 router.put('/polling-config', adminOnly, (req, res) => {
   const { info, updates, imageUpdates, customUpdates } = req.body;
   const save = (key, val) => { if (val !== undefined) db.settings.set(key, String(val)); };
+  const checkEnabled = (section, name) => {
+    if (section && section.enabled !== undefined && typeof section.enabled !== 'boolean')
+      return res.status(400).json({ error: `${name}.enabled must be a boolean` });
+  };
+  if (checkEnabled(info, 'info') || checkEnabled(updates, 'updates') ||
+      checkEnabled(imageUpdates, 'imageUpdates') || checkEnabled(customUpdates, 'customUpdates')) return;
   if (info)          { save('poll_info_enabled', info.enabled ? '1' : '0');                   save('poll_info_interval_min', Math.max(1, parseInt(info.intervalMin) || 5)); }
   if (updates)       { save('poll_updates_enabled', updates.enabled ? '1' : '0');             save('poll_updates_interval_min', Math.max(1, parseInt(updates.intervalMin) || 60)); }
   if (imageUpdates)  { save('poll_image_updates_enabled', imageUpdates.enabled ? '1' : '0'); save('poll_image_updates_interval_min', Math.max(1, parseInt(imageUpdates.intervalMin) || 360)); }

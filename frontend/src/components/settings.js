@@ -25,18 +25,20 @@ async function saveWhiteLabel(obj) {
 
 export function applyWhiteLabel() {
   const wl = getWhiteLabel();
-  if (wl.appName) {
-    document.title = wl.appName;
-    document.querySelectorAll('.sidebar-logo-text h1').forEach(el => el.textContent = wl.appName);
-  }
-  if (wl.appTagline) {
-    document.querySelectorAll('.sidebar-logo-text span').forEach(el => el.textContent = wl.appTagline);
-  }
-  if (wl.accentColor) {
-    document.documentElement.style.setProperty('--accent', wl.accentColor);
-    document.documentElement.style.setProperty('--accent-hover', shadeColor(wl.accentColor, -15));
-    document.documentElement.style.setProperty('--accent-light', hexToLight(wl.accentColor));
-  }
+  const defaultName = 'Shipyard';
+  const defaultTagline = 'Infrastructure';
+  const defaultAccent = '#3b82f6';
+
+  const name = wl.appName || defaultName;
+  const tagline = wl.appTagline || defaultTagline;
+  const accent = wl.accentColor || defaultAccent;
+
+  document.title = name;
+  document.querySelectorAll('.sidebar-logo-text h1').forEach(el => el.textContent = name);
+  document.querySelectorAll('.sidebar-logo-text span').forEach(el => el.textContent = tagline);
+  document.documentElement.style.setProperty('--accent', accent);
+  document.documentElement.style.setProperty('--accent-hover', shadeColor(accent, -15));
+  document.documentElement.style.setProperty('--accent-light', hexToLight(accent));
   document.documentElement.dataset.theme = localStorage.getItem('theme') || 'auto';
   const logoIcon = document.querySelector('.sidebar-logo-icon');
   if (logoIcon) logoIcon.style.display = wl.showIcon === false ? 'none' : '';
@@ -98,11 +100,8 @@ export async function renderSettings() {
       <button class="tab-btn" data-tab="plugins">
         <i class="fas fa-puzzle-piece"></i> ${t('set.tabPlugins')}
       </button>
-      <button class="tab-btn" data-tab="users">
-        <i class="fas fa-users"></i> Users
-      </button>
-      <button class="tab-btn" data-tab="roles">
-        <i class="fas fa-shield-halved"></i> Roles
+      <button class="tab-btn" data-tab="users-roles">
+        <i class="fas fa-users"></i> Users & Roles
       </button>
       <button class="tab-btn" data-tab="audit">
         <i class="fas fa-clipboard-list"></i> ${t('set.tabAudit')}
@@ -476,16 +475,24 @@ export async function renderSettings() {
       </div>
 
       <!-- Tab: Users -->
-      <div class="tab-panel" id="tab-users">
-        <div id="users-settings-content">
-          <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
+      <div class="tab-panel" id="tab-users-roles">
+        <div class="sub-tab-bar">
+          <button class="sub-tab-btn active" data-subtab="users-sub">
+            <i class="fas fa-users"></i> Users
+          </button>
+          <button class="sub-tab-btn" data-subtab="roles-sub">
+            <i class="fas fa-shield-halved"></i> Roles
+          </button>
         </div>
-      </div>
-
-      <!-- Tab: Roles -->
-      <div class="tab-panel" id="tab-roles">
-        <div id="roles-settings-content">
-          <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
+        <div class="sub-tab-panel active" id="subtab-users-sub">
+          <div id="users-settings-content">
+            <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
+          </div>
+        </div>
+        <div class="sub-tab-panel" id="subtab-roles-sub">
+          <div id="roles-settings-content">
+            <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
+          </div>
         </div>
       </div>
 
@@ -516,18 +523,25 @@ export async function renderSettings() {
   setupDangerZone();
   loadPluginsList();
 
-  // Users tab loads lazily when first clicked
-  document.querySelector('.tab-btn[data-tab="users"]')?.addEventListener('click', () => {
+  // Users & Roles tab loads lazily when first clicked
+  document.querySelector('.tab-btn[data-tab="users-roles"]')?.addEventListener('click', () => {
     if (!document.getElementById('users-settings-content')?.dataset.loaded) {
       loadUsersTab();
     }
-  });
-
-  // Roles tab loads lazily when first clicked
-  document.querySelector('.tab-btn[data-tab="roles"]')?.addEventListener('click', () => {
     if (!document.getElementById('roles-settings-content')?.dataset.loaded) {
       loadRolesTab();
     }
+  });
+
+  // Sub-tab switching within Users & Roles
+  document.querySelectorAll('.sub-tab-bar .sub-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const parent = btn.closest('.tab-panel');
+      parent.querySelectorAll('.sub-tab-btn').forEach(b => b.classList.remove('active'));
+      parent.querySelectorAll('.sub-tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      parent.querySelector('#subtab-' + btn.dataset.subtab)?.classList.add('active');
+    });
   });
 
   // Audit tab loads lazily when first clicked
@@ -1709,8 +1723,8 @@ async function loadUsersTab() {
                 <button class="btn btn-secondary btn-sm btn-reset-pw" data-id="${esc(u.id)}" data-username="${esc(u.username)}" title="Reset Password">
                   <i class="fas fa-key"></i>
                 </button>
-                ${u.totp_enabled ? `<button class="btn btn-secondary btn-sm btn-disable-2fa" data-id="${esc(u.id)}" data-username="${esc(u.username)}" title="Disable 2FA">
-                  <i class="fas fa-shield-xmark"></i>
+                ${u.totp_enabled ? `<button class="btn btn-warning btn-sm btn-disable-2fa" data-id="${esc(u.id)}" data-username="${esc(u.username)}" title="Disable 2FA">
+                  <i class="fas fa-shield-halved"></i>
                 </button>` : ''}
                 <button class="btn btn-danger btn-sm btn-del-user" data-id="${esc(u.id)}" data-username="${esc(u.username)}" title="Delete" ${isSelf ? 'style="visibility:hidden;"' : ''}>
                   <i class="fas fa-trash"></i>

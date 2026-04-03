@@ -1,3 +1,4 @@
+import '@fortawesome/fontawesome-free/css/all.min.css';
 import { renderSidebar } from './components/sidebar.js';
 import { renderDashboard, refreshDashboardData } from './components/dashboard.js';
 import { renderServerDetail, loadUpdates, loadHistory } from './components/server-detail.js';

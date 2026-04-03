@@ -5,6 +5,20 @@ const db = require('../db');
 const { adminOnly } = require('../middleware/auth');
 const { serverError } = require('../utils/http-error');
 
+const USERNAME_RE = /^[A-Za-z0-9._-]{3,32}$/;
+function validateUsername(u) {
+  if (!u || typeof u !== 'string') return 'username required';
+  if (!USERNAME_RE.test(u.trim())) return 'Username must be 3-32 characters (letters, digits, . _ -)';
+  return null;
+}
+function normalizeEmail(e) {
+  if (e === undefined || e === null || e === '') return '';
+  if (typeof e !== 'string') return { error: 'email must be a string' };
+  const trimmed = e.trim().toLowerCase();
+  if (trimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return { error: 'Invalid email address' };
+  return trimmed;
+}
+
 // GET /api/users – list all users (no password_hash)
 router.get('/', adminOnly, (req, res) => {
   try {
@@ -17,18 +31,22 @@ router.get('/', adminOnly, (req, res) => {
 // POST /api/users – create user
 router.post('/', adminOnly, async (req, res) => {
   const { username, displayName, email, password, role } = req.body;
-  if (!username || typeof username !== 'string' || !username.trim()) {
-    return res.status(400).json({ error: 'username required' });
-  }
+  const usernameErr = validateUsername(username);
+  if (usernameErr) return res.status(400).json({ error: usernameErr });
   if (!password || typeof password !== 'string' || password.length < 12) {
     return res.status(400).json({ error: 'Password must be at least 12 characters' });
   }
-  // Accept 'admin', any role in the roles table, or fallback to 'user'
+  const emailNorm = normalizeEmail(email);
+  if (emailNorm && emailNorm.error) return res.status(400).json({ error: emailNorm.error });
   const knownRoles = db.roles.getAll().map(r => r.id);
-  const userRole = (role === 'admin' || knownRoles.includes(role)) ? role : 'user';
+  if (role !== undefined && role !== 'admin' && !knownRoles.includes(role)) {
+    return res.status(400).json({ error: 'Invalid role' });
+  }
+  const userRole = role || 'user';
   try {
     const hash = await bcrypt.hash(password, 12);
-    const user = db.users.create(username.trim(), email || '', hash, userRole, displayName || '');
+    const displayNameNorm = (displayName && typeof displayName === 'string') ? displayName.trim().replace(/\s+/g, ' ').slice(0, 100) : '';
+    const user = db.users.create(username.trim(), emailNorm || '', hash, userRole, displayNameNorm);
     db.auditLog.write('users.create', `Created user: ${username}`, req.ip, true, req.user?.username);
     res.status(201).json(user);
   } catch (e) {
@@ -45,12 +63,19 @@ router.put('/:id', adminOnly, (req, res) => {
   const { username, displayName, email, role } = req.body;
   const fields = {};
   if (username !== undefined) {
-    const u = String(username).trim().slice(0, 64);
-    if (!u) return res.status(400).json({ error: 'Username cannot be empty' });
-    fields.username = u;
+    const usernameErr = validateUsername(username);
+    if (usernameErr) return res.status(400).json({ error: usernameErr });
+    fields.username = username.trim();
   }
-  if (displayName !== undefined) fields.display_name = String(displayName).trim().slice(0, 100);
-  if (email !== undefined) fields.email = String(email).trim().slice(0, 256);
+  if (displayName !== undefined) {
+    if (typeof displayName !== 'string') return res.status(400).json({ error: 'displayName must be a string' });
+    fields.display_name = displayName.trim().replace(/\s+/g, ' ').slice(0, 100);
+  }
+  if (email !== undefined) {
+    const emailNorm = normalizeEmail(email);
+    if (emailNorm && emailNorm.error) return res.status(400).json({ error: emailNorm.error });
+    fields.email = emailNorm || '';
+  }
   if (role !== undefined) {
     const knownRoles = db.roles.getAll().map(r => r.id);
     if (role !== 'admin' && !knownRoles.includes(role)) return res.status(400).json({ error: 'Invalid role' });

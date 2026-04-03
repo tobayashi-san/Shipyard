@@ -48,6 +48,13 @@ const wss    = new WebSocketServer({ noServer: true });
 const wssSsh = new WebSocketServer({ noServer: true });
 
 server.on('upgrade', (req, socket, head) => {
+  // Reject browser connections from unconfigured origins
+  const origin = req.headers.origin;
+  if (origin && !isAllowedRequestOrigin(allowedOrigins, origin)) {
+    socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+    socket.destroy();
+    return;
+  }
   const pathname = new URL(req.url, 'http://localhost').pathname;
   if (pathname === '/ws') {
     wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req));
@@ -61,11 +68,9 @@ server.on('upgrade', (req, socket, head) => {
 const PORT = process.env.PORT || (isHttps ? 443 : 3001);
 
 // Middleware
-app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',')
-    : ['http://localhost:3000', 'http://localhost:5173'],
-}));
+const { parseAllowedOrigins, isAllowedRequestOrigin } = require('./utils/allowed-origins');
+const allowedOrigins = parseAllowedOrigins(process.env.ALLOWED_ORIGINS);
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json({ limit: '2mb' }));
 
 // Request logging
@@ -100,8 +105,8 @@ app.use((req, res, next) => {
       // In production the Vite build emits only external module scripts — no inline scripts needed.
       // In development the Express server does not serve the frontend, so this only applies in production.
       isProduction ? "script-src 'self'" : "script-src 'self' 'unsafe-inline'",
-      "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com",
-      "font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com",
+      "style-src 'self' 'unsafe-inline'",
+      "font-src 'self' data:",
       "connect-src 'self' ws: wss:",
       "img-src 'self' data:",
       "frame-ancestors 'none'",

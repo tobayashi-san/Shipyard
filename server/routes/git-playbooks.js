@@ -9,6 +9,12 @@ const { serverError } = require('../utils/http-error');
 // All git-playbooks routes are admin-only
 router.use(adminOnly);
 
+function requireBool(val, name) {
+  if (val === undefined) return undefined;
+  if (typeof val !== 'boolean') throw Object.assign(new Error(`${name} must be a boolean`), { status: 400 });
+  return val;
+}
+
 // GET /api/playbooks-git/config
 router.get('/config', (req, res) => {
   const cfg = gitSync.getConfig();
@@ -36,6 +42,8 @@ router.post('/disconnect', (req, res) => {
 router.post('/settings', (req, res) => {
   const db = require('../db');
   const { autoPull, autoPush } = req.body;
+  try { requireBool(autoPull, 'autoPull'); requireBool(autoPush, 'autoPush'); }
+  catch (e) { return res.status(400).json({ error: e.message }); }
   if (autoPull !== undefined) db.settings.set('git_auto_pull', autoPull ? '1' : '0');
   if (autoPush !== undefined) db.settings.set('git_auto_push', autoPush ? '1' : '0');
   res.json({ success: true });
@@ -46,6 +54,8 @@ router.post('/setup', async (req, res) => {
   const { repoUrl, authToken, autoPull, autoPush, userName, userEmail } = req.body;
   if (!repoUrl || typeof repoUrl !== 'string') return res.status(400).json({ error: 'repoUrl required' });
   if (!/^(git@|https?:\/\/|ssh:\/\/)/.test(repoUrl)) return res.status(400).json({ error: 'Invalid git URL' });
+  try { requireBool(autoPull, 'autoPull'); requireBool(autoPush, 'autoPush'); }
+  catch (e) { return res.status(400).json({ error: e.message }); }
 
   try {
     const result = await gitSync.setup({ repoUrl, authToken, autoPull, autoPush, userName, userEmail });
@@ -59,6 +69,8 @@ router.post('/setup', async (req, res) => {
 // PUT /api/playbooks-git/config  (update settings without re-cloning)
 router.put('/config', (req, res) => {
   const { autoPull, autoPush, userName, userEmail, authToken } = req.body;
+  try { requireBool(autoPull, 'autoPull'); requireBool(autoPush, 'autoPush'); }
+  catch (e) { return res.status(400).json({ error: e.message }); }
   if (autoPull  !== undefined) db.settings.set('git_auto_pull',  autoPull  ? '1' : '0');
   if (autoPush  !== undefined) db.settings.set('git_auto_push',  autoPush  ? '1' : '0');
   if (userName  !== undefined) db.settings.set('git_user_name',  userName);
