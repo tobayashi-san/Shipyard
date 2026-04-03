@@ -129,9 +129,12 @@ export async function renderServerDetail(serverId) {
         <div class="overview-grid">
           <!-- System Info -->
           <div class="server-detail-stack">
-            <div class="panel">
-              <div class="section-header">
-                <h3><i class="fas fa-info-circle"></i> ${t('det.sysinfo')}</h3>
+            <div class="panel dash-panel">
+              <div class="dash-panel-header">
+                <div class="dash-panel-header-left">
+                  <div class="dash-panel-icon"><i class="fas fa-info-circle"></i></div>
+                  <span class="dash-panel-title">${t('det.sysinfo')}</span>
+                </div>
               </div>
               <table class="info-table" id="info-table">
                 <tr><td>${t('common.status')}</td><td id="inf-status">${t('det.loading')}</td></tr>
@@ -148,12 +151,17 @@ export async function renderServerDetail(serverId) {
 
           <!-- Resources + Network -->
           <div class="server-detail-stack">
-            <div class="panel">
-              <div class="section-header">
-                <h3><i class="fas fa-chart-bar"></i> ${t('det.resources')}</h3>
-                <button class="btn btn-secondary btn-sm" id="btn-refresh-info" title="${t('common.refresh')}">
-                  <i class="fas fa-sync-alt"></i>
-                </button>
+            <div class="panel dash-panel">
+              <div class="dash-panel-header">
+                <div class="dash-panel-header-left">
+                  <div class="dash-panel-icon"><i class="fas fa-chart-bar"></i></div>
+                  <span class="dash-panel-title">${t('det.resources')}</span>
+                </div>
+                <div class="dash-panel-header-right">
+                  <button class="btn btn-secondary btn-sm" id="btn-refresh-info" title="${t('common.refresh')}">
+                    <i class="fas fa-sync-alt"></i>
+                  </button>
+                </div>
               </div>
               <div id="res-content">
                 <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
@@ -161,9 +169,12 @@ export async function renderServerDetail(serverId) {
             </div>
 
             <!-- Network Panel -->
-            <div class="panel">
-              <div class="section-header">
-                <h3><i class="fas fa-network-wired"></i> ${t('det.network')}</h3>
+            <div class="panel dash-panel">
+              <div class="dash-panel-header">
+                <div class="dash-panel-header-left">
+                  <div class="dash-panel-icon"><i class="fas fa-network-wired"></i></div>
+                  <span class="dash-panel-title">${t('det.network')}</span>
+                </div>
               </div>
               <table class="info-table" id="network-table">
                 <tr><td>${t('det.ipAddress')}</td><td class="mono">${esc(server.ip_address)}</td></tr>
@@ -189,10 +200,13 @@ export async function renderServerDetail(serverId) {
 
       <!-- Docker tab -->
       <div class="tab-panel" id="tab-docker">
-        <div class="panel">
-          <div class="section-header">
-            <h3><i class="fas fa-cubes"></i> ${t('det.docker')}</h3>
-            <div class="server-detail-toolbar">
+        <div class="panel dash-panel">
+          <div class="dash-panel-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon"><i class="fas fa-cubes"></i></div>
+              <span class="dash-panel-title">${t('det.docker')}</span>
+            </div>
+            <div class="dash-panel-header-right">
               <button class="btn btn-secondary btn-sm" id="btn-refresh-docker" title="${t('common.refresh')}">
                 <i class="fas fa-sync-alt"></i>
               </button>
@@ -212,19 +226,29 @@ export async function renderServerDetail(serverId) {
 
       <!-- Updates tab -->
       <div class="tab-panel" id="tab-updates">
-        ${(hasCap('canViewUpdates') || hasCap('canRunUpdates')) ? `<div class="panel">
-          <div class="section-header">
-            <h3><i class="fas fa-box-open"></i> ${t('det.tabUpdates')}</h3>
-            <button class="btn btn-secondary btn-sm" id="btn-refresh-updates" title="${t('common.refresh')}"><i class="fas fa-sync-alt"></i></button>
+        ${(hasCap('canViewUpdates') || hasCap('canRunUpdates')) ? `<div class="panel dash-panel">
+          <div class="dash-panel-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon"><i class="fas fa-box-open"></i></div>
+              <span class="dash-panel-title">${t('det.tabUpdates')}</span>
+            </div>
+            <div class="dash-panel-header-right">
+              <button class="btn btn-secondary btn-sm" id="btn-refresh-updates" title="${t('common.refresh')}"><i class="fas fa-sync-alt"></i></button>
+            </div>
           </div>
           <div id="updates-content">
             <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
           </div>
         </div>` : ''}
-        ${(hasCap('canViewCustomUpdates') || hasCap('canRunCustomUpdates') || hasCap('canEditCustomUpdates') || hasCap('canDeleteCustomUpdates')) ? `<div class="panel" style="margin-top:16px;">
-          <div class="section-header">
-            <h3><i class="fas fa-cog"></i> ${t('det.customUpdates')}</h3>
-            ${hasCap('canEditCustomUpdates') ? `<button class="btn btn-primary btn-sm" id="btn-add-custom-task"><i class="fas fa-plus"></i> ${t('det.addTask')}</button>` : ''}
+        ${(hasCap('canViewCustomUpdates') || hasCap('canRunCustomUpdates') || hasCap('canEditCustomUpdates') || hasCap('canDeleteCustomUpdates')) ? `<div class="panel dash-panel" style="margin-top:16px;">
+          <div class="dash-panel-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon"><i class="fas fa-cog"></i></div>
+              <span class="dash-panel-title">${t('det.customUpdates')}</span>
+            </div>
+            <div class="dash-panel-header-right">
+              ${hasCap('canEditCustomUpdates') ? `<button class="btn btn-primary btn-sm" id="btn-add-custom-task"><i class="fas fa-plus"></i> ${t('det.addTask')}</button>` : ''}
+            </div>
           </div>
           <div id="custom-updates-content">
             <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
@@ -234,9 +258,12 @@ export async function renderServerDetail(serverId) {
 
       <!-- History tab -->
       <div class="tab-panel" id="tab-history">
-        <div class="panel">
-          <div class="section-header">
-            <h3><i class="fas fa-history"></i> ${t('det.tabHistory')}</h3>
+        <div class="panel dash-panel">
+          <div class="dash-panel-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon"><i class="fas fa-history"></i></div>
+              <span class="dash-panel-title">${t('det.tabHistory')}</span>
+            </div>
           </div>
           <div id="history-content">
             <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
@@ -246,9 +273,12 @@ export async function renderServerDetail(serverId) {
 
       <!-- Agent tab -->
       ${state.user?.role === 'admin' && state.whiteLabel?.agentEnabled ? `<div class="tab-panel" id="tab-agent">
-        <div class="panel">
-          <div class="section-header">
-            <h3><i class="fas fa-robot"></i> ${t('det.tabAgent')}</h3>
+        <div class="panel dash-panel">
+          <div class="dash-panel-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon"><i class="fas fa-robot"></i></div>
+              <span class="dash-panel-title">${t('det.tabAgent')}</span>
+            </div>
           </div>
           <div id="agent-content">
             <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
@@ -259,16 +289,19 @@ export async function renderServerDetail(serverId) {
       <!-- Notes tab -->
       ${hasCap('canViewNotes') ? `<div class="tab-panel" id="tab-notes">
         <div class="notes-layout">
-          <div class="panel" style="flex:1;display:flex;flex-direction:column;min-height:0;">
-            <div class="section-header">
-              <h3><i class="fas fa-sticky-note"></i> ${t('det.tabNotes')}</h3>
-              <div class="server-detail-toolbar server-detail-toolbar--notes">
-                <span class="notes-saved-indicator" id="notes-status"></span>
-                ${hasCap('canEditNotes') ? `<button class="btn btn-secondary btn-sm" id="notes-toggle-edit">
-                  <i class="fas fa-edit"></i> ${t('det.notesEdit')}
-                </button>` : ''}
+          <div class="panel dash-panel" style="flex:1;display:flex;flex-direction:column;min-height:0;">
+              <div class="dash-panel-header">
+                <div class="dash-panel-header-left">
+                  <div class="dash-panel-icon"><i class="fas fa-sticky-note"></i></div>
+                  <span class="dash-panel-title">${t('det.tabNotes')}</span>
+                </div>
+                <div class="dash-panel-header-right">
+                  <span class="notes-saved-indicator" id="notes-status"></span>
+                  ${hasCap('canEditNotes') ? `<button class="btn btn-secondary btn-sm" id="notes-toggle-edit">
+                    <i class="fas fa-edit"></i> ${t('det.notesEdit')}
+                  </button>` : ''}
+                </div>
               </div>
-            </div>
             <div class="notes-view markdown-body" id="notes-view"></div>
             <textarea
               class="notes-editor"
@@ -753,9 +786,12 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
 
   html += `${mobileLayout ? '</div>' : '</tbody></table>'}
   <div id="docker-logs-panel" class="hidden">
-    <div class="section-header" style="border-top:1px solid var(--border);">
-      <h3><i class="fas fa-file-alt"></i> ${t('det.logs')}: <span id="logs-container-name"></span></h3>
-      <div class="server-detail-toolbar server-detail-toolbar--logs">
+    <div class="dash-panel-header" style="border-top:1px solid var(--border);">
+      <div class="dash-panel-header-left">
+        <div class="dash-panel-icon"><i class="fas fa-file-alt"></i></div>
+        <span class="dash-panel-title">${t('det.logs')}: <span id="logs-container-name"></span></span>
+      </div>
+      <div class="dash-panel-header-right">
         <select id="logs-tail-select" class="form-input" style="padding:3px 8px;font-size:12px;width:110px;">
           <option value="100">${t('pb.lines100')}</option>
           <option value="200" selected>${t('pb.lines200')}</option>

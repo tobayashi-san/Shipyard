@@ -176,7 +176,14 @@ export async function renderServers() {
     </div>
 
     <div class="page-content ${serversEditMode ? 'servers-edit-on' : ''}">
-      <div class="panel server-table-wrapper">
+      <div class="panel dash-panel server-table-wrapper">
+        <div class="dash-panel-header">
+          <div class="dash-panel-header-left">
+            <div class="dash-panel-icon"><i class="fas fa-server"></i></div>
+            <span class="dash-panel-title">${t('srv.title')}</span>
+            <span class="badge badge-muted" style="font-size:10px;">${state.servers.length}</span>
+          </div>
+        </div>
         ${tagBar}
         ${state.servers.length === 0 ? `
           <div class="empty-state">

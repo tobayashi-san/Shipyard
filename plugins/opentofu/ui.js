@@ -343,10 +343,15 @@ function renderDashboard(content) {
     ${!_status.installed ? setupGuidePanel() : ''}
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;">
       ${_workspaces.map(ws => `
-        <div class="panel tofu-dash-card" data-id="${esc(ws.id)}" style="cursor:pointer;transition:box-shadow 150ms;">
-          <div class="section-header">
-            <h3><i class="fas fa-layer-group"></i> ${esc(ws.name)}</h3>
-            <div class="tofu-card-status">${statusBadge(ws.last_run)}</div>
+        <div class="panel dash-panel tofu-dash-card" data-id="${esc(ws.id)}" style="cursor:pointer;transition:box-shadow 150ms;">
+          <div class="dash-panel-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon"><i class="fas fa-layer-group"></i></div>
+              <span class="dash-panel-title">${esc(ws.name)}</span>
+            </div>
+            <div class="dash-panel-header-right">
+              <div class="tofu-card-status">${statusBadge(ws.last_run)}</div>
+            </div>
           </div>
           <div style="padding:12px 16px;">
             <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-bottom:8px;
@@ -376,9 +381,12 @@ function renderDashboard(content) {
 
 function setupGuidePanel() {
   return `
-    <div class="panel" id="tofu-install-panel" style="margin-bottom:16px;">
-      <div class="section-header">
-        <h3><i class="fas fa-download"></i> Install OpenTofu</h3>
+    <div class="panel dash-panel" id="tofu-install-panel" style="margin-bottom:16px;">
+      <div class="dash-panel-header">
+        <div class="dash-panel-header-left">
+          <div class="dash-panel-icon"><i class="fas fa-download"></i></div>
+          <span class="dash-panel-title">Install OpenTofu</span>
+        </div>
       </div>
       <div style="padding:16px;">
         <p style="font-size:13px;color:var(--text-muted);margin:0 0 14px;">
@@ -556,10 +564,13 @@ async function renderWorkspaceDetail(ws) {
   const subIcons = { runs:'fa-history', variables:'fa-sliders-h', files:'fa-folder-open', resources:'fa-sitemap' };
 
   detail.innerHTML = `
-    <div class="panel" style="margin-bottom:12px;">
-      <div class="section-header">
-        <h3><i class="fas fa-layer-group"></i> ${esc(ws.name)}</h3>
-        <div style="display:flex;gap:6px;">
+    <div class="panel dash-panel" style="margin-bottom:12px;">
+      <div class="dash-panel-header">
+        <div class="dash-panel-header-left">
+          <div class="dash-panel-icon"><i class="fas fa-layer-group"></i></div>
+          <span class="dash-panel-title">${esc(ws.name)}</span>
+        </div>
+        <div class="dash-panel-header-right">
           <button class="btn btn-secondary btn-sm" id="tofu-btn-edit"><i class="fas fa-pen"></i></button>
           <button class="btn btn-danger btn-sm" id="tofu-btn-delete"><i class="fas fa-trash"></i></button>
         </div>
@@ -615,10 +626,13 @@ async function loadRunsTab(el, ws) {
   el.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;">
       <!-- Actions + Terminal -->
-      <div class="panel">
-        <div class="section-header">
-          <h3><i class="fas fa-play"></i> Run</h3>
-          <div style="display:flex;gap:6px;">
+      <div class="panel dash-panel">
+        <div class="dash-panel-header">
+          <div class="dash-panel-header-left">
+            <div class="dash-panel-icon"><i class="fas fa-play"></i></div>
+            <span class="dash-panel-title">Run</span>
+          </div>
+          <div class="dash-panel-header-right">
             <button class="btn btn-secondary btn-sm hidden" id="tofu-btn-cancel">
               <i class="fas fa-stop"></i> Cancel
             </button>
@@ -653,12 +667,17 @@ async function loadRunsTab(el, ws) {
       </div>
 
       <!-- Run history -->
-      <div class="panel">
-        <div class="section-header">
-          <h3><i class="fas fa-history"></i> History</h3>
-          <button class="btn btn-secondary btn-sm" id="tofu-btn-refresh-runs">
-            <i class="fas fa-rotate"></i>
-          </button>
+      <div class="panel dash-panel">
+        <div class="dash-panel-header">
+          <div class="dash-panel-header-left">
+            <div class="dash-panel-icon"><i class="fas fa-history"></i></div>
+            <span class="dash-panel-title">History</span>
+          </div>
+          <div class="dash-panel-header-right">
+            <button class="btn btn-secondary btn-sm" id="tofu-btn-refresh-runs">
+              <i class="fas fa-rotate"></i>
+            </button>
+          </div>
         </div>
         <div id="tofu-runs-list">
           <div class="loading-state" style="padding:20px;"><div class="loader"></div></div>
@@ -1076,10 +1095,13 @@ function parseEnvBlock(text) {
 async function loadFilesTab(el, ws) {
   el.innerHTML = `
     <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:start;">
-      <div class="panel" id="tofu-file-tree-panel">
-        <div class="section-header">
-          <h3><i class="fas fa-folder-open"></i> Files</h3>
-          <div style="display:flex;gap:4px;">
+      <div class="panel dash-panel" id="tofu-file-tree-panel">
+        <div class="dash-panel-header">
+          <div class="dash-panel-header-left">
+            <div class="dash-panel-icon"><i class="fas fa-folder-open"></i></div>
+            <span class="dash-panel-title">Files</span>
+          </div>
+          <div class="dash-panel-header-right">
             <button class="btn btn-secondary btn-sm" id="tofu-btn-generate-output" title="Generate shipyard_servers output"><i class="fas fa-wand-magic"></i></button>
             <button class="btn btn-secondary btn-sm" id="tofu-btn-new-file" title="New file"><i class="fas fa-plus"></i></button>
             <button class="btn btn-secondary btn-sm" id="tofu-btn-reload-tree" title="Reload"><i class="fas fa-rotate"></i></button>
@@ -1089,7 +1111,7 @@ async function loadFilesTab(el, ws) {
           <div class="loading-state" style="padding:16px;"><div class="loader"></div></div>
         </div>
       </div>
-      <div class="panel" id="tofu-file-editor-panel">
+      <div class="panel dash-panel" id="tofu-file-editor-panel">
         <div class="empty-state" style="padding:48px;">
           <i class="fas fa-file-code" style="font-size:2rem;opacity:.3;margin-bottom:12px;display:block;"></i>
           <p>Select a file to edit</p>
@@ -1205,11 +1227,16 @@ async function openFileEditor(ws, relPath) {
     const { content } = await _pluginApi.request(`/workspaces/${ws.id}/file?path=${encodeURIComponent(relPath)}`);
     _openFile = { path: relPath, content, dirty: false };
     editorPanel.innerHTML = `
-      <div class="section-header">
-        <h3><i class="${fileIcon(relPath)}"></i> ${esc(relPath.split('/').pop())}</h3>
-        <button class="btn btn-primary btn-sm" id="tofu-btn-save-file" disabled>
-          <i class="fas fa-save"></i> Save
-        </button>
+      <div class="dash-panel-header">
+        <div class="dash-panel-header-left">
+          <div class="dash-panel-icon"><i class="${fileIcon(relPath)}"></i></div>
+          <span class="dash-panel-title">${esc(relPath.split('/').pop())}</span>
+        </div>
+        <div class="dash-panel-header-right">
+          <button class="btn btn-primary btn-sm" id="tofu-btn-save-file" disabled>
+            <i class="fas fa-save"></i> Save
+          </button>
+        </div>
       </div>
       <textarea id="tofu-file-content" class="form-input text-mono"
         style="min-height:420px;resize:vertical;border:none;border-top:1px solid var(--border);

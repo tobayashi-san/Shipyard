@@ -286,10 +286,13 @@ function renderTemplatesHTML() {
       </div>
 
       <div id="playbook-editor-panel" class="playbooks-workspace hidden">
-        <div class="panel">
-          <div class="section-header playbooks-workspace-header" id="editor-header">
-            <h3><i class="fas fa-edit"></i> <span id="editor-title">${t('pb.editTitle')}</span></h3>
-            <div class="playbooks-workspace-actions">
+        <div class="panel dash-panel">
+          <div class="dash-panel-header playbooks-workspace-header" id="editor-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon"><i class="fas fa-edit"></i></div>
+              <span class="dash-panel-title" id="editor-title">${t('pb.editTitle')}</span>
+            </div>
+            <div class="dash-panel-header-right playbooks-workspace-actions">
               ${mobileLayout ? `<button class="btn btn-secondary btn-sm" id="btn-template-back"><i class="fas fa-arrow-left"></i> ${t('common.back')}</button>` : ''}
               ${hasCap('canDeletePlaybooks') ? `<button class="btn btn-danger btn-sm hidden" id="btn-delete-playbook"><i class="fas fa-trash"></i></button>` : ''}
               <button class="btn btn-secondary btn-sm hidden" id="btn-playbook-history" title="${t('pb.history')}">
@@ -315,10 +318,13 @@ function renderTemplatesHTML() {
       </div>
 
       <div id="playbook-run-panel" class="playbooks-workspace hidden">
-        <div class="panel">
-          <div class="section-header playbooks-workspace-header">
-            <h3><i class="fas fa-play"></i> <span id="run-playbook-name">${t('common.run')}</span></h3>
-            <div class="playbooks-workspace-actions">
+        <div class="panel dash-panel">
+          <div class="dash-panel-header playbooks-workspace-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon"><i class="fas fa-play"></i></div>
+              <span class="dash-panel-title" id="run-playbook-name">${t('common.run')}</span>
+            </div>
+            <div class="dash-panel-header-right playbooks-workspace-actions">
               ${mobileLayout ? `<button class="btn btn-secondary btn-sm" id="btn-template-back-run"><i class="fas fa-arrow-left"></i> ${t('common.back')}</button>` : ''}
               <button class="btn btn-secondary btn-sm" id="btn-cancel-run">${t('common.close')}</button>
             </div>
@@ -720,9 +726,12 @@ function renderQuickRunHTML() {
   return `
     <div class="playbooks-run-grid">
       <!-- Left: form -->
-      <div class="panel">
-        <div class="section-header">
-          <h3><i class="fas fa-play"></i> ${t('qr.title')}</h3>
+      <div class="panel dash-panel">
+        <div class="dash-panel-header">
+          <div class="dash-panel-header-left">
+            <div class="dash-panel-icon"><i class="fas fa-play"></i></div>
+            <span class="dash-panel-title">${t('qr.title')}</span>
+          </div>
         </div>
         <div class="form-body">
           <div class="form-group">
@@ -766,9 +775,12 @@ function renderQuickRunHTML() {
       </div>
 
       <!-- Right: output terminal -->
-      <div class="panel" id="qr-output-panel">
-        <div class="section-header">
-          <h3 id="qr-terminal-title" style="font-family:var(--font-mono);font-size:13px;font-weight:400;color:var(--text-muted);">${t('pb.output')}</h3>
+      <div class="panel dash-panel" id="qr-output-panel">
+        <div class="dash-panel-header">
+          <div class="dash-panel-header-left">
+            <div class="dash-panel-icon"><i class="fas fa-terminal"></i></div>
+            <span class="dash-panel-title" id="qr-terminal-title">${t('pb.output')}</span>
+          </div>
         </div>
         <div id="qr-output-empty" style="padding:40px 24px;text-align:center;color:var(--text-muted);">
           <i class="fas fa-play-circle" style="font-size:32px;margin-bottom:12px;opacity:.3;display:block;"></i>
@@ -900,21 +912,29 @@ function setupQuickRunEvents() {
 // ============================================================
 function renderVarsHTML() {
   return `
-    <div class="panel">
-      <div class="section-header">
-        <h3><i class="fas fa-sliders-h"></i> ${t('vars.title')}</h3>
-        ${hasCap('canAddVars') ? `<button class="btn btn-primary btn-sm" id="btn-add-var">
-          <i class="fas fa-plus"></i> ${t('vars.add')}
-        </button>` : ''}
+    <div class="panel dash-panel">
+      <div class="dash-panel-header">
+        <div class="dash-panel-header-left">
+          <div class="dash-panel-icon"><i class="fas fa-sliders-h"></i></div>
+          <span class="dash-panel-title">${t('vars.title')}</span>
+        </div>
+        <div class="dash-panel-header-right">
+          ${hasCap('canAddVars') ? `<button class="btn btn-primary btn-sm" id="btn-add-var">
+            <i class="fas fa-plus"></i> ${t('vars.add')}
+          </button>` : ''}
+        </div>
       </div>
       <div id="vars-list">
         <div class="loading-state"><div class="loader"></div> ${t('pb.loading')}</div>
       </div>
     </div>
 
-    <div id="var-form-panel" class="panel hidden" style="margin-top:16px;">
-      <div class="section-header">
-        <h3 id="var-form-title"><i class="fas fa-plus"></i> ${t('vars.add')}</h3>
+    <div id="var-form-panel" class="panel dash-panel hidden" style="margin-top:16px;">
+      <div class="dash-panel-header">
+        <div class="dash-panel-header-left">
+          <div class="dash-panel-icon" id="var-form-icon"><i class="fas fa-plus"></i></div>
+          <span class="dash-panel-title" id="var-form-title">${t('vars.add')}</span>
+        </div>
       </div>
       <div class="form-body">
         <div class="form-group">
@@ -1004,7 +1024,8 @@ async function loadVarsList() {
         const v = vars.find(x => x.id === btn.dataset.id);
         if (!v) return;
         editingVarId = v.id;
-        document.getElementById('var-form-title').innerHTML = `<i class="fas fa-edit"></i> ${t('vars.edit')}`;
+        document.getElementById('var-form-title').textContent = t('vars.edit');
+        document.getElementById('var-form-icon').innerHTML = '<i class="fas fa-edit"></i>';
         document.getElementById('var-key').value = v.key;
         document.getElementById('var-value').value = v.value;
         document.getElementById('var-description').value = v.description || '';
@@ -1033,7 +1054,8 @@ async function loadVarsList() {
 function setupVarsEvents() {
   document.getElementById('btn-add-var')?.addEventListener('click', () => {
     editingVarId = null;
-    document.getElementById('var-form-title').innerHTML = `<i class="fas fa-plus"></i> ${t('vars.add')}`;
+    document.getElementById('var-form-title').textContent = t('vars.add');
+    document.getElementById('var-form-icon').innerHTML = '<i class="fas fa-plus"></i>';
     document.getElementById('var-key').value = '';
     document.getElementById('var-value').value = '';
     document.getElementById('var-description').value = '';
@@ -1133,12 +1155,17 @@ function cronLabel(cron) {
 
 function renderSchedulesHTML() {
   return `
-    <div class="panel">
-      <div class="section-header">
-        <h3><i class="fas fa-clock"></i> ${t('pb.schedules')}</h3>
-        ${hasCap('canAddSchedules') ? `<button class="btn btn-primary btn-sm" id="btn-new-schedule">
-          <i class="fas fa-plus"></i> ${t('pb.newSchedule')}
-        </button>` : ''}
+    <div class="panel dash-panel">
+      <div class="dash-panel-header">
+        <div class="dash-panel-header-left">
+          <div class="dash-panel-icon"><i class="fas fa-clock"></i></div>
+          <span class="dash-panel-title">${t('pb.schedules')}</span>
+        </div>
+        <div class="dash-panel-header-right">
+          ${hasCap('canAddSchedules') ? `<button class="btn btn-primary btn-sm" id="btn-new-schedule">
+            <i class="fas fa-plus"></i> ${t('pb.newSchedule')}
+          </button>` : ''}
+        </div>
       </div>
       <div id="schedule-list">
         <div class="loading-state"><div class="loader"></div> ${t('pb.loading')}</div>
@@ -1263,12 +1290,17 @@ function setupScheduleEvents() {
 // ============================================================
 function renderHistoryHTML() {
   return `
-    <div class="panel">
-      <div class="section-header">
-        <h3><i class="fas fa-history"></i> ${t('hist.title')}</h3>
-        <select class="form-input" id="hist-filter" style="width:200px;">
-          <option value="">${t('hist.filterAll')}</option>
-        </select>
+    <div class="panel dash-panel">
+      <div class="dash-panel-header">
+        <div class="dash-panel-header-left">
+          <div class="dash-panel-icon"><i class="fas fa-history"></i></div>
+          <span class="dash-panel-title">${t('hist.title')}</span>
+        </div>
+        <div class="dash-panel-header-right">
+          <select class="form-input" id="hist-filter" style="width:200px;">
+            <option value="">${t('hist.filterAll')}</option>
+          </select>
+        </div>
       </div>
       <div id="history-list">
         <div class="loading-state"><div class="loader"></div> ${t('pb.loading')}</div>

@@ -36,11 +36,11 @@ export async function renderDashboard() {
       </div>
     </div>
     <div class="page-content" id="dash-content">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:16px;margin-bottom:24px;">
-        <div class="panel" style="height:86px;"><div class="skeleton" style="width:100%;height:100%;"></div></div>
-        <div class="panel" style="height:86px;"><div class="skeleton" style="width:100%;height:100%;"></div></div>
-        <div class="panel" style="height:86px;"><div class="skeleton" style="width:100%;height:100%;"></div></div>
-        <div class="panel" style="height:86px;"><div class="skeleton" style="width:100%;height:100%;"></div></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:12px;margin-bottom:24px;">
+        <div class="panel" style="height:140px;"><div class="skeleton" style="width:100%;height:100%;"></div></div>
+        <div class="panel" style="height:140px;"><div class="skeleton" style="width:100%;height:100%;"></div></div>
+        <div class="panel" style="height:140px;"><div class="skeleton" style="width:100%;height:100%;"></div></div>
+        <div class="panel" style="height:140px;"><div class="skeleton" style="width:100%;height:100%;"></div></div>
       </div>
       <div class="panel" style="padding:24px;">
         <div class="skeleton-text" style="width:180px;height:20px;margin-bottom:24px;"></div>
@@ -91,27 +91,32 @@ function renderDashboardData(data) {
   content.innerHTML = sanitizeHTML(`
     <!-- Stat Cards -->
     <div class="dash-stat-row">
-      ${statCard('fa-server',            summary.total,                          t('dash.totalServers'),    '')}
-      ${statCard('fa-check-circle',      summary.online,                         t('dash.online'),          'success')}
-      ${statCard('fa-times-circle',      summary.offline,                        t('dash.offline'),         summary.offline > 0 ? 'error' : '')}
-      ${statCard('fa-redo',              summary.rebootRequired,                 t('dash.needsReboot'),     summary.rebootRequired > 0 ? 'warning' : '')}
-      ${statCard('fa-arrow-up',          summary.totalUpdates,                   t('dash.updatesAvailable'), summary.totalUpdates > 0 ? 'warning' : '')}
-      ${statCard('fa-exclamation-triangle', summary.criticalDisk + summary.criticalRam, t('dash.resourcesCritical'), (summary.criticalDisk + summary.criticalRam) > 0 ? 'error' : '')}
+      ${statCard({ icon: 'fa-server', value: summary.total, label: t('dash.totalServers'), color: '', footer: t('dash.statFooterReachable', { n: summary.online }) })}
+      ${statCard({ icon: 'fa-check-circle', value: summary.online, label: t('dash.online'), color: 'success', footer: t('dash.statFooterOfTotal', { n: summary.total }) })}
+      ${statCard({ icon: 'fa-times-circle', value: summary.offline, label: t('dash.offline'), color: summary.offline > 0 ? 'error' : '', footer: summary.offline > 0 ? t('dash.statFooterOfTotal', { n: summary.total }) : t('dash.statFooterAllClear') })}
+      ${statCard({ icon: 'fa-redo', value: summary.rebootRequired, label: t('dash.needsReboot'), color: summary.rebootRequired > 0 ? 'warning' : '', footer: summary.rebootRequired > 0 ? t('dash.statFooterServers', { n: summary.rebootRequired }) : t('dash.statFooterAllClear') })}
+      ${statCard({ icon: 'fa-arrow-up', value: summary.totalUpdates, label: t('dash.updatesAvailable'), color: summary.totalUpdates > 0 ? 'warning' : '', footer: summary.totalUpdates > 0 ? t('dash.statFooterOnServers', { n: servers.filter(s => s.updates_count > 0 || s.image_updates_count > 0 || s.custom_updates_count > 0).length }) : t('dash.statFooterAllClear') })}
+      ${statCard({ icon: 'fa-exclamation-triangle', value: summary.criticalDisk + summary.criticalRam, label: t('dash.resourcesCritical'), color: (summary.criticalDisk + summary.criticalRam) > 0 ? 'error' : '', footer: (summary.criticalDisk + summary.criticalRam) > 0 ? t('dash.statFooterDiskRam', { disk: summary.criticalDisk, ram: summary.criticalRam }) : t('dash.statFooterAllClear') })}
     </div>
 
     <div class="dash-grid">
 
       <!-- Server Health -->
       <div class="dash-col-main">
-        <div class="dash-section-title dash-section-title--split">
-          <span><span class="dash-section-kicker">Operations</span>${t('dash.serverHealth')}</span>
-          ${attentionCount > 0 ? `
-            <button class="btn btn-secondary btn-sm ${dashboardAttentionOnly ? 'active' : ''}" id="btn-todo-filter" style="font-size:11px;padding:3px 10px;">
-              <i class="fas fa-filter" style="margin-right:4px;"></i>${t('dash.needsAttention')}
-              <span class="nav-item-badge" style="margin-left:5px;">${attentionCount}</span>
-            </button>` : ''}
-        </div>
         <div class="panel dash-panel">
+          <div class="dash-panel-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon"><i class="fas fa-heartbeat"></i></div>
+              <span class="dash-panel-title">${t('dash.serverHealth')}</span>
+            </div>
+            <div class="dash-panel-header-right">
+              ${attentionCount > 0 ? `
+                <button class="btn btn-secondary btn-sm ${dashboardAttentionOnly ? 'active' : ''}" id="btn-todo-filter">
+                  <i class="fas fa-filter" style="margin-right:4px;"></i>${t('dash.needsAttention')}
+                  <span class="nav-item-badge" style="margin-left:5px;">${attentionCount}</span>
+                </button>` : ''}
+            </div>
+          </div>
           ${servers.length === 0 ? `
             <div class="empty-state">
               <div class="empty-state-icon"><i class="fas fa-server"></i></div>
@@ -148,11 +153,14 @@ function renderDashboardData(data) {
       <div class="dash-col-side">
 
         <!-- Alerts -->
-        <div class="dash-section-title">
-          <span><span class="dash-section-kicker">Signals</span>${t('dash.alerts')}</span>
-          ${alerts.length > 0 ? `<span class="nav-item-badge" style="margin-left:6px;">${alerts.length}</span>` : ''}
-        </div>
         <div class="panel dash-panel" style="margin-bottom:20px;">
+          <div class="dash-panel-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon dash-panel-icon--warning"><i class="fas fa-bell"></i></div>
+              <span class="dash-panel-title">${t('dash.alerts')}</span>
+              ${alerts.length > 0 ? `<span class="nav-item-badge" style="margin-left:2px;">${alerts.length}</span>` : ''}
+            </div>
+          </div>
           ${alerts.length === 0 ? `
             <div class="dash-empty-inline">
               <i class="fas fa-check-circle"></i> ${t('dash.allClear')}
@@ -166,8 +174,13 @@ function renderDashboardData(data) {
         </div>
 
         <!-- Recent Activity -->
-        <div class="dash-section-title"><span><span class="dash-section-kicker">Timeline</span>${t('dash.recentActivity')}</span></div>
         <div class="panel dash-panel">
+          <div class="dash-panel-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon"><i class="fas fa-clock"></i></div>
+              <span class="dash-panel-title">${t('dash.recentActivity')}</span>
+            </div>
+          </div>
           ${recentHistory.length === 0 ? `
             <div class="dash-empty-muted">${t('dash.noActivity')}</div>
           ` : recentHistory.map(h => `
@@ -224,23 +237,27 @@ function renderDashboardData(data) {
   });
 }
 
-function statCard(icon, value, label, colorKey) {
-  const colorAttr = colorKey ? ` data-color="${colorKey}"` : '';
-  const iconColor = colorKey === 'error' ? 'var(--offline)' :
-                    colorKey === 'warning' ? 'var(--warning)' :
-                    colorKey === 'success' ? 'var(--online)' : '';
-  const iconBg = iconColor
-    ? `background:${iconColor}14;color:${iconColor};border-color:${iconColor}33;`
-    : '';
-  const valueColor = iconColor ? `color:${iconColor};` : '';
+function statCard({ icon, value, label, color, footer }) {
+  const colorAttr = color ? ` data-color="${color}"` : '';
+  const iconCls = color === 'error' ? ' dash-stat-icon--error' :
+                  color === 'warning' ? ' dash-stat-icon--warning' :
+                  color === 'success' ? ' dash-stat-icon--success' : '';
+  const valueCls = color === 'error' ? ' dash-stat-value--error' :
+                   color === 'warning' ? ' dash-stat-value--warning' :
+                   color === 'success' ? ' dash-stat-value--success' : '';
+  const footerCls = color === 'error' ? ' dash-stat-footer-text--error' :
+                    color === 'warning' ? ' dash-stat-footer-text--warning' :
+                    color === 'success' ? ' dash-stat-footer-text--success' : '';
   return `
     <div class="dash-stat-card"${colorAttr}>
-      <div class="dash-stat-card-top">
-        <div class="dash-stat-icon" style="${iconBg}"><i class="fas ${icon}"></i></div>
+      <div class="dash-stat-header">
+        <div class="dash-stat-icon${iconCls}"><i class="fas ${icon}"></i></div>
+        <span class="dash-stat-label">${label}</span>
       </div>
-      <div>
-        <div class="dash-stat-value" style="${valueColor}">${value}</div>
-        <div class="dash-stat-label">${label}</div>
+      <div class="dash-stat-value${valueCls}">${value}</div>
+      <div class="dash-stat-divider"></div>
+      <div class="dash-stat-footer">
+        <span class="dash-stat-footer-text${footerCls}">${footer}</span>
       </div>
     </div>
   `;
@@ -323,12 +340,12 @@ function serverHealthCard(s) {
 
 function agentBadge(s) {
   const mode = s.agent_mode || 'legacy';
-  const state = s.agent_state || 'legacy';
+  const agentState = s.agent_state || 'legacy';
   if (mode === 'legacy') return '';
-  const color = state === 'ok' ? 'var(--online)' : state === 'warning' ? 'var(--warning)' : 'var(--offline)';
-  const label = state === 'ok' ? t('dash.agentOk') : state === 'warning' ? t('dash.agentDelayed') : t('dash.agentStale');
+  const stateCls = agentState === 'ok' ? 'agent-mode-badge--ok' : agentState === 'warning' ? 'agent-mode-badge--warning' : 'agent-mode-badge--stale';
+  const label = agentState === 'ok' ? t('dash.agentOk') : agentState === 'warning' ? t('dash.agentDelayed') : t('dash.agentStale');
   const title = `${t('dash.agentMode')}: ${mode} · ${label}`;
-  return `<span class="badge agent-mode-badge" title="${esc(title)}" style="background:${color}14;color:${color};border:1px solid ${color}33;display:inline-flex;align-items:center;gap:4px;"><i class="fas fa-robot" style="font-size:9px;"></i>${esc(mode)}</span>`;
+  return `<span class="badge agent-mode-badge ${stateCls}" title="${esc(title)}"><i class="fas fa-robot"></i>${esc(mode)}</span>`;
 }
 
 function miniBar(pct) {
