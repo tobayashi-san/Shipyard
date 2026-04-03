@@ -1,4 +1,4 @@
-import { state } from './main.js';
+import { state } from './app/state.js';
 import { api } from './api.js';
 
 let ws = null;

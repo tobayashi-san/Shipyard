@@ -12,6 +12,8 @@ const assert = require('node:assert/strict');
 
 const sshManager = require('../services/ssh-manager');
 
+const TEST_PUBLIC_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICcAYbbebZPbEQsSs3m7h/G4kFPBPns2jk6McoNhl+K+ shipyard';
+
 after(() => {
   for (const ext of ['', '-wal', '-shm']) {
     try { fs.unlinkSync(process.env.DB_PATH + ext); } catch {}
@@ -21,9 +23,8 @@ after(() => {
 test('removeKnownHostEntries removes matching hosts from known_hosts and reports missing ones', () => {
   const knownHostsPath = sshManager.getKnownHostsPath();
   fs.mkdirSync(path.dirname(knownHostsPath), { recursive: true });
-  const pub = fs.readFileSync(path.join(__dirname, '..', 'data', 'ssh', 'exp_test.pub'), 'utf8').trim();
 
-  fs.writeFileSync(knownHostsPath, `10.30.1.200 ${pub}\nubuntu-server-01 ${pub}\n`, 'utf8');
+  fs.writeFileSync(knownHostsPath, `10.30.1.200 ${TEST_PUBLIC_KEY}\nubuntu-server-01 ${TEST_PUBLIC_KEY}\n`, 'utf8');
 
   const result = sshManager.removeKnownHostEntries(['10.30.1.200', 'missing-host']);
   const afterContent = fs.readFileSync(knownHostsPath, 'utf8');

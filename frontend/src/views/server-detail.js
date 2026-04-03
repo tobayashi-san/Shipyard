@@ -1,10 +1,13 @@
 import { api } from '../api.js';
-import { state, navigate, openGlobalTerminal, hasCap } from '../main.js';
-import { showToast, showConfirm } from './toast.js';
-import { showAddServerModal } from './add-server-modal.js';
-import { openSshTerminal } from './ssh-terminal.js';
+import { state, hasCap } from '../app/state.js';
+import { navigate } from '../app/router.js';
+import { openGlobalTerminal } from '../terminal/global-terminal.js';
+import { showToast, showConfirm } from '../components/toast.js';
+import { showAddServerModal } from '../modals/add-server-modal.js';
+import { openSshTerminal } from '../components/ssh-terminal.js';
 import { t } from '../i18n.js';
 import { formatDateTimeFull, esc } from '../utils/format.js';
+import { activateDialog } from '../utils/dialog.js';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 
@@ -20,6 +23,10 @@ function parseContainerDate(d) {
 // Persists image update check results per server across container list refreshes
 const imageUpdateMaps = {};
 let _composeChangedListener = null;
+
+function isMobileServerDetailLayout() {
+  return window.matchMedia('(max-width: 768px)').matches;
+}
 
 // ============================================================
 // Server Detail – Tab-based flat admin panel layout
@@ -41,33 +48,35 @@ export async function renderServerDetail(serverId) {
   const statusLabel = server.status === 'online' ? t('common.online') : server.status === 'offline' ? t('common.offline') : t('common.unknown');
 
   main.innerHTML = `
+    <div class="server-detail-page">
     <!-- Top strip -->
-    <div class="page-header">
-      <div style="display:flex;align-items:center;gap:12px;">
+    <div class="page-header server-detail-header">
+      <div class="server-detail-heading">
         <button class="btn btn-secondary btn-sm" id="btn-back" title="${t('common.back')}">
           <i class="fas fa-arrow-left"></i>
         </button>
-        <div>
-          <h2 style="display:flex;align-items:center;gap:10px;">
+        <div class="server-detail-title-wrap">
+          <div class="server-detail-kicker">Server Overview</div>
+          <h2 class="server-detail-title">
             ${esc(server.name)}
             <span class="badge badge-${server.status === 'online' ? 'online' : server.status === 'offline' ? 'offline' : 'unknown'}">
               <span class="status-dot ${dotCls}"></span>${statusLabel}
             </span>
           </h2>
-          <p class="text-mono">${esc(server.ip_address)}${server.hostname ? ' · ' + esc(server.hostname) : ''}</p>
+          <p class="text-mono server-detail-subline">${esc(server.ip_address)}${server.hostname ? ' · ' + esc(server.hostname) : ''}</p>
         </div>
       </div>
-      <div class="page-header-actions">
+      <div class="page-header-actions server-detail-actions">
         ${hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm" id="btn-edit-server"><i class="fas fa-edit"></i> ${t('common.edit')}</button>` : ''}
         ${hasCap('canUseTerminal') ? `<button class="btn btn-secondary btn-sm" id="btn-terminal"><i class="fas fa-terminal"></i> ${t('common.terminal')}</button>` : ''}
-        ${hasCap('canUseTerminal') ? `<button class="btn btn-secondary btn-sm" id="btn-reset-host-key" title="Remove stale SSH host key"><i class="fas fa-key"></i> Reset Host Key</button>` : ''}
+        ${hasCap('canUseTerminal') ? `<button class="btn btn-secondary btn-sm" id="btn-reset-host-key" title="${t('srv.resetHostKeyHint')}"><i class="fas fa-key"></i> ${t('srv.resetHostKey')}</button>` : ''}
         ${hasCap('canRunUpdates') ? `<button class="btn btn-secondary btn-sm" id="btn-update-server"><i class="fas fa-arrow-up"></i> ${t('det.updates')}</button>` : ''}
         ${hasCap('canRebootServers') ? `<button class="btn btn-danger btn-sm" id="btn-reboot-server"><i class="fas fa-power-off"></i> ${t('det.reboot')}</button>` : ''}
       </div>
     </div>
 
     <!-- Tab bar -->
-    <div class="tab-bar">
+    <div class="tab-bar server-detail-tab-bar">
       <button class="tab-btn active" data-tab="overview">${t('det.tabOverview')}</button>
       ${hasCap('canViewDocker') ? `<button class="tab-btn" data-tab="docker">${t('det.tabDocker')}</button>` : ''}
       ${(hasCap('canViewUpdates') || hasCap('canRunUpdates') || hasCap('canRebootServers') || hasCap('canViewCustomUpdates') || hasCap('canRunCustomUpdates') || hasCap('canEditCustomUpdates') || hasCap('canDeleteCustomUpdates')) ? `<button class="tab-btn" data-tab="updates">${t('det.tabUpdates')}</button>` : ''}
@@ -75,12 +84,12 @@ export async function renderServerDetail(serverId) {
       ${state.user?.role === 'admin' && state.whiteLabel?.agentEnabled ? `<button class="tab-btn" data-tab="agent">${t('det.tabAgent')}</button>` : ''}
       ${hasCap('canViewNotes') ? `<button class="tab-btn" data-tab="notes">
         <i class="fas fa-sticky-note" style="margin-right:5px;"></i>${t('det.tabNotes')}
-        ${server.notes?.trim() ? '<span class="nav-item-badge" style="margin-left:6px;" aria-label="has notes">●</span>' : ''}
+        ${server.notes?.trim() ? `<span class="nav-item-badge" style="margin-left:6px;" aria-label="${t('srv.hasNotes')}">●</span>` : ''}
       </button>` : ''}
     </div>
 
     <!-- Tab panels -->
-    <div class="page-content">
+    <div class="page-content server-detail-content">
       <!-- Overview tab -->
       <div class="tab-panel active" id="tab-overview">
 
@@ -111,7 +120,7 @@ export async function renderServerDetail(serverId) {
             <div class="stat-card-icon" id="stat-ping-icon"><i class="fas fa-satellite-dish"></i></div>
             <div>
               <div class="stat-card-value" id="stat-ping">—</div>
-              <div class="stat-card-label">Latency</div>
+              <div class="stat-card-label">${t('det.latency')}</div>
             </div>
           </div>
         </div>
@@ -119,7 +128,7 @@ export async function renderServerDetail(serverId) {
         <!-- Main 2-col grid -->
         <div class="overview-grid">
           <!-- System Info -->
-          <div style="display:flex;flex-direction:column;gap:16px;">
+          <div class="server-detail-stack">
             <div class="panel">
               <div class="section-header">
                 <h3><i class="fas fa-info-circle"></i> ${t('det.sysinfo')}</h3>
@@ -138,7 +147,7 @@ export async function renderServerDetail(serverId) {
           </div>
 
           <!-- Resources + Network -->
-          <div style="display:flex;flex-direction:column;gap:16px;">
+          <div class="server-detail-stack">
             <div class="panel">
               <div class="section-header">
                 <h3><i class="fas fa-chart-bar"></i> ${t('det.resources')}</h3>
@@ -154,14 +163,14 @@ export async function renderServerDetail(serverId) {
             <!-- Network Panel -->
             <div class="panel">
               <div class="section-header">
-                <h3><i class="fas fa-network-wired"></i> Network</h3>
+                <h3><i class="fas fa-network-wired"></i> ${t('det.network')}</h3>
               </div>
               <table class="info-table" id="network-table">
-                <tr><td>IP Address</td><td class="mono">${esc(server.ip_address)}</td></tr>
-                ${server.hostname ? `<tr><td>Hostname</td><td class="mono">${esc(server.hostname)}</td></tr>` : ''}
-                <tr><td>SSH Port</td><td id="net-port" class="mono">${server.ssh_port || 22}</td></tr>
-                <tr><td>SSH User</td><td class="mono">${esc(server.ssh_user || 'root')}</td></tr>
-                <tr><td>Latency</td><td id="net-latency">—</td></tr>
+                <tr><td>${t('det.ipAddress')}</td><td class="mono">${esc(server.ip_address)}</td></tr>
+                ${server.hostname ? `<tr><td>${t('det.hostname')}</td><td class="mono">${esc(server.hostname)}</td></tr>` : ''}
+                <tr><td>${t('det.sshPort')}</td><td id="net-port" class="mono">${server.ssh_port || 22}</td></tr>
+                <tr><td>${t('det.sshUser')}</td><td class="mono">${esc(server.ssh_user || 'root')}</td></tr>
+                <tr><td>${t('det.latency')}</td><td id="net-latency">—</td></tr>
               </table>
             </div>
           </div>
@@ -171,7 +180,7 @@ export async function renderServerDetail(serverId) {
         <div id="terminal-container" style="margin-top:16px;display:none;">
           <div class="terminal">
             <div class="terminal-header">
-              <div class="terminal-title" id="terminal-title">Output</div>
+              <div class="terminal-title" id="terminal-title">${t('det.output')}</div>
             </div>
             <div class="terminal-body" id="terminal-body"></div>
           </div>
@@ -183,7 +192,7 @@ export async function renderServerDetail(serverId) {
         <div class="panel">
           <div class="section-header">
             <h3><i class="fas fa-cubes"></i> ${t('det.docker')}</h3>
-            <div class="flex-gap">
+            <div class="server-detail-toolbar">
               <button class="btn btn-secondary btn-sm" id="btn-refresh-docker" title="${t('common.refresh')}">
                 <i class="fas fa-sync-alt"></i>
               </button>
@@ -253,7 +262,7 @@ export async function renderServerDetail(serverId) {
           <div class="panel" style="flex:1;display:flex;flex-direction:column;min-height:0;">
             <div class="section-header">
               <h3><i class="fas fa-sticky-note"></i> ${t('det.tabNotes')}</h3>
-              <div style="display:flex;align-items:center;gap:8px;">
+              <div class="server-detail-toolbar server-detail-toolbar--notes">
                 <span class="notes-saved-indicator" id="notes-status"></span>
                 ${hasCap('canEditNotes') ? `<button class="btn btn-secondary btn-sm" id="notes-toggle-edit">
                   <i class="fas fa-edit"></i> ${t('det.notesEdit')}
@@ -270,6 +279,7 @@ export async function renderServerDetail(serverId) {
           </div>
         </div>
       </div>` : ''}
+    </div>
     </div>
   `;
 
@@ -300,7 +310,10 @@ export async function renderServerDetail(serverId) {
   });
 
   // ---- Header actions ----
-  document.getElementById('btn-back')?.addEventListener('click', () => navigate('dashboard'));
+  document.getElementById('btn-back')?.addEventListener('click', () => {
+    const fallbackView = hasCap('canViewServers') ? 'servers' : 'dashboard';
+    navigate(state.previousView || fallbackView);
+  });
 
   document.getElementById('btn-edit-server')?.addEventListener('click', () => {
     showAddServerModal(async (savedServer) => {
@@ -321,9 +334,9 @@ export async function renderServerDetail(serverId) {
   });
 
   document.getElementById('btn-reset-host-key')?.addEventListener('click', async () => {
-    if (!await showConfirm(`Remove stored SSH host keys for ${server.name}? Use this after rebuilding a VM with the same IP/hostname.`, {
-      title: 'Reset Host Key',
-      confirmText: 'Reset',
+    if (!await showConfirm(t('srv.resetHostKeyConfirmBody'), {
+      title: t('srv.resetHostKeyConfirmTitle'),
+      confirmText: t('srv.resetHostKeyConfirmText'),
       danger: true,
     })) return;
 
@@ -333,8 +346,8 @@ export async function renderServerDetail(serverId) {
       const result = await api.resetServerHostKey(serverId);
       const removed = Array.isArray(result.removed) && result.removed.length > 0
         ? result.removed.join(', ')
-        : 'no matching entries';
-      showToast(`Host key reset completed: ${removed}`, 'success');
+        : t('srv.resetHostKeyNoEntries');
+      showToast(t('srv.resetHostKeyDone', { entries: removed }), 'success');
     } catch (e) {
       showToast(t('common.errorPrefix', { msg: e.message }), 'error');
     } finally {
@@ -481,7 +494,7 @@ function renderServerInfo(info) {
   // ── ZFS pools (pool-level only, no individual datasets) ────
   const zfsPools = Array.isArray(info.zfs_pools) ? info.zfs_pools : [];
   const zfsHtml = zfsPools.length > 0 ? `
-      <div class="res-subsection"><i class="fas fa-database" style="margin-right:6px;opacity:.6;"></i>ZFS Pools</div>
+      <div class="res-subsection"><i class="fas fa-database" style="margin-right:6px;opacity:.6;"></i>${t('det.zfsPools')}</div>
       ${zfsPools.map(pool => {
         const poolPct = pool.size_gb ? Math.round((pool.alloc_gb / pool.size_gb) * 100) : 0;
         const poolValueClass = poolPct > 90 ? 'res-critical' : poolPct > 70 ? 'res-warn' : '';
@@ -504,7 +517,7 @@ function renderServerInfo(info) {
 
   const isOffline = cpuPct === null && info.ram_used_mb === null;
   if (isOffline) {
-    resEl.innerHTML = `<div class="empty-state empty-state-sm" style="padding:24px 16px;"><i class="fas fa-times-circle" style="font-size:24px;color:var(--offline);margin-bottom:8px;display:block;"></i><p style="color:var(--text-muted);font-size:13px;margin:0;">Offline</p></div>`;
+    resEl.innerHTML = `<div class="empty-state empty-state-sm" style="padding:24px 16px;"><i class="fas fa-times-circle" style="font-size:24px;color:var(--offline);margin-bottom:8px;display:block;"></i><p style="color:var(--text-muted);font-size:13px;margin:0;">${t('det.offline')}</p></div>`;
     return;
   }
 
@@ -670,7 +683,7 @@ async function loadRecentActivity(serverId) {
         </div>`;
     }).join('');
   } catch (e) {
-    if (el) el.innerHTML = `<div style="padding:16px;color:var(--text-muted);font-size:13px;">Could not load activity.</div>`;
+    if (el) el.innerHTML = `<div style="padding:16px;color:var(--text-muted);font-size:13px;">${t('det.activityLoadFailed')}</div>`;
   }
 }
 
@@ -681,6 +694,7 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
   const content = document.getElementById('docker-content');
   if (!content) return;
   content.dataset.serverId = serverId;
+  const mobileLayout = isMobileServerDetailLayout();
   if (!containers || containers.length === 0) {
     content.innerHTML = `<div class="empty-state"><div class="empty-state-icon"><i class="fas fa-cubes"></i></div><h3>${t('det.noContainers')}</h3><p>${t('det.noContainersHint')}</p></div>`;
     setupComposeBtn(serverId);
@@ -700,13 +714,15 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
     }
   });
 
-  let html = `<table class="data-table"><thead><tr>
+  let html = mobileLayout ? '<div class="docker-mobile-list">' : `<table class="data-table"><thead><tr>
     <th style="width:8px;"></th><th>${t('common.name')}</th><th>${t('common.image')}</th><th>${t('common.status')}</th><th>${t('det.checkUpdates')}</th><th>${t('common.actions')}</th>
   </tr></thead><tbody>`;
 
   for (const [proj, data] of Object.entries(stacks)) {
     const allDown = data.containers.every(c => !c.status?.startsWith('Up'));
-    html += `
+    html += mobileLayout
+      ? renderDockerStackCard(proj, data, allDown)
+      : `
       <tr class="group-header no-hover">
         <td colspan="5">
           <span style="display:inline-flex;align-items:center;gap:8px;">
@@ -724,20 +740,22 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
         </td>
       </tr>`;
     data.containers.forEach(c => {
-      if (c.container_name !== '[Stack Offline]') html += renderContainerRow(c, imageUpdateMap);
+      if (c.container_name !== '[Stack Offline]') html += mobileLayout ? renderContainerCard(c, imageUpdateMap) : renderContainerRow(c, imageUpdateMap);
     });
   }
 
   if (standalone.length > 0) {
-    html += `<tr class="group-header no-hover"><td colspan="6"><span style="display:inline-flex;align-items:center;gap:8px;"><i class="fas fa-cube" style="color:var(--text-muted);"></i><strong>Standalone</strong></span></td></tr>`;
-    standalone.forEach(c => { html += renderContainerRow(c, imageUpdateMap); });
+    html += mobileLayout
+      ? `<div class="docker-mobile-section-title"><i class="fas fa-cube"></i><strong>${t('det.standalone')}</strong></div>`
+      : `<tr class="group-header no-hover"><td colspan="6"><span style="display:inline-flex;align-items:center;gap:8px;"><i class="fas fa-cube" style="color:var(--text-muted);"></i><strong>${t('det.standalone')}</strong></span></td></tr>`;
+    standalone.forEach(c => { html += mobileLayout ? renderContainerCard(c, imageUpdateMap) : renderContainerRow(c, imageUpdateMap); });
   }
 
-  html += `</tbody></table>
+  html += `${mobileLayout ? '</div>' : '</tbody></table>'}
   <div id="docker-logs-panel" class="hidden">
     <div class="section-header" style="border-top:1px solid var(--border);">
-      <h3><i class="fas fa-file-alt"></i> Logs: <span id="logs-container-name"></span></h3>
-      <div class="flex-gap">
+      <h3><i class="fas fa-file-alt"></i> ${t('det.logs')}: <span id="logs-container-name"></span></h3>
+      <div class="server-detail-toolbar server-detail-toolbar--logs">
         <select id="logs-tail-select" class="form-input" style="padding:3px 8px;font-size:12px;width:110px;">
           <option value="100">${t('pb.lines100')}</option>
           <option value="200" selected>${t('pb.lines200')}</option>
@@ -898,6 +916,70 @@ function renderContainerRow(c, imageUpdateMap = {}) {
   `;
 }
 
+function renderDockerStackCard(project, data, allDown) {
+  return `
+    <section class="docker-mobile-stack">
+      <div class="docker-mobile-stack-header">
+        <div class="docker-mobile-stack-meta">
+          <div class="docker-mobile-stack-title-line">
+            <i class="fas fa-layer-group" style="color:var(--accent);"></i>
+            <strong>${esc(project)}</strong>
+            ${allDown ? `<span class="badge badge-offline" style="font-size:10px;">${t('common.offline')}</span>` : ''}
+          </div>
+          <div class="mono docker-mobile-stack-path">${esc(data.dir)}</div>
+        </div>
+        <div class="docker-mobile-stack-actions">
+          ${hasCap('canManageDockerCompose') ? `<button class="btn btn-secondary btn-sm compose-action-btn" data-project="${esc(project)}" data-dir="${esc(data.dir)}" data-action="edit" title="${t('common.edit')}"><i class="fas fa-edit"></i></button>` : ''}
+          ${hasCap('canPullDocker') ? `<button class="btn btn-secondary btn-sm compose-action-btn" data-project="${esc(project)}" data-dir="${esc(data.dir)}" data-action="pull" title="pull"><i class="fas fa-cloud-download-alt"></i></button>` : ''}
+          ${hasCap('canManageDockerCompose') ? `<button class="btn btn-primary btn-sm compose-action-btn" data-project="${esc(project)}" data-dir="${esc(data.dir)}" data-action="up" title="up -d"><i class="fas fa-play"></i></button>` : ''}
+          ${hasCap('canManageDockerCompose') ? `<button class="btn btn-danger btn-sm compose-action-btn" data-project="${esc(project)}" data-dir="${esc(data.dir)}" data-action="down" title="down"><i class="fas fa-stop"></i></button>` : ''}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderContainerCard(c, imageUpdateMap = {}) {
+  const isUp = c.status?.startsWith('Up');
+  const dotCls = isUp ? 'online' : 'offline';
+  const updateStatus = imageUpdateMap[c.image] || imageUpdateMap[c.image + ':latest'];
+  const updateCell = updateStatus === 'update_available'
+    ? `<span class="badge badge-warning" style="font-size:10px;"><i class="fas fa-arrow-up"></i> ${t('det.imageUpdateAvail')}</span>`
+    : updateStatus === 'updated'
+      ? `<span class="badge badge-online" style="font-size:10px;"><i class="fas fa-check"></i> ${t('det.imageUpdated')}</span>`
+      : updateStatus === 'up_to_date'
+        ? `<span class="docker-mobile-muted"><i class="fas fa-check"></i> ${t('det.imageUpToDate')}</span>`
+        : `<span class="docker-mobile-muted">—</span>`;
+
+  return `
+    <article class="docker-mobile-card">
+      <div class="docker-mobile-card-header">
+        <div class="docker-mobile-card-title-wrap">
+          <div class="docker-mobile-card-title-line">
+            <span class="status-dot ${dotCls}"></span>
+            <span class="mono docker-mobile-card-title">${esc(c.container_name)}</span>
+          </div>
+          <div class="mono docker-mobile-card-image">${esc(c.image)}</div>
+        </div>
+        <div class="docker-mobile-card-actions">
+          ${hasCap('canViewDocker') ? `<button class="btn btn-secondary btn-sm logs-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.showLogs')}"><i class="fas fa-file-alt"></i></button>` : ''}
+          ${hasCap('canRestartDocker') ? `<button class="btn btn-secondary btn-sm restart-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.containerRestarted')}"><i class="fas fa-sync-alt"></i></button>` : ''}
+        </div>
+      </div>
+      <div class="docker-mobile-card-meta">
+        <div>
+          <span class="docker-mobile-meta-label">${t('common.status')}</span>
+          <span class="docker-mobile-meta-value" style="color:${isUp ? 'var(--online)' : 'var(--offline)'};">${esc(c.status || c.state)}</span>
+        </div>
+        <div>
+          <span class="docker-mobile-meta-label">${t('det.checkUpdates')}</span>
+          <span class="docker-mobile-meta-value">${updateCell}</span>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
 async function loadContainerLogs(serverId, containerName) {
   const panel = document.getElementById('docker-logs-panel');
   const nameEl = document.getElementById('logs-container-name');
@@ -1052,6 +1134,7 @@ function renderUpdatesData(updates, customTasks = [], serverId = null) {
 function renderCustomTasksPanel(customTasks, serverId) {
   const el = document.getElementById('custom-updates-content');
   if (!el) return;
+  const mobileLayout = isMobileServerDetailLayout();
   const rows = (customTasks || []).map(task => {
     const statusCell = task.has_update
       ? `<span class="badge badge-warning" style="font-size:10px;"><i class="fas fa-arrow-up"></i> ${t('det.imageUpdateAvail')}</span>`
@@ -1064,7 +1147,34 @@ function renderCustomTasksPanel(customTasks, serverId) {
         ? `<span style="font-size:11px;color:var(--text-muted);"><i class="fas fa-wave-square"></i> ${t('det.taskTypeTriggerShort')}</span>`
         : `<span style="font-size:11px;color:var(--text-muted);">Script</span>`;
     const latestValue = task.type === 'trigger' ? (task.trigger_output || task.last_version || '—') : (task.last_version || '—');
-    return `
+    return mobileLayout
+      ? `
+      <article class="custom-task-card">
+        <div class="custom-task-card-header">
+          <div>
+            <div class="custom-task-card-title">${esc(task.name)}</div>
+            <div class="custom-task-card-subtitle">${typeLabel}</div>
+          </div>
+          <div class="custom-task-card-status">${statusCell}</div>
+        </div>
+        <div class="custom-task-card-grid">
+          <div>
+            <span class="custom-task-card-label">${t('det.currentVersion')}</span>
+            <span class="mono custom-task-card-value">${esc(task.current_version || '—')}</span>
+          </div>
+          <div>
+            <span class="custom-task-card-label">${t('det.latestVersion')}</span>
+            <span class="mono custom-task-card-value">${esc(latestValue)}</span>
+          </div>
+        </div>
+        <div class="custom-task-card-actions">
+          ${hasCap('canRunCustomUpdates') ? `<button class="btn btn-secondary btn-sm custom-task-check" data-id="${esc(task.id)}"><i class="fas fa-sync-alt"></i> ${t('det.checkNow')}</button>` : ''}
+          ${hasCap('canRunCustomUpdates') && task.update_command ? `<button class="btn btn-primary btn-sm custom-task-run" data-id="${esc(task.id)}" data-name="${esc(task.name)}"><i class="fas fa-play"></i> ${t('det.runUpdate')}</button>` : ''}
+          ${hasCap('canEditCustomUpdates') ? `<button class="btn btn-secondary btn-sm custom-task-edit" data-id="${esc(task.id)}"><i class="fas fa-edit"></i> ${t('common.edit')}</button>` : ''}
+          ${hasCap('canDeleteCustomUpdates') ? `<button class="btn btn-danger btn-sm custom-task-delete" data-id="${esc(task.id)}" data-name="${esc(task.name)}"><i class="fas fa-trash"></i> ${t('common.delete')}</button>` : ''}
+        </div>
+      </article>`
+      : `
       <tr class="no-hover">
         <td><strong>${esc(task.name)}</strong></td>
         <td>${typeLabel}</td>
@@ -1082,7 +1192,9 @@ function renderCustomTasksPanel(customTasks, serverId) {
 
   const emptyRow = `<tr class="no-hover"><td colspan="6" style="color:var(--text-muted);font-size:13px;padding:12px 16px;">${t('det.noCustomTasks')}</td></tr>`;
 
-  el.innerHTML = `
+  el.innerHTML = mobileLayout
+    ? (rows || `<div class="custom-task-empty">${t('det.noCustomTasks')}</div>`)
+    : `
     <table class="data-table">
       <thead><tr>
         <th>${t('common.name')}</th><th>${t('det.taskType')}</th>
@@ -1165,7 +1277,7 @@ function showCustomTaskModal(serverId, task) {
   overlay.innerHTML = `
     <div class="modal modal-md">
       <div class="modal-header">
-        <h3>${isEdit ? t('det.editTask') : t('det.addTask')}</h3>
+        <h3 id="ctm-title">${isEdit ? t('det.editTask') : t('det.addTask')}</h3>
         <button class="btn btn-secondary btn-sm" id="ctm-close"><i class="fas fa-times"></i></button>
       </div>
       <div class="modal-body" style="display:flex;flex-direction:column;gap:14px;">
@@ -1212,6 +1324,20 @@ function showCustomTaskModal(serverId, task) {
     </div>`;
 
   document.body.appendChild(overlay);
+  let releaseDialog = null;
+
+  function close() {
+    releaseDialog?.();
+    releaseDialog = null;
+    overlay.remove();
+  }
+
+  releaseDialog = activateDialog({
+    dialog: overlay.querySelector('.modal'),
+    initialFocus: '#ctm-name',
+    onClose: close,
+    labelledBy: 'ctm-title',
+  });
 
   function syncCustomTaskTypeUi(type) {
     const isGithub = type === 'github';
@@ -1231,7 +1357,6 @@ function showCustomTaskModal(serverId, task) {
   document.getElementById('ctm-type').addEventListener('change', e => syncCustomTaskTypeUi(e.target.value));
   syncCustomTaskTypeUi(task?.type || 'script');
 
-  const close = () => overlay.remove();
   document.getElementById('ctm-close').addEventListener('click', close);
   document.getElementById('ctm-cancel').addEventListener('click', close);
   overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
@@ -1328,7 +1453,7 @@ async function loadHistory(serverId) {
     el.innerHTML = `
       <table class="data-table">
         <thead>
-          <tr><th>${t('det.colAction')}</th><th>Trigger</th><th>${t('common.status')}</th><th>${t('det.colStarted')}</th><th>${t('det.colDone')}</th></tr>
+          <tr><th>${t('det.colAction')}</th><th>${t('det.colTrigger')}</th><th>${t('common.status')}</th><th>${t('det.colStarted')}</th><th>${t('det.colDone')}</th></tr>
         </thead>
         <tbody>
           ${items.map(h => {
@@ -1341,7 +1466,7 @@ async function loadHistory(serverId) {
               <tr class="no-hover">
                 <td class="mono">
                   <div style="display:flex;align-items:center;gap:6px;">
-                    ${isSchedule ? '<span class="badge" style="font-size:10px;padding:1px 6px;background:var(--accent-light);color:var(--accent);border:1px solid var(--accent);flex-shrink:0;">Playbook</span>' : ''}
+                    ${isSchedule ? `<span class="badge" style="font-size:10px;padding:1px 6px;background:var(--accent-light);color:var(--accent);border:1px solid var(--accent);flex-shrink:0;">${t('det.playbookBadge')}</span>` : ''}
                     ${esc(h.action)}
                   </div>
                 </td>

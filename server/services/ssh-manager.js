@@ -288,7 +288,10 @@ class SSHManager {
     }
 
     // Encrypt at rest if SHIPYARD_KEY_SECRET is configured
-    const encrypted = encryptKey(privateKeyContent);
+    // Re-read the key from disk: if a passphrase was stripped above, the file
+    // now contains the unprotected key — not the original privateKeyContent.
+    const strippedKeyContent = fs.readFileSync(keyPath, 'utf8');
+    const encrypted = encryptKey(strippedKeyContent);
     if (encrypted) {
       fs.writeFileSync(keyPath + '.enc', encrypted, { mode: 0o600 });
       fs.unlinkSync(keyPath);

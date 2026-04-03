@@ -1,9 +1,10 @@
 import { api } from '../api.js';
-import { state } from '../main.js';
-import { showToast, showConfirm } from './toast.js';
+import { state } from '../app/state.js';
+import { showToast, showConfirm } from '../components/toast.js';
 import { t } from '../i18n.js';
 import { esc } from '../utils/format.js';
 import { buildAllExceptTargets, describePlaybookTargets } from '../utils/playbook-targets.js';
+import { activateDialog } from '../utils/dialog.js';
 
 /**
  * @param {Function} onClose
@@ -31,7 +32,7 @@ export async function showRunPlaybookModal(onClose, preselectedNames = []) {
 
   overlay.innerHTML = `
     <div class="modal modal-md">
-      <h2>
+      <h2 id="run-playbook-title">
         <i class="fas fa-tools"></i> ${t('run.title')}
         <button id="btn-rp-close" style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:18px;color:var(--text-muted);line-height:1;">×</button>
       </h2>
@@ -46,7 +47,7 @@ export async function showRunPlaybookModal(onClose, preselectedNames = []) {
                   <span class="bulk-target-chip" data-name="${esc(n)}">
                     <span class="status-dot online" style="display:inline-block;"></span>
                     ${esc(n)}
-                    <button type="button" class="chip-remove" data-name="${esc(n)}" title="Entfernen">×</button>
+                    <button type="button" class="chip-remove" data-name="${esc(n)}" title="${t('common.remove')}">×</button>
                   </span>
                 `).join('')}
               </div>
@@ -106,10 +107,22 @@ export async function showRunPlaybookModal(onClose, preselectedNames = []) {
 
   document.body.appendChild(overlay);
 
+  const dialog = overlay.querySelector('.modal');
+  let releaseDialog = null;
+
   const closeModal = () => {
+    releaseDialog?.();
+    releaseDialog = null;
     overlay.remove();
     if (onClose) onClose();
   };
+
+  releaseDialog = activateDialog({
+    dialog,
+    initialFocus: () => overlay.querySelector(isBulk ? '#rp-file' : '#rp-target'),
+    onClose: closeModal,
+    labelledBy: 'run-playbook-title',
+  });
 
   overlay.querySelector('#btn-rp-close').addEventListener('click', closeModal);
   overlay.querySelector('#btn-rp-cancel').addEventListener('click', closeModal);
@@ -155,7 +168,7 @@ export async function showRunPlaybookModal(onClose, preselectedNames = []) {
         <span class="bulk-target-chip" data-name="${esc(n)}">
           <span class="status-dot online" style="display:inline-block;"></span>
           ${esc(n)}
-          <button type="button" class="chip-remove" data-name="${esc(n)}" title="Entfernen">×</button>
+          <button type="button" class="chip-remove" data-name="${esc(n)}" title="${t('common.remove')}">×</button>
         </span>
       `).join('');
       list.querySelectorAll('.chip-remove').forEach(btn => {

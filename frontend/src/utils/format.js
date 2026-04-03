@@ -1,4 +1,3 @@
-import { state } from '../main.js';
 import DOMPurify from 'dompurify';
 
 /** Escape HTML special characters to prevent XSS (Fallback für kleine Strings) */

@@ -1,7 +1,8 @@
 import { api } from '../api.js';
-import { showToast } from './toast.js';
+import { showToast } from '../components/toast.js';
 import { t } from '../i18n.js';
 import { esc } from '../utils/format.js';
+import { activateDialog } from '../utils/dialog.js';
 
 export function showAddServerModal(onSuccess, editServer = null) {
   const overlay = document.getElementById('modal-overlay');
@@ -12,7 +13,7 @@ export function showAddServerModal(onSuccess, editServer = null) {
 
   overlay.innerHTML = `
     <div class="modal">
-      <h2>${title}</h2>
+      <h2 id="server-modal-title">${title}</h2>
       <div class="form-body">
         <form id="server-form">
           <div class="form-group">
@@ -82,18 +83,31 @@ export function showAddServerModal(onSuccess, editServer = null) {
     </div>
   `;
 
-  // Close modal
-  document.getElementById('btn-cancel').addEventListener('click', () => {
+  let releaseDialog = null;
+
+  const closeModal = () => {
+    overlay.removeEventListener('click', onOverlayClick);
+    releaseDialog?.();
+    releaseDialog = null;
     overlay.classList.add('hidden');
     overlay.innerHTML = '';
+  };
+
+  const onOverlayClick = (e) => {
+    if (e.target === overlay) closeModal();
+  };
+
+  const dialog = overlay.querySelector('.modal');
+  releaseDialog = activateDialog({
+    dialog,
+    initialFocus: '#server-name',
+    onClose: closeModal,
+    labelledBy: 'server-modal-title',
   });
 
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) {
-      overlay.classList.add('hidden');
-      overlay.innerHTML = '';
-    }
-  });
+  // Close modal
+  document.getElementById('btn-cancel').addEventListener('click', closeModal);
+  overlay.addEventListener('click', onOverlayClick);
 
   const storageMountList = document.getElementById('storage-mount-list');
 
@@ -175,8 +189,7 @@ export function showAddServerModal(onSuccess, editServer = null) {
         showToast(t('add.added', { name: data.name }), 'success');
       }
 
-      overlay.classList.add('hidden');
-      overlay.innerHTML = '';
+      closeModal();
       if (onSuccess) await onSuccess(savedServer);
     } catch (error) {
       showToast(t('common.errorPrefix', { msg: error.message }), 'error');
@@ -184,7 +197,4 @@ export function showAddServerModal(onSuccess, editServer = null) {
       btn.innerHTML = isEdit ? t('common.save') : t('common.add');
     }
   });
-
-  // Focus first field
-  setTimeout(() => document.getElementById('server-name')?.focus(), 100);
 }

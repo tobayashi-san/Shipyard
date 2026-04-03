@@ -1,10 +1,13 @@
 import { api } from '../api.js';
-import { state, navigate, openGlobalTerminal, hasCap } from '../main.js';
-import { showToast, showConfirm, showPrompt } from './toast.js';
-import { showAddServerModal } from './add-server-modal.js';
-import { showRunPlaybookModal } from './run-playbook-modal.js';
+import { state, hasCap } from '../app/state.js';
+import { navigate } from '../app/router.js';
+import { openGlobalTerminal } from '../terminal/global-terminal.js';
+import { showToast, showConfirm, showPrompt } from '../components/toast.js';
+import { showAddServerModal } from '../modals/add-server-modal.js';
+import { showRunPlaybookModal } from '../modals/run-playbook-modal.js';
 import { t } from '../i18n.js';
 import { esc } from '../utils/format.js';
+import { activateDialog } from '../utils/dialog.js';
 
 // Selection state – survives soft re-renders within the same page visit
 let selectedIds = new Set();
@@ -70,6 +73,10 @@ async function reloadServersState() {
   state.servers = servers.map(normalizeServer);
 }
 
+function isMobileServersLayout() {
+  return window.matchMedia('(max-width: 768px)').matches;
+}
+
 export async function renderServers() {
   const main = document.querySelector('.main-content');
   if (!main) return;
@@ -85,6 +92,7 @@ export async function renderServers() {
 
   const allTags = [...new Set(state.servers.flatMap(s => s.tags || []))].sort();
   const filtered = activeTag ? state.servers.filter(s => (s.tags || []).includes(activeTag)) : state.servers;
+  const mobileLayout = isMobileServersLayout();
 
   const onlineCount = state.servers.filter(s => s.status === 'online').length;
   const offlineCount = state.servers.filter(s => s.status === 'offline').length;
@@ -97,19 +105,22 @@ export async function renderServers() {
   // With groups: no pagination (render all in grouped sections)
   // Without groups: paginate as before
   const useGroups = serverGroups.length > 0;
-  let tableBody = '';
+  let bodyMarkup = '';
   let paginationHtml = '';
-  const allSelected = filtered.length > 0 && filtered.every(s => selectedIds.has(s.id));
+  let visibleServers = filtered;
 
   if (useGroups) {
-    tableBody = renderGroupedBody(filtered, serverGroups);
+    bodyMarkup = mobileLayout ? renderGroupedCards(filtered, serverGroups) : renderGroupedBody(filtered, serverGroups);
   } else {
     const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
     if (serverPage > totalPages) serverPage = totalPages;
     const pageServers = filtered.slice((serverPage - 1) * PAGE_SIZE, serverPage * PAGE_SIZE);
-    tableBody = pageServers.map(s => renderRow(s)).join('');
+    visibleServers = pageServers;
+    bodyMarkup = mobileLayout ? pageServers.map(s => renderServerCard(s)).join('') : pageServers.map(s => renderRow(s)).join('');
     paginationHtml = renderPagination(serverPage, totalPages, filtered.length);
   }
+
+  const allSelected = visibleServers.length > 0 && visibleServers.every(s => selectedIds.has(s.id));
 
   main.innerHTML = `
     <div class="page-header">
@@ -177,29 +188,43 @@ export async function renderServers() {
             </button>` : ''}
           </div>
         ` : `
-          <table class="data-table" id="server-table">
-            <thead>
-              <tr>
-                <th style="width:36px;padding-right:0;">
-                  <input type="checkbox" class="row-checkbox" id="select-all"
-                    ${allSelected ? 'checked' : ''}
-                    title="${t('common.all')}">
-                </th>
-                <th style="width:12px;padding-left:0;"></th>
-                <th>${t('srv.colName')}</th>
-                <th>${t('srv.colIp')}</th>
-                <th>${t('srv.colOs')}</th>
-                <th style="width:120px;">${t('srv.colCpu')}</th>
-                <th style="width:120px;">${t('srv.colRam')}</th>
-                <th style="width:120px;">${t('srv.colDisk')}</th>
-                <th>${t('srv.colLastSeen')}</th>
-                <th>${t('common.actions')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${tableBody}
-            </tbody>
-          </table>
+          ${mobileLayout ? `
+            <div class="servers-mobile-toolbar">
+              <label class="servers-mobile-select-all" for="select-all">
+                <input type="checkbox" class="row-checkbox" id="select-all"
+                  ${allSelected ? 'checked' : ''}
+                  title="${t('common.all')}">
+                <span>${t('common.all')}</span>
+              </label>
+            </div>
+            <div class="servers-mobile-list">
+              ${bodyMarkup}
+            </div>
+          ` : `
+            <table class="data-table" id="server-table">
+              <thead>
+                <tr>
+                  <th style="width:36px;padding-right:0;">
+                    <input type="checkbox" class="row-checkbox" id="select-all"
+                      ${allSelected ? 'checked' : ''}
+                      title="${t('common.all')}">
+                  </th>
+                  <th style="width:12px;padding-left:0;"></th>
+                  <th>${t('srv.colName')}</th>
+                  <th>${t('srv.colIp')}</th>
+                  <th>${t('srv.colOs')}</th>
+                  <th style="width:120px;">${t('srv.colCpu')}</th>
+                  <th style="width:120px;">${t('srv.colRam')}</th>
+                  <th style="width:120px;">${t('srv.colDisk')}</th>
+                  <th>${t('srv.colLastSeen')}</th>
+                  <th>${t('common.actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${bodyMarkup}
+              </tbody>
+            </table>
+          `}
           ${paginationHtml}
         `}
       </div>
@@ -287,6 +312,7 @@ function attachEvents() {
     const groupId = row.dataset.groupId;
     row.addEventListener('click', e => {
       if (e.target.closest('.group-header-actions')) return;
+      if (!groupId) return;
       collapsedGroups.has(groupId) ? collapsedGroups.delete(groupId) : collapsedGroups.add(groupId);
       saveCollapsedGroups();
       renderServers();
@@ -736,7 +762,7 @@ function showGroupDialog({ title = '', confirmText = '', groups = [], defaultNam
 
     overlay.innerHTML = `
       <div class="modal modal-sm">
-        <div class="modal-header"><h3 class="modal-title">${esc(title)}</h3></div>
+        <div class="modal-header"><h3 class="modal-title" id="gd-title">${esc(title)}</h3></div>
         <div class="modal-body" style="display:flex;flex-direction:column;gap:16px;">
           <div>
             <label class="form-label">${t('common.name')}</label>
@@ -769,7 +795,7 @@ function showGroupDialog({ title = '', confirmText = '', groups = [], defaultNam
 
     const nameInput = overlay.querySelector('#gd-name');
     const customColor = overlay.querySelector('#gd-custom-color');
-    nameInput.focus(); nameInput.select();
+    let releaseDialog = null;
 
     const setColor = (color) => {
       selectedColor = color;
@@ -792,20 +818,30 @@ function showGroupDialog({ title = '', confirmText = '', groups = [], defaultNam
       });
     });
 
-    const cleanup = (result) => { document.removeEventListener('keydown', onKey); overlay.remove(); resolve(result); };
+    const cleanup = (result) => {
+      releaseDialog?.();
+      releaseDialog = null;
+      overlay.remove();
+      resolve(result);
+    };
     const submit = () => {
       const name = nameInput.value.trim();
       if (!name) { nameInput.focus(); return; }
       cleanup({ name, color: selectedColor, parentId: overlay.querySelector('#gd-parent').value || null });
     };
 
+    releaseDialog = activateDialog({
+      dialog: overlay.querySelector('.modal'),
+      initialFocus: nameInput,
+      onClose: () => cleanup(null),
+      labelledBy: 'gd-title',
+    });
+    window.requestAnimationFrame(() => nameInput.select());
+
     overlay.querySelector('#gd-cancel').addEventListener('click', () => cleanup(null));
     overlay.querySelector('#gd-ok').addEventListener('click', submit);
     nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
     overlay.addEventListener('click', e => { if (e.target === overlay) cleanup(null); });
-
-    const onKey = (e) => { if (e.key === 'Escape') cleanup(null); };
-    document.addEventListener('keydown', onKey);
   });
 }
 
@@ -898,6 +934,44 @@ function renderGroupedBody(servers, groups) {
   return html;
 }
 
+function renderGroupedCards(servers, groups) {
+  const serversByGroup = {};
+  const ungrouped = [];
+  for (const s of servers) {
+    const gid = s.group_id;
+    if (gid && groups.find(g => g.id === gid)) {
+      (serversByGroup[gid] = serversByGroup[gid] || []).push(s);
+    } else {
+      ungrouped.push(s);
+    }
+  }
+
+  let html = '';
+
+  if (ungrouped.length > 0) {
+    html += `
+      <div class="servers-mobile-group servers-mobile-group--ungrouped">
+        <div class="servers-mobile-group-header">
+          <div class="servers-mobile-group-title-wrap">
+            <i class="fas fa-server" style="color:var(--text-muted);font-size:12px;"></i>
+            <span class="servers-mobile-group-title" style="color:var(--text-muted);">${t('srv.moveToRoot')}</span>
+          </div>
+          <span class="group-badge">${ungrouped.length}</span>
+        </div>
+        <div class="servers-mobile-group-body">
+          ${ungrouped.map(s => renderServerCard(s)).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  const tree = buildGroupTree(groups);
+  for (const node of tree) {
+    html += renderMobileGroupNode(node, 0, serversByGroup);
+  }
+  return html;
+}
+
 function updateBulkBar() {
   const bar = document.getElementById('bulk-bar');
   const count = document.getElementById('bulk-count');
@@ -958,6 +1032,105 @@ function renderRow(server, depth = 0, folderColor = null) {
         </button>` : ''}
       </td>
     </tr>
+  `;
+}
+
+function renderMobileGroupNode(node, depth, serversByGroup) {
+  const members = serversByGroup[node.id] || [];
+  const collapsed = collapsedGroups.has(node.id);
+  const indent = depth * 14;
+  const color = node.color || '#6366f1';
+  const total = members.length + countDescendantServers(node, serversByGroup);
+
+  let html = `
+    <section class="servers-mobile-group">
+      <button type="button" class="servers-mobile-group-header group-row" data-group-id="${node.id}" style="border-left:3px solid ${color};padding-left:${14 + indent}px;">
+        <div class="servers-mobile-group-title-wrap">
+          <i class="fas fa-chevron-${collapsed ? 'right' : 'down'}" style="font-size:11px;color:var(--text-muted);width:14px;flex-shrink:0;"></i>
+          <i class="fas fa-folder${collapsed ? '' : '-open'}" style="color:${color};flex-shrink:0;"></i>
+          <span class="servers-mobile-group-title">${esc(node.name)}</span>
+        </div>
+        <span class="group-badge">${total}</span>
+      </button>
+  `;
+
+  if (!collapsed) {
+    if (members.length === 0 && node.children.length === 0) {
+      html += `<div class="servers-mobile-empty-group"><i class="fas fa-info-circle"></i> ${t('srv.emptyGroup')}</div>`;
+    } else {
+      html += `<div class="servers-mobile-group-body">${members.map(s => renderServerCard(s, depth + 1, color)).join('')}</div>`;
+    }
+
+    for (const child of node.children) {
+      html += renderMobileGroupNode(child, depth + 1, serversByGroup);
+    }
+  }
+
+  html += '</section>';
+  return html;
+}
+
+function renderMetric(label, idPrefix, serverId) {
+  return `
+    <div class="server-card-metric" id="${idPrefix}-${serverId}">
+      <div class="server-card-metric-head">
+        <span>${label}</span>
+        <span class="text-mono empty-value" id="${idPrefix}-val-${serverId}">—</span>
+      </div>
+      <div class="progress-track server-card-progress"><div class="progress-fill" style="width:0%" id="${idPrefix}-bar-${serverId}"></div></div>
+    </div>
+  `;
+}
+
+function renderServerCard(server, depth = 0, folderColor = null) {
+  const dotCls = server.status === 'online' ? 'online' : server.status === 'offline' ? 'offline' : 'unknown';
+  const statusLabel = server.status === 'online' ? t('common.online') : server.status === 'offline' ? t('common.offline') : t('common.unknown');
+  const lastSeen = server.last_seen ? formatRelativeTime(server.last_seen) : '—';
+  const checked = selectedIds.has(server.id) ? 'checked' : '';
+  const indent = depth > 0 ? `style="margin-left:${depth * 12}px;${folderColor ? `border-left:3px solid ${folderColor};` : ''}"` : (folderColor ? `style="border-left:3px solid ${folderColor};"` : '');
+
+  return `
+    <article class="server-card server-row" data-server-id="${server.id}" ${indent}>
+      <div class="server-card-header">
+        <label class="server-card-checkbox checkbox-cell">
+          <input type="checkbox" class="server-checkbox row-checkbox" data-server-id="${server.id}" ${checked}>
+        </label>
+        <div class="server-card-title-wrap">
+          <div class="server-card-title-line">
+            <span class="status-dot ${dotCls}"></span>
+            <span class="server-card-title">${esc(server.name)}</span>
+            <span class="badge badge-${dotCls}">${statusLabel}</span>
+          </div>
+          ${(server.tags || []).length ? `<div class="server-tags-inline">${(server.tags || []).map(tag => `<span class="server-tag">${esc(tag)}</span>`).join('')}</div>` : ''}
+        </div>
+        <div class="row-actions server-card-actions">
+          ${serverGroups.length > 0 && hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm btn-move-server" data-server-id="${server.id}" title="${t('srv.moveTo')}"><i class="fas fa-folder-open"></i></button>` : ''}
+          ${hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm btn-edit-server" data-server-id="${server.id}" title="${t('srv.edit')}"><i class="fas fa-edit"></i></button>` : ''}
+          ${hasCap('canDeleteServers') ? `<button class="btn btn-danger btn-sm btn-delete-server" data-server-id="${server.id}" data-server-name="${esc(server.name)}" title="${t('srv.delete')}"><i class="fas fa-trash"></i></button>` : ''}
+        </div>
+      </div>
+
+      <div class="server-card-meta">
+        <div class="server-card-meta-item">
+          <span class="server-card-meta-label">${t('srv.colIp')}</span>
+          <span class="mono ${server.ip_address ? '' : 'empty-value'}">${esc(server.ip_address || '—')}</span>
+        </div>
+        <div class="server-card-meta-item">
+          <span class="server-card-meta-label">${t('srv.colOs')}</span>
+          <span id="os-${server.id}" class="mono empty-value">—</span>
+        </div>
+        <div class="server-card-meta-item">
+          <span class="server-card-meta-label">${t('srv.colLastSeen')}</span>
+          <span class="mono ${lastSeen === '—' ? 'empty-value' : ''}">${lastSeen}</span>
+        </div>
+      </div>
+
+      <div class="server-card-metrics">
+        ${renderMetric(t('srv.colCpu'), 'cpu', server.id)}
+        ${renderMetric(t('srv.colRam'), 'ram', server.id)}
+        ${renderMetric(t('srv.colDisk'), 'disk', server.id)}
+      </div>
+    </article>
   `;
 }
 

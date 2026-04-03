@@ -1,7 +1,14 @@
 import { api } from '../api.js';
-import { state, navigate } from '../main.js';
+import { state } from '../app/state.js';
+import { navigate } from '../app/router.js';
 import { t } from '../i18n.js';
 import { formatCurrentTime, formatDateTimeShort, esc, sanitizeHTML } from '../utils/format.js';
+
+let dashboardAttentionOnly = false;
+
+function isMobileDashboardLayout() {
+  return window.matchMedia('(max-width: 768px)').matches;
+}
 
 // Called by background poller — only refreshes data, never rebuilds page shell
 export async function refreshDashboardData() {
@@ -62,6 +69,11 @@ function renderDashboardData(data) {
   const ts = document.getElementById('dash-timestamp');
   if (ts) ts.textContent = t('dash.updatedAt', { time: formatCurrentTime() });
 
+  const mobileLayout = isMobileDashboardLayout();
+  const attentionCount = servers.filter(needsAttention).length;
+  if (dashboardAttentionOnly && attentionCount === 0) dashboardAttentionOnly = false;
+  const visibleServers = dashboardAttentionOnly ? servers.filter(needsAttention) : servers;
+
   const alerts = [];
   servers.forEach(s => {
     if (s.status === 'offline') alerts.push({ level: 'error', icon: 'fa-times-circle', text: `<strong>${esc(s.name)}</strong> ${t('dash.alertOffline', { name: '' }).replace(esc(s.name) + ' ', '')}`, serverId: s.id, name: s.name });
@@ -79,28 +91,27 @@ function renderDashboardData(data) {
   content.innerHTML = sanitizeHTML(`
     <!-- Stat Cards -->
     <div class="dash-stat-row">
-      ${statCard('fa-server', summary.total, t('dash.totalServers'), '')}
-      ${statCard('fa-check-circle', summary.online, t('dash.online'), 'var(--online)')}
-      ${statCard('fa-times-circle', summary.offline, t('dash.offline'), summary.offline > 0 ? 'var(--offline)' : '')}
-      ${statCard('fa-redo', summary.rebootRequired, t('dash.needsReboot'), summary.rebootRequired > 0 ? 'var(--warning)' : '')}
-      ${statCard('fa-arrow-up', summary.totalUpdates, t('dash.updatesAvailable'), summary.totalUpdates > 0 ? 'var(--warning)' : '')}
-      ${statCard('fa-exclamation-triangle', summary.criticalDisk + summary.criticalRam, t('dash.resourcesCritical'), (summary.criticalDisk + summary.criticalRam) > 0 ? 'var(--offline)' : '')}
+      ${statCard('fa-server',            summary.total,                          t('dash.totalServers'),    '')}
+      ${statCard('fa-check-circle',      summary.online,                         t('dash.online'),          'success')}
+      ${statCard('fa-times-circle',      summary.offline,                        t('dash.offline'),         summary.offline > 0 ? 'error' : '')}
+      ${statCard('fa-redo',              summary.rebootRequired,                 t('dash.needsReboot'),     summary.rebootRequired > 0 ? 'warning' : '')}
+      ${statCard('fa-arrow-up',          summary.totalUpdates,                   t('dash.updatesAvailable'), summary.totalUpdates > 0 ? 'warning' : '')}
+      ${statCard('fa-exclamation-triangle', summary.criticalDisk + summary.criticalRam, t('dash.resourcesCritical'), (summary.criticalDisk + summary.criticalRam) > 0 ? 'error' : '')}
     </div>
 
     <div class="dash-grid">
 
       <!-- Server Health -->
       <div class="dash-col-main">
-        <div class="dash-section-title" style="justify-content:space-between;">
-          <span>${t('dash.serverHealth')}</span>
-          ${(() => { const attCount = servers.filter(needsAttention).length; return attCount > 0 ? `
-            <button class="btn btn-secondary btn-sm active" id="btn-todo-filter" style="font-size:11px;padding:3px 10px;">
+        <div class="dash-section-title dash-section-title--split">
+          <span><span class="dash-section-kicker">Operations</span>${t('dash.serverHealth')}</span>
+          ${attentionCount > 0 ? `
+            <button class="btn btn-secondary btn-sm ${dashboardAttentionOnly ? 'active' : ''}" id="btn-todo-filter" style="font-size:11px;padding:3px 10px;">
               <i class="fas fa-filter" style="margin-right:4px;"></i>${t('dash.needsAttention')}
-              <span class="nav-item-badge" style="margin-left:5px;">${attCount}</span>
-            </button>` : ''; })()
-          }
+              <span class="nav-item-badge" style="margin-left:5px;">${attentionCount}</span>
+            </button>` : ''}
         </div>
-        <div class="panel">
+        <div class="panel dash-panel">
           ${servers.length === 0 ? `
             <div class="empty-state">
               <div class="empty-state-icon"><i class="fas fa-server"></i></div>
@@ -109,6 +120,10 @@ function renderDashboardData(data) {
               <button class="btn btn-primary" id="btn-empty-add-server" style="margin-top:8px;">
                 <i class="fas fa-plus"></i> ${t('srv.add')}
               </button>
+            </div>
+          ` : mobileLayout ? `
+            <div class="dash-server-list">
+              ${visibleServers.map(s => serverHealthCard(s)).join('')}
             </div>
           ` : `
             <table class="data-table" style="table-layout:fixed;">
@@ -122,7 +137,7 @@ function renderDashboardData(data) {
                 <th style="width:130px;">${t('dash.colUpdates')}</th>
               </tr></thead>
               <tbody>
-                ${(() => { const hasAtt = servers.some(needsAttention); return servers.map(s => serverHealthRow(s, hasAtt)).join(''); })()}
+                ${visibleServers.map(s => serverHealthRow(s)).join('')}
               </tbody>
             </table>
           `}
@@ -134,12 +149,12 @@ function renderDashboardData(data) {
 
         <!-- Alerts -->
         <div class="dash-section-title">
-          ${t('dash.alerts')}
+          <span><span class="dash-section-kicker">Signals</span>${t('dash.alerts')}</span>
           ${alerts.length > 0 ? `<span class="nav-item-badge" style="margin-left:6px;">${alerts.length}</span>` : ''}
         </div>
-        <div class="panel" style="margin-bottom:20px;">
+        <div class="panel dash-panel" style="margin-bottom:20px;">
           ${alerts.length === 0 ? `
-            <div style="padding:16px;display:flex;align-items:center;gap:8px;color:var(--online);font-size:13px;">
+            <div class="dash-empty-inline">
               <i class="fas fa-check-circle"></i> ${t('dash.allClear')}
             </div>
           ` : alerts.map(a => `
@@ -151,18 +166,18 @@ function renderDashboardData(data) {
         </div>
 
         <!-- Recent Activity -->
-        <div class="dash-section-title">${t('dash.recentActivity')}</div>
-        <div class="panel">
+        <div class="dash-section-title"><span><span class="dash-section-kicker">Timeline</span>${t('dash.recentActivity')}</span></div>
+        <div class="panel dash-panel">
           ${recentHistory.length === 0 ? `
-            <div style="padding:16px;font-size:13px;color:var(--text-muted);">${t('dash.noActivity')}</div>
+            <div class="dash-empty-muted">${t('dash.noActivity')}</div>
           ` : recentHistory.map(h => `
             <div class="dash-history-item">
-              <span class="status-dot ${h.status === 'success' ? 'online' : h.status === 'failed' ? 'offline' : 'unknown'}" style="flex-shrink:0;margin-top:3px;"></span>
-              <div style="flex:1;min-width:0;">
-                <div style="font-size:13px;font-weight:500;">${esc(h.server_name || '–')}</div>
-                <div style="font-size:11px;color:var(--text-muted);">${esc(h.action)} · ${formatRelativeTime(h.started_at)}</div>
+              <span class="status-dot ${h.status === 'success' ? 'online' : h.status === 'failed' ? 'offline' : 'unknown'}"></span>
+              <div class="dash-history-body">
+                <div class="dash-history-name">${esc(h.server_name || '–')}</div>
+                <div class="dash-history-meta">${esc(h.action)} · ${formatRelativeTime(h.started_at)}</div>
               </div>
-              <span class="badge badge-${h.status === 'success' ? 'online' : h.status === 'failed' ? 'offline' : 'unknown'}" style="font-size:10px;">${esc(h.status)}</span>
+              <span class="badge badge-${h.status === 'success' ? 'online' : h.status === 'failed' ? 'offline' : 'unknown'} dash-history-badge">${esc(h.status)}</span>
             </div>
           `).join('')}
         </div>
@@ -175,19 +190,19 @@ function renderDashboardData(data) {
   const filterBtn = document.getElementById('btn-todo-filter');
   if (filterBtn) {
     filterBtn.addEventListener('click', () => {
-      const active = filterBtn.classList.toggle('active');
-      content.querySelectorAll('.server-health-row').forEach(row => {
-        if (active && row.dataset.needsAttention !== '1') {
-          row.style.display = 'none';
-        } else {
-          row.style.display = '';
-        }
-      });
+      dashboardAttentionOnly = !dashboardAttentionOnly;
+      renderDashboardData(data);
     });
   }
 
+  // Staggered entry animations (only on fresh data load)
+  requestAnimationFrame(() => {
+    content.querySelector('.dash-stat-row')?.classList.add('is-animated');
+    content.querySelector('.dash-grid')?.classList.add('is-animated');
+  });
+
   // Server-Row click
-  content.querySelectorAll('.server-health-row').forEach(row => {
+  content.querySelectorAll('.dashboard-server-link').forEach(row => {
     row.addEventListener('click', () => navigate('server-detail', { serverId: row.dataset.serverId }));
   });
 
@@ -209,20 +224,29 @@ function renderDashboardData(data) {
   });
 }
 
-function statCard(icon, value, label, color) {
-  const iconBg = color ? `background:${color}1a;color:${color};` : '';
+function statCard(icon, value, label, colorKey) {
+  const colorAttr = colorKey ? ` data-color="${colorKey}"` : '';
+  const iconColor = colorKey === 'error' ? 'var(--offline)' :
+                    colorKey === 'warning' ? 'var(--warning)' :
+                    colorKey === 'success' ? 'var(--online)' : '';
+  const iconBg = iconColor
+    ? `background:${iconColor}14;color:${iconColor};border-color:${iconColor}33;`
+    : '';
+  const valueColor = iconColor ? `color:${iconColor};` : '';
   return `
-    <div class="dash-stat-card">
-      <div class="dash-stat-icon" style="${iconBg}"><i class="fas ${icon}"></i></div>
+    <div class="dash-stat-card"${colorAttr}>
+      <div class="dash-stat-card-top">
+        <div class="dash-stat-icon" style="${iconBg}"><i class="fas ${icon}"></i></div>
+      </div>
       <div>
-        <div class="dash-stat-value" style="${color ? `color:${color}` : ''}">${value}</div>
+        <div class="dash-stat-value" style="${valueColor}">${value}</div>
         <div class="dash-stat-label">${label}</div>
       </div>
     </div>
   `;
 }
 
-function serverHealthRow(s, filterActive) {
+function serverHealthRow(s) {
   const dotCls = s.status === 'online' ? 'online' : s.status === 'offline' ? 'offline' : 'unknown';
   const ramBar = miniBar(s.ram_pct);
   const diskBar = miniBar(s.disk_pct);
@@ -232,13 +256,13 @@ function serverHealthRow(s, filterActive) {
   const visibleTags = tags.slice(0, 3);
 
   return `
-    <tr class="server-health-row" data-server-id="${s.id}" data-needs-attention="${needsAttention(s) ? '1' : '0'}" style="cursor:pointer;${filterActive && !needsAttention(s) ? 'display:none;' : ''}">
+    <tr class="dashboard-server-link server-health-row" data-server-id="${s.id}" data-needs-attention="${needsAttention(s) ? '1' : '0'}">
       <td><span class="status-dot ${dotCls}"></span></td>
       <td>
-        <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
-          <span style="font-weight:600;color:var(--text-primary);">${esc(s.name)}</span>
+        <div class="dash-server-name-line">
+          <span class="dash-server-name">${esc(s.name)}</span>
           ${agentBadge(s)}
-          <span style="font-size:11.5px;color:var(--text-muted);font-family:var(--font-mono);">${esc(s.ip_address)}</span>
+          <span class="dash-server-ip">${esc(s.ip_address)}</span>
         </div>
         ${visibleTags.length > 0 ? `
           <div class="server-tags-inline" style="margin-top:4px;">
@@ -250,9 +274,50 @@ function serverHealthRow(s, filterActive) {
       <td>${ramBar}</td>
       <td>${diskBar}</td>
       <td>${cpuBar}</td>
-      <td><span class="${uptime === '—' ? 'empty-value' : ''}" style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">${esc(uptime)}</span></td>
+      <td><span class="dash-uptime ${uptime === '—' ? 'empty-value' : ''}">${esc(uptime)}</span></td>
       <td>${updatesCell(s)}</td>
     </tr>
+  `;
+}
+
+function serverHealthCard(s) {
+  const dotCls = s.status === 'online' ? 'online' : s.status === 'offline' ? 'offline' : 'unknown';
+  const statusLabel = s.status === 'online' ? t('common.online') : s.status === 'offline' ? t('common.offline') : t('common.unknown');
+  const uptime = formatUptime(s.uptime_seconds);
+  const tags = Array.isArray(s.tags) ? s.tags : [];
+  const visibleTags = tags.slice(0, 4);
+
+  return `
+    <article class="dashboard-server-link dash-server-card" data-server-id="${s.id}" data-needs-attention="${needsAttention(s) ? '1' : '0'}">
+      <div class="dash-server-card-header">
+        <div class="dash-server-card-main">
+          <div class="dash-server-card-title-line">
+            <span class="status-dot ${dotCls}"></span>
+            <span class="dash-server-card-title">${esc(s.name)}</span>
+            <span class="badge badge-${dotCls}">${statusLabel}</span>
+          </div>
+          <div class="dash-server-card-meta">
+            ${agentBadge(s)}
+            <span class="mono dash-server-card-ip">${esc(s.ip_address)}</span>
+            <span class="mono dash-server-card-uptime ${uptime === '—' ? 'empty-value' : ''}">${esc(uptime)}</span>
+          </div>
+          ${visibleTags.length > 0 ? `
+            <div class="server-tags-inline">
+              ${visibleTags.map(tag => `<span class="server-tag">${esc(tag)}</span>`).join('')}
+              ${tags.length > visibleTags.length ? `<span class="server-tag">+${tags.length - visibleTags.length}</span>` : ''}
+            </div>
+          ` : ''}
+        </div>
+      </div>
+      <div class="dash-server-card-metrics">
+        ${mobileMetric(t('dash.colRam'), s.ram_pct)}
+        ${mobileMetric(t('dash.colDisk'), s.disk_pct)}
+        ${mobileMetric(t('dash.colCpu'), s.cpu_pct)}
+      </div>
+      <div class="dash-server-card-updates">
+        ${updatesSummaryChips(s)}
+      </div>
+    </article>
   `;
 }
 
@@ -263,18 +328,33 @@ function agentBadge(s) {
   const color = state === 'ok' ? 'var(--online)' : state === 'warning' ? 'var(--warning)' : 'var(--offline)';
   const label = state === 'ok' ? t('dash.agentOk') : state === 'warning' ? t('dash.agentDelayed') : t('dash.agentStale');
   const title = `${t('dash.agentMode')}: ${mode} · ${label}`;
-  return `<span class="badge" title="${esc(title)}" style="font-size:10px;padding:1px 6px;background:${color}1f;color:${color};border:1px solid ${color};display:inline-flex;align-items:center;gap:4px;"><i class="fas fa-robot" style="font-size:9px;"></i>${esc(mode)}</span>`;
+  return `<span class="badge agent-mode-badge" title="${esc(title)}" style="background:${color}14;color:${color};border:1px solid ${color}33;display:inline-flex;align-items:center;gap:4px;"><i class="fas fa-robot" style="font-size:9px;"></i>${esc(mode)}</span>`;
 }
 
 function miniBar(pct) {
-  if (pct === null || pct === undefined) return '<span class="empty-value" style="font-size:12px;">—</span>';
+  if (pct === null || pct === undefined) return '<span class="empty-value">—</span>';
   const cls = pct > 90 ? ' critical' : pct > 70 ? ' high' : '';
   return `
-    <div style="display:flex;align-items:center;gap:6px;">
-      <div class="progress-track" style="height:5px;width:120px;flex-shrink:0;">
+    <div class="mini-bar">
+      <div class="progress-track">
         <div class="progress-fill${cls}" style="width:${pct}%;"></div>
       </div>
-      <span style="font-family:var(--font-mono);font-size:11px;width:30px;">${pct}%</span>
+      <span class="mono">${pct}%</span>
+    </div>
+  `;
+}
+
+function mobileMetric(label, pct) {
+  const cls = pct > 90 ? ' critical' : pct > 70 ? ' high' : '';
+  return `
+    <div class="dash-server-metric">
+      <div class="dash-server-metric-head">
+        <span>${label}</span>
+        <span class="mono ${pct === null || pct === undefined ? 'empty-value' : ''}">${pct === null || pct === undefined ? '—' : `${pct}%`}</span>
+      </div>
+      <div class="progress-track dash-server-metric-track">
+        <div class="progress-fill${cls}" style="width:${pct || 0}%;"></div>
+      </div>
     </div>
   `;
 }
@@ -300,8 +380,20 @@ function updatesCell(s) {
   if (s.custom_updates_count > 0)
     parts.push(`<span title="${t('dash.colCustomUpdates')}" style="white-space:nowrap;"><i class="fas fa-cog" style="font-size:10px;margin-right:3px;"></i>${s.custom_updates_count}</span>`);
   if (parts.length === 0)
-    return `<span style="color:var(--online);font-size:13px;" title="${t('dash.allClear')}"><i class="fas fa-check-circle"></i></span>`;
-  return `<span class="badge badge-warning" style="font-size:11px;display:inline-flex;gap:8px;align-items:center;">${parts.join('')}</span>`;
+    return `<span class="updates-badge--ok" title="${t('dash.allClear')}"><i class="fas fa-check-circle"></i></span>`;
+  return `<span class="badge badge-warning updates-badge">${parts.join('')}</span>`;
+}
+
+function updatesSummaryChips(s) {
+  const chips = [];
+  if (s.reboot_required) chips.push(`<span class="badge badge-warning"><i class="fas fa-redo"></i>${t('dash.needsReboot')}</span>`);
+  if (s.updates_count > 0) chips.push(`<span class="badge badge-warning"><i class="fas fa-box"></i>${s.updates_count} ${t('dash.colUpdates')}</span>`);
+  if (s.image_updates_count > 0) chips.push(`<span class="badge badge-warning"><i class="fas fa-cube"></i>${s.image_updates_count} ${t('dash.colImageUpdates')}</span>`);
+  if (s.custom_updates_count > 0) chips.push(`<span class="badge badge-warning"><i class="fas fa-cog"></i>${s.custom_updates_count} ${t('dash.colCustomUpdates')}</span>`);
+  if (chips.length === 0) {
+    return `<span class="badge badge-online"><i class="fas fa-check-circle"></i>${t('dash.allClear')}</span>`;
+  }
+  return chips.join('');
 }
 
 function formatUptime(seconds) {

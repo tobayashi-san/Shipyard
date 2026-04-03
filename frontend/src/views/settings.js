@@ -1,9 +1,10 @@
 import { api } from '../api.js';
-import { state } from '../main.js';
-import { renderSidebar } from './sidebar.js';
-import { showToast, showConfirm } from './toast.js';
+import { state } from '../app/state.js';
+import { renderSidebar } from '../components/sidebar.js';
+import { showToast, showConfirm } from '../components/toast.js';
 import { t } from '../i18n.js';
 import { esc } from '../utils/format.js';
+import { activateDialog } from '../utils/dialog.js';
 
 // ============================================================
 // White-label config (stored in DB via API)
@@ -384,7 +385,7 @@ export async function renderSettings() {
         <div class="settings-block" id="plugins-list-content">
           <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
         </div>
-        <div style="margin-top:12px;display:flex;gap:8px;">
+        <div class="settings-inline-actions" style="margin-top:12px;display:flex;gap:8px;">
           <button class="btn btn-secondary btn-sm" id="btn-reload-plugins">
             <i class="fas fa-rotate"></i> ${t('set.pluginsReload')}
           </button>
@@ -770,6 +771,57 @@ function setupNotificationsEvents() {
 async function loadSSHKey() {
   const el = document.getElementById('ssh-key-content');
   if (!el) return;
+
+  const doImport = (fileContent) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:380px;">
+        <div class="modal-header"><h3>${t('set.importKeyTitle')}</h3></div>
+        <div class="modal-body" style="display:flex;flex-direction:column;gap:12px;">
+          <p style="margin:0;font-size:13px;color:var(--text-muted);">${t('set.importKeyHint')}</p>
+          <input type="password" id="import-key-pass" class="form-input" placeholder="${t('set.importKeyPlaceholder')}" autocomplete="current-password">
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="import-key-cancel">${t('common.cancel')}</button>
+          <button class="btn btn-primary" id="import-key-ok"><i class="fas fa-upload"></i> ${t('set.importKeyBtn')}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const passInput = overlay.querySelector('#import-key-pass');
+    let releaseDialog = null;
+    const close = () => { releaseDialog?.(); releaseDialog = null; document.body.removeChild(overlay); };
+    releaseDialog = activateDialog({
+      dialog: overlay.querySelector('.modal'),
+      initialFocus: passInput,
+      onClose: close,
+      label: t('set.importKeyTitle'),
+    });
+    overlay.querySelector('#import-key-cancel').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('#import-key-ok').addEventListener('click', async () => {
+      const pass = passInput.value.trim();
+      try {
+        await api.importSSHKey(fileContent, pass || null);
+        showToast(t('set.importKeySuccess'), 'success');
+        close();
+        loadSSHKey();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+    passInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') overlay.querySelector('#import-key-ok').click(); });
+  };
+
+  const handleImport = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (rev) => doImport(rev.target.result);
+    reader.readAsText(file);
+  };
+
   try {
     const key = await api.getSSHKey();
     const escapedKey = key.publicKey.replace(/'/g, "'\\''");
@@ -852,9 +904,20 @@ async function loadSSHKey() {
       document.body.appendChild(overlay);
       const input1 = overlay.querySelector('#export-key-pass');
       const input2 = overlay.querySelector('#export-key-pass2');
-      input1.focus();
-      const close = () => document.body.removeChild(overlay);
+      let releaseDialog = null;
+      const close = () => {
+        releaseDialog?.();
+        releaseDialog = null;
+        document.body.removeChild(overlay);
+      };
+      releaseDialog = activateDialog({
+        dialog: overlay.querySelector('.modal'),
+        initialFocus: input1,
+        onClose: close,
+        label: t('set.exportKeyTitle'),
+      });
       overlay.querySelector('#export-key-cancel').addEventListener('click', close);
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
       overlay.querySelector('#export-key-ok').addEventListener('click', async () => {
         const pass = input1.value;
         if (pass !== input2.value) {
@@ -876,47 +939,6 @@ async function loadSSHKey() {
       });
       input2.addEventListener('keydown', (e) => { if (e.key === 'Enter') overlay.querySelector('#export-key-ok').click(); });
     });
-
-    const doImport = (fileContent) => {
-      const overlay = document.createElement('div');
-      overlay.className = 'modal-overlay active';
-      overlay.innerHTML = `
-        <div class="modal" style="max-width:380px;">
-          <div class="modal-header"><h3>${t('set.importKeyTitle')}</h3></div>
-          <div class="modal-body" style="display:flex;flex-direction:column;gap:12px;">
-            <p style="margin:0;font-size:13px;color:var(--text-muted);">${t('set.importKeyHint')}</p>
-            <input type="password" id="import-key-pass" class="form-input" placeholder="${t('set.importKeyPlaceholder')}" autocomplete="current-password">
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" id="import-key-cancel">${t('common.cancel')}</button>
-            <button class="btn btn-primary" id="import-key-ok"><i class="fas fa-upload"></i> ${t('set.importKeyBtn')}</button>
-          </div>
-        </div>`;
-      document.body.appendChild(overlay);
-      const passInput = overlay.querySelector('#import-key-pass');
-      passInput.focus();
-      const close = () => document.body.removeChild(overlay);
-      overlay.querySelector('#import-key-cancel').addEventListener('click', close);
-      overlay.querySelector('#import-key-ok').addEventListener('click', async () => {
-        try {
-          await api.importSSHKey(fileContent, passInput.value);
-          showToast(t('set.importKeySuccess'), 'success');
-          close();
-          loadSSHKey();
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
-      });
-      passInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') overlay.querySelector('#import-key-ok').click(); });
-    };
-
-    const handleImport = (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (rev) => doImport(rev.target.result);
-      reader.readAsText(file);
-    };
 
     document.getElementById('btn-import-key')?.addEventListener('click', () => {
       const input = document.createElement('input');
@@ -2200,15 +2222,15 @@ function renderGitSetupPanel() {
   return `
     <div class="settings-group-title"><i class="fab fa-git-alt"></i> Git Sync</div>
     <p style="font-size:13px;color:var(--text-muted);margin:0 0 16px 0;">
-      Connect a remote Git repository to sync playbooks and OpenTofu workspaces automatically.
+      ${t('git.setupHint')}
     </p>
 
     <form id="git-setup-form">
       <div class="settings-block">
         <div class="settings-row">
           <div class="settings-row-label">
-            <span>Repository URL</span>
-            <small>HTTPS or SSH remote URL</small>
+            <span>${t('git.repoUrl')}</span>
+            <small>${t('git.repoUrlSmallHint')}</small>
           </div>
           <div class="settings-row-control">
             <input class="form-input" type="text" id="git-repo-url"
@@ -2218,8 +2240,8 @@ function renderGitSetupPanel() {
         </div>
         <div class="settings-row">
           <div class="settings-row-label">
-            <span>Auth Token</span>
-            <small>HTTPS only — personal access token</small>
+            <span>${t('git.authToken')}</span>
+            <small>${t('git.authTokenHint')}</small>
           </div>
           <div class="settings-row-control">
             <input class="form-input" type="password" id="git-auth-token"
@@ -2229,8 +2251,8 @@ function renderGitSetupPanel() {
         </div>
         <div class="settings-row">
           <div class="settings-row-label">
-            <span>SSH Private Key</span>
-            <small>SSH only — paste private key</small>
+            <span>${t('git.sshKey')}</span>
+            <small>${t('git.sshKeyHint')}</small>
           </div>
           <div class="settings-row-control">
             <textarea class="form-input" id="git-ssh-key" rows="5"
@@ -2240,8 +2262,8 @@ function renderGitSetupPanel() {
         </div>
         <div class="settings-row">
           <div class="settings-row-label">
-            <span>Git User Name</span>
-            <small>Used for commits</small>
+            <span>${t('git.userName')}</span>
+            <small>${t('git.userNameHint')}</small>
           </div>
           <div class="settings-row-control">
             <input class="form-input" type="text" id="git-user-name"
@@ -2250,8 +2272,8 @@ function renderGitSetupPanel() {
         </div>
         <div class="settings-row">
           <div class="settings-row-label">
-            <span>Git User Email</span>
-            <small>Used for commits</small>
+            <span>${t('git.userEmail')}</span>
+            <small>${t('git.userEmailHint')}</small>
           </div>
           <div class="settings-row-control">
             <input class="form-input" type="email" id="git-user-email"
@@ -2260,8 +2282,8 @@ function renderGitSetupPanel() {
         </div>
         <div class="settings-row">
           <div class="settings-row-label">
-            <span>Auto-pull</span>
-            <small>Pull before each run</small>
+            <span>${t('git.autoPull')}</span>
+            <small>${t('git.autoPullHint')}</small>
           </div>
           <div class="settings-row-control">
             <label class="toggle-switch">
@@ -2272,8 +2294,8 @@ function renderGitSetupPanel() {
         </div>
         <div class="settings-row">
           <div class="settings-row-label">
-            <span>Auto-push</span>
-            <small>Push after every save</small>
+            <span>${t('git.autoPush')}</span>
+            <small>${t('git.autoPushHint')}</small>
           </div>
           <div class="settings-row-control">
             <label class="toggle-switch">
@@ -2286,7 +2308,7 @@ function renderGitSetupPanel() {
           <div class="settings-row-label"></div>
           <div class="settings-row-control">
             <button type="submit" class="btn btn-primary btn-sm">
-              <i class="fas fa-plug"></i> Connect Repository
+              <i class="fas fa-plug"></i> ${t('git.connectRepo')}
             </button>
           </div>
         </div>
@@ -2301,45 +2323,45 @@ function renderGitDashboardPanel(cfg) {
     <div class="settings-block">
       <div class="settings-row">
         <div class="settings-row-label">
-          <span>Repository</span>
-          <small>Connected remote</small>
+          <span>${t('git.connectedRemote')}</span>
+          <small>${t('git.connectedRemoteSmall')}</small>
         </div>
         <div class="settings-row-control" style="gap:12px;">
           <code style="font-size:12px;color:var(--text-muted);word-break:break-all;">${esc(cfg.repoUrl || '')}</code>
           <button id="btn-git-disconnect" class="btn btn-danger btn-sm" style="flex-shrink:0;margin-left:auto;">
-            <i class="fas fa-unlink"></i> Disconnect
+            <i class="fas fa-unlink"></i> ${t('git.disconnectBtn')}
           </button>
         </div>
       </div>
       <div class="settings-row">
         <div class="settings-row-label">
-          <span>Branch</span>
-          <small>Active branch</small>
+          <span>${t('git.branch')}</span>
+          <small>${t('git.activeBranchSmall')}</small>
         </div>
         <div class="settings-row-control" style="gap:8px;">
           <select id="git-branch-select" class="form-input" style="max-width:200px;width:100%;"></select>
-          <button id="btn-git-checkout" class="btn btn-secondary btn-sm">Switch</button>
+          <button id="btn-git-checkout" class="btn btn-secondary btn-sm">${t('git.switchBranch')}</button>
         </div>
       </div>
       <div class="settings-row">
         <div class="settings-row-label">
-          <span>Sync</span>
-          <small>Manual operations</small>
+          <span>${t('git.syncManual')}</span>
+          <small>${t('git.syncManualSmall')}</small>
         </div>
         <div class="settings-row-control" style="gap:8px;flex-wrap:wrap;">
           <button id="btn-git-pull" class="btn btn-secondary btn-sm">
-            <i class="fas fa-arrow-down"></i> Pull
+            <i class="fas fa-arrow-down"></i> ${t('git.pull')}
           </button>
           <button id="btn-git-push" class="btn btn-secondary btn-sm">
-            <i class="fas fa-arrow-up"></i> Push
+            <i class="fas fa-arrow-up"></i> ${t('git.push')}
           </button>
           <span id="git-status-msg" style="font-size:12px;color:var(--text-muted);margin-left:4px;"></span>
         </div>
       </div>
       <div class="settings-row">
         <div class="settings-row-label">
-          <span>Auto-pull</span>
-          <small>Pull before each run</small>
+          <span>${t('git.autoPull')}</span>
+          <small>${t('git.autoPullHint')}</small>
         </div>
         <div class="settings-row-control">
           <label class="toggle-switch">
@@ -2350,8 +2372,8 @@ function renderGitDashboardPanel(cfg) {
       </div>
       <div class="settings-row">
         <div class="settings-row-label">
-          <span>Auto-push</span>
-          <small>Push after every save</small>
+          <span>${t('git.autoPush')}</span>
+          <small>${t('git.autoPushHint')}</small>
         </div>
         <div class="settings-row-control">
           <label class="toggle-switch">
@@ -2364,27 +2386,27 @@ function renderGitDashboardPanel(cfg) {
         <div class="settings-row-label"></div>
         <div class="settings-row-control">
           <button id="btn-git-save-settings" class="btn btn-primary btn-sm">
-            <i class="fas fa-save"></i> Save Settings
+            <i class="fas fa-save"></i> ${t('git.saveSettings')}
           </button>
         </div>
       </div>
     </div>
 
-    <div class="settings-group-title" style="margin-top:24px;">Recent Commits</div>
+    <div class="settings-group-title" style="margin-top:24px;">${t('git.recentCommits')}</div>
     <div class="settings-block">
       <div class="settings-row" style="justify-content:space-between;padding:8px 16px;gap:12px;flex-wrap:wrap;">
-        <div id="git-log-meta" style="font-size:12px;color:var(--text-muted);">Loading commits…</div>
+        <div id="git-log-meta" style="font-size:12px;color:var(--text-muted);">${t('git.loadingCommits')}</div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);">
-            <span>Per page</span>
+            <span>${t('git.perPage')}</span>
             <select id="git-log-limit" class="form-input" style="width:auto;min-width:72px;padding:4px 24px 4px 8px;font-size:12px;">
               ${[10, 20, 50].map(size => `<option value="${size}"${gitLogLimit === size ? ' selected' : ''}>${size}</option>`).join('')}
             </select>
           </label>
-          <button id="btn-git-log-prev" class="btn btn-secondary btn-sm" disabled>Prev</button>
-          <button id="btn-git-log-next" class="btn btn-secondary btn-sm" disabled>Next</button>
+          <button id="btn-git-log-prev" class="btn btn-secondary btn-sm" disabled>${t('git.prev')}</button>
+          <button id="btn-git-log-next" class="btn btn-secondary btn-sm" disabled>${t('git.next')}</button>
         <button id="btn-git-refresh-log" class="btn btn-secondary btn-sm">
-          <i class="fas fa-rotate"></i> Refresh
+          <i class="fas fa-rotate"></i> ${t('git.refresh')}
         </button>
         </div>
       </div>
@@ -2401,7 +2423,7 @@ async function _loadGitLog(panel) {
   const nextBtn = panel.querySelector('#btn-git-log-next');
   const limitSel = panel.querySelector('#git-log-limit');
   if (!el) return;
-  if (meta) meta.textContent = 'Loading commits…';
+  if (meta) meta.textContent = t('git.loadingCommits');
   if (prevBtn) prevBtn.disabled = true;
   if (nextBtn) nextBtn.disabled = true;
   try {
@@ -2419,16 +2441,16 @@ async function _loadGitLog(panel) {
     gitLogLimit = pagination.limit || gitLogLimit;
     if (limitSel) limitSel.value = String(gitLogLimit);
     if (meta) {
-      if (!pagination.total) meta.textContent = 'No commits yet.';
+      if (!pagination.total) meta.textContent = t('git.noCommitsYet');
       else {
         const start = (gitLogPage - 1) * gitLogLimit + 1;
         const end = start + commits.length - 1;
-        meta.textContent = `Showing ${start}-${end} of ${pagination.total} commits`;
+        meta.textContent = t('git.showingRange', { start, end, total: pagination.total });
       }
     }
     if (prevBtn) prevBtn.disabled = !pagination.has_prev;
     if (nextBtn) nextBtn.disabled = !pagination.has_next;
-    if (!commits.length) { el.textContent = 'No commits yet.'; return; }
+    if (!commits.length) { el.textContent = t('git.noCommitsYet'); return; }
     el.innerHTML = commits.map(c => `
       <div style="display:flex;align-items:flex-start;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);">
         <code style="color:var(--accent);flex-shrink:0;font-size:11px;">${esc(c.hash)}</code>
@@ -2440,8 +2462,8 @@ async function _loadGitLog(panel) {
         </div>
       </div>`).join('');
   } catch (e) {
-    if (meta) meta.textContent = 'Could not load commits.';
-    el.textContent = 'Could not load log: ' + e.message;
+    if (meta) meta.textContent = t('git.loadFailed');
+    el.textContent = t('git.logLoadFailed') + e.message;
   }
 }
 
@@ -2461,9 +2483,9 @@ function _setupGitSetupEvents(panel) {
   panel.querySelector('#git-setup-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = panel.querySelector('[type=submit]');
-    btn.disabled = true;
-    btn.innerHTML = `<span class="spinner-sm"></span> Connecting…`;
-    try {
+      btn.disabled = true;
+      btn.innerHTML = `<span class="spinner-sm"></span> ${t('git.connecting')}`;
+      try {
       await api.request('/playbooks-git/setup', {
         method: 'POST',
         body: {
@@ -2481,14 +2503,14 @@ function _setupGitSetupEvents(panel) {
     } catch (e) {
       showToast(t('common.errorPrefix', { msg: e.message }), 'error');
       btn.disabled = false;
-      btn.innerHTML = `<i class="fas fa-plug"></i> Connect Repository`;
+      btn.innerHTML = `<i class="fas fa-plug"></i> ${t('git.connectRepo')}`;
     }
   });
 }
 
 function _setupGitDashboardEvents(panel) {
   panel.querySelector('#btn-git-disconnect')?.addEventListener('click', async () => {
-    if (!await showConfirm('Disconnect Git? This will not delete your remote repository.')) return;
+    if (!await showConfirm(t('git.disconnectConfirm'))) return;
     await api.request('/playbooks-git/disconnect', { method: 'POST' });
     showToast(t('git.disconnected'), 'success');
     await loadGitSettingsTab();
@@ -2496,22 +2518,22 @@ function _setupGitDashboardEvents(panel) {
 
   panel.querySelector('#btn-git-pull')?.addEventListener('click', async () => {
     const msg = panel.querySelector('#git-status-msg');
-    msg.textContent = 'Pulling…';
+    msg.textContent = t('git.pulling') || 'Pulling…';
     try {
       await api.request('/playbooks-git/pull', { method: 'POST' });
-      msg.textContent = 'Pull successful.';
+      msg.textContent = t('git.pullSuccess');
       await _loadGitLog(panel);
-    } catch (e) { msg.textContent = 'Pull failed: ' + e.message; }
+    } catch (e) { msg.textContent = t('git.pullFailed', { msg: e.message }); }
   });
 
   panel.querySelector('#btn-git-push')?.addEventListener('click', async () => {
     const msg = panel.querySelector('#git-status-msg');
-    msg.textContent = 'Pushing…';
+    msg.textContent = t('git.pushing') || 'Pushing…';
     try {
       await api.request('/playbooks-git/push', { method: 'POST' });
-      msg.textContent = 'Pushed to git.';
+      msg.textContent = t('git.pushSuccess');
       _loadGitLog(panel);
-    } catch (e) { msg.textContent = 'Push failed: ' + e.message; }
+    } catch (e) { msg.textContent = t('git.pushFailed', { msg: e.message }); }
   });
 
   panel.querySelector('#btn-git-checkout')?.addEventListener('click', async () => {
@@ -2519,11 +2541,11 @@ function _setupGitDashboardEvents(panel) {
     const branch = sel?.value;
     if (!branch) return;
     const msg = panel.querySelector('#git-status-msg');
-    msg.textContent = `Switching to ${branch}…`;
+    msg.textContent = t('git.switchingTo', { branch });
     try {
       await api.gitCheckout(branch);
-      msg.textContent = `Switched to ${branch}.`;
-    } catch (e) { msg.textContent = 'Checkout failed: ' + e.message; }
+      msg.textContent = t('git.switchedTo', { branch });
+    } catch (e) { msg.textContent = t('git.checkoutFailed') + e.message; }
   });
 
   panel.querySelector('#btn-git-refresh-log')?.addEventListener('click', () => _loadGitLog(panel));

@@ -1,7 +1,8 @@
 import { api } from '../api.js';
 import { t, setLang, getLang } from '../i18n.js';
 import { showToast } from './toast.js';
-import { state } from '../main.js';
+import { state } from '../app/state.js';
+import { activateDialog } from '../utils/dialog.js';
 
 function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
@@ -9,12 +10,21 @@ function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt
 
 let _menu = null;
 let _menuBackdrop = null;
+let _menuKeydown = null;
 
-function closeMenu() {
+function closeMenu({ restoreFocus = true } = {}) {
+  if (_menuKeydown) {
+    document.removeEventListener('keydown', _menuKeydown);
+    _menuKeydown = null;
+  }
+
+  const trigger = document.getElementById('sidebar-profile-btn');
   _menu?.remove();
   _menuBackdrop?.remove();
   _menu = null;
   _menuBackdrop = null;
+  trigger?.setAttribute('aria-expanded', 'false');
+  if (restoreFocus) trigger?.focus();
 }
 
 export function showProfileMenu() {
@@ -25,6 +35,7 @@ export function showProfileMenu() {
   const currentLang = getLang();
   const currentTheme = localStorage.getItem('theme') || 'auto';
   const currentTimeFormat = localStorage.getItem('timeFormat') || '24h';
+  const left = rect ? Math.max(12, Math.min(rect.left, window.innerWidth - 292)) : 12;
   
   const ctnStyle = 'width: 114px; background: var(--bg-row-alt); padding: 3px; border-radius: 6px; display: flex; gap: 2px; border: 1px solid var(--border);';
   const btnStyle = 'flex: 1; border: none; background: transparent; color: var(--text-muted); font-size: 11px; padding: 4px 0; border-radius: 4px; cursor: pointer; transition: all 150ms; font-weight: 500;';
@@ -39,8 +50,9 @@ export function showProfileMenu() {
   _menu.style.cssText = `
     position: fixed;
     bottom: ${rect ? window.innerHeight - rect.top + 6 : 70}px;
-    left: ${rect ? rect.left : 0}px;
+    left: ${left}px;
     width: 280px;
+    max-width: calc(100vw - 24px);
     z-index: 3100;
     background: var(--bg-panel);
     border: 1px solid var(--border);
@@ -64,22 +76,22 @@ export function showProfileMenu() {
           ${esc(displayName || username)}
         </div>
         <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-          ${displayName ? `<span style="font-family:var(--font-mono);">@${esc(username)}</span>` : (email ? esc(email) : '<span style="opacity:.5">No email set</span>')}
-          ${isAdmin ? '<span style="margin-left:4px;font-size:9px;background:var(--accent);color:var(--text-inverse);padding:1px 6px;border-radius:3px;vertical-align:middle;">admin</span>' : ''}
+          ${displayName ? `<span style="font-family:var(--font-mono);">@${esc(username)}</span>` : (email ? esc(email) : `<span style="opacity:.5">${t('profile.noEmail')}</span>`)}
+          ${isAdmin ? `<span style="margin-left:4px;font-size:9px;background:var(--accent);color:var(--text-inverse);padding:1px 6px;border-radius:3px;vertical-align:middle;">${t('profile.adminBadge')}</span>` : ''}
         </div>
       </div>
     </div>
 
     <div style="padding:4px 0;">
-      <div class="profile-menu-item" id="pmenu-settings">
+      <button type="button" class="profile-menu-item" id="pmenu-settings">
         <i class="fas fa-user-pen" style="width:16px;opacity:.7;"></i>
-        <span>Profile settings</span>
-      </div>
+        <span>${t('profile.settings')}</span>
+      </button>
 
       <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px;">
         <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-primary);white-space:nowrap;">
           <i class="fas fa-globe" style="width:16px;opacity:.7;"></i>
-          <span>Language</span>
+          <span>${t('profile.language')}</span>
         </div>
         <div style="${ctnStyle}">
           <button style="${btnStyle} ${currentLang === 'de' ? actStyle : ''}" id="pmenu-lang-de">DE</button>
@@ -90,7 +102,7 @@ export function showProfileMenu() {
       <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 16px 8px;">
         <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-primary);white-space:nowrap;">
           <i class="fas fa-moon" style="width:16px;opacity:.7;"></i>
-          <span>Theme</span>
+          <span>${t('profile.theme')}</span>
         </div>
         <div style="${ctnStyle}" id="pmenu-theme-toggles">
           <button style="${btnStyle} ${currentTheme === 'light' ? actStyle : ''}" data-theme="light" title="Light"><i class="fas fa-sun"></i></button>
@@ -102,7 +114,7 @@ export function showProfileMenu() {
       <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 16px 8px;">
         <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-primary);white-space:nowrap;">
           <i class="fas fa-clock" style="width:16px;opacity:.7;"></i>
-          <span>Time Format</span>
+          <span>${t('profile.timeFormat')}</span>
         </div>
         <div style="${ctnStyle}" id="pmenu-time-toggles">
           <button style="${btnStyle} ${currentTimeFormat === '24h' ? actStyle : ''}" data-time="24h">24h</button>
@@ -112,26 +124,36 @@ export function showProfileMenu() {
     </div>
 
     <div style="padding:4px 0;border-top:1px solid var(--border);">
-      <div class="profile-menu-item profile-menu-item--danger" id="pmenu-signout">
+      <button type="button" class="profile-menu-item profile-menu-item--danger" id="pmenu-signout">
         <i class="fas fa-right-from-bracket" style="width:16px;"></i>
-        <span>Sign out</span>
-      </div>
+        <span>${t('profile.signOut')}</span>
+      </button>
     </div>
   `;
 
   document.body.appendChild(_menu);
   _menu.addEventListener('click', e => e.stopPropagation());
+  trigger?.setAttribute('aria-expanded', 'true');
+  _menuKeydown = (event) => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    closeMenu();
+  };
+  document.addEventListener('keydown', _menuKeydown);
+  window.requestAnimationFrame(() => {
+    _menu?.querySelector('#pmenu-settings')?.focus();
+  });
 
-  document.getElementById('pmenu-settings').addEventListener('click', () => { closeMenu(); showProfileModal(); });
-  document.getElementById('pmenu-lang-de').addEventListener('click', e => { e.stopPropagation(); setLang('de'); closeMenu(); showProfileMenu(); });
-  document.getElementById('pmenu-lang-en').addEventListener('click', e => { e.stopPropagation(); setLang('en'); closeMenu(); showProfileMenu(); });
+  document.getElementById('pmenu-settings').addEventListener('click', () => { closeMenu({ restoreFocus: false }); showProfileModal(); });
+  document.getElementById('pmenu-lang-de').addEventListener('click', e => { e.stopPropagation(); setLang('de'); closeMenu({ restoreFocus: false }); showProfileMenu(); });
+  document.getElementById('pmenu-lang-en').addEventListener('click', e => { e.stopPropagation(); setLang('en'); closeMenu({ restoreFocus: false }); showProfileMenu(); });
   
   document.querySelectorAll('#pmenu-theme-toggles button').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
       localStorage.setItem('theme', btn.dataset.theme);
       document.documentElement.dataset.theme = btn.dataset.theme;
-      closeMenu(); showProfileMenu();
+      closeMenu({ restoreFocus: false }); showProfileMenu();
     });
   });
 
@@ -139,18 +161,25 @@ export function showProfileMenu() {
     btn.addEventListener('click', e => {
       e.stopPropagation();
       localStorage.setItem('timeFormat', btn.dataset.time);
-      closeMenu(); location.reload();
+      closeMenu({ restoreFocus: false }); location.reload();
     });
   });
-  document.getElementById('pmenu-signout').addEventListener('click', () => { api.setToken(null); location.reload(); });
+  document.getElementById('pmenu-signout').addEventListener('click', () => {
+    closeMenu({ restoreFocus: false });
+    api.setToken(null);
+    location.reload();
+  });
 }
 
 // ── Profile settings modal ─────────────────────────────────────────────────
 
 let _modal = null;
 let _modalBackdrop = null;
+let _modalRelease = null;
 
 function closeModal() {
+  _modalRelease?.();
+  _modalRelease = null;
   _modal?.remove();
   _modalBackdrop?.remove();
   _modal = null;
@@ -181,7 +210,7 @@ export async function showProfileModal() {
         </div>
         <div>
           <div style="font-size:16px;font-weight:700;line-height:1.2;" id="profile-display-name">${esc(profile.displayName || profile.username)}</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;" id="profile-display-sub">${profile.displayName ? '<span style="font-family:var(--font-mono);font-size:11px;">@' + esc(profile.username) + '</span>' : (profile.email ? esc(profile.email) : '<span style="opacity:.5">No email set</span>')}</div>
+          <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" id="profile-display-sub">${profile.displayName ? '<span style="font-family:var(--font-mono);font-size:11px;">@' + esc(profile.username) + '</span>' : (profile.email ? esc(profile.email) : `<span style="opacity:.5">${t('profile.noEmail')}</span>`)}</div>
           <div style="margin-top:4px;">
             <span style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:4px;
               ${profile.role === 'admin' ? 'background:var(--accent);color:var(--text-inverse);' : 'background:var(--bg-row-alt);color:var(--text-muted);border:1px solid var(--border);'}">
@@ -190,7 +219,7 @@ export async function showProfileModal() {
           </div>
         </div>
       </div>
-      <button class="btn btn-secondary btn-sm" id="profile-modal-close" style="padding:6px 10px;">
+      <button class="btn btn-secondary btn-sm" id="profile-modal-close" style="padding:6px 10px;" title="${t('common.close')}" aria-label="${t('common.close')}">
         <i class="fas fa-times"></i>
       </button>
     </div>
@@ -201,27 +230,27 @@ export async function showProfileModal() {
       <!-- Account -->
       <div style="padding:20px 24px;border-bottom:1px solid var(--border);">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:14px;">
-          Account
+          ${t('profile.account')}
         </div>
         <div style="display:flex;flex-direction:column;gap:12px;">
           <div style="display:flex;align-items:center;gap:12px;">
-            <label style="font-size:13px;color:var(--text-secondary);width:90px;flex-shrink:0;">Display Name</label>
+            <label style="font-size:13px;color:var(--text-secondary);width:90px;flex-shrink:0;">${t('profile.displayName')}</label>
             <input class="form-input" id="profile-display-name-input" value="${esc(profile.displayName || '')}" placeholder="${esc(profile.username)}" style="flex:1;">
           </div>
           <div style="display:flex;align-items:center;gap:12px;">
-            <label style="font-size:13px;color:var(--text-secondary);width:90px;flex-shrink:0;">Username</label>
+            <label style="font-size:13px;color:var(--text-secondary);width:90px;flex-shrink:0;">${t('profile.username')}</label>
             <div style="flex:1;display:flex;align-items:center;gap:8px;">
               <input class="form-input" value="${esc(profile.username)}" style="flex:1;opacity:.55;cursor:default;" readonly tabindex="-1">
-              <span style="font-size:11px;color:var(--text-muted);white-space:nowrap;">Login-ID · read-only</span>
+              <span style="font-size:11px;color:var(--text-muted);white-space:nowrap;">${t('profile.readOnly')}</span>
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:12px;">
-            <label style="font-size:13px;color:var(--text-secondary);width:90px;flex-shrink:0;">Email</label>
+            <label style="font-size:13px;color:var(--text-secondary);width:90px;flex-shrink:0;">${t('profile.email')}</label>
             <input class="form-input" id="profile-email" type="email" value="${esc(profile.email)}" placeholder="you@example.com" style="flex:1;">
           </div>
           <div style="display:flex;justify-content:flex-end;">
             <button class="btn btn-primary btn-sm" id="profile-save-account">
-              <i class="fas fa-check"></i> Save changes
+              <i class="fas fa-check"></i> ${t('profile.saveChanges')}
             </button>
           </div>
         </div>
@@ -231,20 +260,20 @@ export async function showProfileModal() {
       <div style="padding:20px 24px;border-bottom:1px solid var(--border);">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0;" id="pw-row">
           <div>
-            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:2px;">Password</div>
-            <div style="font-size:12px;color:var(--text-muted);">••••••••••••</div>
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:2px;">${t('profile.passwordSection')}</div>
+            <div style="font-size:12px;color:var(--text-muted);">${t('profile.passwordDots')}</div>
           </div>
           <button class="btn btn-secondary btn-sm" id="profile-pw-toggle">
-            <i class="fas fa-key"></i> Change
+            <i class="fas fa-key"></i> ${t('profile.changePassword')}
           </button>
         </div>
         <div id="profile-pw-form" style="display:none;flex-direction:column;gap:10px;margin-top:14px;">
-          <input class="form-input" type="password" id="profile-pw-current" placeholder="Current password" autocomplete="current-password">
-          <input class="form-input" type="password" id="profile-pw-new" placeholder="New password (min 12 characters)" autocomplete="new-password">
-          <input class="form-input" type="password" id="profile-pw-confirm" placeholder="Confirm new password" autocomplete="new-password">
+          <input class="form-input" type="password" id="profile-pw-current" placeholder="${t('profile.currentPassword')}" autocomplete="current-password">
+          <input class="form-input" type="password" id="profile-pw-new" placeholder="${t('profile.newPassword')}" autocomplete="new-password">
+          <input class="form-input" type="password" id="profile-pw-confirm" placeholder="${t('profile.confirmPassword')}" autocomplete="new-password">
           <div style="display:flex;gap:8px;justify-content:flex-end;">
-            <button class="btn btn-secondary btn-sm" id="profile-pw-cancel">Cancel</button>
-            <button class="btn btn-primary btn-sm" id="profile-pw-save"><i class="fas fa-check"></i> Update password</button>
+            <button class="btn btn-secondary btn-sm" id="profile-pw-cancel">${t('profile.cancel')}</button>
+            <button class="btn btn-primary btn-sm" id="profile-pw-save"><i class="fas fa-check"></i> ${t('profile.updatePassword')}</button>
           </div>
         </div>
       </div>
@@ -253,8 +282,8 @@ export async function showProfileModal() {
       <div style="padding:20px 24px;">
         <div style="display:flex;align-items:center;justify-content:space-between;">
           <div>
-            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:2px;">Two-factor authentication</div>
-            <div style="font-size:12px;" id="profile-2fa-status">Checking…</div>
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:2px;">${t('profile.twoFactor')}</div>
+            <div style="font-size:12px;" id="profile-2fa-status">${t('profile.checking')}</div>
           </div>
           <div id="profile-2fa-control"></div>
         </div>
@@ -277,6 +306,12 @@ export async function showProfileModal() {
   `;
 
   _modalBackdrop.appendChild(_modal);
+  _modalRelease = activateDialog({
+    dialog: _modal,
+    initialFocus: () => document.getElementById('profile-display-name-input'),
+    onClose: closeModal,
+    labelledBy: 'profile-display-name',
+  });
 
   document.getElementById('profile-modal-close').addEventListener('click', closeModal);
 
@@ -290,7 +325,7 @@ export async function showProfileModal() {
       document.getElementById('profile-display-name').textContent = shownName;
       document.getElementById('profile-display-sub').innerHTML = displayName
         ? `<span style="font-family:var(--font-mono);font-size:11px;">@${esc(profile.username)}</span>`
-        : (email ? esc(email) : '<span style="opacity:.5">No email set</span>');
+        : (email ? esc(email) : `<span style="opacity:.5">${t('profile.noEmail')}</span>`);
       if (state.user) { state.user.displayName = displayName; state.user.email = email; }
       // keep local profile in sync for re-renders
       profile.displayName = displayName;
@@ -333,18 +368,18 @@ async function _load2fa() {
   try {
     const { enabled } = await api.totpStatus();
     if (enabled) {
-      statusEl.innerHTML = '<span style="color:var(--online);"><i class="fas fa-shield-halved" style="margin-right:4px;"></i>Enabled</span>';
-      controlEl.innerHTML = `<button class="btn btn-danger btn-sm" id="profile-2fa-disable"><i class="fas fa-shield-xmark"></i> Disable</button>`;
+      statusEl.innerHTML = '<span style="color:var(--online);"><i class="fas fa-shield-halved" style="margin-right:4px;"></i>' + t('profile.twoFactorEnabled') + '</span>';
+      controlEl.innerHTML = `<button class="btn btn-danger btn-sm" id="profile-2fa-disable"><i class="fas fa-shield-xmark"></i> ${t('profile.disable2fa')}</button>`;
       document.getElementById('profile-2fa-disable').addEventListener('click', () => {
         const panel = document.getElementById('totp-disable-panel');
         if (panel.style.display === 'flex') { panel.style.display = 'none'; return; }
         panel.style.display = 'flex';
         panel.innerHTML = `
-          <p style="margin:0;font-size:13px;color:var(--text-secondary);">Enter your current password to disable two-factor authentication.</p>
-          <input class="form-input" type="password" id="totp-disable-pw" placeholder="Current password" autocomplete="current-password">
+          <p style="margin:0;font-size:13px;color:var(--text-secondary);">${t('profile.twoFactorDisableHint')}</p>
+          <input class="form-input" type="password" id="totp-disable-pw" placeholder="${t('profile.currentPassword')}" autocomplete="current-password">
           <div style="display:flex;gap:8px;">
-            <button class="btn btn-danger btn-sm" id="totp-disable-confirm"><i class="fas fa-shield-xmark"></i> Disable 2FA</button>
-            <button class="btn btn-secondary btn-sm" id="totp-disable-cancel">Cancel</button>
+            <button class="btn btn-danger btn-sm" id="totp-disable-confirm"><i class="fas fa-shield-xmark"></i> ${t('profile.disable2fa')}</button>
+            <button class="btn btn-secondary btn-sm" id="totp-disable-cancel">${t('profile.cancel')}</button>
           </div>
           <p class="login-error hidden" id="totp-disable-err" style="margin:0;"></p>`;
         document.getElementById('totp-disable-pw').focus();
@@ -355,7 +390,7 @@ async function _load2fa() {
           const btn = document.getElementById('totp-disable-confirm');
           const errEl = document.getElementById('totp-disable-err');
           const pw = document.getElementById('totp-disable-pw').value;
-          if (!pw) { errEl.textContent = 'Password required'; errEl.classList.remove('hidden'); return; }
+          if (!pw) { errEl.textContent = t('profile.passwordRequired'); errEl.classList.remove('hidden'); return; }
           btn.disabled = true; btn.innerHTML = '<span class="spinner-sm"></span>';
           try {
             await api.totpDisable(pw);
@@ -363,16 +398,16 @@ async function _load2fa() {
             panel.style.display = 'none';
             _load2fa();
           } catch (e) {
-            errEl.textContent = e.message || 'Incorrect password';
+            errEl.textContent = e.message || t('profile.incorrectPassword');
             errEl.classList.remove('hidden');
             btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-shield-xmark"></i> Disable 2FA';
+            btn.innerHTML = `<i class="fas fa-shield-xmark"></i> ${t('profile.disable2fa')}`;
           }
         });
       });
     } else {
-      statusEl.innerHTML = '<span style="color:var(--text-muted);">Not enabled</span>';
-      controlEl.innerHTML = `<button class="btn btn-secondary btn-sm" id="profile-2fa-enable"><i class="fas fa-shield-halved"></i> Enable</button>`;
+      statusEl.innerHTML = `<span style="color:var(--text-muted);">${t('profile.twoFactorDisabled')}</span>`;
+      controlEl.innerHTML = `<button class="btn btn-secondary btn-sm" id="profile-2fa-enable"><i class="fas fa-shield-halved"></i> ${t('profile.enable2fa')}</button>`;
       document.getElementById('profile-2fa-enable').addEventListener('click', async () => {
         try {
           const { qrDataUrl, secret } = await api.totpSetup();
@@ -385,7 +420,8 @@ async function _load2fa() {
     }
   } catch { if (statusEl) statusEl.textContent = ''; }
 
-  document.getElementById('btn-totp-verify')?.addEventListener('click', async () => {
+  const verifyBtn = document.getElementById('btn-totp-verify');
+  if (verifyBtn) verifyBtn.onclick = async () => {
     const code = document.getElementById('totp-confirm-code').value.replace(/\s/g, '');
     try {
       await api.totpConfirm(code);
@@ -393,8 +429,9 @@ async function _load2fa() {
       setupPanel.style.display = 'none';
       _load2fa();
     } catch (e) { showToast(e.message || t('set.totpInvalid'), 'error'); }
-  });
-  document.getElementById('btn-totp-cancel')?.addEventListener('click', () => {
+  };
+  const cancelBtn = document.getElementById('btn-totp-cancel');
+  if (cancelBtn) cancelBtn.onclick = () => {
     setupPanel.style.display = 'none';
-  });
+  };
 }

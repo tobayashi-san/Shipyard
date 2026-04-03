@@ -1,10 +1,12 @@
 import { api } from '../api.js';
-import { state, navigate, hasCap } from '../main.js';
-import { showToast, showConfirm } from './toast.js';
+import { state, hasCap } from '../app/state.js';
+import { navigate } from '../app/router.js';
+import { showToast, showConfirm } from '../components/toast.js';
 import { t } from '../i18n.js';
 import { formatDateTimeShort, esc } from '../utils/format.js';
 import { buildAllExceptTargets, parsePlaybookTargets, describePlaybookTargets } from '../utils/playbook-targets.js';
 import { onWsMessage } from '../websocket.js';
+import { activateDialog } from '../utils/dialog.js';
 import { EditorView, basicSetup } from 'codemirror';
 import { yaml } from '@codemirror/lang-yaml';
 import { EditorState } from '@codemirror/state';
@@ -13,6 +15,7 @@ import { classHighlighter } from '@lezer/highlight';
 
 // ── CodeMirror ────────────────────────────────────────────────
 let cmEditor = null;
+let mobileTemplateView = 'list';
 
 const cmTheme = EditorView.theme({
   '&': {
@@ -100,6 +103,14 @@ function saveCollapsedPlaybookCategories() {
   }
 }
 
+function isMobilePlaybooksLayout() {
+  return window.matchMedia('(max-width: 768px)').matches;
+}
+
+function currentTemplateMobileView() {
+  return isMobilePlaybooksLayout() ? mobileTemplateView : 'split';
+}
+
 function allowedTabs() {
   const tabs = ['templates'];
   if (hasCap('canRunPlaybooks')) tabs.push('run');
@@ -120,29 +131,31 @@ export async function renderPlaybooks() {
   if (!allowedTabs().includes(activeTab)) activeTab = allowedTabs()[0];
 
   main.innerHTML = `
-    <div class="page-header">
-      <div>
-        <h2>${t('pb.title')}</h2>
-        <p>${t('pb.subtitle')}</p>
-      </div>
-      <div id="pb-git-widget" style="display:flex;align-items:center;gap:6px;">
-        <div style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-secondary);font-size:12px;color:var(--text-muted);">
-          <i class="fab fa-git-alt"></i>
-          <span id="pb-git-branch">–</span>
+    <div class="playbooks-shell">
+      <div class="page-header">
+        <div>
+          <h2>${t('pb.title')}</h2>
+          <p>${t('pb.subtitle')}</p>
         </div>
-        <button id="pb-git-pull-btn" class="btn btn-secondary btn-sm" title="Pull from remote">
-          <i class="fas fa-arrow-down"></i>
-        </button>
-        <button id="pb-git-push-btn" class="btn btn-secondary btn-sm" title="Push to remote">
-          <i class="fas fa-arrow-up"></i>
-        </button>
-        <button id="pb-git-settings-link" class="btn btn-secondary btn-sm" title="Git Settings">
-          <i class="fas fa-gear"></i>
-        </button>
+        <div id="pb-git-widget" class="pb-git-widget">
+          <div class="pb-git-branch-pill">
+            <i class="fab fa-git-alt"></i>
+            <span id="pb-git-branch">–</span>
+          </div>
+          <button id="pb-git-pull-btn" class="btn btn-secondary btn-sm" title="Pull from remote">
+            <i class="fas fa-arrow-down"></i>
+          </button>
+          <button id="pb-git-push-btn" class="btn btn-secondary btn-sm" title="Push to remote">
+            <i class="fas fa-arrow-up"></i>
+          </button>
+          <button id="pb-git-settings-link" class="btn btn-secondary btn-sm" title="Git Settings">
+            <i class="fas fa-gear"></i>
+          </button>
+        </div>
       </div>
-    </div>
 
-    <div class="tab-bar" id="pb-tab-bar">
+      <div class="pb-tab-shell">
+        <div class="tab-bar" id="pb-tab-bar">
       <button class="tab-btn${activeTab === 'templates' ? ' active' : ''}" data-tab="templates">
         <i class="fas fa-file-code"></i> ${t('pb.tabTemplates')}
       </button>
@@ -158,10 +171,12 @@ export async function renderPlaybooks() {
       ${hasCap('canViewAudit') ? `<button class="tab-btn${activeTab === 'history' ? ' active' : ''}" data-tab="history">
         <i class="fas fa-history"></i> ${t('pb.tabHistory')}
       </button>` : ''}
-    </div>
+        </div>
 
-    <div id="pb-tab-content" class="page-content">
-      ${renderTabContent(activeTab)}
+        <div id="pb-tab-content" class="page-content">
+          ${renderTabContent(activeTab)}
+        </div>
+      </div>
     </div>
   `;
 
@@ -231,7 +246,11 @@ function renderTabContent(tab) {
 
 async function initTab(tab) {
   switch (tab) {
-    case 'templates': await loadPlaybookList(); setupPlaybookEvents(); break;
+    case 'templates':
+      if (isMobilePlaybooksLayout() && activeTemplatePanel === 'none') mobileTemplateView = 'list';
+      await loadPlaybookList();
+      setupPlaybookEvents();
+      break;
     case 'run': await loadQuickRunPlaybooks(); setupQuickRunEvents(); break;
     case 'vars': await loadVarsList(); setupVarsEvents(); break;
     case 'schedules': await loadScheduleList(); setupScheduleEvents(); break;
@@ -246,9 +265,11 @@ let currentFilename = null;
 let activeTemplatePanel = 'none';
 
 function renderTemplatesHTML() {
+  const mobileLayout = isMobilePlaybooksLayout();
+  const templateMobileView = currentTemplateMobileView();
   return `
-    <div class="page-content-grid">
-      <div class="panel" id="playbook-list-panel" style="padding:0;overflow:hidden;">
+    <div class="page-content-grid playbooks-layout ${mobileLayout ? `playbooks-mobile-view-${templateMobileView}` : ''}">
+      <div class="panel playbook-list-panel" id="playbook-list-panel" style="padding:0;overflow:hidden;">
         <div class="pb-panel-toolbar">
           <span class="pb-panel-title">Playbooks</span>
           ${hasCap('canEditPlaybooks') ? `<button class="btn btn-secondary btn-sm" id="btn-new-playbook" title="${t('pb.new')}" style="padding:3px 8px;">
@@ -264,11 +285,12 @@ function renderTemplatesHTML() {
         </div>
       </div>
 
-      <div id="playbook-editor-panel" class="hidden">
+      <div id="playbook-editor-panel" class="playbooks-workspace hidden">
         <div class="panel">
-          <div class="section-header" id="editor-header">
+          <div class="section-header playbooks-workspace-header" id="editor-header">
             <h3><i class="fas fa-edit"></i> <span id="editor-title">${t('pb.editTitle')}</span></h3>
-            <div class="flex-gap">
+            <div class="playbooks-workspace-actions">
+              ${mobileLayout ? `<button class="btn btn-secondary btn-sm" id="btn-template-back"><i class="fas fa-arrow-left"></i> ${t('common.back')}</button>` : ''}
               ${hasCap('canDeletePlaybooks') ? `<button class="btn btn-danger btn-sm hidden" id="btn-delete-playbook"><i class="fas fa-trash"></i></button>` : ''}
               <button class="btn btn-secondary btn-sm hidden" id="btn-playbook-history" title="${t('pb.history')}">
                 <i class="fas fa-history"></i> ${t('pb.history')}
@@ -292,11 +314,14 @@ function renderTemplatesHTML() {
         </div>
       </div>
 
-      <div id="playbook-run-panel" class="hidden">
+      <div id="playbook-run-panel" class="playbooks-workspace hidden">
         <div class="panel">
-          <div class="section-header">
+          <div class="section-header playbooks-workspace-header">
             <h3><i class="fas fa-play"></i> <span id="run-playbook-name">${t('common.run')}</span></h3>
-            <button class="btn btn-secondary btn-sm" id="btn-cancel-run">${t('common.close')}</button>
+            <div class="playbooks-workspace-actions">
+              ${mobileLayout ? `<button class="btn btn-secondary btn-sm" id="btn-template-back-run"><i class="fas fa-arrow-left"></i> ${t('common.back')}</button>` : ''}
+              <button class="btn btn-secondary btn-sm" id="btn-cancel-run">${t('common.close')}</button>
+            </div>
           </div>
           <div class="form-body">
             <div class="form-group">
@@ -338,7 +363,7 @@ function renderTemplatesHTML() {
         </div>
       </div>
 
-      <div id="playbook-welcome">
+      <div id="playbook-welcome" class="playbooks-workspace">
         <div class="panel">
           <div class="empty-state">
             <div class="empty-state-icon"><i class="fas fa-terminal"></i></div>
@@ -503,6 +528,7 @@ function renderPlaybookGroup(label, playbooks, isInternal) {
 
 async function selectPlaybook(filename, isInternal) {
   currentFilename = filename;
+  mobileTemplateView = 'editor';
   showTemplatePanel('editor');
   document.getElementById('editor-title').textContent = filename;
   document.getElementById('filename-group').classList.toggle('hidden', isInternal);
@@ -523,6 +549,7 @@ async function selectPlaybook(filename, isInternal) {
 function openRunPanel(filename, description) {
   currentFilename = filename;
   activeTemplatePanel = 'run';
+  mobileTemplateView = 'run';
   showTemplatePanel('run');
   document.getElementById('run-playbook-name').textContent = description || filename;
   document.getElementById('run-output').classList.add('hidden');
@@ -544,15 +571,22 @@ function openRunPanel(filename, description) {
 
 function showTemplatePanel(which) {
   activeTemplatePanel = which;
+  if (which === 'none') mobileTemplateView = 'list';
   document.getElementById('playbook-editor-panel').classList.toggle('hidden', which !== 'editor');
   document.getElementById('playbook-run-panel').classList.toggle('hidden', which !== 'run');
   document.getElementById('playbook-welcome').classList.toggle('hidden', which !== 'none');
+  const layout = document.querySelector('.playbooks-layout');
+  if (layout) {
+    layout.classList.remove('playbooks-mobile-view-list', 'playbooks-mobile-view-editor', 'playbooks-mobile-view-run');
+    if (isMobilePlaybooksLayout()) layout.classList.add(`playbooks-mobile-view-${mobileTemplateView}`);
+  }
   if (which === 'editor') ensureEditor();
 }
 
 function setupPlaybookEvents() {
   document.getElementById('btn-new-playbook')?.addEventListener('click', () => {
     currentFilename = null;
+    mobileTemplateView = 'editor';
     showTemplatePanel('editor');
     document.getElementById('editor-title').textContent = t('pb.new');
     document.getElementById('filename-group').classList.remove('hidden');
@@ -569,7 +603,19 @@ function setupPlaybookEvents() {
     markSelectedPlaybook();
   });
 
+  document.getElementById('btn-template-back')?.addEventListener('click', () => {
+    showTemplatePanel('none');
+    currentFilename = null;
+    markSelectedPlaybook();
+  });
+
   document.getElementById('btn-cancel-run')?.addEventListener('click', () => {
+    showTemplatePanel('none');
+    currentFilename = null;
+    markSelectedPlaybook();
+  });
+
+  document.getElementById('btn-template-back-run')?.addEventListener('click', () => {
     showTemplatePanel('none');
     currentFilename = null;
     markSelectedPlaybook();
@@ -672,7 +718,7 @@ function setupPlaybookEvents() {
 // ============================================================
 function renderQuickRunHTML() {
   return `
-    <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start;">
+    <div class="playbooks-run-grid">
       <!-- Left: form -->
       <div class="panel">
         <div class="section-header">
@@ -726,7 +772,7 @@ function renderQuickRunHTML() {
         </div>
         <div id="qr-output-empty" style="padding:40px 24px;text-align:center;color:var(--text-muted);">
           <i class="fas fa-play-circle" style="font-size:32px;margin-bottom:12px;opacity:.3;display:block;"></i>
-          Playbook auswählen und ausführen
+          ${t('pb.quickRunPlaceholder')}
         </div>
         <div class="terminal-body" id="qr-terminal-body" style="display:none;min-height:300px;border-top:1px solid var(--border);"></div>
       </div>
@@ -906,7 +952,27 @@ async function loadVarsList() {
       el.innerHTML = `<div class="empty-state empty-state-sm"><p>${t('vars.noVars')}</p></div>`;
       return;
     }
-    el.innerHTML = `
+    if (isMobilePlaybooksLayout()) {
+      el.innerHTML = vars.map(v => `
+        <article class="playbooks-mobile-card">
+          <div class="playbooks-mobile-card-header">
+            <div class="playbooks-mobile-card-title-wrap">
+              <div class="playbooks-mobile-card-title text-mono">${esc(v.key)}</div>
+              <div class="playbooks-mobile-card-subtitle">${esc(v.description || '') || '&nbsp;'}</div>
+            </div>
+            <div class="playbooks-mobile-card-actions">
+              ${hasCap('canEditVars') ? `<button class="btn btn-secondary btn-icon btn-sm var-edit" data-id="${v.id}" title="${t('common.edit')}"><i class="fas fa-pen"></i></button>` : ''}
+              ${hasCap('canDeleteVars') ? `<button class="btn btn-danger btn-icon btn-sm var-delete" data-id="${v.id}" data-key="${esc(v.key)}" title="${t('common.delete')}"><i class="fas fa-trash"></i></button>` : ''}
+            </div>
+          </div>
+          <div class="playbooks-mobile-card-row">
+            <span class="playbooks-mobile-card-label">${t('vars.value')}</span>
+            <span class="text-mono playbooks-mobile-card-value">${esc(v.value)}</span>
+          </div>
+        </article>
+      `).join('');
+    } else {
+      el.innerHTML = `
       <table class="data-table">
         <thead>
           <tr>
@@ -931,6 +997,7 @@ async function loadVarsList() {
         </tbody>
       </table>
     `;
+    }
 
     el.querySelectorAll('.var-edit').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -1089,7 +1156,45 @@ async function loadScheduleList() {
       el.innerHTML = `<div class="empty-state empty-state-sm"><p>${t('sc.noSchedules')}</p></div>`;
       return;
     }
-    el.innerHTML = `
+    if (isMobilePlaybooksLayout()) {
+      el.innerHTML = schedules.map(s => `
+        <article class="playbooks-mobile-card">
+          <div class="playbooks-mobile-card-header">
+            <div class="playbooks-mobile-card-title-wrap">
+              <div class="playbooks-mobile-card-title">${esc(s.name)}</div>
+              <div class="playbooks-mobile-card-subtitle">${esc(s.playbook)}</div>
+            </div>
+            <div class="playbooks-mobile-card-actions">
+              ${hasCap('canEditSchedules') ? `<button class="btn btn-secondary btn-icon btn-sm schedule-edit" data-id="${s.id}" title="${t('common.edit')}"><i class="fas fa-pen"></i></button>` : ''}
+              ${hasCap('canDeleteSchedules') ? `<button class="btn btn-danger btn-icon btn-sm schedule-delete" data-id="${s.id}" title="${t('common.delete')}"><i class="fas fa-trash"></i></button>` : ''}
+            </div>
+          </div>
+          <div class="playbooks-mobile-card-grid">
+            <div>
+              <span class="playbooks-mobile-card-label">${t('hist.targets')}</span>
+              <span class="playbooks-mobile-card-value">${esc(s.targets || 'all')}</span>
+            </div>
+            <div>
+              <span class="playbooks-mobile-card-label">${t('sc.interval')}</span>
+              <span class="playbooks-mobile-card-value">${esc(cronLabel(s.cron_expression))}</span>
+            </div>
+          </div>
+          <div class="playbooks-mobile-card-row">
+            <span class="playbooks-mobile-card-label">${t('common.status')}</span>
+            <span class="playbooks-mobile-card-value">
+              ${hasCap('canToggleSchedules') ? `<label class="toggle-switch" style="vertical-align:middle;margin-right:8px;">
+                <input type="checkbox" class="schedule-toggle" data-id="${s.id}" ${s.enabled ? 'checked' : ''}>
+                <span class="toggle-slider"></span>
+              </label>` : ''}
+              ${s.last_run
+                ? `<span class="badge badge-${s.last_status === 'success' ? 'online' : 'offline'}">${s.last_status}</span> <span style="opacity:.7;">${formatDateTimeShort(s.last_run)}</span>`
+                : `<span class="badge badge-${s.enabled ? 'online' : 'unknown'}">${s.enabled ? t('sc.enabled') : t('sc.disabled')}</span>`}
+            </span>
+          </div>
+        </article>
+      `).join('');
+    } else {
+      el.innerHTML = `
       <div class="settings-block" style="margin:0;">
         ${schedules.map(s => `
           <div class="settings-row" style="gap:12px;flex-wrap:nowrap;">
@@ -1116,6 +1221,7 @@ async function loadScheduleList() {
         `).join('')}
       </div>
     `;
+    }
 
     el.querySelectorAll('.schedule-toggle').forEach(cb => {
       cb.addEventListener('change', async () => {
@@ -1194,7 +1300,44 @@ async function loadHistoryList(scheduleId = null) {
       return;
     }
 
-    el.innerHTML = `
+    if (isMobilePlaybooksLayout()) {
+      el.innerHTML = history.map(h => `
+        <article class="playbooks-mobile-card">
+          <div class="playbooks-mobile-card-header">
+            <div class="playbooks-mobile-card-title-wrap">
+              <div class="playbooks-mobile-card-title">
+                ${h.schedule_id === null
+                  ? `<span class="badge" style="background:var(--accent-light);color:var(--accent);font-size:11px;">${esc(h.schedule_name)}</span>`
+                  : esc(h.schedule_name)}
+              </div>
+              <div class="playbooks-mobile-card-subtitle text-mono">${esc(h.playbook)}</div>
+            </div>
+            <div class="playbooks-mobile-card-actions">
+              <button class="btn btn-secondary btn-sm hist-show-output" data-id="${h.id}" title="${t('hist.output')}">
+                <i class="fas fa-eye"></i>
+              </button>
+            </div>
+          </div>
+          <div class="playbooks-mobile-card-grid">
+            <div>
+              <span class="playbooks-mobile-card-label">${t('hist.targets')}</span>
+              <span class="playbooks-mobile-card-value">${esc(h.targets || 'all')}</span>
+            </div>
+            <div>
+              <span class="playbooks-mobile-card-label">${t('hist.started')}</span>
+              <span class="playbooks-mobile-card-value">${formatDateTimeShort(h.started_at)}</span>
+            </div>
+          </div>
+          <div class="playbooks-mobile-card-row">
+            <span class="playbooks-mobile-card-label">${t('hist.status')}</span>
+            <span class="playbooks-mobile-card-value"><span class="badge badge-${h.status === 'success' ? 'online' : h.status === 'running' ? 'warning' : 'offline'}">
+              ${h.status === 'success' ? t('hist.success') : h.status === 'running' ? t('hist.running') : t('hist.failed')}
+            </span></span>
+          </div>
+        </article>
+      `).join('');
+    } else {
+      el.innerHTML = `
       <table class="data-table">
         <thead>
           <tr>
@@ -1233,6 +1376,7 @@ async function loadHistoryList(scheduleId = null) {
         </tbody>
       </table>
     `;
+    }
 
     el.querySelectorAll('.hist-show-output').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -1251,10 +1395,13 @@ async function loadHistoryList(scheduleId = null) {
 
 function showOutputModal(entry) {
   const overlay = document.getElementById('modal-overlay');
+  const onOverlayClick = (e) => {
+    if (e.target === overlay) close();
+  };
   overlay.classList.remove('hidden');
   overlay.innerHTML = `
     <div class="modal modal-wide">
-      <h2><i class="fas fa-file-alt"></i> ${esc(entry.schedule_name)} — ${esc(entry.playbook)}</h2>
+      <h2 id="hist-output-title"><i class="fas fa-file-alt"></i> ${esc(entry.schedule_name)} — ${esc(entry.playbook)}</h2>
       <div class="terminal" style="margin:8px 0;max-height:60vh;">
         <div class="terminal-header">
           <div class="terminal-title">${formatDateTimeShort(entry.started_at)}</div>
@@ -1266,10 +1413,22 @@ function showOutputModal(entry) {
       </div>
     </div>
   `;
-  document.getElementById('hist-modal-close').addEventListener('click', () => {
-    overlay.classList.add('hidden'); overlay.innerHTML = '';
+  let releaseDialog = null;
+  const close = () => {
+    overlay.removeEventListener('click', onOverlayClick);
+    releaseDialog?.();
+    releaseDialog = null;
+    overlay.classList.add('hidden');
+    overlay.innerHTML = '';
+  };
+  releaseDialog = activateDialog({
+    dialog: overlay.querySelector('.modal'),
+    initialFocus: '#hist-modal-close',
+    onClose: close,
+    labelledBy: 'hist-output-title',
   });
-  overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.classList.add('hidden'); overlay.innerHTML = ''; } });
+  document.getElementById('hist-modal-close').addEventListener('click', close);
+  overlay.addEventListener('click', onOverlayClick);
 }
 
 // ============================================================
@@ -1277,7 +1436,11 @@ function showOutputModal(entry) {
 // ============================================================
 function showHistoryModal(filename, versions, onRestored) {
   const overlay = document.getElementById('modal-overlay');
+  const onOverlayClick = (e) => {
+    if (e.target === overlay) close();
+  };
   overlay.classList.remove('hidden');
+  let releaseDialog = null;
 
   function renderRows(openVersion = null) {
     if (versions.length === 0) {
@@ -1316,7 +1479,7 @@ function showHistoryModal(filename, versions, onRestored) {
   function render(openVersion = null) {
     overlay.innerHTML = `
       <div class="modal modal-wide">
-        <h2><i class="fas fa-history"></i> ${t('pb.historyTitle')}</h2>
+        <h2 id="pb-history-title"><i class="fas fa-history"></i> ${t('pb.historyTitle')}</h2>
         <div class="form-body" style="max-height:70vh;overflow-y:auto;" id="pb-hist-list">
           ${renderRows(openVersion)}
         </div>
@@ -1325,8 +1488,15 @@ function showHistoryModal(filename, versions, onRestored) {
         </div>
       </div>`;
 
+    releaseDialog?.();
+    releaseDialog = activateDialog({
+      dialog: overlay.querySelector('.modal'),
+      initialFocus: '#pb-hist-close',
+      onClose: close,
+      labelledBy: 'pb-history-title',
+    });
+
     document.getElementById('pb-hist-close').addEventListener('click', close);
-    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
 
     overlay.querySelectorAll('.btn-preview-version').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -1370,10 +1540,14 @@ function showHistoryModal(filename, versions, onRestored) {
   }
 
   function close() {
+    overlay.removeEventListener('click', onOverlayClick);
+    releaseDialog?.();
+    releaseDialog = null;
     overlay.classList.add('hidden');
     overlay.innerHTML = '';
   }
 
+  overlay.addEventListener('click', onOverlayClick);
   render();
 }
 
@@ -1406,10 +1580,13 @@ async function openScheduleDialog(editId) {
   ).join('');
 
   const overlay = document.getElementById('modal-overlay');
+  const onOverlayClick = (e) => {
+    if (e.target === overlay) close();
+  };
   overlay.classList.remove('hidden');
   overlay.innerHTML = `
     <div class="modal modal-md">
-      <h2>${existing ? `<i class="fas fa-edit"></i> ${t('sc.editTitle')}` : `<i class="fas fa-clock"></i> ${t('sc.newTitle')}`}</h2>
+      <h2 id="sched-dialog-title">${existing ? `<i class="fas fa-edit"></i> ${t('sc.editTitle')}` : `<i class="fas fa-clock"></i> ${t('sc.newTitle')}`}</h2>
       <div class="form-body">
         <form id="schedule-form">
           <div class="form-group">
@@ -1482,6 +1659,21 @@ async function openScheduleDialog(editId) {
     </div>
   `;
 
+  let releaseDialog = null;
+  const close = () => {
+    overlay.removeEventListener('click', onOverlayClick);
+    releaseDialog?.();
+    releaseDialog = null;
+    overlay.classList.add('hidden');
+    overlay.innerHTML = '';
+  };
+  releaseDialog = activateDialog({
+    dialog: overlay.querySelector('.modal'),
+    initialFocus: '#sched-name',
+    onClose: close,
+    labelledBy: 'sched-dialog-title',
+  });
+
   const allCb = document.getElementById('sched-target-all');
   const schedHint = document.getElementById('sched-target-hint');
   function syncScheduleTargetMode() {
@@ -1512,12 +1704,8 @@ async function openScheduleDialog(editId) {
   updateVisibility();
   intervalSel.addEventListener('change', updateVisibility);
 
-  document.getElementById('sched-cancel').addEventListener('click', () => {
-    overlay.classList.add('hidden'); overlay.innerHTML = '';
-  });
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) { overlay.classList.add('hidden'); overlay.innerHTML = ''; }
-  });
+  document.getElementById('sched-cancel').addEventListener('click', close);
+  overlay.addEventListener('click', onOverlayClick);
 
   document.getElementById('schedule-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1549,7 +1737,7 @@ async function openScheduleDialog(editId) {
         await api.createSchedule({ name, playbook, targets, cronExpression });
         showToast(t('sc.created'), 'success');
       }
-      overlay.classList.add('hidden'); overlay.innerHTML = '';
+      close();
       await loadScheduleList();
     } catch (err) {
       showToast(t('common.errorPrefix', { msg: err.message }), 'error');

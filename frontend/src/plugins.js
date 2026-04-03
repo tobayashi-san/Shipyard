@@ -1,5 +1,6 @@
 import { api }       from './api.js';
-import { state, navigate, refreshServersState } from './main.js';
+import { state, refreshServersState } from './app/state.js';
+import { navigate } from './app/router.js';
 import { onWsMessage } from './websocket.js';
 import { showToast, showConfirm } from './components/toast.js';
 import { esc }       from './utils/format.js';

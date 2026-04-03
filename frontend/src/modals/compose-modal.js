@@ -1,9 +1,13 @@
-import { showToast } from './toast.js';
+import { showToast } from '../components/toast.js';
 import { api } from '../api.js';
 import { t } from '../i18n.js';
 import { esc } from '../utils/format.js';
+import { activateDialog } from '../utils/dialog.js';
 
 export function setupComposeModal() {
+  if (setupComposeModal._initialized) return;
+  setupComposeModal._initialized = true;
+
   const overlay = document.getElementById('compose-modal-overlay');
   const closeBtn = document.getElementById('close-compose-modal');
   const cancelBtn = document.getElementById('cancel-compose-btn');
@@ -16,8 +20,11 @@ export function setupComposeModal() {
   const saveBtn = document.getElementById('save-compose-btn');
 
   let currentServerId = null;
+  let releaseDialog = null;
 
   function closeModal() {
+    releaseDialog?.();
+    releaseDialog = null;
     overlay.classList.add('hidden');
     setTimeout(() => {
       pathInput.value = '';
@@ -43,6 +50,13 @@ export function setupComposeModal() {
     pathInput.disabled = !isNew;
 
     overlay.classList.remove('hidden');
+    releaseDialog?.();
+    releaseDialog = activateDialog({
+      dialog: document.getElementById('compose-modal'),
+      initialFocus: () => (isNew ? pathInput : editor),
+      onClose: closeModal,
+      labelledBy: 'compose-modal-title',
+    });
 
     if (isNew) {
       editor.value = "services:\n  app:\n    image: nginx:latest\n    ports:\n      - \"8080:80\"";

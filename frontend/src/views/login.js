@@ -36,12 +36,12 @@ export async function renderLogin(onSuccess) {
 
         <form id="login-form" autocomplete="on">
           <div class="form-group">
-            <label class="form-label">Username</label>
+            <label class="form-label">${t('set.username')}</label>
             <input
               class="form-input"
               type="text"
               id="login-username"
-              placeholder="${isSetup ? 'admin' : 'Username'}"
+              placeholder="${isSetup ? 'admin' : t('set.username')}"
               value="${isSetup ? 'admin' : ''}"
               autocomplete="username"
               ${isSetup ? '' : 'autofocus'}
@@ -55,7 +55,6 @@ export async function renderLogin(onSuccess) {
               id="login-password"
               placeholder="${isSetup ? t('login.minChars') : t('login.password')}"
               autocomplete="${isSetup ? 'new-password' : 'current-password'}"
-              ${isSetup ? '' : 'autofocus'}
             >
           </div>
           ${isSetup ? `

@@ -158,17 +158,23 @@ export function openSshTerminal(server) {
     resizeObs.observe(container);
 
     // Close
+    let cleanedUp = false;
+    const onEsc = (e) => {
+      if (e.key === 'Escape') closeAll();
+    };
+
     const closeAll = () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
       resizeObs.disconnect();
       ws.close();
       term.dispose();
+      document.removeEventListener('keydown', onEsc);
       overlay.remove();
     };
 
     modal.querySelector('#ssh-term-close').addEventListener('click', closeAll);
     overlay.addEventListener('click', e => { if (e.target === overlay) closeAll(); });
-    document.addEventListener('keydown', function onEsc(e) {
-      if (e.key === 'Escape') { closeAll(); document.removeEventListener('keydown', onEsc); }
-    });
+    document.addEventListener('keydown', onEsc);
   }
 }

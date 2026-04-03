@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { showToast } from './toast.js';
+import { showToast } from '../components/toast.js';
 import { t } from '../i18n.js';
 import { esc } from '../utils/format.js';
 

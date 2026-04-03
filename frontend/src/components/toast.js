@@ -1,5 +1,6 @@
 import { t } from '../i18n.js';
 import { esc } from '../utils/format.js';
+import { activateDialog } from '../utils/dialog.js';
 
 let toastContainer = null;
 
@@ -57,7 +58,7 @@ export function showConfirm(message, { title = '', confirmText = '', danger = fa
     overlay.innerHTML = `
       <div class="modal modal-sm">
         <div class="modal-header">
-          <h3 class="modal-title">${esc(resolvedTitle)}</h3>
+          <h3 class="modal-title" id="sc-title">${esc(resolvedTitle)}</h3>
         </div>
         <div class="modal-body">
           <p style="margin:0;font-size:14px;line-height:1.6;" id="sc-msg"></p>
@@ -72,14 +73,28 @@ export function showConfirm(message, { title = '', confirmText = '', danger = fa
     if (html) { msgEl.innerHTML = message; } else { msgEl.textContent = message; }
     document.body.appendChild(overlay);
 
-    const cleanup = (result) => { overlay.remove(); resolve(result); };
+    let releaseDialog = null;
+    let settled = false;
+
+    const cleanup = (result) => {
+      if (settled) return;
+      settled = true;
+      releaseDialog?.();
+      releaseDialog = null;
+      overlay.remove();
+      resolve(result);
+    };
+
+    releaseDialog = activateDialog({
+      dialog: overlay.querySelector('.modal'),
+      initialFocus: () => overlay.querySelector('#sc-cancel'),
+      onClose: () => cleanup(false),
+      labelledBy: 'sc-title',
+    });
 
     overlay.querySelector('#sc-cancel').addEventListener('click', () => cleanup(false));
     overlay.querySelector('#sc-ok').addEventListener('click', () => cleanup(true));
     overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(false); });
-
-    const onKey = (e) => { if (e.key === 'Escape') { document.removeEventListener('keydown', onKey); cleanup(false); } };
-    document.addEventListener('keydown', onKey);
   });
 }
 
@@ -96,7 +111,7 @@ export function showPrompt(label, { title = '', confirmText = '', defaultValue =
     overlay.innerHTML = `
       <div class="modal modal-sm">
         <div class="modal-header">
-          <h3 class="modal-title">${esc(resolvedTitle)}</h3>
+          <h3 class="modal-title" id="sp-title">${esc(resolvedTitle)}</h3>
         </div>
         <div class="modal-body">
           <label style="display:block;font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.02em;margin-bottom:6px;">${esc(label)}</label>
@@ -111,17 +126,29 @@ export function showPrompt(label, { title = '', confirmText = '', defaultValue =
     document.body.appendChild(overlay);
 
     const input = overlay.querySelector('#sp-input');
-    const cleanup = (value) => { document.removeEventListener('keydown', onKey); overlay.remove(); resolve(value); };
+    let releaseDialog = null;
+    let settled = false;
 
-    input.focus();
-    input.select();
+    const cleanup = (value) => {
+      if (settled) return;
+      settled = true;
+      releaseDialog?.();
+      releaseDialog = null;
+      overlay.remove();
+      resolve(value);
+    };
+
+    releaseDialog = activateDialog({
+      dialog: overlay.querySelector('.modal'),
+      initialFocus: input,
+      onClose: () => cleanup(null),
+      labelledBy: 'sp-title',
+    });
+    window.requestAnimationFrame(() => input.select());
 
     overlay.querySelector('#sp-cancel').addEventListener('click', () => cleanup(null));
     overlay.querySelector('#sp-ok').addEventListener('click', () => cleanup(input.value.trim() || null));
     input.addEventListener('keydown', e => { if (e.key === 'Enter') cleanup(input.value.trim() || null); });
     overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(null); });
-
-    const onKey = (e) => { if (e.key === 'Escape') cleanup(null); };
-    document.addEventListener('keydown', onKey);
   });
 }
