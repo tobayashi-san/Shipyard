@@ -50,7 +50,8 @@ const wssSsh = new WebSocketServer({ noServer: true });
 server.on('upgrade', (req, socket, head) => {
   // Reject browser connections from unconfigured origins
   const origin = req.headers.origin;
-  if (origin && !isAllowedRequestOrigin(allowedOrigins, origin)) {
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  if (origin && !isAllowedRequestOrigin(allowedOrigins, origin, host)) {
     socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
     socket.destroy();
     return;
@@ -231,8 +232,9 @@ app.get('/api/dashboard', (req, res) => {
       if (info?.reboot_required) rebootRequired++;
       totalUpdates += updates.filter(u => !u.phased).length;
 
-      const ramPct = info?.ram_total_mb ? Math.round((info.ram_used_mb / info.ram_total_mb) * 100) : null;
-      const diskPct = info?.disk_total_gb ? Math.round((info.disk_used_gb / info.disk_total_gb) * 100) : null;
+      const isOnline = s.status === 'online';
+      const ramPct = (isOnline && info?.ram_total_mb) ? Math.round((info.ram_used_mb / info.ram_total_mb) * 100) : null;
+      const diskPct = (isOnline && info?.disk_total_gb) ? Math.round((info.disk_used_gb / info.disk_total_gb) * 100) : null;
       if (ramPct > 85) criticalRam++;
       if (diskPct > 85) criticalDisk++;
 
@@ -262,11 +264,11 @@ app.get('/api/dashboard', (req, res) => {
         status: s.status,
         last_seen: s.last_seen,
         os: info?.os || null,
-        uptime_seconds: info?.uptime_seconds || null,
+        uptime_seconds: isOnline ? (info?.uptime_seconds || null) : null,
         ram_pct: ramPct,
         disk_pct: diskPct,
-        cpu_pct: info?.cpu_usage_pct ?? null,
-        load_avg: info?.load_avg || null,
+        cpu_pct: isOnline ? (info?.cpu_usage_pct ?? null) : null,
+        load_avg: isOnline ? (info?.load_avg || null) : null,
         reboot_required: !!info?.reboot_required,
         updates_count: updates.filter(u => !u.phased).length,
         containers_running: containers.filter(c => c.state === 'running').length,

@@ -502,6 +502,12 @@ function renderServerInfo(info) {
       }).join('')}
   ` : '';
 
+  const isOffline = cpuPct === null && info.ram_used_mb === null;
+  if (isOffline) {
+    resEl.innerHTML = `<div class="empty-state empty-state-sm" style="padding:24px 16px;"><i class="fas fa-times-circle" style="font-size:24px;color:var(--offline);margin-bottom:8px;display:block;"></i><p style="color:var(--text-muted);font-size:13px;margin:0;">Offline</p></div>`;
+    return;
+  }
+
   resEl.innerHTML = `
     <div class="res-block">
       ${cpuPct !== null ? `

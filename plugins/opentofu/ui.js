@@ -716,12 +716,12 @@ function renderRunsTable(runs, pagination) {
           </tr>`).join('')}
       </tbody>
     </table>
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:10px 0 0;font-size:12px;color:var(--text-muted);">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:12px 16px 16px;font-size:12px;color:var(--text-muted);">
       <div>Showing ${runs.length} of ${pagination.total} entries · Page ${pagination.page} / ${pagination.total_pages}</div>
       <div style="display:flex;align-items:center;gap:8px;">
-        <label style="display:flex;align-items:center;gap:6px;">
+        <label style="display:flex;align-items:center;margin:0;gap:6px;">
           <span>Per page</span>
-          <select id="tofu-runs-page-size" class="form-input" style="width:auto;min-width:72px;padding:4px 24px 4px 8px;font-size:12px;">
+          <select id="tofu-runs-page-size" class="form-input" style="width:auto;min-width:64px;padding:4px 20px 4px 8px;font-size:12px;height:auto;">
             ${[5, 10, 20, 50, 100].map(size => `<option value="${size}"${pagination.page_size === size ? ' selected' : ''}>${size}</option>`).join('')}
           </select>
         </label>

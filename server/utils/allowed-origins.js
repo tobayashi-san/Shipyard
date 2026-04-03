@@ -28,12 +28,13 @@ function parseAllowedOrigins(envValue) {
   return unique.length > 0 ? unique : DEFAULT_ORIGINS;
 }
 
-function isAllowedRequestOrigin(allowedOrigins, requestOrigin) {
+function isAllowedRequestOrigin(allowedOrigins, requestOrigin, requestHost = null) {
   // No origin header (non-browser clients) → allow
   if (!requestOrigin) return true;
   try {
-    const normalized = new URL(requestOrigin).origin;
-    return allowedOrigins.includes(normalized);
+    const normalized = new URL(requestOrigin);
+    if (requestHost && normalized.host === requestHost) return true;
+    return allowedOrigins.includes(normalized.origin);
   } catch {
     return false;
   }

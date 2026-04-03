@@ -673,6 +673,23 @@ button:focus-visible,
   transform: scale(0.97) translateY(0);
 }
 
+.btn-warning {
+  background: var(--bg-panel);
+  color: var(--warning);
+  border-color: var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-warning:hover {
+  background: var(--warning-bg);
+  border-color: var(--warning);
+  transform: translateY(-1px);
+}
+
+.btn-warning:active {
+  transform: scale(0.97) translateY(0);
+}
+
 .btn-sm {
   padding: 4px 12px;
   font-size: 12px;

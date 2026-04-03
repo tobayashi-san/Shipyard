@@ -449,7 +449,16 @@ router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, 
 
   // Serve cache immediately, refresh in background
   if (cached && !force) {
-    res.json({ ...cached, _cached: true });
+    const isOnline = server.status === 'online';
+    const payload = { ...cached, _cached: true };
+    if (!isOnline) {
+      payload.ram_used_mb = null;
+      payload.disk_used_gb = null;
+      payload.cpu_usage_pct = null;
+      payload.load_avg = null;
+      payload.uptime_seconds = null;
+    }
+    res.json(payload);
     systemInfo.getSystemInfo(server)
       .then(info => {
         db.serverInfo.upsert(server.id, info);
