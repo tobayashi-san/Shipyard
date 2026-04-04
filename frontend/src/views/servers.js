@@ -1000,45 +1000,53 @@ function updateBulkBar() {
   }
 }
 
+function formatLastSeen(server) {
+  if (server.status === 'online') return t('common.online');
+  if (!server.last_seen) return '—';
+  return `Seen ${formatRelativeTime(server.last_seen)} ago`;
+}
+
 function renderRow(server, depth = 0, folderColor = null) {
   const dotCls = server.status === 'online' ? 'online' : server.status === 'offline' ? 'offline' : 'unknown';
-  const lastSeen = server.last_seen ? formatRelativeTime(server.last_seen) : '—';
+  const lastSeen = formatLastSeen(server);
   const checked = selectedIds.has(server.id) ? 'checked' : '';
   const borderStyle = folderColor ? `border-left:3px solid ${folderColor};` : '';
   const nameIndent = folderColor ? 14 + (depth - 1) * 14 : 14;
   return `
-    <tr class="server-row" data-server-id="${server.id}" draggable="true">
+    <tr class="server-row${selectedIds.has(server.id) ? ' is-selected' : ''}" data-server-id="${server.id}" draggable="true">
       <td class="checkbox-cell" style="padding-right:6px;${borderStyle}">
         <input type="checkbox" class="server-checkbox row-checkbox" data-server-id="${server.id}" ${checked}>
       </td>
       <td style="padding-left:6px;padding-right:0;"><span class="status-dot ${dotCls}"></span></td>
       <td style="padding-left:${nameIndent}px;">
-        <span style="font-weight:600;color:var(--text-primary);">${esc(server.name)}</span>
+        <div class="server-name-cell">
+          <span class="server-name-primary">${esc(server.name)}</span>
+        </div>
         ${(server.tags || []).map(tag => `<span class="server-tag">${esc(tag)}</span>`).join('')}
       </td>
       <td class="mono ${server.ip_address ? '' : 'empty-value'}" style="color:var(--text-muted);font-size:12px;">${esc(server.ip_address || '—')}</td>
       <td id="os-${server.id}" class="mono empty-value" style="color:var(--text-muted);">—</td>
       <td id="cpu-${server.id}">
-        <div style="display:flex;align-items:center;gap:6px;">
-          <div class="progress-track" style="height:6px;"><div class="progress-fill" style="width:0%" id="cpu-bar-${server.id}"></div></div>
+        <div class="table-metric-row">
+          <div class="progress-track table-progress-track" style="height:6px;"><div class="progress-fill" style="width:0%" id="cpu-bar-${server.id}"></div></div>
           <span class="text-mono empty-value" id="cpu-val-${server.id}" style="width:32px;text-align:right;">—</span>
         </div>
       </td>
       <td id="ram-${server.id}">
-        <div style="display:flex;align-items:center;gap:6px;">
-          <div class="progress-track" style="height:6px;"><div class="progress-fill" style="width:0%" id="ram-bar-${server.id}"></div></div>
+        <div class="table-metric-row">
+          <div class="progress-track table-progress-track" style="height:6px;"><div class="progress-fill" style="width:0%" id="ram-bar-${server.id}"></div></div>
           <span class="text-mono empty-value" id="ram-val-${server.id}" style="width:32px;text-align:right;">—</span>
         </div>
       </td>
       <td id="disk-${server.id}">
-        <div style="display:flex;align-items:center;gap:6px;">
-          <div class="progress-track" style="height:6px;"><div class="progress-fill" style="width:0%" id="disk-bar-${server.id}"></div></div>
+        <div class="table-metric-row">
+          <div class="progress-track table-progress-track" style="height:6px;"><div class="progress-fill" style="width:0%" id="disk-bar-${server.id}"></div></div>
           <span class="text-mono empty-value" id="disk-val-${server.id}" style="width:32px;text-align:right;">—</span>
         </div>
       </td>
       <td class="text-mono ${lastSeen === '—' ? 'empty-value' : ''}" style="color:var(--text-muted);font-size:11px;">${lastSeen}</td>
       <td class="row-actions" style="white-space:nowrap;">
-        ${serverGroups.length > 0 && hasCap('canEditServers') ? `<button class="btn btn-icon btn-move-server" data-server-id="${server.id}" title="${t('srv.moveTo')}"><i class="fas fa-folder-open"></i></button>` : ''}
+        ${serverGroups.length > 0 && hasCap('canEditServers') ? `<button class="btn btn-icon btn-move-server" data-server-id="${server.id}" title="${t('srv.moveTo')}"><i class="fas fa-folder-tree"></i></button>` : ''}
         ${hasCap('canEditServers') ? `<button class="btn btn-icon btn-edit-server" data-server-id="${server.id}" title="${t('srv.edit')}">
           <i class="fas fa-edit"></i>
         </button>` : ''}
@@ -1100,12 +1108,12 @@ function renderMetric(label, idPrefix, serverId) {
 function renderServerCard(server, depth = 0, folderColor = null) {
   const dotCls = server.status === 'online' ? 'online' : server.status === 'offline' ? 'offline' : 'unknown';
   const statusLabel = server.status === 'online' ? t('common.online') : server.status === 'offline' ? t('common.offline') : t('common.unknown');
-  const lastSeen = server.last_seen ? formatRelativeTime(server.last_seen) : '—';
+  const lastSeen = formatLastSeen(server);
   const checked = selectedIds.has(server.id) ? 'checked' : '';
   const indent = depth > 0 ? `style="margin-left:${depth * 12}px;${folderColor ? `border-left:3px solid ${folderColor};` : ''}"` : (folderColor ? `style="border-left:3px solid ${folderColor};"` : '');
 
   return `
-    <article class="server-card server-row" data-server-id="${server.id}" ${indent}>
+    <article class="server-card server-row${selectedIds.has(server.id) ? ' is-selected' : ''}" data-server-id="${server.id}" ${indent}>
       <div class="server-card-header">
         <label class="server-card-checkbox checkbox-cell">
           <input type="checkbox" class="server-checkbox row-checkbox" data-server-id="${server.id}" ${checked}>
@@ -1119,7 +1127,7 @@ function renderServerCard(server, depth = 0, folderColor = null) {
           ${(server.tags || []).length ? `<div class="server-tags-inline">${(server.tags || []).map(tag => `<span class="server-tag">${esc(tag)}</span>`).join('')}</div>` : ''}
         </div>
         <div class="row-actions server-card-actions">
-          ${serverGroups.length > 0 && hasCap('canEditServers') ? `<button class="btn btn-icon btn-move-server" data-server-id="${server.id}" title="${t('srv.moveTo')}"><i class="fas fa-folder-open"></i></button>` : ''}
+          ${serverGroups.length > 0 && hasCap('canEditServers') ? `<button class="btn btn-icon btn-move-server" data-server-id="${server.id}" title="${t('srv.moveTo')}"><i class="fas fa-folder-tree"></i></button>` : ''}
           ${hasCap('canEditServers') ? `<button class="btn btn-icon btn-edit-server" data-server-id="${server.id}" title="${t('srv.edit')}"><i class="fas fa-edit"></i></button>` : ''}
           ${hasCap('canDeleteServers') ? `<button class="btn btn-icon btn-icon--danger btn-delete-server" data-server-id="${server.id}" data-server-name="${esc(server.name)}" title="${t('srv.delete')}"><i class="fas fa-trash"></i></button>` : ''}
         </div>
@@ -1198,7 +1206,8 @@ async function loadServerInfo(serverId) {
 function updateBar(id, pct) {
   const el = document.getElementById(id);
   if (!el) return;
-  el.style.width = pct + '%';
+  const visiblePct = pct > 0 ? Math.max(pct, 4) : 0;
+  el.style.width = visiblePct + '%';
   el.className = 'progress-fill' + (pct > 90 ? ' critical' : pct > 70 ? ' high' : '');
 }
 

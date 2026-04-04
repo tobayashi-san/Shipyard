@@ -15,10 +15,11 @@ export function openSshTerminal(server) {
   ].join(';');
 
   const modal = document.createElement('div');
+  const userLabel = server.ssh_user || 'root';
   modal.style.cssText = [
     'width:90vw', 'max-width:1100px', 'height:75vh',
     'background:var(--terminal-bg)',
-    'border-radius:8px',
+    'border-radius:12px',
     'border:1px solid var(--terminal-border)',
     'display:flex', 'flex-direction:column',
     'overflow:hidden',
@@ -27,11 +28,19 @@ export function openSshTerminal(server) {
 
   modal.innerHTML = `
     <div class="ssh-terminal-header">
-      <span><i class="fas fa-terminal"></i>&nbsp; ${esc(server.name)} &middot; ${esc(server.ip_address)}</span>
-      <div style="display:flex;gap:10px;align-items:center;">
+      <div class="ssh-terminal-title-wrap">
+        <div class="ssh-terminal-title-row">
+          <span class="ssh-terminal-kicker">${t('common.terminal')}</span>
+          <span class="ssh-terminal-title">${esc(server.name)}</span>
+        </div>
+        <div class="ssh-terminal-subtitle">${esc(userLabel)}@${esc(server.hostname || server.name)} <span class="ssh-terminal-sub-sep">&middot;</span> ${esc(server.ip_address)}</div>
+      </div>
+      <div class="ssh-terminal-header-actions">
         <span id="ssh-status-dot" class="ssh-status-dot connecting"></span>
-        <span id="ssh-status-text" style="font-size:12px;color:var(--terminal-muted);">${t('term.connecting')}</span>
-        <button id="ssh-term-close" style="background:none;border:none;color:var(--terminal-muted);font-size:22px;line-height:1;cursor:pointer;padding:0 2px;">×</button>
+        <span id="ssh-status-text" class="ssh-status-text">${t('term.connecting')}</span>
+        <button id="ssh-term-close" class="ssh-term-close" title="${t('common.close')} (Esc)" aria-label="${t('common.close')}">
+          <i class="fas fa-times"></i>
+        </button>
       </div>
     </div>
     <div class="ssh-term-shell">
@@ -97,7 +106,7 @@ export function openSshTerminal(server) {
     let ready = false;
 
     ws.onopen = () => {
-      term.write(`\r\n\x1b[33m  ⟳  ${t('term.connectingTo', { name: server.name, ip: server.ip_address })}\x1b[0m\r\n`);
+      setStatus('connecting', t('term.connecting'));
     };
 
     ws.onmessage = e => {
@@ -107,21 +116,7 @@ export function openSshTerminal(server) {
           const msg = JSON.parse(e.data);
           if (msg.type === 'ready') {
             ready = true;
-            setStatus('online', t('term.connected'));
-            // Build banner — measure ONLY visible chars, add ANSI after padding
-            const D    = Math.min(term.cols - 2, 50);
-            const fill = (s, n) => s + ' '.repeat(Math.max(0, n - s.length));
-            const row  = (txt) => `│ ${fill(txt, D - 2)} │`;
-            const hr   = '─'.repeat(D);
-            const l1   = `✓  ${server.name}`;
-            const l2   = `   ${server.ip_address}  ·  ${server.ssh_user || 'root'}`;
-            term.write(
-              `\r\x1b[K` +                               // overwrite connecting line
-              `\x1b[32m┌${hr}┐\r\n` +
-              `\x1b[1m${row(l1)}\x1b[0;32m\r\n` +
-              `\x1b[2m${row(l2)}\x1b[0m\r\n` +
-              `\x1b[32m└${hr}┘\x1b[0m\r\n\r\n`
-            );
+            setStatus('online', `Connected as ${userLabel}`);
           } else if (msg.type === 'error') {
             setStatus('offline', t('term.error'));
             term.write(`\r\n\x1b[31m${t('term.error')}: ${msg.message}\x1b[0m\r\n`);

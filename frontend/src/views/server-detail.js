@@ -116,6 +116,12 @@ function formatUsageValue(used, total, pct) {
   return Number.isFinite(pct) ? `${base} · ${pct}%` : base;
 }
 
+function formatScrubSummary(scrub) {
+  const text = String(scrub || '').trim();
+  if (!text) return '';
+  return text.length > 72 ? `${text.slice(0, 72)}...` : text;
+}
+
 async function copyText(text, message) {
   try {
     await navigator.clipboard.writeText(text);
@@ -199,32 +205,32 @@ export async function renderServerDetail(serverId) {
 
         <!-- Stat Cards -->
         <div class="stat-cards-row">
-          <div class="stat-card">
-            <div class="stat-card-icon"><i class="fas fa-clock"></i></div>
+          <div class="stat-card stat-card--health">
+            <div class="stat-card-icon" id="stat-health-icon"><i class="fas fa-heart-pulse"></i></div>
             <div>
-              <div class="stat-card-value" id="stat-uptime">—</div>
-              <div class="stat-card-label">${t('det.uptime')}</div>
+              <div class="stat-card-value" id="stat-health">—</div>
+              <div class="stat-card-label">Health</div>
             </div>
           </div>
-          <div class="stat-card">
-            <div class="stat-card-icon"><i class="fas fa-cubes"></i></div>
-            <div>
-              <div class="stat-card-value" id="stat-docker">—</div>
-              <div class="stat-card-label">${t('det.tabDocker')}</div>
-            </div>
-          </div>
-          <div class="stat-card">
+          <div class="stat-card stat-card--updates">
             <div class="stat-card-icon" id="stat-updates-icon"><i class="fas fa-box-open"></i></div>
             <div>
               <div class="stat-card-value" id="stat-updates">—</div>
               <div class="stat-card-label">${t('det.tabUpdates')}</div>
             </div>
           </div>
-          <div class="stat-card">
+          <div class="stat-card stat-card--latency">
             <div class="stat-card-icon" id="stat-ping-icon"><i class="fas fa-satellite-dish"></i></div>
             <div>
               <div class="stat-card-value" id="stat-ping">—</div>
               <div class="stat-card-label">${t('det.latency')}</div>
+            </div>
+          </div>
+          <div class="stat-card stat-card--docker">
+            <div class="stat-card-icon" id="stat-docker-icon"><i class="fas fa-cubes"></i></div>
+            <div>
+              <div class="stat-card-value" id="stat-docker">—</div>
+              <div class="stat-card-label">${t('det.tabDocker')}</div>
             </div>
           </div>
         </div>
@@ -235,7 +241,7 @@ export async function renderServerDetail(serverId) {
         <div class="overview-grid">
           <!-- System Info -->
           <div class="server-detail-stack">
-            <div class="panel dash-panel">
+            <div class="panel dash-panel server-info-card">
               <div class="dash-panel-header">
                 <div class="dash-panel-header-left">
                   <div class="dash-panel-icon"><i class="fas fa-info-circle"></i></div>
@@ -243,12 +249,12 @@ export async function renderServerDetail(serverId) {
                 </div>
               </div>
               <div class="info-section" id="info-table">
-                <div class="info-section-title">${t('det.sysinfo')}</div>
                 <div class="info-list">
                   <div class="info-row"><div class="info-key">${t('det.os')}</div><div class="info-value" id="inf-os">—</div></div>
                   <div class="info-row"><div class="info-key">${t('det.kernel')}</div><div class="info-value" id="inf-kernel">—</div></div>
                   <div class="info-row"><div class="info-key">${t('det.cpu')}</div><div class="info-value" id="inf-cpu">—</div></div>
                   <div class="info-row"><div class="info-key">${t('det.cores')}</div><div class="info-value" id="inf-cores">—</div></div>
+                  <div class="info-row"><div class="info-key">${t('det.uptime')}</div><div class="info-value mono" id="inf-uptime">—</div></div>
                   <div class="info-row"><div class="info-key">${t('det.loadAvg')}</div><div class="info-value mono" id="inf-load">—</div></div>
                 </div>
               </div>
@@ -607,6 +613,7 @@ function renderServerInfo(info) {
   set('inf-kernel', info.kernel);
   set('inf-cpu', info.cpu);
   set('inf-cores', info.cpu_cores ? info.cpu_cores + ' ' + t('det.cores') : '—');
+  set('inf-uptime', info.uptime_seconds ? formatUptime(info.uptime_seconds) : '—');
   const loadState = loadAverageState(info.load_avg, info.cpu_cores);
   const loadEl = document.getElementById('inf-load');
   if (loadEl) {
@@ -615,9 +622,17 @@ function renderServerInfo(info) {
   }
 
   // ── Stat cards ──────────────────────────────────────────────
-  const uptimeStatEl = document.getElementById('stat-uptime');
-  if (uptimeStatEl && info.uptime_seconds) {
-    uptimeStatEl.textContent = formatUptime(info.uptime_seconds);
+  const healthEl = document.getElementById('stat-health');
+  const healthIconEl = document.getElementById('stat-health-icon');
+  if (healthEl) {
+    const updateCount = Number.isFinite(info.updates_count) ? info.updates_count : 0;
+    const healthText = info._cached ? 'Cached' : updateCount > 0 ? 'Attention' : 'Healthy';
+    healthEl.textContent = healthText;
+    healthEl.className = `stat-card-value ${info._cached ? 'stat-card-value--warning' : updateCount > 0 ? 'stat-card-value--warning' : 'stat-card-value--ok'}`;
+    if (healthIconEl) {
+      healthIconEl.classList.toggle('stat-card-icon--warning', info._cached || updateCount > 0);
+      healthIconEl.classList.toggle('stat-card-icon--ok', !info._cached && updateCount === 0);
+    }
   }
 
   const resEl = document.getElementById('res-content');
@@ -660,20 +675,20 @@ function renderServerInfo(info) {
   // ── ZFS pools (pool-level only, no individual datasets) ────
   const zfsPools = Array.isArray(info.zfs_pools) ? info.zfs_pools : [];
   const zfsHtml = zfsPools.length > 0 ? `
-      <div class="res-subsection"><i class="fas fa-database" style="margin-right:6px;opacity:.6;"></i>${t('det.zfsPools')}</div>
+      <div class="res-subsection res-subsection--major"><i class="fas fa-database" style="margin-right:6px;opacity:.6;"></i>${t('det.zfsPools')}</div>
       ${zfsPools.map(pool => {
         const poolPct = pool.size_gb ? Math.round((pool.alloc_gb / pool.size_gb) * 100) : 0;
         const poolValueClass = poolPct >= 95 ? 'res-critical' : poolPct >= 85 ? 'res-warn' : poolPct >= 70 ? 'res-caution' : '';
         const healthClass = pool.health === 'ONLINE' ? 'badge-online' : pool.health === 'DEGRADED' ? 'badge-warning' : pool.health === 'FAULTED' ? 'badge-error' : 'badge-unknown';
         const poolAbsolute = formatUsageValue(pool.alloc_gb, pool.size_gb, poolPct);
-        const scrubInfo = pool.scrub ? `<span class="res-path" style="margin-left:8px;">scrub: ${esc(pool.scrub.length > 60 ? pool.scrub.slice(0, 60) + '…' : pool.scrub)}</span>` : '';
+        const scrubInfo = formatScrubSummary(pool.scrub);
         return `
         <div class="res-row" style="margin-bottom:0;">
           <div class="res-header">
-            <span class="res-label">
-              <span class="badge ${healthClass}" style="font-size:10px;padding:1px 6px;margin-right:6px;">${esc(pool.health)}</span>
-              ${esc(pool.name)}${scrubInfo}
-            </span>
+            <div class="res-title-block">
+              <span class="res-label res-label--strong">${esc(pool.name)} <span class="badge ${healthClass}" style="font-size:10px;padding:1px 6px;margin-left:6px;vertical-align:middle;">${esc(pool.health)}</span></span>
+              ${scrubInfo ? `<span class="res-path res-path--detail">Last scrub: ${esc(scrubInfo)}</span>` : ''}
+            </div>
             <span class="res-value ${poolValueClass}">${poolAbsolute}</span>
           </div>
           ${renderThresholdBar(poolPct)}
@@ -749,9 +764,12 @@ async function loadServerInfo(serverId) {
     if (hasCap('canViewDocker')) {
       api.getServerDocker(serverId).then(containers => {
         const el = document.getElementById('stat-docker');
+        const iconEl = document.getElementById('stat-docker-icon');
         if (el) {
           const list = Array.isArray(containers) ? containers : [];
-          el.textContent = list.length;
+          el.textContent = list.length ? String(list.length) : 'Idle';
+          el.className = `stat-card-value ${list.length ? '' : 'stat-card-value--muted'}`;
+          if (iconEl) iconEl.classList.toggle('stat-card-icon--muted', list.length === 0);
         }
       }).catch(() => {
         const el = document.getElementById('stat-docker');

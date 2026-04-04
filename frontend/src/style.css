@@ -1123,6 +1123,10 @@ button:focus-visible,
   background: var(--bg-row-hover);
 }
 
+.data-table tbody tr.server-row.is-selected td {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-panel));
+}
+
 .data-table tbody tr:last-child td {
   border-bottom: none;
 }
@@ -1151,26 +1155,52 @@ button:focus-visible,
    Info Sections (key-value)
    ============================================ */
 .info-section {
-  padding: 12px 0 0;
+  padding: 8px 0 0;
+}
+
+.dash-panel-header + .info-section {
+  padding-top: 0;
+}
+
+.server-info-card {
+  border-color: color-mix(in srgb, var(--border-section) 90%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+
+.server-info-card .dash-panel-header {
+  border-bottom-color: color-mix(in srgb, var(--border-section) 88%, transparent);
 }
 
 .info-section-title {
-  padding: 0 16px 8px;
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 18px;
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: color-mix(in srgb, var(--text-muted) 74%, var(--text-primary) 26%);
+  background: color-mix(in srgb, var(--bg-row-alt) 92%, var(--bg-panel));
+  border-top: 1px solid color-mix(in srgb, var(--border-section) 88%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-section) 88%, transparent);
+}
+
+.info-section-divider + .info-section .info-section-title {
+  margin-top: 6px;
+  background: color-mix(in srgb, var(--bg-row-alt) 96%, var(--bg-panel));
 }
 
 .info-section-divider {
-  margin: 10px 16px 0;
-  border-top: 1px solid var(--border);
+  margin: 18px 0 0;
+  border-top: 1px solid color-mix(in srgb, var(--border-section) 100%, transparent);
+  box-shadow: 0 -1px 0 color-mix(in srgb, var(--surface-highlight) 22%, transparent);
 }
 
 .info-list {
   display: flex;
   flex-direction: column;
+  padding: 0;
 }
 
 .info-row {
@@ -1178,17 +1208,22 @@ button:focus-visible,
   grid-template-columns: 144px minmax(0, 1fr);
   gap: 16px;
   align-items: center;
-  padding: 11px 16px;
-  border-top: 1px solid var(--border);
+  min-height: 40px;
+  padding: 9px 18px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
 }
 
 .info-list .info-row:first-child {
   border-top: none;
 }
 
+.info-section + .info-section-divider + .info-section .info-section-title {
+  margin-top: 0;
+}
+
 .info-key {
-  color: var(--text-muted);
-  font-size: 11px;
+  color: color-mix(in srgb, var(--text-muted) 86%, transparent);
+  font-size: 12px;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -1196,8 +1231,9 @@ button:focus-visible,
 
 .info-value {
   min-width: 0;
-  font-size: 12px;
-  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--text-primary) 98%, white 2%);
   font-family: var(--font-mono);
 }
 
@@ -1518,17 +1554,25 @@ input[type=number] {
   padding: 0;
 }
 
-.ssh-term-shell {
-  flex: 1;
-  padding: 10px;
+.terminal.xterm {
   box-sizing: border-box;
-  overflow: hidden;
+  padding: 10px;
 }
 
 .ssh-term-container {
   width: 100%;
   height: 100%;
   overflow: hidden;
+}
+
+.ssh-term-shell {
+  flex: 1;
+  min-height: 0;
+  margin: 8px 8px 8px;
+  border: 1px solid color-mix(in srgb, var(--terminal-border) 24%, transparent);
+  border-radius: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--terminal-bg) 99%, black 1%);
 }
 
 .terminal-header {
@@ -1712,30 +1756,30 @@ input[type=number] {
 /* Server group rows */
 .group-row>td {
   padding: 0 !important;
-  background: var(--bg-hover);
-  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-row-alt) 80%, var(--bg-panel));
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
 }
 
 .group-header-inner {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 14px;
+  padding: 5px 14px;
   cursor: pointer;
   user-select: none;
-  min-height: 41px;
+  min-height: 37px;
 }
 
 .group-name {
   font-weight: 600;
-  font-size: 13px;
-  color: var(--text-primary);
+  font-size: 12.5px;
+  color: color-mix(in srgb, var(--text-primary) 84%, var(--text-muted) 16%);
 }
 
 .group-badge {
   margin-left: auto;
-  font-size: 11px;
-  color: var(--text-muted);
+  font-size: 10px;
+  color: color-mix(in srgb, var(--text-muted) 85%, transparent);
 }
 
 .group-header-actions {
@@ -1821,6 +1865,45 @@ input[type=number] {
 .server-row td:first-child[style*="border-left"]~td,
 .server-row td:first-child[style*="border-left"] {
   background: rgba(255, 255, 255, 0.01);
+}
+
+.server-name-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.server-name-primary {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.server-name-secondary {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.table-metric-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.table-progress-track {
+  min-width: 52px;
+}
+
+.row-actions {
+  opacity: 0.84;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+
+.server-row:hover .row-actions {
+  opacity: 1;
+}
+
+.server-row:hover .server-name-primary {
+  color: var(--accent);
 }
 
 /* Server tag badges in table */
@@ -2832,12 +2915,39 @@ input[type=number] {
   box-shadow: none;
 }
 
+.stat-card-icon--ok {
+  background: color-mix(in srgb, var(--online) 12%, transparent);
+  color: var(--online);
+}
+
+.stat-card-icon--warning {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+}
+
+.stat-card-icon--muted {
+  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+  color: var(--text-muted);
+}
+
 .stat-card-value {
   font-size: var(--kpi-value-size-compact);
   font-weight: 800;
   letter-spacing: -0.02em;
   line-height: 1.1;
   color: var(--text-primary);
+}
+
+.stat-card-value--ok {
+  color: var(--online);
+}
+
+.stat-card-value--warning {
+  color: var(--warning);
+}
+
+.stat-card-value--muted {
+  color: var(--text-muted);
 }
 
 .stat-card-label {
@@ -2901,9 +3011,9 @@ input[type=number] {
 }
 
 .res-row {
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 2px;
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  margin-bottom: 6px;
 }
 
 .res-block > .res-row:last-child {
@@ -2912,7 +3022,7 @@ input[type=number] {
 }
 
 .res-subsection {
-  padding: 12px 16px 4px;
+  padding: 18px 16px 8px;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -2920,11 +3030,18 @@ input[type=number] {
   color: var(--text-muted);
 }
 
+.res-subsection--major {
+  margin-top: 16px;
+  padding-top: 26px;
+  padding-bottom: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--border-section) 100%, transparent);
+}
+
 .res-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 7px;
+  margin-bottom: 10px;
   gap: 12px;
 }
 
@@ -2955,6 +3072,11 @@ input[type=number] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.res-path--detail {
+  white-space: normal;
+  line-height: 1.45;
 }
 
 .res-value {
@@ -3085,7 +3207,7 @@ input[type=number] {
   padding: 10px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--bg-row-alt);
+  background: color-mix(in srgb, var(--bg-row-alt) 80%, var(--bg-panel));
   color: var(--text-primary);
   text-align: left;
   font: inherit;
@@ -3101,8 +3223,9 @@ input[type=number] {
 
 .servers-mobile-group-title {
   min-width: 0;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
+  color: color-mix(in srgb, var(--text-primary) 84%, var(--text-muted) 16%);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3133,6 +3256,11 @@ input[type=number] {
   box-shadow: var(--shadow-sm);
   cursor: pointer;
   transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+}
+
+.server-card.is-selected {
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--border));
+  background: color-mix(in srgb, var(--accent) 4%, var(--bg-panel));
 }
 
 .server-card:hover {
@@ -3175,6 +3303,12 @@ input[type=number] {
   display: flex;
   gap: 6px;
   flex-shrink: 0;
+  opacity: 0.92;
+  transition: opacity var(--transition-fast);
+}
+
+.server-card:hover .server-card-actions {
+  opacity: 1;
 }
 
 .server-card-actions .btn {
@@ -3213,6 +3347,7 @@ input[type=number] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-secondary);
 }
 
 .server-card-metrics {
@@ -4914,13 +5049,64 @@ input[type=number] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
+  gap: 14px;
+  padding: 8px 12px;
   background: var(--terminal-header-bg);
-  border-bottom: 1px solid var(--terminal-border);
+  border-bottom: 1px solid color-mix(in srgb, var(--terminal-border) 96%, transparent);
   font-size: 13px;
   font-family: var(--font-mono, monospace);
   color: var(--terminal-text);
   flex-shrink: 0;
+}
+
+.ssh-terminal-title-wrap {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ssh-terminal-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.ssh-terminal-kicker {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--terminal-muted) 92%, transparent);
+}
+
+.ssh-terminal-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--terminal-text);
+}
+
+.ssh-terminal-subtitle {
+  color: color-mix(in srgb, var(--terminal-muted) 88%, white 12%);
+  font-size: 11px;
+}
+
+.ssh-terminal-sub-sep {
+  opacity: 0.7;
+  padding: 0 4px;
+}
+
+.ssh-terminal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.ssh-status-text {
+  font-size: 11.5px;
+  color: var(--terminal-muted);
 }
 
 .ssh-status-dot {
@@ -4941,6 +5127,41 @@ input[type=number] {
 
 .ssh-status-dot.offline {
   background: var(--offline, #f85149);
+}
+
+.ssh-term-close {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--terminal-border) 32%, transparent);
+  background: color-mix(in srgb, var(--terminal-text) 4%, transparent);
+  color: color-mix(in srgb, var(--terminal-text) 78%, var(--terminal-muted) 22%);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.ssh-term-close:hover {
+  background: color-mix(in srgb, var(--terminal-text) 10%, transparent);
+  border-color: color-mix(in srgb, var(--terminal-border) 70%, transparent);
+  color: var(--terminal-text);
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--terminal-border) 65%, transparent);
+  border-radius: 999px;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* ============================================================
@@ -5120,6 +5341,11 @@ input[type=number] {
 #server-table th,
 #server-table td {
   vertical-align: middle;
+}
+
+#server-table tbody td {
+  padding-top: 10px;
+  padding-bottom: 10px;
 }
 
 @keyframes slideDown {
