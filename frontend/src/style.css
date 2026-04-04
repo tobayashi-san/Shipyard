@@ -2901,8 +2901,9 @@ input[type=number] {
 .res-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 7px;
+  gap: 12px;
 }
 
 .res-label {
@@ -2911,12 +2912,27 @@ input[type=number] {
   color: var(--text-secondary);
 }
 
+.res-label--strong {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.res-title-block {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
 .res-path {
   display: inline-block;
-  margin-left: 8px;
   font-size: 11px;
   font-weight: 400;
   color: var(--text-muted);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .res-value {
@@ -2924,6 +2940,8 @@ input[type=number] {
   font-weight: 500;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+  text-align: right;
+  flex-shrink: 0;
 }
 
 .res-ok {
@@ -2932,6 +2950,10 @@ input[type=number] {
 
 .res-warn {
   color: var(--warning);
+}
+
+.res-caution {
+  color: color-mix(in srgb, var(--warning) 75%, var(--text-primary));
 }
 
 .res-critical {
@@ -2944,6 +2966,7 @@ input[type=number] {
   border-radius: 4px;
   background: var(--bg-row-alt);
   overflow: hidden;
+  position: relative;
 }
 
 .progress-bar-fill {
@@ -2951,6 +2974,12 @@ input[type=number] {
   border-radius: 6px;
   background: var(--online);
   transition: width var(--transition-progress);
+  position: relative;
+  z-index: 1;
+}
+
+.progress-bar-fill.caution {
+  background: color-mix(in srgb, var(--warning) 75%, var(--online));
 }
 
 .progress-bar-fill.high {
@@ -2963,6 +2992,32 @@ input[type=number] {
 
 .progress-bar-empty {
   opacity: 0.5;
+}
+
+.progress-threshold {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--text-muted) 35%, transparent);
+  z-index: 0;
+}
+
+.progress-threshold--70 { left: 70%; }
+.progress-threshold--85 { left: 85%; }
+.progress-threshold--95 { left: 95%; }
+
+.network-value-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.network-copy-btn {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
 }
 
 /* Server table wrapper */
@@ -3743,6 +3798,14 @@ input[type=number] {
 
 .server-links-cell {
   font-family: inherit !important;
+}
+
+.quick-links-panel {
+  margin-bottom: 16px;
+}
+
+.quick-links-panel-body {
+  padding: 0 16px 16px;
 }
 
 .server-link-chip {

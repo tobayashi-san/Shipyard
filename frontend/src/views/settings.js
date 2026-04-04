@@ -79,7 +79,7 @@ export function applyWhiteLabel() {
     favicon.setAttribute('type', 'image/svg+xml');
     document.head.appendChild(favicon);
   }
-  favicon.setAttribute('href', buildFaviconDataUrl(icon, accent));
+  favicon.setAttribute('href', buildFaviconDataUrl(name, accent));
 }
 
 function shadeColor(hex, pct) {
@@ -106,17 +106,10 @@ function hexToRgb(hex) {
   return `${(n >> 16) & 0xFF}, ${((n >> 8) & 0xFF)}, ${n & 0xFF}`;
 }
 
-function buildFaviconDataUrl(icon, accent) {
-  const glyphs = {
-    'fa-ship': '\uF21A',
-    'fa-server': '\uF233',
-    'fa-terminal': '\uF120',
-    'fa-shield-halved': '\uF3ED',
-    'fa-cubes': '\uF1B3',
-    'fa-network-wired': '\uF6FF',
-  };
-  const glyph = glyphs[icon] || glyphs['fa-ship'];
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="8" y="8" width="48" height="48" rx="12" fill="${accent}"/><text x="32" y="41" text-anchor="middle" font-family="Font Awesome 6 Free" font-weight="900" font-size="24" fill="#ffffff">${glyph}</text></svg>`;
+function buildFaviconDataUrl(appName, accent) {
+  const trimmedName = String(appName || '').trim();
+  const letter = (trimmedName[0] || 'S').toUpperCase();
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="8" y="8" width="48" height="48" rx="12" fill="${accent}"/><text x="32" y="42" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="26" fill="#ffffff">${esc(letter)}</text></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 

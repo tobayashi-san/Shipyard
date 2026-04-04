@@ -46,6 +46,75 @@ function renderServerLinksMarkup(links = [], { compact = false } = {}) {
   `;
 }
 
+function renderQuickLinksPanel(links = []) {
+  if (!Array.isArray(links) || links.length === 0) return '';
+  return `
+    <div class="panel dash-panel quick-links-panel">
+      <div class="dash-panel-header">
+        <div class="dash-panel-header-left">
+          <div class="dash-panel-icon"><i class="fas fa-grid-2"></i></div>
+          <span class="dash-panel-title">${t('det.quickLinks')}</span>
+        </div>
+      </div>
+      <div class="quick-links-panel-body">
+        ${renderServerLinksMarkup(links)}
+      </div>
+    </div>
+  `;
+}
+
+function truncateMiddle(value, maxLength = 28) {
+  const text = String(value || '');
+  if (text.length <= maxLength) return text;
+  const keep = Math.max(8, Math.floor((maxLength - 1) / 2));
+  return `${text.slice(0, keep)}…${text.slice(-keep)}`;
+}
+
+function loadAverageState(loadAvgText, cpuCores) {
+  const firstLoad = parseFloat(String(loadAvgText || '').split(/[\s,]+/)[0]);
+  if (!Number.isFinite(firstLoad) || !Number.isFinite(cpuCores) || cpuCores <= 0) {
+    return { ratio: null, cls: '', label: loadAvgText || '—' };
+  }
+
+  const ratio = firstLoad / cpuCores;
+  const cls = ratio >= 0.95 ? 'res-critical' : ratio >= 0.85 ? 'res-warn' : ratio >= 0.7 ? 'res-caution' : 'res-ok';
+  return {
+    ratio,
+    cls,
+    label: `${loadAvgText} (${Math.round(ratio * 100)}% of ${cpuCores}c)`,
+  };
+}
+
+function renderThresholdBar(pct) {
+  if (!Number.isFinite(pct)) return '<div class="progress-bar-thick progress-bar-empty"></div>';
+  const safePct = Math.max(0, Math.min(100, pct));
+  const cls = safePct >= 95 ? 'critical' : safePct >= 85 ? 'high' : safePct >= 70 ? 'caution' : '';
+  return `
+    <div class="progress-bar-thick">
+      <div class="progress-threshold progress-threshold--70"></div>
+      <div class="progress-threshold progress-threshold--85"></div>
+      <div class="progress-threshold progress-threshold--95"></div>
+      <div class="progress-bar-fill ${cls}" style="width:${safePct}%"></div>
+    </div>
+  `;
+}
+
+function formatUsageValue(used, total, pct) {
+  const base = Number.isFinite(used) && Number.isFinite(total)
+    ? `${used.toFixed(1)} / ${total.toFixed(1)} GB`
+    : t('det.storageUnavailable');
+  return Number.isFinite(pct) ? `${base} · ${pct}%` : base;
+}
+
+async function copyText(text, message) {
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast(message || t('common.copied'), 'success');
+  } catch (error) {
+    showToast(t('common.errorPrefix', { msg: error.message || 'Copy failed' }), 'error');
+  }
+}
+
 // ============================================================
 // Server Detail – Tab-based flat admin panel layout
 // ============================================================
@@ -150,6 +219,8 @@ export async function renderServerDetail(serverId) {
           </div>
         </div>
 
+        ${renderQuickLinksPanel(server.links)}
+
         <!-- Main 2-col grid -->
         <div class="overview-grid">
           <!-- System Info -->
@@ -162,12 +233,10 @@ export async function renderServerDetail(serverId) {
                 </div>
               </div>
               <table class="info-table" id="info-table">
-                <tr><td>${t('common.status')}</td><td id="inf-status">${t('det.loading')}</td></tr>
                 <tr><td>${t('det.os')}</td><td id="inf-os">—</td></tr>
                 <tr><td>${t('det.kernel')}</td><td id="inf-kernel">—</td></tr>
                 <tr><td>${t('det.cpu')}</td><td id="inf-cpu">—</td></tr>
                 <tr><td>${t('det.cores')}</td><td id="inf-cores">—</td></tr>
-                <tr><td>${t('det.uptime')}</td><td id="inf-uptime">—</td></tr>
                 <tr><td>${t('det.loadAvg')}</td><td id="inf-load">—</td></tr>
               </table>
             </div>
@@ -202,12 +271,30 @@ export async function renderServerDetail(serverId) {
                 </div>
               </div>
               <table class="info-table" id="network-table">
-                <tr><td>${t('det.ipAddress')}</td><td class="mono">${esc(server.ip_address)}</td></tr>
-                ${server.hostname ? `<tr><td>${t('det.hostname')}</td><td class="mono">${esc(server.hostname)}</td></tr>` : ''}
+                <tr>
+                  <td>${t('det.ipAddress')}</td>
+                  <td>
+                    <div class="network-value-row">
+                      <span class="mono">${esc(server.ip_address)}</span>
+                      <button type="button" class="btn btn-icon network-copy-btn" data-copy-value="${esc(server.ip_address)}" data-copy-label="${t('det.ipAddress')}" title="${t('common.copy')}">
+                        <i class="fas fa-copy"></i>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                ${server.hostname ? `<tr>
+                  <td>${t('det.hostname')}</td>
+                  <td>
+                    <div class="network-value-row">
+                      <span class="mono">${esc(server.hostname)}</span>
+                      <button type="button" class="btn btn-icon network-copy-btn" data-copy-value="${esc(server.hostname)}" data-copy-label="${t('det.hostname')}" title="${t('common.copy')}">
+                        <i class="fas fa-copy"></i>
+                      </button>
+                    </div>
+                  </td>
+                </tr>` : ''}
                 <tr><td>${t('det.sshPort')}</td><td id="net-port" class="mono">${server.ssh_port || 22}</td></tr>
                 <tr><td>${t('det.sshUser')}</td><td class="mono">${esc(server.ssh_user || 'root')}</td></tr>
-                <tr><td>${t('det.links')}</td><td class="server-links-cell">${renderServerLinksMarkup(server.links)}</td></tr>
-                <tr><td>${t('det.latency')}</td><td id="net-latency">—</td></tr>
               </table>
             </div>
           </div>
@@ -375,6 +462,10 @@ export async function renderServerDetail(serverId) {
     navigate(state.previousView || fallbackView);
   });
 
+  main.querySelectorAll('.network-copy-btn').forEach((button) => {
+    button.addEventListener('click', () => copyText(button.dataset.copyValue || '', `${button.dataset.copyLabel || t('common.copy')} ${t('common.copied').toLowerCase()}`));
+  });
+
   // Overflow menu toggle
   const overflowBtn = document.getElementById('btn-detail-overflow');
   const overflowMenu = document.getElementById('detail-overflow-menu');
@@ -502,19 +593,18 @@ export async function renderServerDetail(serverId) {
 // ============================================================
 function renderServerInfo(info) {
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || '—'; };
-  const formatStorageGb = (value) => Number.isFinite(value) ? `${value.toFixed(1)} GB` : '—';
-
-  const statusEl = document.getElementById('inf-status');
-  if (statusEl) statusEl.innerHTML = info._cached
-    ? `<span class="badge badge-unknown" title="${t('det.cached')}"><i class="fas fa-clock"></i> ${t('det.cached')}</span>`
-    : `<span class="badge badge-online">${t('det.reachable')}</span>`;
+  const formatStorageGb = (value) => Number.isFinite(value) ? Number(value).toFixed(1) : null;
 
   set('inf-os', info.os);
   set('inf-kernel', info.kernel);
   set('inf-cpu', info.cpu);
   set('inf-cores', info.cpu_cores ? info.cpu_cores + ' ' + t('det.cores') : '—');
-  set('inf-uptime', info.uptime_seconds ? formatUptime(info.uptime_seconds) : '—');
-  set('inf-load', info.load_avg || '—');
+  const loadState = loadAverageState(info.load_avg, info.cpu_cores);
+  const loadEl = document.getElementById('inf-load');
+  if (loadEl) {
+    loadEl.textContent = loadState.label;
+    loadEl.className = loadState.cls ? `mono ${loadState.cls}` : 'mono';
+  }
 
   // ── Stat cards ──────────────────────────────────────────────
   const uptimeStatEl = document.getElementById('stat-uptime');
@@ -528,38 +618,33 @@ function renderServerInfo(info) {
   const ramPct = info.ram_total_mb ? Math.round((info.ram_used_mb / info.ram_total_mb) * 100) : 0;
   const diskPct = info.disk_total_gb ? Math.round((info.disk_used_gb / info.disk_total_gb) * 100) : 0;
   const cpuPct = info.cpu_usage_pct ?? null;
-  const storageMountMetrics = Array.isArray(info.storage_mount_metrics) ? info.storage_mount_metrics : [];
-
-  const bar = (pct) => {
-    const cls = pct > 90 ? 'critical' : pct > 70 ? 'high' : '';
-    return `<div class="progress-bar-thick"><div class="progress-bar-fill ${cls}" style="width:${pct}%"></div></div>`;
-  };
+  const storageMountMetrics = (Array.isArray(info.storage_mount_metrics) ? info.storage_mount_metrics : []).slice()
+    .sort((a, b) => (b.usage_pct ?? -1) - (a.usage_pct ?? -1));
 
   // RAM labels
   const ramUsedLabel = info.ram_total_mb ? (info.ram_used_mb >= 1024 ? (info.ram_used_mb / 1024).toFixed(1) + ' GB' : Math.round(info.ram_used_mb) + ' MB') : null;
   const ramTotalLabel = info.ram_total_mb ? (info.ram_total_mb >= 1024 ? (info.ram_total_mb / 1024).toFixed(1) + ' GB' : Math.round(info.ram_total_mb) + ' MB') : null;
-  const ramAbsolute = ramUsedLabel ? `${ramUsedLabel} / ${ramTotalLabel}` : '—';
+  const ramAbsolute = ramUsedLabel ? `${ramUsedLabel} / ${ramTotalLabel} · ${ramPct}%` : '—';
 
   // Disk labels
-  const diskUsedLabel = info.disk_total_gb ? info.disk_used_gb.toFixed(1) + ' GB' : null;
-  const diskTotalLabel = info.disk_total_gb ? info.disk_total_gb.toFixed(1) + ' GB' : null;
-  const diskAbsolute = diskUsedLabel ? `${diskUsedLabel} / ${diskTotalLabel}` : '—';
+  const diskAbsolute = formatUsageValue(info.disk_used_gb, info.disk_total_gb, diskPct);
   const storageMountsHtml = storageMountMetrics.length > 0 ? `
       <div class="res-subsection">${t('det.storageMounts')}</div>
       ${storageMountMetrics.map((mount) => {
-        const pct = mount.usage_pct ?? 0;
-        const valueClass = mount.usage_pct > 90 ? 'res-critical' : mount.usage_pct > 70 ? 'res-warn' : '';
-        const absolute = Number.isFinite(mount.used_gb) && Number.isFinite(mount.total_gb)
-          ? `${formatStorageGb(mount.used_gb)} / ${formatStorageGb(mount.total_gb)}`
-          : t('det.storageUnavailable');
+        const pct = Number.isFinite(mount.usage_pct) ? mount.usage_pct : null;
+        const valueClass = pct >= 95 ? 'res-critical' : pct >= 85 ? 'res-warn' : pct >= 70 ? 'res-caution' : '';
+        const absolute = formatUsageValue(mount.used_gb, mount.total_gb, pct);
         const meta = mount.filesystem ? ` · ${esc(mount.filesystem)}` : '';
         return `
         <div class="res-row" style="margin-bottom:0;">
           <div class="res-header">
-            <span class="res-label">${esc(mount.name || mount.path)} <span class="res-path">${esc(mount.path)}${meta}</span></span>
-            <span class="res-value ${valueClass}">${absolute}${mount.usage_pct != null ? ` <span style="opacity:.6;font-size:11px;">(${mount.usage_pct}%)</span>` : ''}</span>
+            <div class="res-title-block">
+              <span class="res-label res-label--strong">${esc(mount.name || mount.path)}</span>
+              <span class="res-path" title="${esc(mount.path)}${meta}">${esc(truncateMiddle(mount.path || '', 34))}${meta}</span>
+            </div>
+            <span class="res-value ${valueClass}">${absolute}</span>
           </div>
-          ${mount.usage_pct != null ? bar(pct) : '<div class="progress-bar-thick progress-bar-empty"></div>'}
+          ${renderThresholdBar(pct)}
         </div>`;
       }).join('')}
   ` : '';
@@ -570,9 +655,9 @@ function renderServerInfo(info) {
       <div class="res-subsection"><i class="fas fa-database" style="margin-right:6px;opacity:.6;"></i>${t('det.zfsPools')}</div>
       ${zfsPools.map(pool => {
         const poolPct = pool.size_gb ? Math.round((pool.alloc_gb / pool.size_gb) * 100) : 0;
-        const poolValueClass = poolPct > 90 ? 'res-critical' : poolPct > 70 ? 'res-warn' : '';
+        const poolValueClass = poolPct >= 95 ? 'res-critical' : poolPct >= 85 ? 'res-warn' : poolPct >= 70 ? 'res-caution' : '';
         const healthClass = pool.health === 'ONLINE' ? 'badge-online' : pool.health === 'DEGRADED' ? 'badge-warning' : pool.health === 'FAULTED' ? 'badge-error' : 'badge-unknown';
-        const poolAbsolute = pool.size_gb != null ? `${formatStorageGb(pool.alloc_gb)} / ${formatStorageGb(pool.size_gb)}` : '—';
+        const poolAbsolute = formatUsageValue(pool.alloc_gb, pool.size_gb, poolPct);
         const scrubInfo = pool.scrub ? `<span class="res-path" style="margin-left:8px;">scrub: ${esc(pool.scrub.length > 60 ? pool.scrub.slice(0, 60) + '…' : pool.scrub)}</span>` : '';
         return `
         <div class="res-row" style="margin-bottom:0;">
@@ -581,9 +666,9 @@ function renderServerInfo(info) {
               <span class="badge ${healthClass}" style="font-size:10px;padding:1px 6px;margin-right:6px;">${esc(pool.health)}</span>
               ${esc(pool.name)}${scrubInfo}
             </span>
-            <span class="res-value ${poolValueClass}">${poolAbsolute} <span style="opacity:.6;font-size:11px;">(${poolPct}%)</span></span>
+            <span class="res-value ${poolValueClass}">${poolAbsolute}</span>
           </div>
-          ${bar(poolPct)}
+          ${renderThresholdBar(poolPct)}
         </div>`;
       }).join('')}
   ` : '';
@@ -602,21 +687,21 @@ function renderServerInfo(info) {
           <span class="res-label">${t('det.cpu')}</span>
           <span class="res-value ${cpuPct > 90 ? 'res-critical' : cpuPct > 70 ? 'res-warn' : 'res-ok'}">${cpuPct}%</span>
         </div>
-        ${bar(cpuPct)}
+        ${renderThresholdBar(cpuPct)}
       </div>` : ''}
       <div class="res-row">
         <div class="res-header">
           <span class="res-label">RAM</span>
-          <span class="res-value ${ramPct > 90 ? 'res-critical' : ramPct > 70 ? 'res-warn' : ''}">${ramAbsolute} <span style="opacity:.6;font-size:11px;">(${ramPct}%)</span></span>
+          <span class="res-value ${ramPct >= 95 ? 'res-critical' : ramPct >= 85 ? 'res-warn' : ramPct >= 70 ? 'res-caution' : ''}">${ramAbsolute}</span>
         </div>
-        ${bar(ramPct)}
+        ${renderThresholdBar(ramPct)}
       </div>
       <div class="res-row" style="margin-bottom:0;">
         <div class="res-header">
-          <span class="res-label">Disk</span>
-          <span class="res-value ${diskPct > 90 ? 'res-critical' : diskPct > 70 ? 'res-warn' : ''}">${diskAbsolute} <span style="opacity:.6;font-size:11px;">(${diskPct}%)</span></span>
+          <span class="res-label">${t('det.disk')}</span>
+          <span class="res-value ${diskPct >= 95 ? 'res-critical' : diskPct >= 85 ? 'res-warn' : diskPct >= 70 ? 'res-caution' : ''}">${diskAbsolute}</span>
         </div>
-        ${bar(diskPct)}
+        ${renderThresholdBar(diskPct)}
       </div>
       ${storageMountsHtml}
       ${zfsHtml}
@@ -644,14 +729,12 @@ async function loadServerInfo(serverId) {
       const pingMs = Math.round(samples.reduce((a, b) => a + b, 0) / samples.length);
       const pingEl = document.getElementById('stat-ping');
       const pingIconEl = document.getElementById('stat-ping-icon');
-      const netLatEl = document.getElementById('net-latency');
       if (pingEl) {
         pingEl.textContent = pingMs + ' ms';
         const col = pingMs < 80 ? 'var(--online)' : pingMs < 250 ? 'var(--warning)' : 'var(--offline)';
         pingEl.style.color = col;
         if (pingIconEl) pingIconEl.style.color = col;
       }
-      if (netLatEl) netLatEl.textContent = pingMs + ' ms';
     })();
 
     // Docker stat card
@@ -700,7 +783,7 @@ async function loadServerInfo(serverId) {
     // If cached, silently fetch fresh data in background
     if (info._cached) {
       api.getServerInfo(serverId, true)
-        .then(fresh => { if (fresh && document.getElementById('inf-status')) renderServerInfo(fresh); })
+        .then(fresh => { if (fresh) renderServerInfo(fresh); })
         .catch(() => { });
     }
 
@@ -719,8 +802,7 @@ async function loadServerInfo(serverId) {
       }
     });
   } catch (e) {
-    const el = document.getElementById('inf-status');
-    if (el) el.innerHTML = `<span class="badge badge-offline">${t('common.errorPrefix', { msg: esc(e.message) })}</span>`;
+    showToast(t('common.errorPrefix', { msg: e.message }), 'error');
   }
 }
 
