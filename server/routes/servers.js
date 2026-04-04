@@ -16,8 +16,76 @@ function parseServer(s) {
     ...s,
     tags: JSON.parse(s.tags || '[]'),
     services: JSON.parse(s.services || '[]'),
+    links: parseServerLinks(s.links),
     storage_mounts: parseConfiguredStorageMounts(s.storage_mounts),
   };
+}
+
+function parseServerLinks(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeServerLinks(value) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    const err = new Error('Links must be an array');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const seenUrls = new Set();
+  return value.map((link, index) => {
+    if (!link || typeof link !== 'object') {
+      const err = new Error(`Link #${index + 1} is invalid`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const name = String(link.name || '').trim().slice(0, 100);
+    const url = String(link.url || '').trim().slice(0, 1000);
+    if (!name) {
+      const err = new Error(`Link #${index + 1} needs a name`);
+      err.statusCode = 400;
+      throw err;
+    }
+    if (!url) {
+      const err = new Error(`Link "${name}" needs a URL`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      const err = new Error(`Link "${name}" has an invalid URL`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      const err = new Error(`Link "${name}" must use http or https`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const normalizedUrl = parsed.toString();
+    if (seenUrls.has(normalizedUrl)) {
+      const err = new Error(`Link URL "${normalizedUrl}" is duplicated`);
+      err.statusCode = 400;
+      throw err;
+    }
+    seenUrls.add(normalizedUrl);
+
+    return { name, url: normalizedUrl };
+  });
 }
 
 function normalizeStorageMounts(value) {
@@ -110,6 +178,7 @@ router.get('/export', guard('canExportImportServers'), (req, res) => {
       ssh_user:    s.ssh_user,
       tags:        JSON.parse(s.tags     || '[]'),
       services:    JSON.parse(s.services || '[]'),
+      links:       parseServerLinks(s.links),
       storage_mounts: parseConfiguredStorageMounts(s.storage_mounts),
     }));
 
@@ -122,10 +191,10 @@ router.get('/export', guard('canExportImportServers'), (req, res) => {
         return s.includes(',') || s.includes('"') || s.includes('\n')
           ? `"${s.replace(/"/g, '""')}"` : s;
       };
-      const header = 'name,hostname,ip_address,ssh_port,ssh_user,tags,services,storage_mounts';
+      const header = 'name,hostname,ip_address,ssh_port,ssh_user,tags,services,links,storage_mounts';
       const rows = servers.map(s =>
         [s.name, s.hostname, s.ip_address, s.ssh_port, s.ssh_user,
-         JSON.stringify(s.tags), JSON.stringify(s.services), JSON.stringify(s.storage_mounts)].map(escape).join(',')
+         JSON.stringify(s.tags), JSON.stringify(s.services), JSON.stringify(s.links), JSON.stringify(s.storage_mounts)].map(escape).join(',')
       );
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', 'attachment; filename="servers.csv"');
@@ -174,6 +243,7 @@ router.post('/import', guard('canExportImportServers'), (req, res) => {
           ssh_user:  String(s.ssh_user || 'root').slice(0, 100),
           tags:      normalizedTags,
           services:  Array.isArray(s.services) ? s.services : [],
+          links:     normalizeServerLinks(s.links || []),
           storage_mounts: normalizeStorageMounts(s.storage_mounts || []),
         });
         const autoGroupId = resolveGroupIdByTags(normalizedTags, allGroups);
@@ -297,7 +367,7 @@ router.get('/:id', guardServerAccess, guard('canViewServers'), (req, res) => {
 // POST /api/servers - Add a new server
 router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAddServers')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
-    const { name, hostname, ip_address, ssh_port, ssh_user, tags, services, storage_mounts } = req.body;
+    const { name, hostname, ip_address, ssh_port, ssh_user, tags, services, links, storage_mounts } = req.body;
     if (!name || typeof name !== 'string' || !ip_address || typeof ip_address !== 'string') {
       return res.status(400).json({ error: 'Name and IP address are required' });
     }
@@ -306,6 +376,7 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
     if (hostname && (typeof hostname !== 'string' || hostname.length > 255)) return res.status(400).json({ error: 'Hostname too long (max 255)' });
     if (ssh_user && (typeof ssh_user !== 'string' || ssh_user.length > 100)) return res.status(400).json({ error: 'SSH user too long (max 100)' });
     const allGroups = db.serverGroups.getAll();
+    const normalizedLinks = normalizeServerLinks(links || []);
     const normalizedStorageMounts = normalizeStorageMounts(storage_mounts || []);
     const normalizedTags = Array.isArray(tags) ? tags.filter(t => typeof t === 'string').map(t => t.slice(0, 100)) : [];
     const server = db.servers.create({
@@ -316,6 +387,7 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
       ssh_user: (ssh_user || 'root').slice(0, 100),
       tags: normalizedTags,
       services: Array.isArray(services) ? services.filter(s => typeof s === 'string').map(s => s.slice(0, 100)) : [],
+      links: normalizedLinks,
       storage_mounts: normalizedStorageMounts,
     });
     const autoGroupId = resolveGroupIdByTags(normalizedTags, allGroups);
@@ -337,7 +409,7 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
     const existing = req.server;
     const allGroups = db.serverGroups.getAll();
 
-    const { name, hostname, ip_address, ssh_port, ssh_user, tags, services, storage_mounts } = req.body;
+    const { name, hostname, ip_address, ssh_port, ssh_user, tags, services, links, storage_mounts } = req.body;
     const sName   = name !== undefined ? String(name).slice(0, 100) : existing.name;
     const sHost   = hostname !== undefined ? String(hostname).slice(0, 255) : existing.hostname;
     const sIp     = ip_address !== undefined ? String(ip_address).slice(0, 45) : existing.ip_address;
@@ -345,10 +417,12 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
     const sUser   = ssh_user !== undefined ? String(ssh_user).slice(0, 100) : existing.ssh_user;
     const sTags   = Array.isArray(tags) ? tags.filter(t => typeof t === 'string').map(t => t.slice(0, 100)) : JSON.parse(existing.tags || '[]');
     const sSvcs   = Array.isArray(services) ? services.filter(s => typeof s === 'string').map(s => s.slice(0, 100)) : JSON.parse(existing.services || '[]');
+    const sLinks  = links !== undefined ? normalizeServerLinks(links) : parseServerLinks(existing.links);
     const sMounts = storage_mounts !== undefined ? normalizeStorageMounts(storage_mounts) : parseConfiguredStorageMounts(existing.storage_mounts);
     const server = db.servers.update(req.params.id, {
       name: sName, hostname: sHost, ip_address: sIp,
       ssh_port: sPort, ssh_user: sUser, tags: sTags, services: sSvcs,
+      links: sLinks,
       storage_mounts: sMounts,
     });
     if (tags !== undefined) {

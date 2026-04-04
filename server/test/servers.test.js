@@ -76,6 +76,10 @@ test('POST /api/servers creates server with defaults', async () => {
     .send({
       name: 'my-server',
       ip_address: '192.168.1.50',
+      links: [
+        { name: 'Sonarr', url: 'http://192.168.1.50:8989' },
+        { name: 'Radarr', url: 'https://radarr.example.test' },
+      ],
       storage_mounts: [
         { name: 'Media', path: '/mnt/media' },
         { name: 'Backups', path: '/mnt/backups' },
@@ -87,6 +91,10 @@ test('POST /api/servers creates server with defaults', async () => {
   assert.equal(res.body.ssh_port, 22);
   assert.equal(res.body.ssh_user, 'root');
   assert.deepEqual(res.body.tags, []);
+  assert.deepEqual(res.body.links, [
+    { name: 'Sonarr', url: 'http://192.168.1.50:8989/' },
+    { name: 'Radarr', url: 'https://radarr.example.test/' },
+  ]);
   assert.deepEqual(res.body.storage_mounts, [
     { name: 'Media', path: '/mnt/media' },
     { name: 'Backups', path: '/mnt/backups' },
@@ -161,12 +169,27 @@ test('PUT /api/servers/:id updates name and ip', async () => {
     .send({
       name: 'renamed-server',
       ip_address: '192.168.1.99',
+      links: [{ name: 'Admin', url: 'https://admin.example.test/ui' }],
       storage_mounts: [{ name: 'Archive', path: '/srv/archive' }],
     });
   assert.equal(res.status, 200);
   assert.equal(res.body.name, 'renamed-server');
   assert.equal(res.body.ip_address, '192.168.1.99');
+  assert.deepEqual(res.body.links, [{ name: 'Admin', url: 'https://admin.example.test/ui' }]);
   assert.deepEqual(res.body.storage_mounts, [{ name: 'Archive', path: '/srv/archive' }]);
+});
+
+test('POST /api/servers rejects invalid server link protocol', async () => {
+  const res = await request(app)
+    .post('/api/servers')
+    .set('Authorization', `Bearer ${token}`)
+    .send({
+      name: 'bad-link-server',
+      ip_address: '10.0.0.61',
+      links: [{ name: 'SMB', url: 'smb://10.0.0.61/share' }],
+    });
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /http or https/i);
 });
 
 test('POST /api/servers rejects invalid storage mount path', async () => {

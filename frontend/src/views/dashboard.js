@@ -6,6 +6,21 @@ import { formatCurrentTime, formatDateTimeShort, esc, sanitizeHTML } from '../ut
 
 let dashboardAttentionOnly = false;
 
+function renderCompactLinks(links = []) {
+  if (!Array.isArray(links) || links.length === 0) return '';
+  return `
+    <div class="server-links server-links--compact" style="margin-top:6px;">
+      ${links.slice(0, 3).map(link => `
+        <a class="server-link-chip" href="${esc(link.url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">
+          <span>${esc(link.name)}</span>
+          <i class="fas fa-up-right-from-square"></i>
+        </a>
+      `).join('')}
+      ${links.length > 3 ? `<span class="server-link-chip server-link-chip--muted">+${links.length - 3}</span>` : ''}
+    </div>
+  `;
+}
+
 function isMobileDashboardLayout() {
   return window.matchMedia('(max-width: 768px)').matches;
 }
@@ -219,6 +234,10 @@ function renderDashboardData(data) {
     row.addEventListener('click', () => navigate('server-detail', { serverId: row.dataset.serverId }));
   });
 
+  content.querySelectorAll('.server-link-chip[href]').forEach(link => {
+    link.addEventListener('click', (event) => event.stopPropagation());
+  });
+
   // Alert click → Server Detail
   content.querySelectorAll('.dash-alert[data-server-id]').forEach(el => {
     if (el.dataset.serverId) {
@@ -287,6 +306,7 @@ function serverHealthRow(s) {
             ${tags.length > visibleTags.length ? `<span class="server-tag">+${tags.length - visibleTags.length}</span>` : ''}
           </div>
         ` : ''}
+        ${renderCompactLinks(s.links)}
       </td>
       <td>${ramBar}</td>
       <td>${diskBar}</td>
@@ -324,6 +344,7 @@ function serverHealthCard(s) {
               ${tags.length > visibleTags.length ? `<span class="server-tag">+${tags.length - visibleTags.length}</span>` : ''}
             </div>
           ` : ''}
+          ${renderCompactLinks(s.links)}
         </div>
       </div>
       <div class="dash-server-card-metrics">

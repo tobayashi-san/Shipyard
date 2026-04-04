@@ -5,6 +5,17 @@ const { serverError } = require('../utils/http-error');
 
 const router = express.Router();
 
+function parseJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 router.get('/', (req, res) => {
   try {
     const perms = getPermissions(req.user);
@@ -58,6 +69,7 @@ router.get('/', (req, res) => {
         name: s.name,
         ip_address: s.ip_address,
         tags: JSON.parse(s.tags || '[]'),
+        links: parseJsonArray(s.links),
         status: s.status,
         last_seen: s.last_seen,
         os: info?.os || null,

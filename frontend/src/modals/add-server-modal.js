@@ -56,6 +56,15 @@ export function showAddServerModal(onSuccess, editServer = null) {
           </div>
 
           <div class="form-group">
+            <label class="form-label">${t('add.links')}</label>
+            <div class="form-hint" style="margin-bottom:10px;">${t('add.linksHint')}</div>
+            <div id="server-link-list" class="server-link-list"></div>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-add-server-link">
+              <i class="fas fa-plus"></i> ${t('add.linkAdd')}
+            </button>
+          </div>
+
+          <div class="form-group">
             <label class="form-label">${t('add.storageMounts')}</label>
             <div class="form-hint" style="margin-bottom:10px;">${t('add.storageMountsHint')}</div>
             <div id="storage-mount-list" class="storage-mount-list"></div>
@@ -110,6 +119,31 @@ export function showAddServerModal(onSuccess, editServer = null) {
   overlay.addEventListener('click', onOverlayClick);
 
   const storageMountList = document.getElementById('storage-mount-list');
+  const serverLinkList = document.getElementById('server-link-list');
+
+  function addServerLinkRow(link = {}) {
+    const row = document.createElement('div');
+    row.className = 'server-link-row';
+    row.innerHTML = `
+      <div class="form-row server-link-fields">
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">${t('add.linkName')}</label>
+          <input class="form-input server-link-name" type="text" placeholder="${t('add.linkNamePlaceholder')}" value="${esc(link.name || '')}">
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">${t('add.linkUrl')}</label>
+          <input class="form-input server-link-url" type="url" placeholder="https://radarr.example.local" value="${esc(link.url || '')}">
+        </div>
+      </div>
+      <div class="server-link-actions">
+        <button type="button" class="btn btn-secondary btn-sm btn-remove-server-link">
+          <i class="fas fa-trash"></i> ${t('common.delete')}
+        </button>
+      </div>
+    `;
+    row.querySelector('.btn-remove-server-link')?.addEventListener('click', () => row.remove());
+    serverLinkList.appendChild(row);
+  }
 
   function addStorageMountRow(mount = {}) {
     const row = document.createElement('div');
@@ -135,6 +169,10 @@ export function showAddServerModal(onSuccess, editServer = null) {
     storageMountList.appendChild(row);
   }
 
+  (editServer?.links || []).forEach(addServerLinkRow);
+  if (!editServer?.links?.length) addServerLinkRow();
+  document.getElementById('btn-add-server-link')?.addEventListener('click', () => addServerLinkRow());
+
   (editServer?.storage_mounts || []).forEach(addStorageMountRow);
   if (!editServer?.storage_mounts?.length) addStorageMountRow();
   document.getElementById('btn-add-storage-mount')?.addEventListener('click', () => addStorageMountRow());
@@ -154,6 +192,10 @@ export function showAddServerModal(onSuccess, editServer = null) {
       ssh_port: Math.min(65535, Math.max(1, parseInt(document.getElementById('server-port').value) || 22)),
       services: document.getElementById('server-services').value.split(',').map(s => s.trim()).filter(Boolean),
       tags: document.getElementById('server-tags').value.split(',').map(s => s.trim()).filter(Boolean),
+      links: Array.from(document.querySelectorAll('.server-link-row')).map((row) => ({
+        name: row.querySelector('.server-link-name')?.value.trim() || '',
+        url: row.querySelector('.server-link-url')?.value.trim() || '',
+      })).filter((link) => link.name || link.url),
       storage_mounts: Array.from(document.querySelectorAll('.storage-mount-row')).map((row) => ({
         name: row.querySelector('.storage-mount-name')?.value.trim() || '',
         path: row.querySelector('.storage-mount-path')?.value.trim() || '',

@@ -38,11 +38,11 @@ const serverQueries = {
   getAll: db.prepare('SELECT * FROM servers ORDER BY name'),
   getById: db.prepare('SELECT * FROM servers WHERE id = ?'),
   insert: db.prepare(`
-    INSERT INTO servers (id, name, hostname, ip_address, ssh_port, ssh_user, tags, services, storage_mounts)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO servers (id, name, hostname, ip_address, ssh_port, ssh_user, tags, services, links, storage_mounts)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `),
   update: db.prepare(`
-    UPDATE servers SET name = ?, hostname = ?, ip_address = ?, ssh_port = ?, ssh_user = ?, tags = ?, services = ?, storage_mounts = ?, updated_at = datetime('now')
+    UPDATE servers SET name = ?, hostname = ?, ip_address = ?, ssh_port = ?, ssh_user = ?, tags = ?, services = ?, links = ?, storage_mounts = ?, updated_at = datetime('now')
     WHERE id = ?
   `),
   delete: db.prepare('DELETE FROM servers WHERE id = ?'),
@@ -171,6 +171,7 @@ module.exports = {
         server.ssh_user || 'root',
         JSON.stringify(server.tags || []),
         JSON.stringify(server.services || []),
+        JSON.stringify(server.links || []),
         JSON.stringify(server.storage_mounts || [])
       );
       return serverQueries.getById.get(id);
@@ -184,6 +185,7 @@ module.exports = {
         server.ssh_user || 'root',
         JSON.stringify(server.tags || []),
         JSON.stringify(server.services || []),
+        JSON.stringify(server.links || []),
         JSON.stringify(server.storage_mounts || []),
         id
       );

@@ -9,6 +9,7 @@ function applySchema(db) {
       ssh_user TEXT DEFAULT 'root',
       tags TEXT DEFAULT '[]',
       services TEXT DEFAULT '[]',
+      links TEXT DEFAULT '[]',
       storage_mounts TEXT DEFAULT '[]',
       status TEXT DEFAULT 'unknown',
       last_seen TEXT,

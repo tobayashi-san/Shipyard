@@ -65,6 +65,7 @@ function normalizeServer(server) {
     ...server,
     services: typeof server.services === 'string' ? JSON.parse(server.services) : server.services || [],
     tags: typeof server.tags === 'string' ? JSON.parse(server.tags) : server.tags || [],
+    links: typeof server.links === 'string' ? JSON.parse(server.links) : server.links || [],
   };
 }
 
@@ -713,6 +714,7 @@ function parseCsvServers(text) {
     // Parse JSON arrays back
     try { obj.tags = JSON.parse(obj.tags || '[]'); } catch { obj.tags = []; }
     try { obj.services = JSON.parse(obj.services || '[]'); } catch { obj.services = []; }
+    try { obj.links = JSON.parse(obj.links || '[]'); } catch { obj.links = []; }
     try { obj.storage_mounts = JSON.parse(obj.storage_mounts || '[]'); } catch { obj.storage_mounts = []; }
     obj.ssh_port = parseInt(obj.ssh_port) || 22;
     return obj;

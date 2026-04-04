@@ -40,6 +40,7 @@ export function normalizeServer(server) {
     ...server,
     services: typeof server.services === 'string' ? JSON.parse(server.services) : server.services || [],
     tags: typeof server.tags === 'string' ? JSON.parse(server.tags) : server.tags || [],
+    links: typeof server.links === 'string' ? JSON.parse(server.links) : server.links || [],
   };
 }
 

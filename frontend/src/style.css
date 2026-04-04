@@ -1454,6 +1454,26 @@ input[type=number] {
   margin-bottom: 10px;
 }
 
+.server-link-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.server-link-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: var(--bg-row-alt);
+}
+
+.server-link-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
 .storage-mount-row {
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -3709,6 +3729,47 @@ input[type=number] {
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.01em;
+}
+
+.server-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.server-links--compact {
+  gap: 6px;
+}
+
+.server-links-cell {
+  font-family: inherit !important;
+}
+
+.server-link-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-row-alt);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+.server-link-chip:hover {
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-row-alt));
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  color: var(--text-primary);
+  transform: translateY(-1px);
+}
+
+.server-link-chip--muted {
+  color: var(--text-muted);
+  cursor: default;
 }
 
 /* Keep legacy section title for non-dashboard use */

@@ -28,6 +28,24 @@ function isMobileServerDetailLayout() {
   return window.matchMedia('(max-width: 768px)').matches;
 }
 
+function renderServerLinksMarkup(links = [], { compact = false } = {}) {
+  if (!Array.isArray(links) || links.length === 0) {
+    return compact ? '' : `<span class="empty-value">${t('common.none')}</span>`;
+  }
+
+  const cls = compact ? 'server-links server-links--compact' : 'server-links';
+  return `
+    <div class="${cls}">
+      ${links.map(link => `
+        <a class="server-link-chip" href="${esc(link.url)}" target="_blank" rel="noopener noreferrer">
+          <span>${esc(link.name)}</span>
+          <i class="fas fa-up-right-from-square"></i>
+        </a>
+      `).join('')}
+    </div>
+  `;
+}
+
 // ============================================================
 // Server Detail – Tab-based flat admin panel layout
 // ============================================================
@@ -188,6 +206,7 @@ export async function renderServerDetail(serverId) {
                 ${server.hostname ? `<tr><td>${t('det.hostname')}</td><td class="mono">${esc(server.hostname)}</td></tr>` : ''}
                 <tr><td>${t('det.sshPort')}</td><td id="net-port" class="mono">${server.ssh_port || 22}</td></tr>
                 <tr><td>${t('det.sshUser')}</td><td class="mono">${esc(server.ssh_user || 'root')}</td></tr>
+                <tr><td>${t('det.links')}</td><td class="server-links-cell">${renderServerLinksMarkup(server.links)}</td></tr>
                 <tr><td>${t('det.latency')}</td><td id="net-latency">—</td></tr>
               </table>
             </div>
