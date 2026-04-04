@@ -242,41 +242,46 @@ export async function renderServerDetail(serverId) {
                   <span class="dash-panel-title">${t('det.sysinfo')}</span>
                 </div>
               </div>
-              <table class="info-table" id="info-table">
-                <tr><td>${t('det.os')}</td><td id="inf-os">—</td></tr>
-                <tr><td>${t('det.kernel')}</td><td id="inf-kernel">—</td></tr>
-                <tr><td>${t('det.cpu')}</td><td id="inf-cpu">—</td></tr>
-                <tr><td>${t('det.cores')}</td><td id="inf-cores">—</td></tr>
-                <tr><td>${t('det.loadAvg')}</td><td id="inf-load">—</td></tr>
-              </table>
-              <div class="info-table-divider"></div>
-              <div class="info-table-section-title">${t('det.network')}</div>
-              <table class="info-table" id="network-table">
-                <tr>
-                  <td>${t('det.ipAddress')}</td>
-                  <td>
-                    <div class="network-value-row">
-                      <span class="mono">${esc(server.ip_address)}</span>
-                      <button type="button" class="btn btn-icon network-copy-btn" data-copy-value="${esc(server.ip_address)}" data-copy-label="${t('det.ipAddress')}" title="${t('common.copy')}">
-                        <i class="fas fa-copy"></i>
-                      </button>
+              <div class="info-section" id="info-table">
+                <div class="info-section-title">${t('det.sysinfo')}</div>
+                <div class="info-list">
+                  <div class="info-row"><div class="info-key">${t('det.os')}</div><div class="info-value" id="inf-os">—</div></div>
+                  <div class="info-row"><div class="info-key">${t('det.kernel')}</div><div class="info-value" id="inf-kernel">—</div></div>
+                  <div class="info-row"><div class="info-key">${t('det.cpu')}</div><div class="info-value" id="inf-cpu">—</div></div>
+                  <div class="info-row"><div class="info-key">${t('det.cores')}</div><div class="info-value" id="inf-cores">—</div></div>
+                  <div class="info-row"><div class="info-key">${t('det.loadAvg')}</div><div class="info-value mono" id="inf-load">—</div></div>
+                </div>
+              </div>
+              <div class="info-section-divider"></div>
+              <div class="info-section" id="network-table">
+                <div class="info-section-title">${t('det.network')}</div>
+                <div class="info-list">
+                  <div class="info-row">
+                    <div class="info-key">${t('det.ipAddress')}</div>
+                    <div class="info-value">
+                      <div class="network-value-row">
+                        <span class="mono">${esc(server.ip_address)}</span>
+                        <button type="button" class="btn btn-icon network-copy-btn" data-copy-value="${esc(server.ip_address)}" data-copy-label="${t('det.ipAddress')}" title="${t('common.copy')}">
+                          <i class="fas fa-copy"></i>
+                        </button>
+                      </div>
                     </div>
-                  </td>
-                </tr>
-                ${server.hostname ? `<tr>
-                  <td>${t('det.hostname')}</td>
-                  <td>
-                    <div class="network-value-row">
-                      <span class="mono">${esc(server.hostname)}</span>
-                      <button type="button" class="btn btn-icon network-copy-btn" data-copy-value="${esc(server.hostname)}" data-copy-label="${t('det.hostname')}" title="${t('common.copy')}">
-                        <i class="fas fa-copy"></i>
-                      </button>
+                  </div>
+                  ${server.hostname ? `<div class="info-row">
+                    <div class="info-key">${t('det.hostname')}</div>
+                    <div class="info-value">
+                      <div class="network-value-row">
+                        <span class="mono">${esc(server.hostname)}</span>
+                        <button type="button" class="btn btn-icon network-copy-btn" data-copy-value="${esc(server.hostname)}" data-copy-label="${t('det.hostname')}" title="${t('common.copy')}">
+                          <i class="fas fa-copy"></i>
+                        </button>
+                      </div>
                     </div>
-                  </td>
-                </tr>` : ''}
-                <tr><td>${t('det.sshPort')}</td><td id="net-port" class="mono">${server.ssh_port || 22}</td></tr>
-                <tr><td>${t('det.sshUser')}</td><td class="mono">${esc(server.ssh_user || 'root')}</td></tr>
-              </table>
+                  </div>` : ''}
+                  <div class="info-row"><div class="info-key">${t('det.sshPort')}</div><div class="info-value mono" id="net-port">${server.ssh_port || 22}</div></div>
+                  <div class="info-row"><div class="info-key">${t('det.sshUser')}</div><div class="info-value mono">${esc(server.ssh_user || 'root')}</div></div>
+                </div>
+              </div>
             </div>
 
           </div>

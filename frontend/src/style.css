@@ -1148,29 +1148,45 @@ button:focus-visible,
 }
 
 /* ============================================
-   Info Rows (key-value)
+   Info Sections (key-value)
    ============================================ */
-.info-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12.5px;
+.info-section {
+  padding: 12px 0 0;
 }
 
-.info-table tr {
-  border-bottom: 1px solid var(--border);
+.info-section-title {
+  padding: 0 16px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
-.info-table tr:last-child {
-  border-bottom: none;
+.info-section-divider {
+  margin: 10px 16px 0;
+  border-top: 1px solid var(--border);
 }
 
-.info-table td {
+.info-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.info-row {
+  display: grid;
+  grid-template-columns: 144px minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
   padding: 11px 16px;
-  vertical-align: middle;
+  border-top: 1px solid var(--border);
 }
 
-.info-table td:first-child {
-  width: 144px;
+.info-list .info-row:first-child {
+  border-top: none;
+}
+
+.info-key {
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 500;
@@ -1178,24 +1194,11 @@ button:focus-visible,
   letter-spacing: 0.1em;
 }
 
-.info-table td:last-child {
-  font-family: var(--font-mono);
+.info-value {
+  min-width: 0;
   font-size: 12px;
   color: var(--text-primary);
-}
-
-.info-table-divider {
-  margin: 4px 16px 0;
-  border-top: 1px solid var(--border);
-}
-
-.info-table-section-title {
-  padding: 12px 16px 4px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+  font-family: var(--font-mono);
 }
 
 /* ============================================
@@ -5734,25 +5737,10 @@ input[type=number] {
     flex: 1 1 140px;
   }
 
-  .info-table,
-  .info-table tbody,
-  .info-table tr,
-  .info-table td {
-    display: block;
-    width: 100%;
-  }
-
-  .info-table tr {
-    padding: 10px 16px;
-  }
-
-  .info-table td {
-    padding: 0;
-  }
-
-  .info-table td:first-child {
-    width: auto;
-    margin-bottom: 4px;
+  .info-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+    align-items: flex-start;
   }
 
   .res-header {
