@@ -52,10 +52,12 @@ export async function renderServerDetail(serverId) {
     <!-- Top strip -->
     <div class="page-header server-detail-header">
       <div class="server-detail-heading">
-        <button class="btn btn-secondary btn-sm" id="btn-back" title="${t('common.back')}">
-          <i class="fas fa-arrow-left"></i>
-        </button>
         <div class="server-detail-title-wrap">
+          <nav class="breadcrumb">
+            <a href="#" id="breadcrumb-back">${t('srv.title')}</a>
+            <i class="fas fa-chevron-right breadcrumb-sep"></i>
+            <span class="breadcrumb-current">${esc(server.name)}</span>
+          </nav>
           <h2 class="server-detail-title">
             ${esc(server.name)}
             <span class="badge badge-${server.status === 'online' ? 'online' : server.status === 'offline' ? 'offline' : 'unknown'}">
@@ -66,11 +68,17 @@ export async function renderServerDetail(serverId) {
         </div>
       </div>
       <div class="page-header-actions server-detail-actions">
+        ${hasCap('canUseTerminal') ? `<button class="btn btn-primary btn-sm" id="btn-terminal"><i class="fas fa-terminal"></i> ${t('common.terminal')}</button>` : ''}
         ${hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm" id="btn-edit-server"><i class="fas fa-edit"></i> ${t('common.edit')}</button>` : ''}
-        ${hasCap('canUseTerminal') ? `<button class="btn btn-secondary btn-sm" id="btn-terminal"><i class="fas fa-terminal"></i> ${t('common.terminal')}</button>` : ''}
-        ${hasCap('canUseTerminal') ? `<button class="btn btn-secondary btn-sm" id="btn-reset-host-key" title="${t('srv.resetHostKeyHint')}"><i class="fas fa-key"></i> ${t('srv.resetHostKey')}</button>` : ''}
-        ${hasCap('canRunUpdates') ? `<button class="btn btn-secondary btn-sm" id="btn-update-server"><i class="fas fa-arrow-up"></i> ${t('det.updates')}</button>` : ''}
-        ${hasCap('canRebootServers') ? `<button class="btn btn-danger btn-sm" id="btn-reboot-server"><i class="fas fa-power-off"></i> ${t('det.reboot')}</button>` : ''}
+        ${(hasCap('canUseTerminal') || hasCap('canRunUpdates') || hasCap('canRebootServers')) ? `
+        <div class="action-overflow-wrap">
+          <button class="action-overflow-trigger" id="btn-detail-overflow" title="${t('common.actions')}"><i class="fas fa-ellipsis-vertical"></i></button>
+          <div class="action-overflow-menu" id="detail-overflow-menu">
+            ${hasCap('canRunUpdates') ? `<button class="action-overflow-item" id="btn-update-server"><i class="fas fa-arrow-up"></i> ${t('det.updates')}</button>` : ''}
+            ${hasCap('canUseTerminal') ? `<button class="action-overflow-item" id="btn-reset-host-key"><i class="fas fa-key"></i> ${t('srv.resetHostKey')}</button>` : ''}
+            ${hasCap('canRebootServers') ? `<div class="action-overflow-sep"></div><button class="action-overflow-item action-overflow-item--danger" id="btn-reboot-server"><i class="fas fa-power-off"></i> ${t('det.reboot')}</button>` : ''}
+          </div>
+        </div>` : ''}
       </div>
     </div>
 
@@ -157,7 +165,7 @@ export async function renderServerDetail(serverId) {
                   <span class="dash-panel-title">${t('det.resources')}</span>
                 </div>
                 <div class="dash-panel-header-right">
-                  <button class="btn btn-secondary btn-sm" id="btn-refresh-info" title="${t('common.refresh')}">
+                  <button class="btn btn-icon" id="btn-refresh-info" title="${t('common.refresh')}">
                     <i class="fas fa-sync-alt"></i>
                   </button>
                 </div>
@@ -206,7 +214,7 @@ export async function renderServerDetail(serverId) {
               <span class="dash-panel-title">${t('det.docker')}</span>
             </div>
             <div class="dash-panel-header-right">
-              <button class="btn btn-secondary btn-sm" id="btn-refresh-docker" title="${t('common.refresh')}">
+              <button class="btn btn-icon" id="btn-refresh-docker" title="${t('common.refresh')}">
                 <i class="fas fa-sync-alt"></i>
               </button>
               ${hasCap('canPullDocker') ? `<button class="btn btn-secondary btn-sm" id="btn-check-image-updates">
@@ -232,7 +240,7 @@ export async function renderServerDetail(serverId) {
               <span class="dash-panel-title">${t('det.tabUpdates')}</span>
             </div>
             <div class="dash-panel-header-right">
-              <button class="btn btn-secondary btn-sm" id="btn-refresh-updates" title="${t('common.refresh')}"><i class="fas fa-sync-alt"></i></button>
+              <button class="btn btn-icon" id="btn-refresh-updates" title="${t('common.refresh')}"><i class="fas fa-sync-alt"></i></button>
             </div>
           </div>
           <div id="updates-content">
@@ -342,10 +350,23 @@ export async function renderServerDetail(serverId) {
   });
 
   // ---- Header actions ----
-  document.getElementById('btn-back')?.addEventListener('click', () => {
+  document.getElementById('breadcrumb-back')?.addEventListener('click', (e) => {
+    e.preventDefault();
     const fallbackView = hasCap('canViewServers') ? 'servers' : 'dashboard';
     navigate(state.previousView || fallbackView);
   });
+
+  // Overflow menu toggle
+  const overflowBtn = document.getElementById('btn-detail-overflow');
+  const overflowMenu = document.getElementById('detail-overflow-menu');
+  if (overflowBtn && overflowMenu) {
+    overflowBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      overflowMenu.classList.toggle('open');
+    });
+    document.addEventListener('click', () => overflowMenu.classList.remove('open'));
+    overflowMenu.addEventListener('click', () => overflowMenu.classList.remove('open'));
+  }
 
   document.getElementById('btn-edit-server')?.addEventListener('click', () => {
     showAddServerModal(async (savedServer) => {
@@ -406,6 +427,7 @@ export async function renderServerDetail(serverId) {
     if (!await showConfirm(t('det.confirmReboot', { name: server.name }), { title: t('det.reboot'), confirmText: t('det.reboot'), danger: true })) return;
     const btn = document.getElementById('btn-reboot-server');
     btn.disabled = true;
+    const origHtml = btn.innerHTML;
     btn.innerHTML = `<span class="spinner-sm"></span> ${t('det.rebooting')}`;
     try {
       await api.runReboot(serverId);
@@ -414,7 +436,7 @@ export async function renderServerDetail(serverId) {
       showToast(t('common.errorPrefix', { msg: e.message }), 'error');
     } finally {
       btn.disabled = false;
-      btn.innerHTML = `<i class="fas fa-power-off"></i> ${t('det.reboot')}`;
+      btn.innerHTML = origHtml;
     }
   });
 
@@ -765,10 +787,10 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
           </span>
         </td>
         <td style="white-space:nowrap;">
-          ${hasCap('canManageDockerCompose') ? `<button class="btn btn-secondary btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="edit" title="${t('common.edit')}"><i class="fas fa-edit"></i></button>` : ''}
-          ${hasCap('canPullDocker') ? `<button class="btn btn-secondary btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="pull" title="pull"><i class="fas fa-cloud-download-alt"></i></button>` : ''}
-          ${hasCap('canManageDockerCompose') ? `<button class="btn btn-primary btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="up" title="up -d"><i class="fas fa-play"></i></button>` : ''}
-          ${hasCap('canManageDockerCompose') ? `<button class="btn btn-danger btn-sm compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="down" title="down"><i class="fas fa-stop"></i></button>` : ''}
+          ${hasCap('canManageDockerCompose') ? `<button class="btn btn-icon compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="edit" title="${t('common.edit')}"><i class="fas fa-edit"></i></button>` : ''}
+          ${hasCap('canPullDocker') ? `<button class="btn btn-icon compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="pull" title="pull"><i class="fas fa-cloud-download-alt"></i></button>` : ''}
+          ${hasCap('canManageDockerCompose') ? `<button class="btn btn-icon compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="up" title="up -d"><i class="fas fa-play"></i></button>` : ''}
+          ${hasCap('canManageDockerCompose') ? `<button class="btn btn-icon btn-icon--danger compose-action-btn" data-project="${esc(proj)}" data-dir="${esc(data.dir)}" data-action="down" title="down"><i class="fas fa-stop"></i></button>` : ''}
         </td>
       </tr>`;
     data.containers.forEach(c => {
@@ -797,8 +819,8 @@ function renderDockerData(serverId, containers, imageUpdateMap = {}) {
           <option value="500">${t('pb.lines500')}</option>
           <option value="1000">${t('pb.lines1000')}</option>
         </select>
-        <button class="btn btn-secondary btn-sm" id="btn-logs-refresh" title="${t('common.refresh')}"><i class="fas fa-sync-alt"></i></button>
-        <button class="btn btn-secondary btn-sm" id="btn-logs-close" title="${t('common.close')}"><i class="fas fa-times"></i></button>
+        <button class="btn btn-icon" id="btn-logs-refresh" title="${t('common.refresh')}"><i class="fas fa-sync-alt"></i></button>
+        <button class="btn btn-icon" id="btn-logs-close" title="${t('common.close')}"><i class="fas fa-times"></i></button>
       </div>
     </div>
     <div class="terminal" style="border-radius:0;border-left:none;border-right:none;border-bottom:none;">
@@ -944,8 +966,8 @@ function renderContainerRow(c, imageUpdateMap = {}) {
       <td><span style="font-size:12px;color:${isUp ? 'var(--online)' : 'var(--offline)'};">${esc(c.status || c.state)}</span></td>
       <td>${updateCell}</td>
       <td style="white-space:nowrap;">
-        ${hasCap('canViewDocker') ? `<button class="btn btn-secondary btn-sm logs-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.showLogs')}"><i class="fas fa-file-alt"></i></button>` : ''}
-        ${hasCap('canRestartDocker') ? `<button class="btn btn-secondary btn-sm restart-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.containerRestarted')}"><i class="fas fa-sync-alt"></i></button>` : ''}
+        ${hasCap('canViewDocker') ? `<button class="btn btn-icon logs-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.showLogs')}"><i class="fas fa-file-alt"></i></button>` : ''}
+        ${hasCap('canRestartDocker') ? `<button class="btn btn-icon restart-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.containerRestarted')}"><i class="fas fa-sync-alt"></i></button>` : ''}
       </td>
     </tr>
   `;
@@ -964,10 +986,10 @@ function renderDockerStackCard(project, data, allDown) {
           <div class="mono docker-mobile-stack-path">${esc(data.dir)}</div>
         </div>
         <div class="docker-mobile-stack-actions">
-          ${hasCap('canManageDockerCompose') ? `<button class="btn btn-secondary btn-sm compose-action-btn" data-project="${esc(project)}" data-dir="${esc(data.dir)}" data-action="edit" title="${t('common.edit')}"><i class="fas fa-edit"></i></button>` : ''}
-          ${hasCap('canPullDocker') ? `<button class="btn btn-secondary btn-sm compose-action-btn" data-project="${esc(project)}" data-dir="${esc(data.dir)}" data-action="pull" title="pull"><i class="fas fa-cloud-download-alt"></i></button>` : ''}
-          ${hasCap('canManageDockerCompose') ? `<button class="btn btn-primary btn-sm compose-action-btn" data-project="${esc(project)}" data-dir="${esc(data.dir)}" data-action="up" title="up -d"><i class="fas fa-play"></i></button>` : ''}
-          ${hasCap('canManageDockerCompose') ? `<button class="btn btn-danger btn-sm compose-action-btn" data-project="${esc(project)}" data-dir="${esc(data.dir)}" data-action="down" title="down"><i class="fas fa-stop"></i></button>` : ''}
+          ${hasCap('canManageDockerCompose') ? `<button class="btn btn-icon compose-action-btn" data-project="${esc(project)}" data-dir="${esc(data.dir)}" data-action="edit" title="${t('common.edit')}"><i class="fas fa-edit"></i></button>` : ''}
+          ${hasCap('canPullDocker') ? `<button class="btn btn-icon compose-action-btn" data-project="${esc(project)}" data-dir="${esc(data.dir)}" data-action="pull" title="pull"><i class="fas fa-cloud-download-alt"></i></button>` : ''}
+          ${hasCap('canManageDockerCompose') ? `<button class="btn btn-icon compose-action-btn" data-project="${esc(project)}" data-dir="${esc(data.dir)}" data-action="up" title="up -d"><i class="fas fa-play"></i></button>` : ''}
+          ${hasCap('canManageDockerCompose') ? `<button class="btn btn-icon btn-icon--danger compose-action-btn" data-project="${esc(project)}" data-dir="${esc(data.dir)}" data-action="down" title="down"><i class="fas fa-stop"></i></button>` : ''}
         </div>
       </div>
     </section>
@@ -997,8 +1019,8 @@ function renderContainerCard(c, imageUpdateMap = {}) {
           <div class="mono docker-mobile-card-image">${esc(c.image)}</div>
         </div>
         <div class="docker-mobile-card-actions">
-          ${hasCap('canViewDocker') ? `<button class="btn btn-secondary btn-sm logs-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.showLogs')}"><i class="fas fa-file-alt"></i></button>` : ''}
-          ${hasCap('canRestartDocker') ? `<button class="btn btn-secondary btn-sm restart-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.containerRestarted')}"><i class="fas fa-sync-alt"></i></button>` : ''}
+          ${hasCap('canViewDocker') ? `<button class="btn btn-icon logs-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.showLogs')}"><i class="fas fa-file-alt"></i></button>` : ''}
+          ${hasCap('canRestartDocker') ? `<button class="btn btn-icon restart-docker-btn" data-container="${esc(c.container_name)}" title="${t('det.containerRestarted')}"><i class="fas fa-sync-alt"></i></button>` : ''}
         </div>
       </div>
       <div class="docker-mobile-card-meta">
@@ -1203,10 +1225,10 @@ function renderCustomTasksPanel(customTasks, serverId) {
           </div>
         </div>
         <div class="custom-task-card-actions">
-          ${hasCap('canRunCustomUpdates') ? `<button class="btn btn-secondary btn-sm custom-task-check" data-id="${esc(task.id)}"><i class="fas fa-sync-alt"></i> ${t('det.checkNow')}</button>` : ''}
-          ${hasCap('canRunCustomUpdates') && task.update_command ? `<button class="btn btn-primary btn-sm custom-task-run" data-id="${esc(task.id)}" data-name="${esc(task.name)}"><i class="fas fa-play"></i> ${t('det.runUpdate')}</button>` : ''}
-          ${hasCap('canEditCustomUpdates') ? `<button class="btn btn-secondary btn-sm custom-task-edit" data-id="${esc(task.id)}"><i class="fas fa-edit"></i> ${t('common.edit')}</button>` : ''}
-          ${hasCap('canDeleteCustomUpdates') ? `<button class="btn btn-danger btn-sm custom-task-delete" data-id="${esc(task.id)}" data-name="${esc(task.name)}"><i class="fas fa-trash"></i> ${t('common.delete')}</button>` : ''}
+          ${hasCap('canRunCustomUpdates') ? `<button class="btn btn-icon custom-task-check" data-id="${esc(task.id)}" title="${t('det.checkNow')}"><i class="fas fa-sync-alt"></i></button>` : ''}
+          ${hasCap('canRunCustomUpdates') && task.update_command ? `<button class="btn btn-icon custom-task-run" data-id="${esc(task.id)}" data-name="${esc(task.name)}" title="${t('det.runUpdate')}"><i class="fas fa-play"></i></button>` : ''}
+          ${hasCap('canEditCustomUpdates') ? `<button class="btn btn-icon custom-task-edit" data-id="${esc(task.id)}" title="${t('common.edit')}"><i class="fas fa-edit"></i></button>` : ''}
+          ${hasCap('canDeleteCustomUpdates') ? `<button class="btn btn-icon btn-icon--danger custom-task-delete" data-id="${esc(task.id)}" data-name="${esc(task.name)}" title="${t('common.delete')}"><i class="fas fa-trash"></i></button>` : ''}
         </div>
       </article>`
       : `
@@ -1217,10 +1239,10 @@ function renderCustomTasksPanel(customTasks, serverId) {
         <td class="mono" style="font-size:11px;">${esc(latestValue)}</td>
         <td>${statusCell}</td>
         <td style="white-space:nowrap;">
-          ${hasCap('canRunCustomUpdates') ? `<button class="btn btn-secondary btn-sm custom-task-check" data-id="${esc(task.id)}" title="${t('det.checkNow')}"><i class="fas fa-sync-alt"></i></button>` : ''}
-          ${hasCap('canRunCustomUpdates') && task.update_command ? `<button class="btn btn-primary btn-sm custom-task-run" data-id="${esc(task.id)}" data-name="${esc(task.name)}" title="${t('det.runUpdate')}"><i class="fas fa-play"></i></button>` : ''}
-          ${hasCap('canEditCustomUpdates') ? `<button class="btn btn-secondary btn-sm custom-task-edit" data-id="${esc(task.id)}" title="${t('common.edit')}"><i class="fas fa-edit"></i></button>` : ''}
-          ${hasCap('canDeleteCustomUpdates') ? `<button class="btn btn-danger btn-sm custom-task-delete" data-id="${esc(task.id)}" data-name="${esc(task.name)}" title="${t('common.delete')}"><i class="fas fa-trash"></i></button>` : ''}
+          ${hasCap('canRunCustomUpdates') ? `<button class="btn btn-icon custom-task-check" data-id="${esc(task.id)}" title="${t('det.checkNow')}"><i class="fas fa-sync-alt"></i></button>` : ''}
+          ${hasCap('canRunCustomUpdates') && task.update_command ? `<button class="btn btn-icon custom-task-run" data-id="${esc(task.id)}" data-name="${esc(task.name)}" title="${t('det.runUpdate')}"><i class="fas fa-play"></i></button>` : ''}
+          ${hasCap('canEditCustomUpdates') ? `<button class="btn btn-icon custom-task-edit" data-id="${esc(task.id)}" title="${t('common.edit')}"><i class="fas fa-edit"></i></button>` : ''}
+          ${hasCap('canDeleteCustomUpdates') ? `<button class="btn btn-icon btn-icon--danger custom-task-delete" data-id="${esc(task.id)}" data-name="${esc(task.name)}" title="${t('common.delete')}"><i class="fas fa-trash"></i></button>` : ''}
         </td>
       </tr>`;
   }).join('');

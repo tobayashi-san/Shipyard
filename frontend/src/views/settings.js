@@ -1529,7 +1529,7 @@ async function loadRolesTab() {
               ${groups.map(g => `
                 <label class="rf-cap-label">
                   <input type="checkbox" class="rf-group-chk" value="${esc(g.id)}" ${checkedGroups.includes(g.id) ? 'checked' : ''}>
-                  <span style="width:8px;height:8px;border-radius:2px;background:${esc(g.color||'#6366f1')};display:inline-block;flex-shrink:0;"></span>
+                   <span style="width:8px;height:8px;border-radius:2px;background:${esc(g.color||'var(--accent)')};display:inline-block;flex-shrink:0;"></span>
                   <span>${esc(g.name)}</span>
                 </label>`).join('')}
             </div>` : ''}
@@ -2188,7 +2188,7 @@ async function loadAuditTab() {
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${t('set.auditIp')}: ${esc(r.ip || '—')}</div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
-          <span style="font-size:11px;padding:2px 8px;border-radius:999px;${r.success ? 'background:rgba(34,197,94,.14);color:#22c55e;' : 'background:rgba(239,68,68,.14);color:#ef4444;'}">${r.success ? t('set.auditStatusOk') : t('set.auditStatusFailed')}</span>
+          <span style="font-size:11px;padding:2px 8px;border-radius:999px;${r.success ? 'background:color-mix(in srgb, var(--online) 14%, transparent);color:var(--online);' : 'background:color-mix(in srgb, var(--offline) 14%, transparent);color:var(--offline);'}">${r.success ? t('set.auditStatusOk') : t('set.auditStatusFailed')}</span>
           <span style="font-size:11px;color:var(--text-muted);">${esc(r.created_at || '')}</span>
         </div>
       </div>

@@ -572,6 +572,138 @@ button:focus-visible,
   min-height: 40px;
 }
 
+/* ---- Breadcrumb ---- */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+  min-width: 0;
+}
+
+.breadcrumb a {
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.breadcrumb a:hover {
+  color: var(--accent);
+}
+
+.breadcrumb .breadcrumb-sep {
+  font-size: 9px;
+  opacity: 0.5;
+}
+
+.breadcrumb .breadcrumb-current {
+  color: var(--text-secondary);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Overflow / Action Menu ---- */
+.action-overflow-wrap {
+  position: relative;
+}
+
+.action-overflow-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  font-size: 14px;
+  padding: 0;
+}
+
+.action-overflow-trigger:hover {
+  background: var(--bg-row-hover);
+  border-color: var(--border-section);
+}
+
+.action-overflow-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 200px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  z-index: var(--z-dropdown, 200);
+  padding: 4px;
+  display: none;
+}
+
+.action-overflow-menu.open {
+  display: block;
+}
+
+.action-overflow-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-family: var(--font);
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  transition: background 0.12s, color 0.12s;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.action-overflow-item:hover {
+  background: var(--bg-row-hover);
+  color: var(--text-primary);
+}
+
+.action-overflow-item i {
+  width: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.action-overflow-item:hover i {
+  color: var(--text-secondary);
+}
+
+.action-overflow-item--danger {
+  color: var(--offline);
+}
+
+.action-overflow-item--danger:hover {
+  background: color-mix(in srgb, var(--offline) 8%, transparent);
+  color: var(--offline);
+}
+
+.action-overflow-item--danger i {
+  color: var(--offline);
+}
+
+.action-overflow-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 8px;
+}
+
 .btn-group {
   display: flex;
   gap: 0;
@@ -827,10 +959,15 @@ button:focus-visible,
 }
 
 .btn-icon {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   justify-content: center;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .btn:disabled {
@@ -845,7 +982,18 @@ button:focus-visible,
 
 .btn-icon:hover {
   background: var(--bg-row-hover);
-  border-color: var(--border-section);
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+
+.btn-icon.btn-icon--danger {
+  color: var(--text-muted);
+}
+
+.btn-icon.btn-icon--danger:hover {
+  color: var(--offline);
+  background: color-mix(in srgb, var(--offline) 8%, transparent);
+  border-color: color-mix(in srgb, var(--offline) 20%, transparent);
 }
 
 /* ============================================
@@ -5143,13 +5291,12 @@ input[type=number] {
   }
 
   .server-detail-actions {
-    width: 100%;
-    justify-content: flex-start;
+    width: auto;
+    justify-content: flex-end;
   }
 
   .server-detail-actions .btn {
-    flex: 1 1 140px;
-    justify-content: center;
+    flex: none;
   }
 
   .server-detail-toolbar {
@@ -5281,7 +5428,7 @@ input[type=number] {
   }
 
   .server-detail-actions .btn {
-    flex-basis: 100%;
+    flex: none;
   }
 
   .docker-mobile-card-header,

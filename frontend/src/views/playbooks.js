@@ -39,9 +39,9 @@ const cmTheme = EditorView.theme({
   },
   '.cm-activeLineGutter': { background: 'var(--bg-row-hover)' },
   '.cm-activeLine': { background: 'rgba(128,128,128,0.06)' },
-  '.cm-selectionBackground': { background: 'rgba(99,102,241,0.25) !important' },
-  '&.cm-focused .cm-selectionBackground': { background: 'rgba(99,102,241,0.40) !important' },
-  '&.cm-focused .cm-activeLine .cm-selectionBackground': { background: 'rgba(99,102,241,0.45) !important' },
+  '.cm-selectionBackground': { background: 'rgba(var(--accent-rgb),0.25) !important' },
+  '&.cm-focused .cm-selectionBackground': { background: 'rgba(var(--accent-rgb),0.40) !important' },
+  '&.cm-focused .cm-activeLine .cm-selectionBackground': { background: 'rgba(var(--accent-rgb),0.45) !important' },
   '.cm-matchingBracket': { background: 'var(--accent-light)', color: 'var(--accent) !important', fontWeight: 'bold' },
   '.cm-foldPlaceholder': { background: 'var(--accent-light)', border: 'none', color: 'var(--accent)' },
 });

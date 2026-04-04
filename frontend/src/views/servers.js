@@ -129,33 +129,27 @@ export async function renderServers() {
         <p>${t('srv.count', { total: state.servers.length, online: onlineCount, offline: offlineCount })}${activeTag ? ` · ${t('srv.filtered', { tag: activeTag })}` : ''}</p>
       </div>
       <div class="page-header-actions">
-        <button class="btn btn-secondary btn-sm" id="btn-refresh-all">
-          <i class="fas fa-sync-alt"></i> ${t('common.refresh')}
-        </button>
-        ${serverGroups.length > 0 && hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm" id="btn-toggle-edit" title="Toggle folder edit mode">
-          <i class="fas ${serversEditMode ? 'fa-lock-open' : 'fa-lock'}"></i> ${serversEditMode ? 'Done' : 'Edit'}
-        </button>` : ''}
-        ${hasCap('canExportImportServers') ? `<div class="btn-group" id="btn-export-wrap">
-          <button class="btn btn-secondary btn-sm" id="btn-export-json" title="${t('srv.export')} JSON">
-            <i class="fas fa-file-export"></i> JSON
-          </button>
-          <button class="btn btn-secondary btn-sm" id="btn-export-csv" title="${t('srv.export')} CSV">
-            <i class="fas fa-file-csv"></i> CSV
-          </button>
-        </div>
-        <label class="btn btn-secondary btn-sm" title="${t('srv.import')}" style="cursor:pointer;margin:0;">
-          <i class="fas fa-file-import"></i> ${t('srv.import')}
-          <input type="file" id="btn-import-file" accept=".json,.csv" style="display:none;">
-        </label>` : ''}
-        ${hasCap('canAddServers') ? `<button class="btn btn-secondary btn-sm" id="btn-create-group">
-          <i class="fas fa-folder-plus"></i> ${t('srv.folder')}
-        </button>` : ''}
-        ${hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm" id="btn-auto-group-tags">
-          <i class="fas fa-tags"></i> ${t('srv.autoGroupFromTags')}
-        </button>` : ''}
         ${hasCap('canAddServers') ? `<button class="btn btn-primary btn-sm" id="btn-add-server">
           <i class="fas fa-plus"></i> ${t('srv.add')}
         </button>` : ''}
+        <button class="btn btn-icon" id="btn-refresh-all" title="${t('common.refresh')}">
+          <i class="fas fa-sync-alt"></i>
+        </button>
+        <div class="action-overflow-wrap">
+          <button class="action-overflow-trigger" id="btn-servers-overflow" title="${t('common.actions')}"><i class="fas fa-ellipsis-vertical"></i></button>
+          <div class="action-overflow-menu" id="servers-overflow-menu">
+            ${hasCap('canAddServers') ? `<button class="action-overflow-item" id="btn-create-group"><i class="fas fa-folder-plus"></i> ${t('srv.folder')}</button>` : ''}
+            ${hasCap('canEditServers') ? `<button class="action-overflow-item" id="btn-auto-group-tags"><i class="fas fa-tags"></i> ${t('srv.autoGroupFromTags')}</button>` : ''}
+            ${serverGroups.length > 0 && hasCap('canEditServers') ? `<button class="action-overflow-item" id="btn-toggle-edit"><i class="fas ${serversEditMode ? 'fa-lock-open' : 'fa-lock'}"></i> ${serversEditMode ? 'Done' : 'Edit'}</button>` : ''}
+            ${hasCap('canExportImportServers') ? `<div class="action-overflow-sep"></div>
+            <button class="action-overflow-item" id="btn-export-json"><i class="fas fa-file-export"></i> ${t('srv.export')} JSON</button>
+            <button class="action-overflow-item" id="btn-export-csv"><i class="fas fa-file-csv"></i> ${t('srv.export')} CSV</button>
+            <label class="action-overflow-item" style="cursor:pointer;margin:0;">
+              <i class="fas fa-file-import"></i> ${t('srv.import')}
+              <input type="file" id="btn-import-file" accept=".json,.csv" style="display:none;">
+            </label>` : ''}
+          </div>
+        </div>
       </div>
     </div>
 
@@ -246,6 +240,18 @@ export async function renderServers() {
 }
 
 function attachEvents() {
+  // Overflow menu toggle
+  const srvOverflowBtn = document.getElementById('btn-servers-overflow');
+  const srvOverflowMenu = document.getElementById('servers-overflow-menu');
+  if (srvOverflowBtn && srvOverflowMenu) {
+    srvOverflowBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      srvOverflowMenu.classList.toggle('open');
+    });
+    document.addEventListener('click', () => srvOverflowMenu.classList.remove('open'));
+    srvOverflowMenu.addEventListener('click', () => srvOverflowMenu.classList.remove('open'));
+  }
+
   document.querySelectorAll('.tag-filter-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       activeTag = btn.dataset.tag || null;
@@ -749,9 +755,9 @@ function closeMoveDropdowns() {
 
 const PRESET_COLORS = ['#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f97316'];
 
-function showGroupDialog({ title = '', confirmText = '', groups = [], defaultName = '', defaultColor = '#6366f1', defaultParentId = null, editId = null } = {}) {
+function showGroupDialog({ title = '', confirmText = '', groups = [], defaultName = '', defaultColor = PRESET_COLORS[0], defaultParentId = null, editId = null } = {}) {
   return new Promise((resolve) => {
-    let selectedColor = defaultColor || '#6366f1';
+    let selectedColor = defaultColor || PRESET_COLORS[0];
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
 
@@ -779,7 +785,7 @@ function showGroupDialog({ title = '', confirmText = '', groups = [], defaultNam
             <label class="form-label">${t('srv.groupColor')}</label>
             <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
               ${PRESET_COLORS.map(c => `
-                <button class="color-swatch${c === selectedColor ? ' active' : ''}" data-color="${c}" style="background:${c};width:24px;height:24px;border-radius:50%;border:2px solid ${c === selectedColor ? '#fff' : 'transparent'};outline:2px solid ${c === selectedColor ? c : 'transparent'};cursor:pointer;"></button>
+                <button class="color-swatch${c === selectedColor ? ' active' : ''}" data-color="${c}" style="background:${c};width:24px;height:24px;border-radius:50%;border:2px solid ${c === selectedColor ? 'var(--text-inverse)' : 'transparent'};outline:2px solid ${c === selectedColor ? c : 'transparent'};cursor:pointer;"></button>
               `).join('')}
               <input type="color" id="gd-custom-color" value="${selectedColor}" title="${t('common.customColor')}" style="width:24px;height:24px;padding:0;border:none;border-radius:50%;cursor:pointer;background:none;">
             </div>
@@ -809,7 +815,7 @@ function showGroupDialog({ title = '', confirmText = '', groups = [], defaultNam
       customColor.value = color;
       overlay.querySelectorAll('.color-swatch').forEach(s => {
         const active = s.dataset.color === color;
-        s.style.border = `2px solid ${active ? '#fff' : 'transparent'}`;
+        s.style.border = `2px solid ${active ? 'var(--text-inverse)' : 'transparent'}`;
         s.style.outline = `2px solid ${active ? color : 'transparent'}`;
       });
     };
@@ -864,7 +870,7 @@ function renderGroupNode(node, depth, serversByGroup) {
   const members = serversByGroup[node.id] || [];
   const collapsed = collapsedGroups.has(node.id);
   const indent = depth * 20;
-  const color = node.color || '#6366f1';
+  const color = node.color || PRESET_COLORS[0];
 
   let html = `<tr class="group-row" data-group-id="${node.id}" ${serversEditMode ? 'draggable="true"' : ''}>
     <td colspan="10" style="border-left:3px solid ${color};">
@@ -873,9 +879,9 @@ function renderGroupNode(node, depth, serversByGroup) {
         <i class="fas fa-folder${collapsed ? '' : '-open'}" style="color:${color};flex-shrink:0;"></i>
         <span class="group-name">${esc(node.name)}</span>
         <div class="group-header-actions">
-          ${hasCap('canAddServers') ? `<button class="btn btn-secondary btn-sm create-subgroup-btn" data-parent-id="${node.id}" title="${t('srv.createSubfolder')}"><i class="fas fa-folder-plus"></i></button>` : ''}
-          ${hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm rename-group-btn" data-group-id="${node.id}" title="${t('srv.editFolder')}"><i class="fas fa-pen"></i></button>` : ''}
-          ${hasCap('canDeleteServers') ? `<button class="btn btn-danger btn-sm delete-group-btn" data-group-id="${node.id}" data-group-name="${esc(node.name)}" title="${t('srv.deleteFolder')}"><i class="fas fa-trash"></i></button>` : ''}
+          ${hasCap('canAddServers') ? `<button class="btn btn-icon create-subgroup-btn" data-parent-id="${node.id}" title="${t('srv.createSubfolder')}"><i class="fas fa-folder-plus"></i></button>` : ''}
+          ${hasCap('canEditServers') ? `<button class="btn btn-icon rename-group-btn" data-group-id="${node.id}" title="${t('srv.editFolder')}"><i class="fas fa-pen"></i></button>` : ''}
+          ${hasCap('canDeleteServers') ? `<button class="btn btn-icon btn-icon--danger delete-group-btn" data-group-id="${node.id}" data-group-name="${esc(node.name)}" title="${t('srv.deleteFolder')}"><i class="fas fa-trash"></i></button>` : ''}
         </div>
         <span class="group-badge">${members.length + countDescendantServers(node, serversByGroup)}</span>
       </div>
@@ -1030,11 +1036,11 @@ function renderRow(server, depth = 0, folderColor = null) {
       </td>
       <td class="text-mono ${lastSeen === '—' ? 'empty-value' : ''}" style="color:var(--text-muted);font-size:11px;">${lastSeen}</td>
       <td class="row-actions" style="white-space:nowrap;">
-        ${serverGroups.length > 0 && hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm btn-move-server" data-server-id="${server.id}" title="${t('srv.moveTo')}"><i class="fas fa-folder-open"></i></button>` : ''}
-        ${hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm btn-edit-server" data-server-id="${server.id}" title="${t('srv.edit')}">
+        ${serverGroups.length > 0 && hasCap('canEditServers') ? `<button class="btn btn-icon btn-move-server" data-server-id="${server.id}" title="${t('srv.moveTo')}"><i class="fas fa-folder-open"></i></button>` : ''}
+        ${hasCap('canEditServers') ? `<button class="btn btn-icon btn-edit-server" data-server-id="${server.id}" title="${t('srv.edit')}">
           <i class="fas fa-edit"></i>
         </button>` : ''}
-        ${hasCap('canDeleteServers') ? `<button class="btn btn-danger btn-sm btn-delete-server" data-server-id="${server.id}" data-server-name="${esc(server.name)}" title="${t('srv.delete')}">
+        ${hasCap('canDeleteServers') ? `<button class="btn btn-icon btn-icon--danger btn-delete-server" data-server-id="${server.id}" data-server-name="${esc(server.name)}" title="${t('srv.delete')}">
           <i class="fas fa-trash"></i>
         </button>` : ''}
       </td>
@@ -1046,7 +1052,7 @@ function renderMobileGroupNode(node, depth, serversByGroup) {
   const members = serversByGroup[node.id] || [];
   const collapsed = collapsedGroups.has(node.id);
   const indent = depth * 14;
-  const color = node.color || '#6366f1';
+  const color = node.color || PRESET_COLORS[0];
   const total = members.length + countDescendantServers(node, serversByGroup);
 
   let html = `
@@ -1111,9 +1117,9 @@ function renderServerCard(server, depth = 0, folderColor = null) {
           ${(server.tags || []).length ? `<div class="server-tags-inline">${(server.tags || []).map(tag => `<span class="server-tag">${esc(tag)}</span>`).join('')}</div>` : ''}
         </div>
         <div class="row-actions server-card-actions">
-          ${serverGroups.length > 0 && hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm btn-move-server" data-server-id="${server.id}" title="${t('srv.moveTo')}"><i class="fas fa-folder-open"></i></button>` : ''}
-          ${hasCap('canEditServers') ? `<button class="btn btn-secondary btn-sm btn-edit-server" data-server-id="${server.id}" title="${t('srv.edit')}"><i class="fas fa-edit"></i></button>` : ''}
-          ${hasCap('canDeleteServers') ? `<button class="btn btn-danger btn-sm btn-delete-server" data-server-id="${server.id}" data-server-name="${esc(server.name)}" title="${t('srv.delete')}"><i class="fas fa-trash"></i></button>` : ''}
+          ${serverGroups.length > 0 && hasCap('canEditServers') ? `<button class="btn btn-icon btn-move-server" data-server-id="${server.id}" title="${t('srv.moveTo')}"><i class="fas fa-folder-open"></i></button>` : ''}
+          ${hasCap('canEditServers') ? `<button class="btn btn-icon btn-edit-server" data-server-id="${server.id}" title="${t('srv.edit')}"><i class="fas fa-edit"></i></button>` : ''}
+          ${hasCap('canDeleteServers') ? `<button class="btn btn-icon btn-icon--danger btn-delete-server" data-server-id="${server.id}" data-server-name="${esc(server.name)}" title="${t('srv.delete')}"><i class="fas fa-trash"></i></button>` : ''}
         </div>
       </div>
 
