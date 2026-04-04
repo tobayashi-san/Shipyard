@@ -17,9 +17,9 @@ export function openSshTerminal(server) {
   const modal = document.createElement('div');
   modal.style.cssText = [
     'width:90vw', 'max-width:1100px', 'height:75vh',
-    'background:#0d1117',
+    'background:var(--terminal-bg)',
     'border-radius:8px',
-    'border:1px solid #30363d',
+    'border:1px solid var(--terminal-border)',
     'display:flex', 'flex-direction:column',
     'overflow:hidden',
     'box-shadow:0 8px 32px rgba(0,0,0,.6)',
@@ -30,8 +30,8 @@ export function openSshTerminal(server) {
       <span><i class="fas fa-terminal"></i>&nbsp; ${esc(server.name)} &middot; ${esc(server.ip_address)}</span>
       <div style="display:flex;gap:10px;align-items:center;">
         <span id="ssh-status-dot" class="ssh-status-dot connecting"></span>
-        <span id="ssh-status-text" style="font-size:12px;color:#8b949e;">${t('term.connecting')}</span>
-        <button id="ssh-term-close" style="background:none;border:none;color:#8b949e;font-size:22px;line-height:1;cursor:pointer;padding:0 2px;">×</button>
+        <span id="ssh-status-text" style="font-size:12px;color:var(--terminal-muted);">${t('term.connecting')}</span>
+        <button id="ssh-term-close" style="background:none;border:none;color:var(--terminal-muted);font-size:22px;line-height:1;cursor:pointer;padding:0 2px;">×</button>
       </div>
     </div>
     <div id="ssh-term-container" style="flex:1;overflow:hidden;padding:4px;box-sizing:border-box;"></div>

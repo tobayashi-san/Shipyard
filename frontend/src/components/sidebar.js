@@ -43,6 +43,7 @@ export function renderSidebar() {
         <span>${esc(state.whiteLabel?.appTagline || 'Infrastructure')}</span>
       </div>
     </div>
+    <div class="sidebar-separator"></div>
 
     <nav class="sidebar-nav">
       <div class="nav-section">
@@ -71,7 +72,8 @@ export function renderSidebar() {
       <button type="button" class="nav-item ${state.currentView === 'settings' ? 'active' : ''}" data-view="settings" ${state.currentView === 'settings' ? 'aria-current="page"' : ''}>
         <span class="nav-item-icon"><i class="fas fa-cog"></i></span>
         <span>${t('nav.settings')}</span>
-      </button>` : ''}
+      </button>
+      <div class="sidebar-separator"></div>` : ''}
       <button type="button" class="nav-item nav-item-profile" id="sidebar-profile-btn" aria-label="Open profile menu" aria-haspopup="menu" aria-expanded="false">
         <span class="nav-profile-avatar">${esc(initials)}</span>
         <span class="nav-profile-meta">

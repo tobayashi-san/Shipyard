@@ -27,10 +27,10 @@ export function appendGlobalTerminal(text, type = 'stdout') {
   if (!clean.trim()) return;
   const line = document.createElement('div');
   line.style.cssText = type === 'stderr'
-    ? 'color:#f87171;padding:1px 0;'
+    ? 'color:var(--terminal-stderr);padding:1px 0;'
     : type === 'success'
-    ? 'color:#4ade80;padding:1px 0;'
-    : 'color:#c9d1d9;padding:1px 0;';
+    ? 'color:var(--terminal-success);padding:1px 0;'
+    : 'color:var(--terminal-text);padding:1px 0;';
   line.textContent = clean;
   body.appendChild(line);
   body.scrollTop = body.scrollHeight;

@@ -93,10 +93,10 @@ export async function renderOnboarding() {
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;align-items:center;">
             ${['#3b82f6','#6366f1','#8b5cf6','#ec4899','#14b8a6','#22c55e'].map(c => `
               <button class="ob-color-swatch" data-color="${c}" title="${c === '#3b82f6' ? c + ' (default)' : c}"
-                style="width:26px;height:26px;border-radius:50%;background:${c};border:2px solid ${c === '#3b82f6' ? '#fff' : 'transparent'};cursor:pointer;transition:border .15s;outline:none;">
+                style="width:28px;height:28px;border-radius:50%;background:${c};border:2px solid ${c === '#3b82f6' ? 'rgba(255,255,255,0.9)' : 'transparent'};cursor:pointer;transition:border .15s;outline:none;">
               </button>`).join('')}
             <input type="color" id="ob-color-picker" value="#3b82f6" title="${t('common.customColor')}"
-              style="width:26px;height:26px;border-radius:50%;border:2px solid var(--border);cursor:pointer;padding:2px;background:none;">
+              style="width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,0.12);cursor:pointer;padding:2px;background:none;">
           </div>
         </div>
         <div class="form-group" style="margin-top:12px;">
@@ -185,7 +185,7 @@ export async function renderOnboarding() {
       document.querySelectorAll('.ob-color-swatch').forEach(btn => {
         btn.addEventListener('click', () => {
           document.querySelectorAll('.ob-color-swatch').forEach(b => b.style.borderColor = 'transparent');
-          btn.style.borderColor = '#fff';
+          btn.style.borderColor = 'rgba(255,255,255,0.9)';
           const picker = document.getElementById('ob-color-picker');
           if (picker) picker.value = btn.dataset.color;
         });
@@ -284,11 +284,11 @@ export async function renderOnboarding() {
       if (key?.exists) {
         statusEl.innerHTML = `
           <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;
-            background:var(--online-bg);border-radius:var(--radius);border:1px solid var(--online);">
+            background:rgba(22,163,74,0.1);border-radius:var(--radius);border:1px solid rgba(22,163,74,0.3);">
             <i class="fas fa-check-circle" style="color:var(--online);font-size:18px;flex-shrink:0;"></i>
             <div>
               <div style="font-size:13px;font-weight:500;color:var(--online);">${t('ob.keyExists')}</div>
-              <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;word-break:break-all;">
+              <div style="font-size:12px;color:rgba(255,255,255,0.45);margin-top:2px;word-break:break-all;">
                 ${esc(key.publicKey?.substring(0, 64))}…
               </div>
             </div>
@@ -296,8 +296,8 @@ export async function renderOnboarding() {
         document.getElementById('ob-next').style.display = '';
       } else {
         statusEl.innerHTML = `
-          <div style="padding:12px 14px;background:var(--warning-bg);border-radius:var(--radius);
-            border:1px solid var(--warning);font-size:13px;color:var(--warning);">
+          <div style="padding:12px 14px;background:rgba(217,119,6,0.1);border-radius:var(--radius);
+            border:1px solid rgba(217,119,6,0.3);font-size:13px;color:var(--warning);">
             <i class="fas fa-exclamation-triangle"></i> ${t('ob.noKey')}
           </div>`;
         document.getElementById('ob-ssh-gen').style.display = '';

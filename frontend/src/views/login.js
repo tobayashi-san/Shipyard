@@ -74,6 +74,7 @@ export async function renderLogin(onSuccess) {
             ${isSetup ? `<i class="fas fa-lock"></i> ${t('login.setPassword')}` : `<i class="fas fa-sign-in-alt"></i> ${t('login.loginBtn')}`}
           </button>
         </form>
+        <div class="login-footer">Infrastructure Control Plane</div>
       </div>
     </div>
   `;
@@ -145,8 +146,7 @@ function renderTotp(tempToken, onSuccess) {
             <input class="form-input totp-code-input" id="totp-code"
               type="text" inputmode="numeric" pattern="[0-9 ]*"
               maxlength="7" autocomplete="one-time-code" autofocus
-              placeholder="000 000"
-              style="text-align:center;font-size:28px;font-weight:700;letter-spacing:0.25em;font-family:var(--font-mono);height:60px;padding:0 16px;">
+              placeholder="000 000">
           </div>
           <p class="login-error hidden" id="totp-error"></p>
           <button class="btn btn-primary" type="submit" id="totp-btn" style="width:100%;margin-top:4px;">
@@ -156,6 +156,7 @@ function renderTotp(tempToken, onSuccess) {
             ${t('login.totpBack')}
           </button>
         </form>
+        <div class="login-footer">Infrastructure Control Plane</div>
       </div>
     </div>
   `;

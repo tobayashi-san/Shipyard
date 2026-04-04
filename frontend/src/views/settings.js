@@ -116,8 +116,14 @@ export async function renderSettings() {
 
       <!-- Tab: Appearance -->
       <div class="tab-panel active" id="tab-appearance">
-        <div class="settings-group-title" style="margin-top:4px;">${t('set.whiteLabel')}</div>
-        <div class="settings-block">
+        <div class="panel dash-panel" style="margin-bottom:24px;">
+          <div class="dash-panel-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon"><i class="fas fa-paint-brush"></i></div>
+              <span class="dash-panel-title">${t('set.whiteLabel')}</span>
+            </div>
+          </div>
+          <div class="settings-block">
           <div class="settings-row">
             <div class="settings-row-label">
               <span>${t('set.appName')}</span>
@@ -170,54 +176,69 @@ export async function renderSettings() {
             </div>
           </div>
         </div>
+        </div>
       </div>
 
       <!-- Tab: SSH -->
       <div class="tab-panel" id="tab-ssh">
-        <div class="settings-group-title">${t('set.sshTitle')}</div>
-        <div class="settings-block" id="ssh-key-content">
-          <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
+        <div class="panel dash-panel" style="margin-bottom:24px;">
+          <div class="dash-panel-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon"><i class="fas fa-key"></i></div>
+              <span class="dash-panel-title">${t('set.sshTitle')}</span>
+            </div>
+          </div>
+          <div class="settings-block" id="ssh-key-content">
+            <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
+          </div>
         </div>
 
-        <div class="settings-group-title">${t('set.sshDistribute')}</div>
-        <div class="settings-block">
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span>${t('set.sshTarget')}</span>
-              <small>${t('set.sshTargetHint')}</small>
+        <div class="panel dash-panel">
+          <div class="dash-panel-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon"><i class="fas fa-paper-plane"></i></div>
+              <span class="dash-panel-title">${t('set.sshDistribute')}</span>
             </div>
-            <div class="settings-row-control">
-              <div style="display:grid;grid-template-columns:1fr 90px 70px;gap:8px;max-width:420px;width:100%;">
-                <input class="form-input" type="text" id="deploy-ip" placeholder="192.168.1.100">
-                <input class="form-input" type="text" id="deploy-user" placeholder="root" value="root">
-                <input class="form-input" type="number" id="deploy-port" placeholder="22" value="22">
+          </div>
+          <div class="settings-block">
+            <div class="settings-row">
+              <div class="settings-row-label">
+                <span>${t('set.sshTarget')}</span>
+                <small>${t('set.sshTargetHint')}</small>
+              </div>
+              <div class="settings-row-control">
+                <div style="display:grid;grid-template-columns:1fr 90px 70px;gap:8px;max-width:420px;width:100%;">
+                  <input class="form-input" type="text" id="deploy-ip" placeholder="192.168.1.100">
+                  <input class="form-input" type="text" id="deploy-user" placeholder="root" value="root">
+                  <input class="form-input" type="number" id="deploy-port" placeholder="22" value="22">
+                </div>
               </div>
             </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span>${t('set.sshPassword')}</span>
-              <small>${t('set.sshPasswordHint')}</small>
+            <div class="settings-row">
+              <div class="settings-row-label">
+                <span>${t('set.sshPassword')}</span>
+                <small>${t('set.sshPasswordHint')}</small>
+              </div>
+              <div class="settings-row-control">
+                <input class="form-input" type="password" id="deploy-password" placeholder="${t('set.serverPasswordPlaceholder')}" style="max-width:420px;width:100%;">
+              </div>
             </div>
-            <div class="settings-row-control">
-              <input class="form-input" type="password" id="deploy-password" placeholder="${t('set.serverPasswordPlaceholder')}" style="max-width:420px;width:100%;">
+            <div class="settings-row">
+              <div class="settings-row-label"></div>
+              <div class="settings-row-control" style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="btn btn-primary btn-sm" id="btn-deploy-key">
+                  <i class="fas fa-key"></i> ${t('set.sshDistributeBtn')}
+                </button>
+                <button class="btn btn-secondary btn-sm" id="btn-deploy-key-all">
+                  <i class="fas fa-key"></i> ${t('set.sshDistributeAllBtn')}
+                </button>
+              </div>
             </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-label"></div>
-            <div class="settings-row-control" style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button class="btn btn-primary btn-sm" id="btn-deploy-key">
-                <i class="fas fa-key"></i> ${t('set.sshDistributeBtn')}
-              </button>
-              <button class="btn btn-secondary btn-sm" id="btn-deploy-key-all">
-                <i class="fas fa-key"></i> ${t('set.sshDistributeAllBtn')}
-              </button>
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-label"></div>
-            <div class="settings-row-control" style="font-size:12px;color:var(--text-muted);">
-              ${t('set.sshDistributeAllHint')}
+            <div class="settings-row">
+              <div class="settings-row-label"></div>
+              <div class="settings-row-control" style="font-size:12px;color:var(--text-muted);">
+                ${t('set.sshDistributeAllHint')}
+              </div>
             </div>
           </div>
         </div>
@@ -225,29 +246,50 @@ export async function renderSettings() {
 
       <!-- Tab: System -->
       <div class="tab-panel" id="tab-system">
-        <div class="settings-group-title">${t('set.ansible')}</div>
-        <div class="settings-block" id="ansible-status-content">
-          <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
-        </div>
-
-        <div class="settings-group-title">${t('set.polling')}</div>
-        <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px 0;padding:0 4px;">${t('set.pollingHint')}</p>
-        <div class="settings-block" id="polling-config-content">
-          <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
-        </div>
-
-        <div class="settings-group-title">${t('set.agentFeature')}</div>
-        <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px 0;padding:0 4px;">${t('set.agentFeatureHint')}</p>
-        <div class="settings-block">
-          <div class="settings-row" style="border-bottom:none;">
-            <div class="settings-row-label">
-              <span>${t('set.agentFeatureToggle')}</span>
+        <div class="panel dash-panel" style="margin-bottom:24px;">
+          <div class="dash-panel-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon"><i class="fas fa-terminal"></i></div>
+              <span class="dash-panel-title">${t('set.ansible')}</span>
             </div>
-            <div class="settings-row-control">
-              <label class="toggle-switch">
-                <input type="checkbox" id="agent-enabled-toggle" ${state.whiteLabel?.agentEnabled ? 'checked' : ''}>
-                <span class="toggle-slider"></span>
-              </label>
+          </div>
+          <div class="settings-block" id="ansible-status-content">
+            <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
+          </div>
+        </div>
+
+        <div class="panel dash-panel" style="margin-bottom:24px;">
+          <div class="dash-panel-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon"><i class="fas fa-clock-rotate-left"></i></div>
+              <span class="dash-panel-title">${t('set.polling')}</span>
+            </div>
+          </div>
+          <p style="font-size:13px;color:var(--text-muted);margin:0;padding:12px 18px 0;">${t('set.pollingHint')}</p>
+          <div class="settings-block" id="polling-config-content">
+            <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
+          </div>
+        </div>
+
+        <div class="panel dash-panel" style="margin-bottom:24px;">
+          <div class="dash-panel-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon"><i class="fas fa-robot"></i></div>
+              <span class="dash-panel-title">${t('set.agentFeature')}</span>
+            </div>
+          </div>
+          <p style="font-size:13px;color:var(--text-muted);margin:0;padding:12px 18px 0;">${t('set.agentFeatureHint')}</p>
+          <div class="settings-block">
+            <div class="settings-row" style="border-bottom:none;">
+              <div class="settings-row-label">
+                <span>${t('set.agentFeatureToggle')}</span>
+              </div>
+              <div class="settings-row-control">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="agent-enabled-toggle" ${state.whiteLabel?.agentEnabled ? 'checked' : ''}>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
             </div>
           </div>
         </div>
@@ -262,135 +304,163 @@ export async function renderSettings() {
 
       <!-- Tab: Notifications -->
       <div class="tab-panel" id="tab-notifications">
-        <div class="settings-group-title">${t('set.webhooks')}</div>
-        <div class="settings-block">
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span>${t('set.webhookUrl')}</span>
-              <small>${t('set.webhookUrlHint')}</small>
-            </div>
-            <div class="settings-row-control">
-              <input class="form-input" type="url" id="webhook-url" value="${esc(wl.webhookUrl || '')}" placeholder="https://discord.com/api/webhooks/…" style="max-width:420px;width:100%;">
+        <div class="panel dash-panel" style="margin-bottom:24px;">
+          <div class="dash-panel-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon"><i class="fas fa-globe"></i></div>
+              <span class="dash-panel-title">${t('set.webhooks')}</span>
             </div>
           </div>
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span>${t('set.webhookSecret')}</span>
-              <small>${t('set.webhookSecretHint')}</small>
+          <div class="settings-block">
+            <div class="settings-row">
+              <div class="settings-row-label">
+                <span>${t('set.webhookUrl')}</span>
+                <small>${t('set.webhookUrlHint')}</small>
+              </div>
+              <div class="settings-row-control">
+                <input class="form-input" type="url" id="webhook-url" value="${esc(wl.webhookUrl || '')}" placeholder="https://discord.com/api/webhooks/…" style="max-width:420px;width:100%;">
+              </div>
             </div>
-            <div class="settings-row-control">
-              <input class="form-input" type="password" id="webhook-secret" value="${esc(wl.webhookSecret || '')}" placeholder="optional" style="max-width:420px;width:100%;" autocomplete="off">
+            <div class="settings-row">
+              <div class="settings-row-label">
+                <span>${t('set.webhookSecret')}</span>
+                <small>${t('set.webhookSecretHint')}</small>
+              </div>
+              <div class="settings-row-control">
+                <input class="form-input" type="password" id="webhook-secret" value="${esc(wl.webhookSecret || '')}" placeholder="optional" style="max-width:420px;width:100%;" autocomplete="off">
+              </div>
             </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-label"></div>
-            <div class="settings-row-control" style="display:flex;gap:8px;">
-              <button class="btn btn-primary btn-sm" id="btn-save-webhook">
-                <i class="fas fa-save"></i> ${t('set.webhookSave')}
-              </button>
-              <button class="btn btn-secondary btn-sm" id="btn-test-webhook">
-                <i class="fas fa-paper-plane"></i> ${t('set.webhookTest')}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="settings-group-title">${t('set.smtp')}</div>
-        <div class="settings-block">
-          <div class="settings-row">
-            <div class="settings-row-label"><span>${t('set.smtpHost')}</span></div>
-            <div class="settings-row-control" style="display:grid;grid-template-columns:1fr 90px;gap:8px;max-width:420px;width:100%;">
-              <input class="form-input" type="text" id="smtp-host" value="${esc(wl.smtpHost || '')}" placeholder="smtp.example.com">
-              <input class="form-input" type="number" id="smtp-port" value="${esc(wl.smtpPort || '587')}" placeholder="587">
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-label"><span>${t('set.smtpUser')}</span></div>
-            <div class="settings-row-control">
-              <input class="form-input" type="text" id="smtp-user" value="${esc(wl.smtpUser || '')}" placeholder="user@example.com" autocomplete="off" style="max-width:420px;width:100%;">
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-label"><span>${t('set.smtpPass')}</span></div>
-            <div class="settings-row-control">
-              <input class="form-input" type="password" id="smtp-pass" value="" placeholder="••••••••" autocomplete="new-password" style="max-width:420px;width:100%;">
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-label"><span>${t('set.smtpFrom')}</span></div>
-            <div class="settings-row-control">
-              <input class="form-input" type="email" id="smtp-from" value="${esc(wl.smtpFrom || '')}" placeholder="shipyard@example.com" style="max-width:420px;width:100%;">
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span>${t('set.smtpTo')}</span>
-              <small>${t('set.smtpToHint')}</small>
-            </div>
-            <div class="settings-row-control">
-              <input class="form-input" type="text" id="smtp-to" value="${esc(wl.smtpTo || '')}" placeholder="admin@example.com" style="max-width:420px;width:100%;">
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-label"></div>
-            <div class="settings-row-control" style="display:flex;gap:8px;">
-              <button class="btn btn-primary btn-sm" id="btn-save-smtp">
-                <i class="fas fa-save"></i> ${t('common.save')}
-              </button>
-              <button class="btn btn-secondary btn-sm" id="btn-test-smtp">
-                <i class="fas fa-paper-plane"></i> ${t('set.webhookTest')}
-              </button>
+            <div class="settings-row">
+              <div class="settings-row-label"></div>
+              <div class="settings-row-control" style="display:flex;gap:8px;">
+                <button class="btn btn-primary btn-sm" id="btn-save-webhook">
+                  <i class="fas fa-save"></i> ${t('set.webhookSave')}
+                </button>
+                <button class="btn btn-secondary btn-sm" id="btn-test-webhook">
+                  <i class="fas fa-paper-plane"></i> ${t('set.webhookTest')}
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
-        <div class="settings-group-title" style="margin-top:20px;">Notification Events</div>
-        <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px 0;padding:0 4px;">
-          Choose which failures trigger a notification. Notifications are sent only if webhook or email is configured above.
-        </p>
-        <div class="settings-block">
-          <div class="settings-row">
-            <div class="settings-row-label">
-              <span>Playbook failure</span>
-              <small>Notify when an Ansible playbook fails</small>
-            </div>
-            <div class="settings-row-control">
-              <label class="toggle-switch">
-                <input type="checkbox" id="notif-playbook-failed" ${wl.notifPlaybookFailed !== false ? 'checked' : ''}>
-                <span class="toggle-slider"></span>
-              </label>
+        <div class="panel dash-panel" style="margin-bottom:24px;">
+          <div class="dash-panel-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon"><i class="fas fa-envelope"></i></div>
+              <span class="dash-panel-title">${t('set.smtp')}</span>
             </div>
           </div>
-          <div class="settings-row" style="border-bottom:none;">
-            <div class="settings-row-label">
-              <span>Update failure</span>
-              <small>Notify when a system or bulk update fails</small>
+          <div class="settings-block">
+            <div class="settings-row">
+              <div class="settings-row-label"><span>${t('set.smtpHost')}</span></div>
+              <div class="settings-row-control" style="display:grid;grid-template-columns:1fr 90px;gap:8px;max-width:420px;width:100%;">
+                <input class="form-input" type="text" id="smtp-host" value="${esc(wl.smtpHost || '')}" placeholder="smtp.example.com">
+                <input class="form-input" type="number" id="smtp-port" value="${esc(wl.smtpPort || '587')}" placeholder="587">
+              </div>
             </div>
-            <div class="settings-row-control">
-              <label class="toggle-switch">
-                <input type="checkbox" id="notif-update-failed" ${wl.notifUpdateFailed !== false ? 'checked' : ''}>
-                <span class="toggle-slider"></span>
-              </label>
+            <div class="settings-row">
+              <div class="settings-row-label"><span>${t('set.smtpUser')}</span></div>
+              <div class="settings-row-control">
+                <input class="form-input" type="text" id="smtp-user" value="${esc(wl.smtpUser || '')}" placeholder="user@example.com" autocomplete="off" style="max-width:420px;width:100%;">
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-label"><span>${t('set.smtpPass')}</span></div>
+              <div class="settings-row-control">
+                <input class="form-input" type="password" id="smtp-pass" value="" placeholder="••••••••" autocomplete="new-password" style="max-width:420px;width:100%;">
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-label"><span>${t('set.smtpFrom')}</span></div>
+              <div class="settings-row-control">
+                <input class="form-input" type="email" id="smtp-from" value="${esc(wl.smtpFrom || '')}" placeholder="shipyard@example.com" style="max-width:420px;width:100%;">
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-label">
+                <span>${t('set.smtpTo')}</span>
+                <small>${t('set.smtpToHint')}</small>
+              </div>
+              <div class="settings-row-control">
+                <input class="form-input" type="text" id="smtp-to" value="${esc(wl.smtpTo || '')}" placeholder="admin@example.com" style="max-width:420px;width:100%;">
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-label"></div>
+              <div class="settings-row-control" style="display:flex;gap:8px;">
+                <button class="btn btn-primary btn-sm" id="btn-save-smtp">
+                  <i class="fas fa-save"></i> ${t('common.save')}
+                </button>
+                <button class="btn btn-secondary btn-sm" id="btn-test-smtp">
+                  <i class="fas fa-paper-plane"></i> ${t('set.webhookTest')}
+                </button>
+              </div>
             </div>
           </div>
+        </div>
+
+        <div class="panel dash-panel" style="margin-bottom:24px;">
+          <div class="dash-panel-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon"><i class="fas fa-bell"></i></div>
+              <span class="dash-panel-title">Notification Events</span>
+            </div>
+          </div>
+          <p style="font-size:13px;color:var(--text-muted);margin:0;padding:12px 18px 0;">
+            Choose which failures trigger a notification. Notifications are sent only if webhook or email is configured above.
+          </p>
+          <div class="settings-block">
+            <div class="settings-row">
+              <div class="settings-row-label">
+                <span>Playbook failure</span>
+                <small>Notify when an Ansible playbook fails</small>
+              </div>
+              <div class="settings-row-control">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="notif-playbook-failed" ${wl.notifPlaybookFailed !== false ? 'checked' : ''}>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+            <div class="settings-row" style="border-bottom:none;">
+              <div class="settings-row-label">
+                <span>Update failure</span>
+                <small>Notify when a system or bulk update fails</small>
+              </div>
+              <div class="settings-row-control">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="notif-update-failed" ${wl.notifUpdateFailed !== false ? 'checked' : ''}>
+                  <span class="toggle-slider"></span>
+                </label>
+            </div>
+          </div>
+        </div>
         </div>
       </div>
 
       <!-- Tab: Plugins -->
       <div class="tab-panel" id="tab-plugins">
-        <div class="settings-group-title">${t('set.plugins')}</div>
-        <p style="font-size:13px;color:var(--text-secondary);margin:0 0 8px;">
-          ${t('set.pluginsHint')}
-        </p>
-        <div class="settings-block" id="plugins-list-content">
-          <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
+        <div class="panel dash-panel" style="margin-bottom:24px;">
+          <div class="dash-panel-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon"><i class="fas fa-puzzle-piece"></i></div>
+              <span class="dash-panel-title">${t('set.plugins')}</span>
+            </div>
+            <div class="dash-panel-header-right">
+              <button class="btn btn-secondary btn-sm" id="btn-reload-plugins">
+                <i class="fas fa-rotate"></i> ${t('set.pluginsReload')}
+              </button>
+            </div>
+          </div>
+          <p style="font-size:13px;color:var(--text-secondary);margin:0;padding:12px 18px 0;">
+            ${t('set.pluginsHint')}
+          </p>
+          <div class="settings-block" id="plugins-list-content">
+            <div class="loading-state"><div class="loader"></div> ${t('common.loading')}</div>
+          </div>
         </div>
-        <div class="settings-inline-actions" style="margin-top:12px;display:flex;gap:8px;">
-          <button class="btn btn-secondary btn-sm" id="btn-reload-plugins">
-            <i class="fas fa-rotate"></i> ${t('set.pluginsReload')}
-          </button>
-        </div>
-        <div class="settings-block" style="margin-top:20px;background:var(--warning-bg);border:1px solid var(--warning);border-radius:var(--radius);padding:14px 16px;">
+        <div class="settings-block" style="background:var(--warning-bg);border:1px solid var(--warning);border-radius:var(--radius);padding:14px 16px;">
           <div style="display:flex;gap:10px;align-items:flex-start;">
             <i class="fas fa-triangle-exclamation" style="color:var(--warning);margin-top:2px;flex-shrink:0;"></i>
             <div style="font-size:13px;color:var(--text-secondary);">
@@ -403,16 +473,20 @@ export async function renderSettings() {
 
       <!-- Tab: Danger Zone -->
       <div class="tab-panel" id="tab-danger">
-        <div class="settings-group-title">
-          <i class="fas fa-triangle-exclamation"></i> ${t('set.danger')}
-        </div>
-        <p style="font-size:13px;color:var(--text-secondary);margin:0 0 16px;">
-          ${t('set.dangerHint')}
-        </p>
+        <div class="panel dash-panel" style="margin-bottom:24px;">
+          <div class="dash-panel-header">
+            <div class="dash-panel-header-left">
+              <div class="dash-panel-icon dash-panel-icon--warning"><i class="fas fa-triangle-exclamation"></i></div>
+              <span class="dash-panel-title">${t('set.danger')}</span>
+            </div>
+          </div>
+          <p style="font-size:13px;color:var(--text-secondary);margin:0;padding:12px 18px 0;">
+            ${t('set.dangerHint')}
+          </p>
 
-        <div class="danger-zone-block">
+          <div class="danger-zone-block">
 
-          <div class="settings-row">
+            <div class="settings-row">
             <div class="settings-row-label">
               <span>${t('set.delServers')}</span>
               <small>${t('set.delServersHint')}</small>
@@ -473,6 +547,7 @@ export async function renderSettings() {
           </div>
 
         </div>
+      </div>
       </div>
 
       <!-- Tab: Users -->
@@ -1305,63 +1380,77 @@ async function loadRolesTab() {
     const customRoles = roles.filter(r => !r.is_system);
 
     content.innerHTML = `
-      <div class="settings-group-title">Role Management</div>
-      <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
-        Roles control what servers, playbooks, and features each user can access.
-        The built-in <strong>Admin</strong> and <strong>User</strong> roles cannot be changed.
-      </div>
+      <div class="panel dash-panel" style="margin-bottom:24px;">
+        <div class="dash-panel-header">
+          <div class="dash-panel-header-left">
+            <div class="dash-panel-icon"><i class="fas fa-shield-halved"></i></div>
+            <span class="dash-panel-title">Role Management</span>
+          </div>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin:0;padding:12px 18px 0;">
+          Roles control what servers, playbooks, and features each user can access.
+          The built-in <strong>Admin</strong> and <strong>User</strong> roles cannot be changed.
+        </p>
 
-      <!-- Built-in roles -->
-      <div class="settings-block" style="margin-bottom:16px;">
-        ${roles.filter(r => r.is_system).map((r, i, arr) => `
-          <div class="settings-row" ${i === arr.length - 1 ? 'style="border-bottom:none;"' : ''}>
-            <div class="settings-row-label">
-              <span><i class="fas fa-lock" style="font-size:11px;color:var(--text-muted);margin-right:6px;"></i>${esc(r.name)}</span>
-              <small>${r.id === 'admin' ? 'Full access to everything' : 'Default access — all servers, playbooks and features'}</small>
-            </div>
-            <div class="settings-row-control">
-              <span class="badge badge-muted">Built-in</span>
-            </div>
-          </div>`).join('')}
+        <!-- Built-in roles -->
+        <div class="settings-block" style="margin-bottom:0;">
+          ${roles.filter(r => r.is_system).map((r, i, arr) => `
+            <div class="settings-row" ${i === arr.length - 1 ? 'style="border-bottom:none;"' : ''}>
+              <div class="settings-row-label">
+                <span><i class="fas fa-lock" style="font-size:11px;color:var(--text-muted);margin-right:6px;"></i>${esc(r.name)}</span>
+                <small>${r.id === 'admin' ? 'Full access to everything' : 'Default access — all servers, playbooks and features'}</small>
+              </div>
+              <div class="settings-row-control">
+                <span class="badge badge-muted">Built-in</span>
+              </div>
+            </div>`).join('')}
+        </div>
       </div>
 
       <!-- Custom roles -->
-      <div class="settings-group-title" style="margin-top:16px;">Custom Roles</div>
-      <div class="settings-block" id="roles-list">
-        ${customRoles.length === 0 ? `
-          <div class="settings-row" style="border-bottom:none;">
-            <div style="padding:20px 0;color:var(--text-muted);font-size:13px;text-align:center;width:100%;">
-              <i class="fas fa-shield-halved" style="opacity:.4;font-size:1.5rem;margin-bottom:8px;display:block;"></i>
-              No custom roles yet. Create one to restrict user access.
-            </div>
-          </div>` :
-          customRoles.map((r, i) => {
-            const p = r.permissions || {};
-            const serverSummary = p.servers === 'all' ? 'All servers'
-              : `${(p.servers?.groups || []).length} group(s), ${(p.servers?.servers || []).length} server(s)`;
-            const playbookSummary = p.playbooks === 'all' ? 'All playbooks' : `${(p.playbooks || []).length} playbook(s)`;
-            const pluginSummary  = p.plugins  === 'all' ? 'All plugins'  : `${(p.plugins  || []).length} plugin(s)`;
-            return `
-            <div class="settings-row" ${i === customRoles.length - 1 ? 'style="border-bottom:none;"' : ''}>
-              <div class="settings-row-label">
-                <span>${esc(r.name)}</span>
-                <small>${serverSummary} · ${playbookSummary} · ${pluginSummary}</small>
+      <div class="panel dash-panel" style="margin-bottom:24px;">
+        <div class="dash-panel-header">
+          <div class="dash-panel-header-left">
+            <div class="dash-panel-icon"><i class="fas fa-user-shield"></i></div>
+            <span class="dash-panel-title">Custom Roles</span>
+          </div>
+          <div class="dash-panel-header-right">
+            <button class="btn btn-primary btn-sm" id="btn-add-role">
+              <i class="fas fa-plus"></i> New Role
+            </button>
+          </div>
+        </div>
+        <div class="settings-block" id="roles-list">
+          ${customRoles.length === 0 ? `
+            <div class="settings-row" style="border-bottom:none;">
+              <div style="padding:20px 0;color:var(--text-muted);font-size:13px;text-align:center;width:100%;">
+                <i class="fas fa-shield-halved" style="opacity:.4;font-size:1.5rem;margin-bottom:8px;display:block;"></i>
+                No custom roles yet. Create one to restrict user access.
               </div>
-              <div class="settings-row-control" style="gap:8px;">
-                <button class="btn btn-secondary btn-sm btn-edit-role" data-id="${esc(r.id)}"><i class="fas fa-edit"></i> Edit</button>
-                <button class="btn btn-danger btn-sm btn-del-role" data-id="${esc(r.id)}" data-name="${esc(r.name)}"><i class="fas fa-trash"></i></button>
-              </div>
-            </div>`;
-          }).join('')
-        }
+            </div>` :
+            customRoles.map((r, i) => {
+              const p = r.permissions || {};
+              const serverSummary = p.servers === 'all' ? 'All servers'
+                : `${(p.servers?.groups || []).length} group(s), ${(p.servers?.servers || []).length} server(s)`;
+              const playbookSummary = p.playbooks === 'all' ? 'All playbooks' : `${(p.playbooks || []).length} playbook(s)`;
+              const pluginSummary  = p.plugins  === 'all' ? 'All plugins'  : `${(p.plugins  || []).length} plugin(s)`;
+              return `
+              <div class="settings-row" ${i === customRoles.length - 1 ? 'style="border-bottom:none;"' : ''}>
+                <div class="settings-row-label">
+                  <span>${esc(r.name)}</span>
+                  <small>${serverSummary} · ${playbookSummary} · ${pluginSummary}</small>
+                </div>
+                <div class="settings-row-control" style="gap:8px;">
+                  <button class="btn btn-secondary btn-sm btn-edit-role" data-id="${esc(r.id)}"><i class="fas fa-edit"></i> Edit</button>
+                  <button class="btn btn-danger btn-sm btn-del-role" data-id="${esc(r.id)}" data-name="${esc(r.name)}"><i class="fas fa-trash"></i></button>
+                </div>
+              </div>`;
+            }).join('')
+          }
+        </div>
       </div>
 
-      <div style="margin-top:12px;">
-        <button class="btn btn-primary btn-sm" id="btn-add-role">
-          <i class="fas fa-plus"></i> New Role
-        </button>
-      </div>
-      <div id="roles-form-area" style="margin-top:16px;"></div>
+      <div id="roles-form-area"></div>
     `;
 
     // Store for form use
@@ -1708,13 +1797,19 @@ async function loadUsersTab() {
     }
 
     content.innerHTML = `
-      <div class="settings-group-title" style="display:flex;align-items:center;justify-content:space-between;">
-        <span>User Management</span>
-        <button class="btn btn-primary btn-sm" id="btn-add-user">
-          <i class="fas fa-user-plus"></i> Add User
-        </button>
-      </div>
-      <div class="settings-block" id="users-list">
+      <div class="panel dash-panel" style="margin-bottom:24px;">
+        <div class="dash-panel-header">
+          <div class="dash-panel-header-left">
+            <div class="dash-panel-icon"><i class="fas fa-users"></i></div>
+            <span class="dash-panel-title">User Management</span>
+          </div>
+          <div class="dash-panel-header-right">
+            <button class="btn btn-primary btn-sm" id="btn-add-user">
+              <i class="fas fa-user-plus"></i> Add User
+            </button>
+          </div>
+        </div>
+        <div class="settings-block" id="users-list">
         ${users.length === 0 ? `
           <div class="settings-row" style="border-bottom:none;">
             <div style="padding:20px 0;color:var(--text-muted);font-size:13px;text-align:center;width:100%;">
@@ -1755,6 +1850,7 @@ async function loadUsersTab() {
             </div>`;
           }).join('')
         }
+      </div>
       </div>
       <div id="users-form-area" style="margin-top:12px;"></div>
     `;
@@ -1955,50 +2051,64 @@ async function loadAgentManifestTab() {
 
     const jsonStr = JSON.stringify(manifest?.content || {}, null, 2);
     content.innerHTML = `
-      <div class="settings-group-title" style="display:flex;align-items:center;justify-content:space-between;">
-        <span>${t('set.agentManifestTitle')}</span>
-        <button class="btn btn-secondary btn-sm" id="btn-agent-manifest-reload"><i class="fas fa-rotate"></i> ${t('set.agentManifestReload')}</button>
-      </div>
-      <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px 0;">${t('set.agentManifestHint')}</p>
-      <div class="settings-block">
-        <div class="settings-row">
-          <div class="settings-row-label"><span>${t('set.agentManifestVersion', { version: manifest?.version || 1 })}</span></div>
-          <div class="settings-row-control"></div>
-        </div>
-        <div class="settings-row">
-          <div class="settings-row-label">
-            <span>JSON</span>
+      <div class="panel dash-panel" style="margin-bottom:24px;">
+        <div class="dash-panel-header">
+          <div class="dash-panel-header-left">
+            <div class="dash-panel-icon"><i class="fas fa-robot"></i></div>
+            <span class="dash-panel-title">${t('set.agentManifestTitle')}</span>
           </div>
-          <div class="settings-row-control">
-            <textarea id="agent-manifest-json" class="form-input" rows="16" style="width:100%;max-width:900px;font-family:var(--font-mono);font-size:12px;line-height:1.4;white-space:pre;">${esc(jsonStr)}</textarea>
+          <div class="dash-panel-header-right">
+            <button class="btn btn-secondary btn-sm" id="btn-agent-manifest-reload"><i class="fas fa-rotate"></i> ${t('set.agentManifestReload')}</button>
           </div>
         </div>
-        <div class="settings-row" style="border-bottom:none;">
-          <div class="settings-row-label">
-            <span>${t('set.agentManifestChangelog')}</span>
+        <p style="font-size:13px;color:var(--text-muted);margin:0;padding:12px 18px 0;">${t('set.agentManifestHint')}</p>
+        <div class="settings-block">
+          <div class="settings-row">
+            <div class="settings-row-label"><span>${t('set.agentManifestVersion', { version: manifest?.version || 1 })}</span></div>
+            <div class="settings-row-control"></div>
           </div>
-          <div class="settings-row-control" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-            <input id="agent-manifest-changelog" class="form-input" type="text" placeholder="${t('set.agentManifestChangelogPlaceholder')}" style="max-width:420px;width:100%;">
-            <button class="btn btn-primary btn-sm" id="btn-agent-manifest-save"><i class="fas fa-save"></i> ${t('set.agentManifestSave')}</button>
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span>JSON</span>
+            </div>
+            <div class="settings-row-control">
+              <textarea id="agent-manifest-json" class="form-input" rows="16" style="width:100%;max-width:900px;font-family:var(--font-mono);font-size:12px;line-height:1.4;white-space:pre;">${esc(jsonStr)}</textarea>
+            </div>
+          </div>
+          <div class="settings-row" style="border-bottom:none;">
+            <div class="settings-row-label">
+              <span>${t('set.agentManifestChangelog')}</span>
+            </div>
+            <div class="settings-row-control" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <input id="agent-manifest-changelog" class="form-input" type="text" placeholder="${t('set.agentManifestChangelogPlaceholder')}" style="max-width:420px;width:100%;">
+              <button class="btn btn-primary btn-sm" id="btn-agent-manifest-save"><i class="fas fa-save"></i> ${t('set.agentManifestSave')}</button>
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="settings-group-title" style="margin-top:20px;">${t('set.agentManifestHistory')}</div>
-      <div class="settings-block" id="agent-manifest-history">
-        ${history.length ? history.map((h, i) => `
-          <div class="settings-row" ${i === history.length - 1 ? 'style="border-bottom:none;"' : ''}>
-            <div style="flex:1;min-width:0;">
-              <div style="font-size:13px;font-weight:600;">v${esc(String(h.version))}</div>
-              <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${esc(h.changelog || '—')}</div>
+      <div class="panel dash-panel" style="margin-bottom:24px;">
+        <div class="dash-panel-header">
+          <div class="dash-panel-header-left">
+            <div class="dash-panel-icon"><i class="fas fa-clock-rotate-left"></i></div>
+            <span class="dash-panel-title">${t('set.agentManifestHistory')}</span>
+          </div>
+        </div>
+        <div class="settings-block" id="agent-manifest-history">
+          ${history.length ? history.map((h, i) => `
+            <div class="settings-row" ${i === history.length - 1 ? 'style="border-bottom:none;"' : ''}>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;font-weight:600;">v${esc(String(h.version))}</div>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${esc(h.changelog || '—')}</div>
+              </div>
+              <div style="font-size:11px;color:var(--text-muted);flex-shrink:0;">${esc(h.created_at || '')}</div>
             </div>
-            <div style="font-size:11px;color:var(--text-muted);flex-shrink:0;">${esc(h.created_at || '')}</div>
-          </div>
-        `).join('') : `
-          <div class="settings-row" style="border-bottom:none;">
-            <div style="padding:14px 0;color:var(--text-muted);font-size:13px;">${t('set.agentManifestNoHistory')}</div>
-          </div>
-        `}
+          `).join('') : `
+            <div class="settings-row" style="border-bottom:none;">
+              <div style="padding:14px 0;color:var(--text-muted);font-size:13px;">${t('set.agentManifestNoHistory')}</div>
+            </div>
+          `}
+        </div>
       </div>
     `;
 
@@ -2097,48 +2207,53 @@ async function loadAuditTab() {
     const userOpts = meta.users.map(u => `<option value="${esc(u)}" ${filters.user === u ? 'selected' : ''}>${esc(u)}</option>`).join('');
 
     content.innerHTML = `
-      <div class="settings-group-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-        <span>${t('set.auditTitle')}</span>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:11px;color:var(--text-muted);">${t('set.auditTotal', { n: meta.count })} · ${t('set.auditRetention')}</span>
-          <button class="btn btn-secondary btn-sm" id="btn-refresh-audit"><i class="fas fa-rotate"></i> ${t('set.auditRefresh')}</button>
+      <div class="panel dash-panel" style="margin-bottom:24px;">
+        <div class="dash-panel-header">
+          <div class="dash-panel-header-left">
+            <div class="dash-panel-icon"><i class="fas fa-scroll"></i></div>
+            <span class="dash-panel-title">${t('set.auditTitle')}</span>
+          </div>
+          <div class="dash-panel-header-right" style="gap:8px;">
+            <span style="font-size:11px;color:var(--text-muted);">${t('set.auditTotal', { n: meta.count })} · ${t('set.auditRetention')}</span>
+            <button class="btn btn-secondary btn-sm" id="btn-refresh-audit"><i class="fas fa-rotate"></i> ${t('set.auditRefresh')}</button>
+          </div>
         </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;padding:12px 18px;">
+          <div>
+            <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px;">${t('set.auditFilterAction')}</label>
+            <select id="audit-f-action" class="form-input" style="font-size:12px;min-width:140px;padding:4px 6px;">
+              <option value="">${t('set.auditFilterAll')}</option>
+              ${actionOpts}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px;">${t('set.auditFilterUser')}</label>
+            <select id="audit-f-user" class="form-input" style="font-size:12px;min-width:120px;padding:4px 6px;">
+              <option value="">${t('set.auditFilterAll')}</option>
+              ${userOpts}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px;">${t('set.auditFilterStatus')}</label>
+            <select id="audit-f-success" class="form-input" style="font-size:12px;min-width:100px;padding:4px 6px;">
+              <option value="">${t('set.auditFilterAll')}</option>
+              <option value="1" ${filters.success === '1' ? 'selected' : ''}>${t('set.auditStatusOk')}</option>
+              <option value="0" ${filters.success === '0' ? 'selected' : ''}>${t('set.auditStatusFailed')}</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px;">${t('set.auditFilterFrom')}</label>
+            <input id="audit-f-from" type="date" class="form-input" style="font-size:12px;padding:4px 6px;" value="${esc(filters.from)}">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px;">${t('set.auditFilterTo')}</label>
+            <input id="audit-f-to" type="date" class="form-input" style="font-size:12px;padding:4px 6px;" value="${esc(filters.to)}">
+          </div>
+          <button class="btn btn-secondary btn-sm" id="audit-f-reset" style="padding:4px 8px;font-size:11px;">${t('set.auditFilterReset')}</button>
+        </div>
+        <div class="settings-block" id="audit-list"></div>
+        <div style="text-align:center;padding:8px 0;" id="audit-more-wrap"></div>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;padding:8px 0 12px;">
-        <div>
-          <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px;">${t('set.auditFilterAction')}</label>
-          <select id="audit-f-action" class="form-input" style="font-size:12px;min-width:140px;padding:4px 6px;">
-            <option value="">${t('set.auditFilterAll')}</option>
-            ${actionOpts}
-          </select>
-        </div>
-        <div>
-          <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px;">${t('set.auditFilterUser')}</label>
-          <select id="audit-f-user" class="form-input" style="font-size:12px;min-width:120px;padding:4px 6px;">
-            <option value="">${t('set.auditFilterAll')}</option>
-            ${userOpts}
-          </select>
-        </div>
-        <div>
-          <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px;">${t('set.auditFilterStatus')}</label>
-          <select id="audit-f-success" class="form-input" style="font-size:12px;min-width:100px;padding:4px 6px;">
-            <option value="">${t('set.auditFilterAll')}</option>
-            <option value="1" ${filters.success === '1' ? 'selected' : ''}>${t('set.auditStatusOk')}</option>
-            <option value="0" ${filters.success === '0' ? 'selected' : ''}>${t('set.auditStatusFailed')}</option>
-          </select>
-        </div>
-        <div>
-          <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px;">${t('set.auditFilterFrom')}</label>
-          <input id="audit-f-from" type="date" class="form-input" style="font-size:12px;padding:4px 6px;" value="${esc(filters.from)}">
-        </div>
-        <div>
-          <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px;">${t('set.auditFilterTo')}</label>
-          <input id="audit-f-to" type="date" class="form-input" style="font-size:12px;padding:4px 6px;" value="${esc(filters.to)}">
-        </div>
-        <button class="btn btn-secondary btn-sm" id="audit-f-reset" style="padding:4px 8px;font-size:11px;">${t('set.auditFilterReset')}</button>
-      </div>
-      <div class="settings-block" id="audit-list"></div>
-      <div style="text-align:center;padding:8px 0;" id="audit-more-wrap"></div>
     `;
 
     renderRows();
@@ -2220,64 +2335,157 @@ export async function loadGitSettingsTab() {
 
 function renderGitSetupPanel() {
   return `
-    <div class="settings-group-title"><i class="fab fa-git-alt"></i> Git Sync</div>
-    <p style="font-size:13px;color:var(--text-muted);margin:0 0 16px 0;">
-      ${t('git.setupHint')}
-    </p>
+    <div class="panel dash-panel" style="margin-bottom:24px;">
+      <div class="dash-panel-header">
+        <div class="dash-panel-header-left">
+          <div class="dash-panel-icon"><i class="fab fa-git-alt"></i></div>
+          <span class="dash-panel-title">Git Sync</span>
+        </div>
+      </div>
+      <p style="font-size:13px;color:var(--text-muted);margin:0;padding:12px 18px 0;">
+        ${t('git.setupHint')}
+      </p>
 
-    <form id="git-setup-form">
+      <form id="git-setup-form">
+        <div class="settings-block">
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span>${t('git.repoUrl')}</span>
+              <small>${t('git.repoUrlSmallHint')}</small>
+            </div>
+            <div class="settings-row-control">
+              <input class="form-input" type="text" id="git-repo-url"
+                style="max-width:420px;width:100%;"
+                placeholder="https://github.com/user/repo.git">
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span>${t('git.authToken')}</span>
+              <small>${t('git.authTokenHint')}</small>
+            </div>
+            <div class="settings-row-control">
+              <input class="form-input" type="password" id="git-auth-token"
+                style="max-width:420px;width:100%;"
+                placeholder="ghp_xxxxxxxxxxxx" autocomplete="off">
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span>${t('git.sshKey')}</span>
+              <small>${t('git.sshKeyHint')}</small>
+            </div>
+            <div class="settings-row-control">
+              <textarea class="form-input" id="git-ssh-key" rows="5"
+                style="max-width:420px;width:100%;font-family:var(--font-mono);font-size:11px;resize:vertical;"
+                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"></textarea>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span>${t('git.userName')}</span>
+              <small>${t('git.userNameHint')}</small>
+            </div>
+            <div class="settings-row-control">
+              <input class="form-input" type="text" id="git-user-name"
+                style="max-width:220px;width:100%;" placeholder="Shipyard Bot">
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span>${t('git.userEmail')}</span>
+              <small>${t('git.userEmailHint')}</small>
+            </div>
+            <div class="settings-row-control">
+              <input class="form-input" type="email" id="git-user-email"
+                style="max-width:280px;width:100%;" placeholder="bot@example.com">
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span>${t('git.autoPull')}</span>
+              <small>${t('git.autoPullHint')}</small>
+            </div>
+            <div class="settings-row-control">
+              <label class="toggle-switch">
+                <input type="checkbox" id="git-auto-pull" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <span>${t('git.autoPush')}</span>
+              <small>${t('git.autoPushHint')}</small>
+            </div>
+            <div class="settings-row-control">
+              <label class="toggle-switch">
+                <input type="checkbox" id="git-auto-push" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label"></div>
+            <div class="settings-row-control">
+              <button type="submit" class="btn btn-primary btn-sm">
+                <i class="fas fa-plug"></i> ${t('git.connectRepo')}
+              </button>
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>`;
+}
+
+function renderGitDashboardPanel(cfg) {
+  return `
+    <div class="panel dash-panel" style="margin-bottom:24px;">
+      <div class="dash-panel-header">
+        <div class="dash-panel-header-left">
+          <div class="dash-panel-icon"><i class="fab fa-git-alt"></i></div>
+          <span class="dash-panel-title">Git Sync</span>
+        </div>
+        <div class="dash-panel-header-right">
+          <button id="btn-git-disconnect" class="btn btn-danger btn-sm">
+            <i class="fas fa-unlink"></i> ${t('git.disconnectBtn')}
+          </button>
+        </div>
+      </div>
+
       <div class="settings-block">
         <div class="settings-row">
           <div class="settings-row-label">
-            <span>${t('git.repoUrl')}</span>
-            <small>${t('git.repoUrlSmallHint')}</small>
+            <span>${t('git.connectedRemote')}</span>
+            <small>${t('git.connectedRemoteSmall')}</small>
           </div>
           <div class="settings-row-control">
-            <input class="form-input" type="text" id="git-repo-url"
-              style="max-width:420px;width:100%;"
-              placeholder="https://github.com/user/repo.git">
+            <code style="font-size:12px;color:var(--text-muted);word-break:break-all;">${esc(cfg.repoUrl || '')}</code>
           </div>
         </div>
         <div class="settings-row">
           <div class="settings-row-label">
-            <span>${t('git.authToken')}</span>
-            <small>${t('git.authTokenHint')}</small>
+            <span>${t('git.branch')}</span>
+            <small>${t('git.activeBranchSmall')}</small>
           </div>
-          <div class="settings-row-control">
-            <input class="form-input" type="password" id="git-auth-token"
-              style="max-width:420px;width:100%;"
-              placeholder="ghp_xxxxxxxxxxxx" autocomplete="off">
-          </div>
-        </div>
-        <div class="settings-row">
-          <div class="settings-row-label">
-            <span>${t('git.sshKey')}</span>
-            <small>${t('git.sshKeyHint')}</small>
-          </div>
-          <div class="settings-row-control">
-            <textarea class="form-input" id="git-ssh-key" rows="5"
-              style="max-width:420px;width:100%;font-family:var(--font-mono);font-size:11px;resize:vertical;"
-              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"></textarea>
+          <div class="settings-row-control" style="gap:8px;">
+            <select id="git-branch-select" class="form-input" style="max-width:200px;width:100%;"></select>
+            <button id="btn-git-checkout" class="btn btn-secondary btn-sm">${t('git.switchBranch')}</button>
           </div>
         </div>
         <div class="settings-row">
           <div class="settings-row-label">
-            <span>${t('git.userName')}</span>
-            <small>${t('git.userNameHint')}</small>
+            <span>${t('git.syncManual')}</span>
+            <small>${t('git.syncManualSmall')}</small>
           </div>
-          <div class="settings-row-control">
-            <input class="form-input" type="text" id="git-user-name"
-              style="max-width:220px;width:100%;" placeholder="Shipyard Bot">
-          </div>
-        </div>
-        <div class="settings-row">
-          <div class="settings-row-label">
-            <span>${t('git.userEmail')}</span>
-            <small>${t('git.userEmailHint')}</small>
-          </div>
-          <div class="settings-row-control">
-            <input class="form-input" type="email" id="git-user-email"
-              style="max-width:280px;width:100%;" placeholder="bot@example.com">
+          <div class="settings-row-control" style="gap:8px;flex-wrap:wrap;">
+            <button id="btn-git-pull" class="btn btn-secondary btn-sm">
+              <i class="fas fa-arrow-down"></i> ${t('git.pull')}
+            </button>
+            <button id="btn-git-push" class="btn btn-secondary btn-sm">
+              <i class="fas fa-arrow-up"></i> ${t('git.push')}
+            </button>
+            <span id="git-status-msg" style="font-size:12px;color:var(--text-muted);margin-left:4px;"></span>
           </div>
         </div>
         <div class="settings-row">
@@ -2287,7 +2495,7 @@ function renderGitSetupPanel() {
           </div>
           <div class="settings-row-control">
             <label class="toggle-switch">
-              <input type="checkbox" id="git-auto-pull" checked>
+              <input type="checkbox" id="git-auto-pull" ${cfg.autoPull !== false ? 'checked' : ''}>
               <span class="toggle-slider"></span>
             </label>
           </div>
@@ -2299,7 +2507,7 @@ function renderGitSetupPanel() {
           </div>
           <div class="settings-row-control">
             <label class="toggle-switch">
-              <input type="checkbox" id="git-auto-push" checked>
+              <input type="checkbox" id="git-auto-push" ${cfg.autoPush !== false ? 'checked' : ''}>
               <span class="toggle-slider"></span>
             </label>
           </div>
@@ -2307,96 +2515,21 @@ function renderGitSetupPanel() {
         <div class="settings-row">
           <div class="settings-row-label"></div>
           <div class="settings-row-control">
-            <button type="submit" class="btn btn-primary btn-sm">
-              <i class="fas fa-plug"></i> ${t('git.connectRepo')}
+            <button id="btn-git-save-settings" class="btn btn-primary btn-sm">
+              <i class="fas fa-save"></i> ${t('git.saveSettings')}
             </button>
           </div>
         </div>
       </div>
-    </form>`;
-}
-
-function renderGitDashboardPanel(cfg) {
-  return `
-    <div class="settings-group-title"><i class="fab fa-git-alt"></i> Git Sync</div>
-
-    <div class="settings-block">
-      <div class="settings-row">
-        <div class="settings-row-label">
-          <span>${t('git.connectedRemote')}</span>
-          <small>${t('git.connectedRemoteSmall')}</small>
-        </div>
-        <div class="settings-row-control" style="gap:12px;">
-          <code style="font-size:12px;color:var(--text-muted);word-break:break-all;">${esc(cfg.repoUrl || '')}</code>
-          <button id="btn-git-disconnect" class="btn btn-danger btn-sm" style="flex-shrink:0;margin-left:auto;">
-            <i class="fas fa-unlink"></i> ${t('git.disconnectBtn')}
-          </button>
-        </div>
-      </div>
-      <div class="settings-row">
-        <div class="settings-row-label">
-          <span>${t('git.branch')}</span>
-          <small>${t('git.activeBranchSmall')}</small>
-        </div>
-        <div class="settings-row-control" style="gap:8px;">
-          <select id="git-branch-select" class="form-input" style="max-width:200px;width:100%;"></select>
-          <button id="btn-git-checkout" class="btn btn-secondary btn-sm">${t('git.switchBranch')}</button>
-        </div>
-      </div>
-      <div class="settings-row">
-        <div class="settings-row-label">
-          <span>${t('git.syncManual')}</span>
-          <small>${t('git.syncManualSmall')}</small>
-        </div>
-        <div class="settings-row-control" style="gap:8px;flex-wrap:wrap;">
-          <button id="btn-git-pull" class="btn btn-secondary btn-sm">
-            <i class="fas fa-arrow-down"></i> ${t('git.pull')}
-          </button>
-          <button id="btn-git-push" class="btn btn-secondary btn-sm">
-            <i class="fas fa-arrow-up"></i> ${t('git.push')}
-          </button>
-          <span id="git-status-msg" style="font-size:12px;color:var(--text-muted);margin-left:4px;"></span>
-        </div>
-      </div>
-      <div class="settings-row">
-        <div class="settings-row-label">
-          <span>${t('git.autoPull')}</span>
-          <small>${t('git.autoPullHint')}</small>
-        </div>
-        <div class="settings-row-control">
-          <label class="toggle-switch">
-            <input type="checkbox" id="git-auto-pull" ${cfg.autoPull !== false ? 'checked' : ''}>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-      </div>
-      <div class="settings-row">
-        <div class="settings-row-label">
-          <span>${t('git.autoPush')}</span>
-          <small>${t('git.autoPushHint')}</small>
-        </div>
-        <div class="settings-row-control">
-          <label class="toggle-switch">
-            <input type="checkbox" id="git-auto-push" ${cfg.autoPush !== false ? 'checked' : ''}>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-      </div>
-      <div class="settings-row">
-        <div class="settings-row-label"></div>
-        <div class="settings-row-control">
-          <button id="btn-git-save-settings" class="btn btn-primary btn-sm">
-            <i class="fas fa-save"></i> ${t('git.saveSettings')}
-          </button>
-        </div>
-      </div>
     </div>
 
-    <div class="settings-group-title" style="margin-top:24px;">${t('git.recentCommits')}</div>
-    <div class="settings-block">
-      <div class="settings-row" style="justify-content:space-between;padding:8px 16px;gap:12px;flex-wrap:wrap;">
-        <div id="git-log-meta" style="font-size:12px;color:var(--text-muted);">${t('git.loadingCommits')}</div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+    <div class="panel dash-panel" style="margin-bottom:24px;">
+      <div class="dash-panel-header">
+        <div class="dash-panel-header-left">
+          <div class="dash-panel-icon"><i class="fas fa-code-commit"></i></div>
+          <span class="dash-panel-title">${t('git.recentCommits')}</span>
+        </div>
+        <div class="dash-panel-header-right" style="gap:8px;">
           <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);">
             <span>${t('git.perPage')}</span>
             <select id="git-log-limit" class="form-input" style="width:auto;min-width:72px;padding:4px 24px 4px 8px;font-size:12px;">
@@ -2405,11 +2538,12 @@ function renderGitDashboardPanel(cfg) {
           </label>
           <button id="btn-git-log-prev" class="btn btn-secondary btn-sm" disabled>${t('git.prev')}</button>
           <button id="btn-git-log-next" class="btn btn-secondary btn-sm" disabled>${t('git.next')}</button>
-        <button id="btn-git-refresh-log" class="btn btn-secondary btn-sm">
-          <i class="fas fa-rotate"></i> ${t('git.refresh')}
-        </button>
+          <button id="btn-git-refresh-log" class="btn btn-secondary btn-sm">
+            <i class="fas fa-rotate"></i> ${t('git.refresh')}
+          </button>
         </div>
       </div>
+      <div id="git-log-meta" style="font-size:12px;color:var(--text-muted);padding:8px 18px 0;">${t('git.loadingCommits')}</div>
       <div id="git-log-list" style="padding:0 20px 12px;font-family:var(--font-mono);font-size:12px;color:var(--text-muted);line-height:1.8;">
         <div class="loading-state" style="padding:16px;"><div class="loader"></div></div>
       </div>

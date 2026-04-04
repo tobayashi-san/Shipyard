@@ -56,14 +56,13 @@ export async function renderServerDetail(serverId) {
           <i class="fas fa-arrow-left"></i>
         </button>
         <div class="server-detail-title-wrap">
-          <div class="server-detail-kicker">Server Overview</div>
           <h2 class="server-detail-title">
             ${esc(server.name)}
             <span class="badge badge-${server.status === 'online' ? 'online' : server.status === 'offline' ? 'offline' : 'unknown'}">
               <span class="status-dot ${dotCls}"></span>${statusLabel}
             </span>
           </h2>
-          <p class="text-mono server-detail-subline">${esc(server.ip_address)}${server.hostname ? ' · ' + esc(server.hostname) : ''}</p>
+          <p class="text-mono server-detail-subline">${esc(server.ip_address)}${server.hostname && server.hostname !== server.ip_address ? ' · ' + esc(server.hostname) : ''}</p>
         </div>
       </div>
       <div class="page-header-actions server-detail-actions">

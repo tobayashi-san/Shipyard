@@ -229,8 +229,9 @@ export async function showProfileModal() {
 
       <!-- Account -->
       <div style="padding:20px 24px;border-bottom:1px solid var(--border);">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:14px;">
-          ${t('profile.account')}
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+          <div class="dash-panel-icon" style="width:28px;height:28px;font-size:12px;"><i class="fas fa-user-pen"></i></div>
+          <span style="font-size:13px;font-weight:600;color:var(--text-primary);">${t('profile.account')}</span>
         </div>
         <div style="display:flex;flex-direction:column;gap:12px;">
           <div style="display:flex;align-items:center;gap:12px;">
@@ -259,9 +260,12 @@ export async function showProfileModal() {
       <!-- Password -->
       <div style="padding:20px 24px;border-bottom:1px solid var(--border);">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0;" id="pw-row">
-          <div>
-            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:2px;">${t('profile.passwordSection')}</div>
-            <div style="font-size:12px;color:var(--text-muted);">${t('profile.passwordDots')}</div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="dash-panel-icon" style="width:28px;height:28px;font-size:12px;"><i class="fas fa-key"></i></div>
+            <div>
+              <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:2px;">${t('profile.passwordSection')}</div>
+              <div style="font-size:12px;color:var(--text-muted);">${t('profile.passwordDots')}</div>
+            </div>
           </div>
           <button class="btn btn-secondary btn-sm" id="profile-pw-toggle">
             <i class="fas fa-key"></i> ${t('profile.changePassword')}
@@ -281,9 +285,12 @@ export async function showProfileModal() {
       <!-- 2FA -->
       <div style="padding:20px 24px;">
         <div style="display:flex;align-items:center;justify-content:space-between;">
-          <div>
-            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:2px;">${t('profile.twoFactor')}</div>
-            <div style="font-size:12px;" id="profile-2fa-status">${t('profile.checking')}</div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="dash-panel-icon" style="width:28px;height:28px;font-size:12px;"><i class="fas fa-shield-halved"></i></div>
+            <div>
+              <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:2px;">${t('profile.twoFactor')}</div>
+              <div style="font-size:12px;" id="profile-2fa-status">${t('profile.checking')}</div>
+            </div>
           </div>
           <div id="profile-2fa-control"></div>
         </div>
