@@ -52,7 +52,7 @@ function renderQuickLinksPanel(links = []) {
     <div class="panel dash-panel quick-links-panel">
       <div class="dash-panel-header">
         <div class="dash-panel-header-left">
-          <div class="dash-panel-icon"><i class="fas fa-grid-2"></i></div>
+          <div class="dash-panel-icon"><i class="fas fa-link"></i></div>
           <span class="dash-panel-title">${t('det.quickLinks')}</span>
         </div>
       </div>
@@ -95,6 +95,16 @@ function renderThresholdBar(pct) {
       <div class="progress-threshold progress-threshold--85"></div>
       <div class="progress-threshold progress-threshold--95"></div>
       <div class="progress-bar-fill ${cls}" style="width:${safePct}%"></div>
+    </div>
+  `;
+}
+
+function renderThresholdLegend() {
+  return `
+    <div class="resource-threshold-legend">
+      <span><span class="resource-threshold-dot resource-threshold-dot--70"></span>70%</span>
+      <span><span class="resource-threshold-dot resource-threshold-dot--85"></span>85%</span>
+      <span><span class="resource-threshold-dot resource-threshold-dot--95"></span>95%</span>
     </div>
   `;
 }
@@ -239,37 +249,8 @@ export async function renderServerDetail(serverId) {
                 <tr><td>${t('det.cores')}</td><td id="inf-cores">—</td></tr>
                 <tr><td>${t('det.loadAvg')}</td><td id="inf-load">—</td></tr>
               </table>
-            </div>
-
-          </div>
-
-          <!-- Resources + Network -->
-          <div class="server-detail-stack">
-            <div class="panel dash-panel">
-              <div class="dash-panel-header">
-                <div class="dash-panel-header-left">
-                  <div class="dash-panel-icon"><i class="fas fa-chart-bar"></i></div>
-                  <span class="dash-panel-title">${t('det.resources')}</span>
-                </div>
-                <div class="dash-panel-header-right">
-                  <button class="btn btn-icon" id="btn-refresh-info" title="${t('common.refresh')}">
-                    <i class="fas fa-sync-alt"></i>
-                  </button>
-                </div>
-              </div>
-              <div id="res-content">
-                <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
-              </div>
-            </div>
-
-            <!-- Network Panel -->
-            <div class="panel dash-panel">
-              <div class="dash-panel-header">
-                <div class="dash-panel-header-left">
-                  <div class="dash-panel-icon"><i class="fas fa-network-wired"></i></div>
-                  <span class="dash-panel-title">${t('det.network')}</span>
-                </div>
-              </div>
+              <div class="info-table-divider"></div>
+              <div class="info-table-section-title">${t('det.network')}</div>
               <table class="info-table" id="network-table">
                 <tr>
                   <td>${t('det.ipAddress')}</td>
@@ -296,6 +277,28 @@ export async function renderServerDetail(serverId) {
                 <tr><td>${t('det.sshPort')}</td><td id="net-port" class="mono">${server.ssh_port || 22}</td></tr>
                 <tr><td>${t('det.sshUser')}</td><td class="mono">${esc(server.ssh_user || 'root')}</td></tr>
               </table>
+            </div>
+
+          </div>
+
+          <!-- Resources -->
+          <div class="server-detail-stack">
+            <div class="panel dash-panel">
+              <div class="dash-panel-header">
+                <div class="dash-panel-header-left">
+                  <div class="dash-panel-icon"><i class="fas fa-chart-bar"></i></div>
+                  <span class="dash-panel-title">${t('det.resources')}</span>
+                </div>
+                <div class="dash-panel-header-right">
+                  ${renderThresholdLegend()}
+                  <button class="btn btn-icon" id="btn-refresh-info" title="${t('common.refresh')}">
+                    <i class="fas fa-sync-alt"></i>
+                  </button>
+                </div>
+              </div>
+              <div id="res-content">
+                <div class="loading-state"><div class="loader"></div> ${t('det.loading')}</div>
+              </div>
             </div>
           </div>
         </div>

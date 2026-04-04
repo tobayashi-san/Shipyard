@@ -1184,6 +1184,20 @@ button:focus-visible,
   color: var(--text-primary);
 }
 
+.info-table-divider {
+  margin: 4px 16px 0;
+  border-top: 1px solid var(--border);
+}
+
+.info-table-section-title {
+  padding: 12px 16px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 /* ============================================
    Progress Bars
    ============================================ */
@@ -2889,6 +2903,11 @@ input[type=number] {
   margin-bottom: 2px;
 }
 
+.res-block > .res-row:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
 .res-subsection {
   padding: 12px 16px 4px;
   font-size: 11px;
@@ -3757,6 +3776,7 @@ input[type=number] {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .dash-panel-icon {
@@ -3801,11 +3821,46 @@ input[type=number] {
 }
 
 .quick-links-panel {
-  margin-bottom: 16px;
+  margin-top: 2px;
+  margin-bottom: 18px;
 }
 
 .quick-links-panel-body {
-  padding: 0 16px 16px;
+  padding: 14px 16px 16px;
+}
+
+.resource-threshold-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.resource-threshold-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.resource-threshold-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.resource-threshold-dot--70 {
+  background: color-mix(in srgb, var(--warning) 65%, var(--online));
+}
+
+.resource-threshold-dot--85 {
+  background: var(--warning);
+}
+
+.resource-threshold-dot--95 {
+  background: var(--offline);
 }
 
 .server-link-chip {
