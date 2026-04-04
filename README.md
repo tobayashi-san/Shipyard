@@ -1,6 +1,6 @@
 # Shipyard
 
-Web dashboard for managing Linux servers — SSH, system monitoring, OS updates, Docker, and Ansible playbooks in a single interface.
+Web dashboard for managing Linux servers — SSH access, monitoring, Docker workloads, updates, and Ansible automation in a single interface.
 
 > **Do not expose Shipyard to the public internet.**
 > It stores SSH private keys and has direct shell access to all managed servers.
@@ -56,7 +56,7 @@ docker compose up -d
 ```
 
 With `:latest`, this updates Shipyard to the newest **stable** release.
-Release candidates are published as explicit tags (for example `:1.0.2-rc.20`) and do not move `latest`.
+Release candidates are published as explicit versioned tags (for example `:1.0.4-rc.7`) and do not move `latest`.
 
 ## Documentation
 
@@ -64,27 +64,32 @@ Release candidates are published as explicit tags (for example `:1.0.2-rc.20`) a
 
 ## Screenshots
 
+Current screenshots are captured from a seeded local demo instance. Primary assets live in `docs/images/`, additional UI shots in `docs/images/demo/`.
+
 ![Dashboard](docs/images/Dashboard.png)
 
 <details>
 <summary>More screenshots</summary>
 
+![Servers](docs/images/demo/Servers.png)
 ![Server Detail](docs/images/Server-Detail.png)
 ![Docker](docs/images/Docker.png)
+![Updates](docs/images/demo/Updates.png)
 ![Terminal](docs/images/Terminal.png)
 ![Playbooks](docs/images/Playbooks.png)
+![Quick Run](docs/images/demo/Quick-Run.png)
 
 </details>
 
 ## Features
 
-- **Servers** — add, edit, group, bulk import/export (JSON or CSV)
-- **Monitoring** — CPU, RAM, disk, uptime, load average via SSH polling or directly from the Shipyard Agent
+- **Servers** — add, edit, group, tag, attach quick links, and bulk import/export (JSON or CSV)
+- **Monitoring** — CPU, RAM, disk, mounted storage, uptime, and load average via SSH polling or directly from the Shipyard Agent
 - **OS Updates** — via Ansible (`apt`, `dnf`, `pacman`, …) with live terminal output
 - **Custom Update Tasks** — track scripts or GitHub releases, shows current vs. latest
 - **Docker & Compose** — container overview, logs, restart, edit and run Compose stacks
 - **Ansible** — built-in YAML editor, version history, cron scheduler, live output
-- **SSH Terminal** — browser-based, resizable, ANSI-aware
+- **SSH Terminal** — browser-based, resizable, ANSI-aware, with live session status
 - **SSH Key Management** — auto-generate Ed25519, deploy via UI, AES-256-GCM encryption at rest
 - **Notifications** — webhooks (Discord, Slack) and SMTP email alerts
 - **Auth & Security** — JWT, RBAC with custom roles, TOTP/2FA, audit log, rate limiting, HTTPS
