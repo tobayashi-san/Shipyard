@@ -6,6 +6,14 @@ import { t } from '../i18n.js';
 import { esc } from '../utils/format.js';
 import { activateDialog } from '../utils/dialog.js';
 
+export function renderBrandMark(branding = {}, fallbackIcon = 'fa-ship', alt = 'Brand logo') {
+  if (branding.showIcon === false) return '';
+  if (branding.logoImage) {
+    return `<div class="sidebar-logo-image-wrap"><img class="sidebar-logo-image" src="${esc(branding.logoImage)}" alt="${esc(alt)}"></div>`;
+  }
+  return `<div class="sidebar-logo-icon"><i class="fas ${esc(branding.logoIcon || fallbackIcon)}"></i></div>`;
+}
+
 // ============================================================
 // White-label config (stored in DB via API)
 // ============================================================
@@ -29,20 +37,49 @@ export function applyWhiteLabel() {
   const defaultName = 'Shipyard';
   const defaultTagline = 'Infrastructure';
   const defaultAccent = '#3b82f6';
+  const defaultIcon = 'fa-ship';
 
   const name = wl.appName || defaultName;
   const tagline = wl.appTagline || defaultTagline;
   const accent = wl.accentColor || defaultAccent;
+  const icon = wl.logoIcon || defaultIcon;
+  const logoImage = wl.logoImage || '';
 
   document.title = name;
+  const metaDescription = document.querySelector('meta[name="description"]');
+  if (metaDescription) metaDescription.setAttribute('content', `${name} - ${tagline}`);
+  let themeColor = document.querySelector('meta[name="theme-color"]');
+  if (!themeColor) {
+    themeColor = document.createElement('meta');
+    themeColor.setAttribute('name', 'theme-color');
+    document.head.appendChild(themeColor);
+  }
+  themeColor.setAttribute('content', accent);
   document.querySelectorAll('.sidebar-logo-text h1').forEach(el => el.textContent = name);
   document.querySelectorAll('.sidebar-logo-text span').forEach(el => el.textContent = tagline);
   document.documentElement.style.setProperty('--accent', accent);
   document.documentElement.style.setProperty('--accent-hover', shadeColor(accent, -15));
   document.documentElement.style.setProperty('--accent-light', hexToLight(accent));
+  const accentRgb = hexToRgb(accent);
+  if (accentRgb) document.documentElement.style.setProperty('--accent-rgb', accentRgb);
   document.documentElement.dataset.theme = localStorage.getItem('theme') || 'auto';
-  const logoIcon = document.querySelector('.sidebar-logo-icon');
-  if (logoIcon) logoIcon.style.display = wl.showIcon === false ? 'none' : '';
+  document.querySelectorAll('.sidebar-logo-icon').forEach((logoIcon) => {
+    logoIcon.style.display = wl.showIcon === false ? 'none' : '';
+    const iconEl = logoIcon.querySelector('i');
+    if (iconEl) iconEl.className = `fas ${icon}`;
+  });
+  document.querySelectorAll('.sidebar-logo-image').forEach((img) => {
+    img.src = logoImage || '';
+  });
+
+  let favicon = document.querySelector('link[rel="icon"]');
+  if (!favicon) {
+    favicon = document.createElement('link');
+    favicon.setAttribute('rel', 'icon');
+    favicon.setAttribute('type', 'image/svg+xml');
+    document.head.appendChild(favicon);
+  }
+  favicon.setAttribute('href', buildFaviconDataUrl(icon, accent));
 }
 
 function shadeColor(hex, pct) {
@@ -60,6 +97,27 @@ function hexToLight(hex) {
   const g = (n >> 8) & 0xFF;
   const b = n & 0xFF;
   return `rgba(${r},${g},${b},0.12)`;
+}
+
+function hexToRgb(hex) {
+  const value = String(hex || '').trim().replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(value)) return null;
+  const n = parseInt(value, 16);
+  return `${(n >> 16) & 0xFF}, ${((n >> 8) & 0xFF)}, ${n & 0xFF}`;
+}
+
+function buildFaviconDataUrl(icon, accent) {
+  const glyphs = {
+    'fa-ship': '\uF21A',
+    'fa-server': '\uF233',
+    'fa-terminal': '\uF120',
+    'fa-shield-halved': '\uF3ED',
+    'fa-cubes': '\uF1B3',
+    'fa-network-wired': '\uF6FF',
+  };
+  const glyph = glyphs[icon] || glyphs['fa-ship'];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="8" y="8" width="48" height="48" rx="12" fill="${accent}"/><text x="32" y="41" text-anchor="middle" font-family="Font Awesome 6 Free" font-weight="900" font-size="24" fill="#ffffff">${glyph}</text></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
 // ============================================================
@@ -160,10 +218,28 @@ export async function renderSettings() {
               <small>Show icon in the sidebar header</small>
             </div>
             <div class="settings-row-control">
-              <label class="toggle-switch">
-                <input type="checkbox" id="wl-show-icon" ${wl.showIcon !== false ? 'checked' : ''}>
-                <span class="toggle-slider"></span>
-              </label>
+              <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="wl-show-icon" ${wl.showIcon !== false ? 'checked' : ''}>
+                  <span class="toggle-slider"></span>
+                </label>
+                <select class="form-input" id="wl-logo-icon" style="max-width:180px;">
+                  ${[
+                    ['fa-ship', 'Ship'],
+                    ['fa-server', 'Server'],
+                    ['fa-terminal', 'Terminal'],
+                    ['fa-shield-halved', 'Shield'],
+                    ['fa-cubes', 'Cubes'],
+                    ['fa-network-wired', 'Network'],
+                  ].map(([value, label]) => `<option value="${value}" ${((wl.logoIcon || 'fa-ship') === value) ? 'selected' : ''}>${label}</option>`).join('')}
+                </select>
+                <label class="btn btn-secondary btn-sm" style="cursor:pointer;">
+                  <i class="fas fa-image"></i> Logo Upload
+                  <input type="file" id="wl-logo-upload" accept="image/png,image/jpeg,image/svg+xml,image/webp" style="display:none;">
+                </label>
+                ${wl.logoImage ? `<button class="btn btn-secondary btn-sm" id="wl-logo-clear"><i class="fas fa-times"></i> Remove logo</button>` : ''}
+              </div>
+              <input type="hidden" id="wl-logo-image" value="${esc(wl.logoImage || '')}">
             </div>
           </div>
           <div class="settings-row">
@@ -660,10 +736,35 @@ function setupSettingsEvents(wl) {
   // Sync color picker <-> hex input
   const picker = document.getElementById('wl-color');
   const hexInput = document.getElementById('wl-color-hex');
+  const logoUpload = document.getElementById('wl-logo-upload');
+  const logoImageInput = document.getElementById('wl-logo-image');
   picker?.addEventListener('input', () => { if (hexInput) hexInput.value = picker.value; });
   hexInput?.addEventListener('input', () => {
     const val = hexInput.value.trim();
     if (/^#[0-9a-fA-F]{6}$/.test(val) && picker) picker.value = val;
+  });
+
+  logoUpload?.addEventListener('change', () => {
+    const file = logoUpload.files?.[0];
+    if (!file || !logoImageInput) return;
+    if (file.size > 150 * 1024) {
+      showToast('Logo file too large (max 150 KB)', 'error');
+      logoUpload.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      logoImageInput.value = typeof reader.result === 'string' ? reader.result : '';
+      showToast('Logo loaded. Save to apply.', 'success');
+    };
+    reader.onerror = () => showToast('Failed to read logo file', 'error');
+    reader.readAsDataURL(file);
+  });
+
+  document.getElementById('wl-logo-clear')?.addEventListener('click', () => {
+    if (logoImageInput) logoImageInput.value = '';
+    if (logoUpload) logoUpload.value = '';
+    showToast('Custom logo removed. Save to apply.', 'success');
   });
 
   document.getElementById('btn-save-wl')?.addEventListener('click', async () => {
@@ -676,6 +777,8 @@ function setupSettingsEvents(wl) {
         appTagline:  document.getElementById('wl-tagline').value.trim() || undefined,
         accentColor: document.getElementById('wl-color').value,
         showIcon:    document.getElementById('wl-show-icon').checked,
+        logoIcon:    document.getElementById('wl-logo-icon').value,
+        logoImage:   document.getElementById('wl-logo-image').value || '',
       });
       showToast(t('set.toastSaved'), 'success');
     } catch {
@@ -690,7 +793,7 @@ function setupSettingsEvents(wl) {
     const btn = document.getElementById('btn-reset-wl');
     btn.disabled = true;
     try {
-      await api.saveSettings({ appName: '', appTagline: '', accentColor: '' });
+      await api.saveSettings({ appName: '', appTagline: '', accentColor: '', logoIcon: '', logoImage: '', showIcon: true });
       state.whiteLabel = {};
       document.documentElement.style.removeProperty('--accent');
       document.documentElement.style.removeProperty('--accent-hover');
@@ -703,6 +806,9 @@ function setupSettingsEvents(wl) {
       document.getElementById('wl-tagline').value = '';
       document.getElementById('wl-color').value = '#3b82f6';
       document.getElementById('wl-color-hex').value = '#3b82f6';
+      document.getElementById('wl-logo-image').value = '';
+      document.getElementById('wl-logo-icon').value = 'fa-ship';
+      document.getElementById('wl-show-icon').checked = true;
       showToast(t('set.toastReset'), 'success');
     } catch {
       showToast(t('set.toastErrorReset'), 'error');

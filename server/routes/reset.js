@@ -107,6 +107,9 @@ router.delete('/all', resetLimiter, adminOnly, (req, res) => {
     db.settings.set('wl_app_name', '');
     db.settings.set('wl_app_tagline', '');
     db.settings.set('wl_accent_color', '');
+    db.settings.set('wl_logo_icon', '');
+    db.settings.set('wl_logo_image', '');
+    db.settings.set('wl_show_icon', '1');
     db.settings.set('ui_theme', 'auto');
     db.settings.set('onboarding_done', '');
     db.auditLog.write('reset.all', 'Full factory reset performed', req.ip, true, req.user?.username);

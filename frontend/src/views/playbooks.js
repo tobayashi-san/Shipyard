@@ -173,7 +173,7 @@ export async function renderPlaybooks() {
       </button>` : ''}
         </div>
 
-        <div id="pb-tab-content" class="page-content">
+        <div id="pb-tab-content" class="playbooks-page-content">
           ${renderTabContent(activeTab)}
         </div>
       </div>
@@ -269,12 +269,17 @@ function renderTemplatesHTML() {
   const templateMobileView = currentTemplateMobileView();
   return `
     <div class="page-content-grid playbooks-layout ${mobileLayout ? `playbooks-mobile-view-${templateMobileView}` : ''}">
-      <div class="panel playbook-list-panel" id="playbook-list-panel" style="padding:0;overflow:hidden;">
-        <div class="pb-panel-toolbar">
-          <span class="pb-panel-title">Playbooks</span>
-          ${hasCap('canEditPlaybooks') ? `<button class="btn btn-secondary btn-sm" id="btn-new-playbook" title="${t('pb.new')}" style="padding:3px 8px;">
-            <i class="fas fa-plus"></i>
-          </button>` : ''}
+      <div class="panel dash-panel playbook-list-panel" id="playbook-list-panel" style="padding:0;overflow:hidden;">
+        <div class="dash-panel-header playbook-list-header">
+          <div class="dash-panel-header-left">
+            <div class="dash-panel-icon"><i class="fas fa-file-code"></i></div>
+            <span class="dash-panel-title">Playbooks</span>
+          </div>
+          <div class="dash-panel-header-right">
+            ${hasCap('canEditPlaybooks') ? `<button class="btn btn-secondary btn-sm" id="btn-new-playbook" title="${t('pb.new')}">
+              <i class="fas fa-plus"></i>
+            </button>` : ''}
+          </div>
         </div>
         <div class="pb-search-wrap">
           <i class="fas fa-search pb-search-icon"></i>
@@ -342,24 +347,24 @@ function renderTemplatesHTML() {
             <div class="form-group" id="run-exclude-group">
               <label class="form-label">${t('run.excludeServers')}</label>
               <div class="form-hint">${t('run.excludeHint')}</div>
-              <div style="border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-panel-alt);max-height:180px;overflow-y:auto;">
+              <div class="playbooks-select-list playbooks-select-list--run exclude-mode">
                 ${state.servers.map(s => `
-                  <label style="display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:1px solid var(--border);cursor:pointer;">
-                    <input type="checkbox" class="run-exclude-cb" value="${esc(s.name)}" style="accent-color:var(--accent);">
-                    <span style="flex:1;">${esc(s.name)}</span>
-                    <span class="badge badge-${s.status === 'online' ? 'online' : 'offline'}" style="font-size:10px;">${s.status === 'online' ? t('common.online') : t('common.offline')}</span>
+                  <label class="playbooks-select-row">
+                    <input type="checkbox" class="run-exclude-cb" value="${esc(s.name)}">
+                    <span class="playbooks-select-label">${esc(s.name)}</span>
+                    <span class="badge playbooks-status-badge badge-${s.status === 'online' ? 'online' : 'offline'}">${s.status === 'online' ? t('common.online') : t('common.offline')}</span>
                   </label>
                 `).join('')}
               </div>
             </div>
-            <div style="padding-top:4px;">
-              <button class="btn btn-primary" id="btn-run-confirm">
+            <div class="playbooks-action-row">
+              <button class="btn btn-primary playbooks-primary-action" id="btn-run-confirm">
                 <i class="fas fa-play"></i> ${t('common.run')}
               </button>
             </div>
           </div>
-          <div id="run-output" class="hidden" style="border-top:1px solid var(--border);">
-            <div class="terminal" style="border:none;border-radius:0;">
+          <div id="run-output" class="playbooks-terminal-output hidden">
+            <div class="terminal">
               <div class="terminal-header">
                 <div class="terminal-title" id="run-terminal-title">${t('pb.output')}</div>
               </div>
@@ -393,7 +398,7 @@ async function loadPlaybookList() {
       return;
     }
   } catch (e) {
-    listEl.innerHTML = `<p style="padding:12px;color:var(--offline);">${t('pb.loadError', { msg: esc(e.message) })}</p>`;
+      listEl.innerHTML = `<p class="playbooks-error-text">${t('pb.loadError', { msg: esc(e.message) })}</p>`;
     return;
   }
 
@@ -743,23 +748,20 @@ function renderQuickRunHTML() {
           <div class="form-group">
             <label class="form-label">${t('qr.targets')}</label>
             <div class="form-hint" id="qr-target-hint">${t('run.includeHint')}</div>
-            <div id="qr-server-list" style="
-              border:1px solid var(--border);border-radius:var(--radius);
-              background:var(--bg-panel-alt);max-height:220px;overflow-y:auto;
-            ">
-              <label style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);cursor:pointer;">
+            <div id="qr-server-list" class="playbooks-select-list playbooks-select-list--quick">
+              <label class="playbooks-select-row playbooks-select-row--primary">
                 <input type="checkbox" id="qr-all" value="all" style="accent-color:var(--accent);">
-                <span style="font-weight:500;">${t('pb.allServers')}</span>
+                <span class="playbooks-select-label playbooks-select-label--strong">${t('pb.allServers')}</span>
               </label>
               ${state.servers.map(s => `
-                <label style="display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:1px solid var(--border);cursor:pointer;" class="qr-server-row">
-                  <input type="checkbox" class="qr-server-cb" value="${esc(s.name)}" style="accent-color:var(--accent);">
-                  <span style="flex:1;">${esc(s.name)}</span>
-                  <span class="badge badge-${s.status === 'online' ? 'online' : 'offline'}" style="font-size:10px;">${s.status === 'online' ? t('common.online') : t('common.offline')}</span>
+                <label class="playbooks-select-row qr-server-row">
+                  <input type="checkbox" class="qr-server-cb" value="${esc(s.name)}">
+                  <span class="playbooks-select-label">${esc(s.name)}</span>
+                  <span class="badge playbooks-status-badge badge-${s.status === 'online' ? 'online' : 'offline'}">${s.status === 'online' ? t('common.online') : t('common.offline')}</span>
                 </label>
               `).join('')}
-              <label style="display:flex;align-items:center;gap:10px;padding:7px 12px;cursor:pointer;" class="qr-server-row">
-                <input type="checkbox" class="qr-server-cb" value="localhost" style="accent-color:var(--accent);">
+              <label class="playbooks-select-row qr-server-row">
+                <input type="checkbox" class="qr-server-cb" value="localhost">
                 <span>localhost</span>
               </label>
             </div>
@@ -768,7 +770,7 @@ function renderQuickRunHTML() {
             <label class="form-label">${t('qr.extraVars')} <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
             <input class="form-input text-mono" type="text" id="qr-extra-vars" placeholder='{"key": "value"}'>
           </div>
-          <button class="btn btn-primary" id="btn-qr-run" style="width:100%;">
+          <button class="btn btn-primary playbooks-primary-action" id="btn-qr-run">
             <i class="fas fa-play"></i> ${t('qr.run')}
           </button>
         </div>
@@ -782,11 +784,11 @@ function renderQuickRunHTML() {
             <span class="dash-panel-title" id="qr-terminal-title">${t('pb.output')}</span>
           </div>
         </div>
-        <div id="qr-output-empty" style="padding:40px 24px;text-align:center;color:var(--text-muted);">
-          <i class="fas fa-play-circle" style="font-size:32px;margin-bottom:12px;opacity:.3;display:block;"></i>
+        <div id="qr-output-empty" class="playbooks-empty-output">
+          <i class="fas fa-play-circle"></i>
           ${t('pb.quickRunPlaceholder')}
         </div>
-        <div class="terminal-body" id="qr-terminal-body" style="display:none;min-height:300px;border-top:1px solid var(--border);"></div>
+        <div class="terminal-body playbooks-terminal-body" id="qr-terminal-body"></div>
       </div>
     </div>
   `;
@@ -814,10 +816,12 @@ function setupQuickRunEvents() {
 
   function syncQuickRunTargetMode() {
     const excludeMode = !!allCb?.checked;
+    const serverList = document.getElementById('qr-server-list');
     const localhostCb = document.querySelector('.qr-server-cb[value="localhost"]');
     if (hintEl) {
       hintEl.textContent = excludeMode ? t('run.excludeHint') : t('run.includeHint');
     }
+    if (serverList) serverList.classList.toggle('exclude-mode', excludeMode);
     if (localhostCb) {
       localhostCb.disabled = excludeMode;
       if (excludeMode) localhostCb.checked = false;
@@ -1046,8 +1050,8 @@ async function loadVarsList() {
         }
       });
     });
-  } catch (e) {
-    el.innerHTML = `<p style="padding:12px;color:var(--offline);">${e.message}</p>`;
+    } catch (e) {
+      el.innerHTML = `<p class="playbooks-error-text">${e.message}</p>`;
   }
 }
 
@@ -1276,8 +1280,8 @@ async function loadScheduleList() {
         }
       });
     });
-  } catch (e) {
-    el.innerHTML = `<p style="padding:12px;color:var(--offline);">${e.message}</p>`;
+    } catch (e) {
+      el.innerHTML = `<p class="playbooks-error-text">${e.message}</p>`;
   }
 }
 
@@ -1420,8 +1424,8 @@ async function loadHistoryList(scheduleId = null) {
         }
       });
     });
-  } catch (e) {
-    el.innerHTML = `<p style="padding:12px;color:var(--offline);">${e.message}</p>`;
+    } catch (e) {
+      el.innerHTML = `<p class="playbooks-error-text">${e.message}</p>`;
   }
 }
 
@@ -1434,13 +1438,13 @@ function showOutputModal(entry) {
   overlay.innerHTML = `
     <div class="modal modal-wide">
       <h2 id="hist-output-title"><i class="fas fa-file-alt"></i> ${esc(entry.schedule_name)} — ${esc(entry.playbook)}</h2>
-      <div class="terminal" style="margin:8px 0;max-height:60vh;">
+      <div class="terminal playbooks-terminal-modal">
         <div class="terminal-header">
           <div class="terminal-title">${formatDateTimeShort(entry.started_at)}</div>
         </div>
-        <div class="terminal-body" style="white-space:pre-wrap;">${esc(entry.output || t('adhoc.noOutput'))}</div>
+        <div class="terminal-body playbooks-terminal-prewrap">${esc(entry.output || t('adhoc.noOutput'))}</div>
       </div>
-      <div class="form-actions" style="padding-top:8px;">
+      <div class="form-actions playbooks-modal-actions-compact">
         <button class="btn btn-secondary" id="hist-modal-close">${t('common.close')}</button>
       </div>
     </div>
@@ -1476,18 +1480,18 @@ function showHistoryModal(filename, versions, onRestored) {
 
   function renderRows(openVersion = null) {
     if (versions.length === 0) {
-      return `<p style="color:var(--text-muted);padding:8px 0;font-size:13px;">${t('pb.noHistory')}</p>`;
+      return `<p class="playbooks-history-empty">${t('pb.noHistory')}</p>`;
     }
     return versions.map(v => {
       const isOpen = openVersion === v.version;
       return `
         <div class="pb-hist-row" data-version="${v.version}">
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">
-            <span style="font-size:13px;">
+          <div class="playbooks-history-row-head">
+            <span class="playbooks-history-row-title">
               <strong>${t('pb.historyVersion', { n: v.version })}</strong>
-              <span style="color:var(--text-muted);margin-left:8px;">${formatDateTimeShort(v.modifiedAt)}</span>
+              <span class="playbooks-history-row-date">${formatDateTimeShort(v.modifiedAt)}</span>
             </span>
-            <div style="display:flex;gap:6px;flex-shrink:0;">
+            <div class="playbooks-history-row-actions">
               <button class="btn btn-secondary btn-sm btn-preview-version" data-version="${v.version}"
                 title="${t('pb.historyPreview')}" style="${isOpen ? 'color:var(--accent);' : ''}">
                 <i class="fas fa-eye"></i>
@@ -1499,8 +1503,8 @@ function showHistoryModal(filename, versions, onRestored) {
             </div>
           </div>
           ${isOpen ? `
-          <div class="pb-hist-preview" style="margin-bottom:8px;">
-            <div class="loading-state" style="padding:12px;" id="pb-hist-preview-${v.version}">
+          <div class="pb-hist-preview playbooks-history-preview">
+            <div class="loading-state" id="pb-hist-preview-${v.version}">
               <div class="loader"></div>
             </div>
           </div>` : ''}
@@ -1512,10 +1516,10 @@ function showHistoryModal(filename, versions, onRestored) {
     overlay.innerHTML = `
       <div class="modal modal-wide">
         <h2 id="pb-history-title"><i class="fas fa-history"></i> ${t('pb.historyTitle')}</h2>
-        <div class="form-body" style="max-height:70vh;overflow-y:auto;" id="pb-hist-list">
+        <div class="form-body playbooks-scroll-body" id="pb-hist-list">
           ${renderRows(openVersion)}
         </div>
-        <div class="form-actions" style="padding-top:12px;">
+        <div class="form-actions playbooks-modal-actions">
           <button class="btn btn-secondary" id="pb-hist-close">${t('common.close')}</button>
         </div>
       </div>`;
@@ -1635,7 +1639,7 @@ async function openScheduleDialog(editId) {
           <div class="form-group">
             <label class="form-label">${t('sc.target')}</label>
             <div class="form-hint" id="sched-target-hint">${parsedTargets.mode === 'all' ? t('run.excludeHint') : t('run.includeHint')}</div>
-            <div id="sched-targets-box" style="border:1px solid var(--border);border-radius:var(--radius-sm);max-height:150px;overflow-y:auto;background:var(--bg-panel);">
+            <div id="sched-targets-box" class="playbooks-select-list playbooks-select-list--schedule">
               ${[
       { value: 'all', label: t('pb.allServers'), special: true },
       ...state.servers.map(s => ({ value: s.name, label: s.name })),
@@ -1649,9 +1653,9 @@ async function openScheduleDialog(editId) {
       } else {
         sel = parsedTargets.included.includes(opt.value);
       }
-      return `<label style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);">
+      return `<label class="playbooks-select-row">
                   <input type="checkbox" class="sched-target-cb" value="${esc(opt.value)}"${sel ? ' checked' : ''}${opt.special ? ' id="sched-target-all"' : ''}>
-                  ${opt.special ? `<span style="color:var(--text-muted);"><i class="fas fa-layer-group" style="margin-right:4px;"></i>${esc(opt.label)}</span>` : `<span>${esc(opt.label)}</span>`}
+                  ${opt.special ? `<span class="playbooks-select-special"><i class="fas fa-layer-group"></i>${esc(opt.label)}</span>` : `<span>${esc(opt.label)}</span>`}
                 </label>`;
     }).join('')}
             </div>
@@ -1663,10 +1667,10 @@ async function openScheduleDialog(editId) {
             </div>
             <div class="form-group" id="sched-time-group">
               <label class="form-label">${t('sc.time')}</label>
-              <div style="display:flex;align-items:center;gap:4px;">
-                <select class="form-input" id="sched-hour" style="width:72px;">${hourOptions}</select>
-                <span style="color:var(--text-muted);font-weight:600;">:</span>
-                <select class="form-input" id="sched-minute" style="width:72px;">${minuteOptions}</select>
+              <div class="playbooks-time-select">
+                <select class="form-input" id="sched-hour">${hourOptions}</select>
+                <span class="playbooks-time-separator">:</span>
+                <select class="form-input" id="sched-minute">${minuteOptions}</select>
               </div>
             </div>
           </div>
@@ -1710,7 +1714,9 @@ async function openScheduleDialog(editId) {
   const schedHint = document.getElementById('sched-target-hint');
   function syncScheduleTargetMode() {
     const excludeMode = !!allCb?.checked;
+    const targetsBox = document.getElementById('sched-targets-box');
     if (schedHint) schedHint.textContent = excludeMode ? t('run.excludeHint') : t('run.includeHint');
+    if (targetsBox) targetsBox.classList.toggle('exclude-mode', excludeMode);
     const localhostCb = document.querySelector('.sched-target-cb[value="localhost"]');
     if (localhostCb) {
       localhostCb.disabled = excludeMode;

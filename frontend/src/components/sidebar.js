@@ -4,6 +4,7 @@ import { showRunPlaybookModal } from '../modals/run-playbook-modal.js';
 import { showProfileMenu } from './profile.js';
 import { t } from '../i18n.js';
 import { esc } from '../utils/format.js';
+import { renderBrandMark } from '../views/settings.js';
 
 export function renderSidebar() {
   const sidebar = document.getElementById('sidebar');
@@ -37,7 +38,7 @@ export function renderSidebar() {
 
   sidebar.innerHTML = `
     <div class="sidebar-header">
-      ${state.whiteLabel?.showIcon !== false ? '<div class="sidebar-logo-icon"><i class="fas fa-ship"></i></div>' : ''}
+      ${renderBrandMark(state.whiteLabel || {}, 'fa-ship', 'Sidebar logo')}
       <div class="sidebar-logo-text">
         <h1>${esc(state.whiteLabel?.appName || 'Shipyard')}</h1>
         <span>${esc(state.whiteLabel?.appTagline || 'Infrastructure')}</span>

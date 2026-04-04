@@ -143,6 +143,9 @@ router.get('/settings', adminOnly, (req, res) => {
       appName:              raw.wl_app_name     || '',
       appTagline:           raw.wl_app_tagline  || '',
       accentColor:          raw.wl_accent_color || '',
+      showIcon:             raw.wl_show_icon    !== '0',
+      logoIcon:             raw.wl_logo_icon    || 'fa-ship',
+      logoImage:            raw.wl_logo_image   || '',
       theme:                raw.ui_theme        || 'auto',
       timeFormat:           raw.ui_time_format  || '24h',
       agentEnabled:         raw.agent_enabled   === '1',
@@ -164,7 +167,7 @@ router.get('/settings', adminOnly, (req, res) => {
 // PUT /api/system/settings - Save app settings
 router.put('/settings', adminOnly, (req, res) => {
   try {
-    const { appName, appTagline, accentColor, theme, timeFormat,
+    const { appName, appTagline, accentColor, showIcon, logoIcon, logoImage, theme, timeFormat,
             agentEnabled, webhookUrl, webhookSecret,
             smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom, smtpTo,
             notifPlaybookFailed, notifUpdateFailed } = req.body;
@@ -172,6 +175,9 @@ router.put('/settings', adminOnly, (req, res) => {
     if (appName       !== undefined) db.settings.set('wl_app_name',     str(appName, 100));
     if (appTagline    !== undefined) db.settings.set('wl_app_tagline',  str(appTagline, 500));
     if (accentColor   !== undefined) db.settings.set('wl_accent_color', str(accentColor, 20));
+    if (showIcon      !== undefined) db.settings.set('wl_show_icon',    showIcon ? '1' : '0');
+    if (logoIcon      !== undefined) db.settings.set('wl_logo_icon',    str(logoIcon, 64));
+    if (logoImage     !== undefined) db.settings.set('wl_logo_image',   str(logoImage, 200000));
     if (theme         !== undefined) db.settings.set('ui_theme',        str(theme, 20));
     if (timeFormat    !== undefined) db.settings.set('ui_time_format',  str(timeFormat, 10));
     if (agentEnabled !== undefined) {

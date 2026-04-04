@@ -1,5 +1,6 @@
 import { api } from '../api.js';
 import { t } from '../i18n.js';
+import { renderBrandMark } from './settings.js';
 
 /**
  * Renders the full-screen login or first-time-setup screen.
@@ -11,19 +12,22 @@ export async function renderLogin(onSuccess) {
     status = await api.getAuthStatus();
   } catch {
     // If the status check fails, assume configured (show login, not setup wizard)
-    status = { configured: true };
+    status = { configured: true, appName: 'Shipyard', appTagline: 'Infrastructure', accentColor: '#3b82f6', showIcon: true, logoIcon: 'fa-ship' };
   }
   const isSetup = !status.configured;
+  const appName = status.appName || 'Shipyard';
+  const appTagline = status.appTagline || 'Infrastructure';
+
+  document.title = appName;
+  document.documentElement.style.setProperty('--accent', status.accentColor || '#3b82f6');
 
   document.body.innerHTML = `
     <div class="login-screen">
       <div class="login-card">
         <div class="login-logo">
-          <div class="sidebar-logo-icon">
-            <i class="fas fa-ship"></i>
-          </div>
+          ${renderBrandMark(status, 'fa-ship', 'Login logo')}
           <div>
-            <div class="login-title">Shipyard</div>
+            <div class="login-title">${appName}</div>
             <div class="login-sub">${isSetup ? t('login.setup') : t('login.signin')}</div>
           </div>
         </div>
@@ -74,7 +78,7 @@ export async function renderLogin(onSuccess) {
             ${isSetup ? `<i class="fas fa-lock"></i> ${t('login.setPassword')}` : `<i class="fas fa-sign-in-alt"></i> ${t('login.loginBtn')}`}
           </button>
         </form>
-        <div class="login-footer">Infrastructure Control Plane</div>
+        <div class="login-footer">${appTagline}</div>
       </div>
     </div>
   `;
@@ -112,7 +116,7 @@ export async function renderLogin(onSuccess) {
         ? await api.authSetup(uname || 'admin', pw)
         : await api.authLogin(uname, pw);
       if (result.requires2FA) {
-        renderTotp(result.tempToken, onSuccess);
+        renderTotp(result.tempToken, onSuccess, { appName, appTagline, showIcon: status.showIcon, logoIcon: status.logoIcon });
         return;
       }
       api.setToken(result.token);
@@ -129,14 +133,16 @@ export async function renderLogin(onSuccess) {
   });
 }
 
-function renderTotp(tempToken, onSuccess) {
+function renderTotp(tempToken, onSuccess, branding = {}) {
+  const appName = branding.appName || 'Shipyard';
+  const appTagline = branding.appTagline || 'Infrastructure';
   document.body.innerHTML = `
     <div class="login-screen">
       <div class="login-card">
         <div class="login-logo">
-          <div class="sidebar-logo-icon"><i class="fas fa-shield-alt"></i></div>
+          ${renderBrandMark(branding, 'fa-shield-halved', 'Authentication logo')}
           <div>
-            <div class="login-title">Shipyard</div>
+            <div class="login-title">${appName}</div>
             <div class="login-sub">${t('login.totpTitle')}</div>
           </div>
         </div>
@@ -156,7 +162,7 @@ function renderTotp(tempToken, onSuccess) {
             ${t('login.totpBack')}
           </button>
         </form>
-        <div class="login-footer">Infrastructure Control Plane</div>
+        <div class="login-footer">${appTagline}</div>
       </div>
     </div>
   `;

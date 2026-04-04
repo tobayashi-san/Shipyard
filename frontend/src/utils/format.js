@@ -25,23 +25,23 @@ function h12() {
   return (localStorage.getItem('timeFormat') || '24h') === '12h';
 }
 
-/** dd.mm.yyyy hh:mm  (with year) */
+/** 15. Jan 2025, 14:30  (with year) */
 export function formatDateTimeFull(dateStr) {
   if (!dateStr) return '—';
   try {
     return toUtcDate(dateStr).toLocaleString(undefined, {
-      day: '2-digit', month: '2-digit', year: 'numeric',
+      day: 'numeric', month: 'short', year: 'numeric',
       hour: '2-digit', minute: '2-digit', hour12: h12(),
     });
   } catch { return String(dateStr); }
 }
 
-/** dd.mm. hh:mm  (without year) */
+/** 15. Jan, 14:30  (without year) */
 export function formatDateTimeShort(dateStr) {
   if (!dateStr) return '—';
   try {
     return toUtcDate(dateStr).toLocaleString(undefined, {
-      day: '2-digit', month: '2-digit',
+      day: 'numeric', month: 'short',
       hour: '2-digit', minute: '2-digit', hour12: h12(),
     });
   } catch { return String(dateStr); }

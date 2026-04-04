@@ -53,10 +53,21 @@ function makeTempToken(payload) {
 // GET /api/auth/status – is a password configured? Is onboarding done?
 router.get('/status', (req, res) => {
   const configured = db.users.count() > 0;
+  const appName = db.settings.get('wl_app_name') || 'Shipyard';
+  const appTagline = db.settings.get('wl_app_tagline') || 'Infrastructure';
+  const accentColor = db.settings.get('wl_accent_color') || '#3b82f6';
+  const logoIcon = db.settings.get('wl_logo_icon') || 'fa-ship';
+  const logoImage = db.settings.get('wl_logo_image') || '';
   res.json({
     configured,
     onboardingDone: !!db.settings.get('onboarding_done'),
     username: 'admin',
+    appName,
+    appTagline,
+    accentColor,
+    showIcon: db.settings.get('wl_show_icon') !== '0',
+    logoIcon,
+    logoImage,
   });
 });
 

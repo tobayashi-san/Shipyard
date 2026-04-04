@@ -719,7 +719,7 @@ async function loadRecentActivity(serverId) {
       const rawDate = String(item.started_at || '');
       const d = new Date(!rawDate.endsWith('Z') ? rawDate.replace(' ', 'T') + 'Z' : rawDate);
       const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const date = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+      const date = d.toLocaleDateString([], { day: 'numeric', month: 'short' });
       const ok = item.status === 'success';
       const fail = item.status === 'failed';
       return `

@@ -2,11 +2,29 @@ import { api } from '../api.js';
 import { showToast } from '../components/toast.js';
 import { t } from '../i18n.js';
 import { esc } from '../utils/format.js';
+import { renderBrandMark } from './settings.js';
 
 const STEPS = 5;
 
 export async function renderOnboarding() {
   let currentStep = 0;
+  let branding = { appName: 'Shipyard', appTagline: 'Infrastructure', accentColor: '#3b82f6', showIcon: true, logoIcon: 'fa-ship' };
+
+  try {
+    const status = await api.getAuthStatus();
+    branding = {
+      appName: status.appName || 'Shipyard',
+      appTagline: status.appTagline || 'Infrastructure',
+      accentColor: status.accentColor || '#3b82f6',
+      showIcon: status.showIcon !== false,
+      logoIcon: status.logoIcon || 'fa-ship',
+    };
+  } catch {
+    // Keep defaults if branding is unavailable before auth
+  }
+
+  document.title = branding.appName;
+  document.documentElement.style.setProperty('--accent', branding.accentColor);
 
   function stepBar() {
     return `
@@ -20,10 +38,10 @@ export async function renderOnboarding() {
   function logo() {
     return `
       <div class="onboarding-logo">
-        <div class="sidebar-logo-icon"><i class="fas fa-ship"></i></div>
+        ${renderBrandMark(branding, 'fa-ship', 'Onboarding logo')}
         <div>
-          <div class="login-title">Shipyard</div>
-          <div class="login-sub">${t('login.setup')}</div>
+          <div class="login-title">${branding.appName}</div>
+          <div class="login-sub">${branding.appTagline}</div>
         </div>
       </div>`;
   }
@@ -82,20 +100,20 @@ export async function renderOnboarding() {
         </p>
         <div class="form-group">
           <label class="form-label">${t('set.appName')}</label>
-          <input class="form-input" type="text" id="ob-name" placeholder="Shipyard">
+          <input class="form-input" type="text" id="ob-name" placeholder="Shipyard" value="${esc(branding.appName === 'Shipyard' ? '' : branding.appName)}">
         </div>
         <div class="form-group" style="margin-top:12px;">
           <label class="form-label">${t('set.tagline')}</label>
-          <input class="form-input" type="text" id="ob-tagline" placeholder="Infrastructure">
+          <input class="form-input" type="text" id="ob-tagline" placeholder="Infrastructure" value="${esc(branding.appTagline === 'Infrastructure' ? '' : branding.appTagline)}">
         </div>
         <div class="form-group" style="margin-top:12px;">
           <label class="form-label">${t('set.accentColor')}</label>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;align-items:center;">
             ${['#3b82f6','#6366f1','#8b5cf6','#ec4899','#14b8a6','#22c55e'].map(c => `
               <button class="ob-color-swatch" data-color="${c}" title="${c === '#3b82f6' ? c + ' (default)' : c}"
-                style="width:28px;height:28px;border-radius:50%;background:${c};border:2px solid ${c === '#3b82f6' ? 'rgba(255,255,255,0.9)' : 'transparent'};cursor:pointer;transition:border .15s;outline:none;">
+                style="width:28px;height:28px;border-radius:50%;background:${c};border:2px solid ${c === branding.accentColor ? 'rgba(255,255,255,0.9)' : 'transparent'};cursor:pointer;transition:border .15s;outline:none;">
               </button>`).join('')}
-            <input type="color" id="ob-color-picker" value="#3b82f6" title="${t('common.customColor')}"
+            <input type="color" id="ob-color-picker" value="${branding.accentColor}" title="${t('common.customColor')}"
               style="width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,0.12);cursor:pointer;padding:2px;background:none;">
           </div>
         </div>
@@ -270,7 +288,7 @@ export async function renderOnboarding() {
     btn.innerHTML = `<span class="spinner-sm"></span> ${t('common.save')}…`;
 
     try {
-      await api.saveSettings({ appName: name, appTagline: tagline, accentColor: color, theme });
+      await api.saveSettings({ appName: name, appTagline: tagline, accentColor: color, logoIcon: branding.logoIcon, showIcon: branding.showIcon, theme });
     } catch { /* nicht kritisch */ }
 
     setStep(3);
