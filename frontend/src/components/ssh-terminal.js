@@ -34,7 +34,9 @@ export function openSshTerminal(server) {
         <button id="ssh-term-close" style="background:none;border:none;color:var(--terminal-muted);font-size:22px;line-height:1;cursor:pointer;padding:0 2px;">×</button>
       </div>
     </div>
-    <div id="ssh-term-container" style="flex:1;overflow:hidden;padding:4px;box-sizing:border-box;"></div>
+    <div class="ssh-term-shell">
+      <div id="ssh-term-container" class="ssh-term-container"></div>
+    </div>
   `;
 
   overlay.appendChild(modal);

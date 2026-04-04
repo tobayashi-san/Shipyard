@@ -1478,7 +1478,20 @@ input[type=number] {
 }
 
 .xterm-screen {
+  padding: 0;
+}
+
+.ssh-term-shell {
+  flex: 1;
   padding: 10px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.ssh-term-container {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 .terminal-header {
