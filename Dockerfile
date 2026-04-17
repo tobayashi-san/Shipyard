@@ -6,6 +6,14 @@ RUN cd frontend && npm ci
 COPY frontend/ ./frontend/
 RUN cd frontend && npm run build
 
+# ── Stage 1b: Build frontend-next (parallel React/TS UI at /next) ──
+FROM node:20-alpine AS builder-next
+WORKDIR /app
+COPY frontend-next/package*.json ./frontend-next/
+RUN cd frontend-next && npm ci
+COPY frontend-next/ ./frontend-next/
+RUN cd frontend-next && npm run build
+
 # ── Stage 2: Runtime ─────────────────────────────────────────
 # node:20-slim (Debian) is required — better-sqlite3 is a native addon
 # that needs glibc (fcntl64). Alpine's musl libc is incompatible.
@@ -23,6 +31,7 @@ COPY server/package*.json ./server/
 RUN cd server && npm ci --omit=dev
 COPY server/ ./server/
 COPY --from=builder /app/frontend/dist ./frontend/dist
+COPY --from=builder-next /app/frontend-next/dist ./frontend-next/dist
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 

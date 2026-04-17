@@ -6,11 +6,8 @@ import { DashboardPage } from '@/routes/dashboard';
 import { ServersPage } from '@/routes/servers';
 import { ServerDetailPage } from '@/routes/server-detail';
 import { PlaybooksPage } from '@/routes/playbooks';
-import { SchedulesPage } from '@/routes/schedules';
 import { SettingsPage } from '@/routes/settings';
-import { AuditPage } from '@/routes/audit';
-import { AgentPage } from '@/routes/agent';
-import { PluginsPage, PluginHostPage } from '@/routes/plugins';
+import { PluginHostPage } from '@/routes/_legacy/plugins';
 import { getToken } from '@/lib/auth';
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
@@ -43,16 +40,17 @@ const protectedLayout = createRoute({
   ),
 });
 
-const dashboardRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/',           component: DashboardPage });
-const serversRoute   = createRoute({ getParentRoute: () => protectedLayout, path: '/servers',    component: ServersPage });
-const serverDetail   = createRoute({ getParentRoute: () => protectedLayout, path: '/servers/$id', component: ServerDetailPage });
-const playbooksRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/playbooks',  component: PlaybooksPage });
-const schedulesRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/schedules',  component: SchedulesPage });
-const settingsRoute  = createRoute({ getParentRoute: () => protectedLayout, path: '/settings',   component: SettingsPage });
-const auditRoute     = createRoute({ getParentRoute: () => protectedLayout, path: '/audit',      component: AuditPage });
-const agentRoute     = createRoute({ getParentRoute: () => protectedLayout, path: '/agent',      component: AgentPage });
-const pluginsRoute   = createRoute({ getParentRoute: () => protectedLayout, path: '/plugins',    component: PluginsPage });
-const pluginHostRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/plugins/$id', component: PluginHostPage });
+const dashboardRoute  = createRoute({ getParentRoute: () => protectedLayout, path: '/',             component: DashboardPage });
+const serversRoute    = createRoute({ getParentRoute: () => protectedLayout, path: '/servers',      component: ServersPage });
+const serverDetail    = createRoute({ getParentRoute: () => protectedLayout, path: '/servers/$id',  component: ServerDetailPage });
+const playbooksRoute  = createRoute({ getParentRoute: () => protectedLayout, path: '/playbooks',    component: PlaybooksPage });
+// Settings is the single page that hosts: appearance, ssh, system, agent-manifest,
+// notifications, git, plugins, users-roles, audit, danger — matching the legacy UI.
+// Tab is selected via the optional :tab path segment (default = appearance).
+const settingsRoute   = createRoute({ getParentRoute: () => protectedLayout, path: '/settings',     component: SettingsPage });
+const settingsTabRoute= createRoute({ getParentRoute: () => protectedLayout, path: '/settings/$tab', component: SettingsPage });
+// Plugin host route: dynamically loaded plugin UIs (sidebar entries link here).
+const pluginHostRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/plugins/$id',  component: PluginHostPage });
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
@@ -62,11 +60,8 @@ const routeTree = rootRoute.addChildren([
     serversRoute,
     serverDetail,
     playbooksRoute,
-    schedulesRoute,
     settingsRoute,
-    auditRoute,
-    agentRoute,
-    pluginsRoute,
+    settingsTabRoute,
     pluginHostRoute,
   ]),
 ]);

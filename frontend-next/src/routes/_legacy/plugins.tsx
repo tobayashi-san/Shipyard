@@ -223,7 +223,7 @@ export function PluginHostPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <Link to="/plugins">
+        <Link to="/settings/$tab" params={{ tab: 'plugins' }}>
           <Button variant="ghost" size="sm">
             <ArrowLeft className="h-4 w-4" /> {t('plugins.back')}
           </Button>
