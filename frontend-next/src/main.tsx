@@ -6,6 +6,7 @@ import './lib/i18n';
 import './index.css';
 import { router } from './router';
 import { setOnUnauthorized } from './lib/auth';
+import { Toaster } from './components/ui/toaster';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -29,6 +30,7 @@ createRoot(rootEl).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
+      <Toaster />
     </QueryClientProvider>
   </StrictMode>
 );
