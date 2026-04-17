@@ -244,6 +244,14 @@ export async function renderSettings() {
               <button class="btn btn-secondary btn-sm" id="btn-reset-wl">${t('common.reset')}</button>
             </div>
           </div>
+          <div class="settings-row" style="border-bottom:none;">
+            <div class="settings-row-label" style="opacity:.5;font-size:11px;">Preview</div>
+            <div class="settings-row-control">
+              <a href="/next/" style="font-size:11px;color:var(--text-muted);text-decoration:none;border-bottom:1px dotted var(--text-muted);">
+                Try the new UI (experimental) →
+              </a>
+            </div>
+          </div>
         </div>
         </div>
       </div>

@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const log = require('./utils/logger');
 const db = require('./db');
 const pluginLoader = require('./services/plugin-loader');
@@ -95,6 +96,13 @@ function createApp({ isHttps = false } = {}) {
     app.use(express.static(path.join(__dirname, '..', 'frontend', 'dist')));
   }
 
+  // Parallel "next" UI (React + shadcn). Served only when built.
+  // Keeps the legacy UI as default; frontend-next is opt-in via /next/*.
+  const nextDist = path.join(__dirname, '..', 'frontend-next', 'dist');
+  if (fs.existsSync(nextDist)) {
+    app.use('/next', express.static(nextDist));
+  }
+
   app.get('/api/health', (req, res) => {
     try {
       db.db.prepare('SELECT 1').get();
@@ -151,6 +159,13 @@ function createApp({ isHttps = false } = {}) {
     res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(uiPath);
   });
+
+  // SPA fallback for the parallel /next UI (independent of NODE_ENV so dev preview works too)
+  if (fs.existsSync(nextDist)) {
+    app.get('/next/*', (req, res) => {
+      res.sendFile(path.join(nextDist, 'index.html'));
+    });
+  }
 
   if (process.env.NODE_ENV === 'production') {
     app.get('*', (req, res) => {
