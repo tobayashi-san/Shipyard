@@ -36,21 +36,23 @@ interface SettingsSectionProps {
   title?: React.ReactNode;
   description?: React.ReactNode;
   icon?: React.ReactNode;
+  headerRight?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
 }
 
 /** Card-like section that hosts a group of SettingsRow's. */
-export function SettingsSection({ title, description, icon, children, className }: SettingsSectionProps) {
+export function SettingsSection({ title, description, icon, headerRight, children, className }: SettingsSectionProps) {
   return (
     <section className={cn('rounded-lg border bg-card text-card-foreground shadow-sm', className)}>
-      {(title || description) && (
+      {(title || description || headerRight) && (
         <header className="flex items-start gap-3 border-b border-border/60 px-5 py-4">
           {icon && <div className="mt-0.5 text-muted-foreground">{icon}</div>}
           <div className="min-w-0 flex-1">
             {title && <h3 className="text-sm font-semibold tracking-tight">{title}</h3>}
             {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
           </div>
+          {headerRight && <div className="flex items-center gap-2">{headerRight}</div>}
         </header>
       )}
       <div className="px-5">{children}</div>
