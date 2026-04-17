@@ -5,6 +5,29 @@ const log = require('../utils/logger').child('db');
 const { applySchema } = require('./schema');
 const { applyMigrations } = require('./migrations');
 const { seedDb } = require('./seed');
+const cryptoUtil = require('../utils/crypto');
+
+/**
+ * Read a TOTP-secret column. If the row is plaintext (legacy), auto-encrypt
+ * it in place so the next read finds it encrypted. Returns plaintext to caller
+ * either way.
+ */
+function readUserTotp(stored, userId, column) {
+  if (!stored) return '';
+  if (typeof stored === 'string' && stored.startsWith('enc:')) {
+    return cryptoUtil.decrypt(stored);
+  }
+  // Legacy plaintext — opportunistically encrypt at rest.
+  try {
+    const enc = cryptoUtil.encrypt(stored);
+    if (enc !== stored) {
+      db.prepare(`UPDATE users SET ${column} = ? WHERE id = ?`).run(enc, userId);
+    }
+  } catch (e) {
+    log.warn({ err: e, userId, column }, 'Failed to upgrade TOTP secret to encrypted form');
+  }
+  return stored;
+}
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'shipyard.db');
 
@@ -197,6 +220,13 @@ module.exports = {
       else serverQueries.updateStatus.run(status, id);
     },
     setNotes: (id, notes) => db.prepare("UPDATE servers SET notes = ? WHERE id = ?").run(notes, id),
+    getHostFingerprint: (id) => {
+      const row = db.prepare("SELECT host_fingerprint FROM servers WHERE id = ?").get(id);
+      return row ? (row.host_fingerprint || '') : '';
+    },
+    setHostFingerprint: (id, fingerprint) => {
+      db.prepare("UPDATE servers SET host_fingerprint = ? WHERE id = ?").run(fingerprint || '', id);
+    },
   },
   serverInfo: {
     get: (serverId) => {
@@ -325,16 +355,20 @@ module.exports = {
     },
     getRecent: (limit = 100) => db.prepare('SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ?').all(limit),
     query: ({ action, user, ip, success, from, to, limit = 200, offset = 0 } = {}) => {
+      // Escape SQL LIKE wildcards so user-supplied filters can't widen the match.
+      const escapeLike = (s) => String(s).replace(/[\\%_]/g, ch => '\\' + ch);
       const conditions = [];
       const params = [];
-      if (action) { conditions.push('action LIKE ?'); params.push(`${action}%`); }
+      if (action) { conditions.push("action LIKE ? ESCAPE '\\'"); params.push(`${escapeLike(action)}%`); }
       if (user) { conditions.push('user = ?'); params.push(user); }
-      if (ip) { conditions.push('ip LIKE ?'); params.push(`%${ip}%`); }
+      if (ip) { conditions.push("ip LIKE ? ESCAPE '\\'"); params.push(`%${escapeLike(ip)}%`); }
       if (success !== undefined && success !== '') { conditions.push('success = ?'); params.push(Number(success)); }
       if (from) { conditions.push('created_at >= ?'); params.push(from); }
       if (to) { conditions.push('created_at <= ?'); params.push(to); }
       const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-      params.push(Math.min(limit, 500), offset);
+      const safeLimit = Math.min(500, Math.max(1, parseInt(limit, 10) || 200));
+      const safeOffset = Math.max(0, parseInt(offset, 10) || 0);
+      params.push(safeLimit, safeOffset);
       return db.prepare(`SELECT * FROM audit_log ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...params);
     },
     countAll: () => db.prepare('SELECT COUNT(*) as count FROM audit_log').get().count,
@@ -412,13 +446,13 @@ module.exports = {
     getById: (id) => db.prepare('SELECT * FROM custom_update_tasks WHERE id = ?').get(id),
     create: (serverId, fields) => {
       const id = uuidv4();
-      db.prepare(`INSERT INTO custom_update_tasks (id, server_id, name, type, check_command, github_repo, update_command, trigger_output) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(id, serverId, fields.name, fields.type, fields.check_command || null, fields.github_repo || null, fields.update_command || '', fields.trigger_output || null);
+      db.prepare(`INSERT INTO custom_update_tasks (id, server_id, name, type, check_command, github_repo, update_command, trigger_output, latest_command) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(id, serverId, fields.name, fields.type, fields.check_command || null, fields.github_repo || null, fields.update_command || '', fields.trigger_output || null, fields.latest_command || null);
       return db.prepare('SELECT * FROM custom_update_tasks WHERE id = ?').get(id);
     },
     update: (id, fields) => {
-      db.prepare(`UPDATE custom_update_tasks SET name = ?, type = ?, check_command = ?, github_repo = ?, update_command = ?, trigger_output = ? WHERE id = ?`)
-        .run(fields.name, fields.type, fields.check_command || null, fields.github_repo || null, fields.update_command || '', fields.trigger_output || null, id);
+      db.prepare(`UPDATE custom_update_tasks SET name = ?, type = ?, check_command = ?, github_repo = ?, update_command = ?, trigger_output = ?, latest_command = ? WHERE id = ?`)
+        .run(fields.name, fields.type, fields.check_command || null, fields.github_repo || null, fields.update_command || '', fields.trigger_output || null, fields.latest_command || null, id);
       return db.prepare('SELECT * FROM custom_update_tasks WHERE id = ?').get(id);
     },
     delete: (id) => db.prepare('DELETE FROM custom_update_tasks WHERE id = ?').run(id),
@@ -544,6 +578,28 @@ module.exports = {
       `).run(id, username, displayName || '', email || '', passwordHash, role || 'user');
       return db.prepare('SELECT id, username, display_name, email, role, totp_enabled, token_version, created_at FROM users WHERE id = ?').get(id);
     },
+    /**
+     * Atomically create the first admin user during onboarding. Throws
+     * 'ALREADY_SETUP' if any user already exists. Used by /api/auth/setup to
+     * defeat races between concurrent setup requests with different usernames.
+     */
+    createFirstAdmin: (username, passwordHash) => {
+      const tx = db.transaction(() => {
+        const row = db.prepare('SELECT COUNT(*) as c FROM users').get();
+        if (row.c > 0) {
+          const err = new Error('ALREADY_SETUP');
+          err.code = 'ALREADY_SETUP';
+          throw err;
+        }
+        const id = uuidv4();
+        db.prepare(`
+          INSERT INTO users (id, username, display_name, email, password_hash, role)
+          VALUES (?, ?, '', '', ?, 'admin')
+        `).run(id, username, passwordHash);
+        return db.prepare('SELECT id, username, display_name, email, role, totp_enabled, token_version, created_at FROM users WHERE id = ?').get(id);
+      });
+      return tx();
+    },
     update: (id, fields) => {
       const allowed = { username: 'username', display_name: 'display_name', email: 'email', role: 'role' };
       const sets = [];
@@ -559,8 +615,24 @@ module.exports = {
       return db.prepare('SELECT id, username, display_name, email, role, totp_enabled, token_version, created_at FROM users WHERE id = ?').get(id);
     },
     setPasswordHash: (id, hash) => db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, id),
-    setTotp: (id, secret, enabled) => db.prepare('UPDATE users SET totp_secret = ?, totp_enabled = ? WHERE id = ?').run(secret, enabled ? 1 : 0, id),
-    setPendingTotp: (id, secret) => db.prepare('UPDATE users SET totp_secret_pending = ? WHERE id = ?').run(secret, id),
+    setTotp: (id, secret, enabled) => {
+      const stored = secret ? cryptoUtil.encrypt(secret) : '';
+      db.prepare('UPDATE users SET totp_secret = ?, totp_enabled = ? WHERE id = ?').run(stored, enabled ? 1 : 0, id);
+    },
+    setPendingTotp: (id, secret) => {
+      const stored = secret ? cryptoUtil.encrypt(secret) : '';
+      db.prepare('UPDATE users SET totp_secret_pending = ? WHERE id = ?').run(stored, id);
+    },
+    /** Get the decrypted active TOTP secret for a user, or '' if none. */
+    getTotpSecret: (id) => {
+      const row = db.prepare('SELECT totp_secret FROM users WHERE id = ?').get(id);
+      return readUserTotp(row?.totp_secret, id, 'totp_secret');
+    },
+    /** Get the decrypted pending TOTP secret for a user, or '' if none. */
+    getPendingTotpSecret: (id) => {
+      const row = db.prepare('SELECT totp_secret_pending FROM users WHERE id = ?').get(id);
+      return readUserTotp(row?.totp_secret_pending, id, 'totp_secret_pending');
+    },
     incrementTokenVersion: (id) => db.prepare('UPDATE users SET token_version = COALESCE(token_version, 0) + 1 WHERE id = ?').run(id),
     delete: (id) => db.prepare('DELETE FROM users WHERE id = ?').run(id),
     count: () => db.prepare('SELECT COUNT(*) as c FROM users').get().c,

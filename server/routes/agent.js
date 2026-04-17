@@ -10,6 +10,15 @@ const log = require('../utils/logger').child('routes:agent');
 const router = express.Router();
 const reportWindowMs = 10 * 1000;
 const lastReportByServer = new Map();
+// Hard cap to bound memory if many distinct server_ids report.
+const MAX_TRACKED_SERVERS = 10000;
+
+function pruneStaleReports(now) {
+  const cutoff = now - reportWindowMs;
+  for (const [id, ts] of lastReportByServer) {
+    if (ts <= cutoff) lastReportByServer.delete(id);
+  }
+}
 
 const preAuthLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -80,11 +89,22 @@ router.post('/report', (req, res) => {
   const cfg = authenticateAgent(req);
   if (!cfg) return res.status(401).json({ error: 'Unauthorized' });
 
+  const now = Date.now();
   const last = lastReportByServer.get(cfg.server_id) || 0;
-  if (Date.now() - last < reportWindowMs) {
+  if (now - last < reportWindowMs) {
     return res.status(429).json({ error: 'Rate limit exceeded for this agent token' });
   }
-  lastReportByServer.set(cfg.server_id, Date.now());
+  // Opportunistic prune: stale entries (older than the rate-limit window) are
+  // useless and otherwise grow the map unbounded as new server_ids report.
+  if (lastReportByServer.size >= MAX_TRACKED_SERVERS) {
+    pruneStaleReports(now);
+    // If still at cap after pruning, drop the oldest entry to make room.
+    if (lastReportByServer.size >= MAX_TRACKED_SERVERS) {
+      const oldestKey = lastReportByServer.keys().next().value;
+      if (oldestKey !== undefined) lastReportByServer.delete(oldestKey);
+    }
+  }
+  lastReportByServer.set(cfg.server_id, now);
 
   try {
     processIncomingReport({

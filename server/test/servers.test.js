@@ -334,7 +334,7 @@ test('GET /api/servers/:id/docker/:container/logs uses become-enabled ansible ac
     assert.deepEqual(captured, {
       targets: 'renamed-server',
       module: 'shell',
-      args: '$(command -v docker 2>/dev/null || command -v podman 2>/dev/null) logs --tail 50 --timestamps app-1 2>&1',
+      args: '$(command -v docker 2>/dev/null || command -v podman 2>/dev/null) logs --tail "50" --timestamps "app-1" 2>&1',
       options: { become: true },
     });
   } finally {

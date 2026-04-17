@@ -33,6 +33,17 @@ const changeLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Strict limiter for the unauthenticated onboarding endpoint — prevents CPU DoS
+// on bcrypt and a race to create the first admin account during the onboarding window.
+const setupLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  skip: () => isTest,
+  message: { error: 'Too many setup attempts. Please wait 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 function verifyTotp(code, secret) {
   const result = otplib.verifySync({ token: String(code).replace(/\s/g, ''), secret });
   return result.valid;
@@ -106,7 +117,7 @@ router.put('/profile', authMiddleware, (req, res) => {
 });
 
 // POST /api/auth/setup – first-time password setup (only when no users exist)
-router.post('/setup', async (req, res) => {
+router.post('/setup', setupLimiter, async (req, res) => {
   if (db.users.count() > 0) {
     return res.status(400).json({ error: 'Users already exist. Use /api/auth/change.' });
   }
@@ -116,7 +127,16 @@ router.post('/setup', async (req, res) => {
     return res.status(400).json({ error: 'Password must be at least 12 characters' });
   }
   const hash = await bcrypt.hash(password, 12);
-  const user = db.users.create(username, '', hash, 'admin');
+  let user;
+  try {
+    // Atomic: race-safe when two setup requests arrive concurrently.
+    user = db.users.createFirstAdmin(username, hash);
+  } catch (e) {
+    if (e.code === 'ALREADY_SETUP') {
+      return res.status(400).json({ error: 'Users already exist. Use /api/auth/change.' });
+    }
+    return serverError(res, e, 'setup');
+  }
 
   db.auditLog.write('auth.setup', `Initial admin user created: ${username}`, req.ip, true, username);
   res.json({ token: makeToken(user) });
@@ -206,7 +226,7 @@ router.post('/totp/login', loginLimiter, (req, res) => {
     db.users.getById(payload.userId)?.username || ''
   );
   if (!user) return res.status(401).json({ error: 'User not found' });
-  const secret = user.totp_secret;
+  const secret = db.users.getTotpSecret(user.id);
   if (!secret) return res.status(400).json({ error: '2FA not configured' });
   if (!verifyTotp(code, secret)) {
     db.auditLog.write('auth.totp', 'Invalid TOTP code', req.ip, false, user.username);
@@ -245,7 +265,7 @@ router.post('/totp/confirm', authMiddleware, (req, res) => {
   if (!code) return res.status(400).json({ error: 'code required' });
 
   const fullUser = db.users.getByUsername(req.user.username);
-  const secret = fullUser?.totp_secret_pending;
+  const secret = fullUser ? db.users.getPendingTotpSecret(fullUser.id) : '';
   if (!secret) return res.status(400).json({ error: 'No pending TOTP setup. Call /totp/setup first.' });
   if (!verifyTotp(code, secret)) return res.status(400).json({ error: 'Invalid code – try again' });
   db.users.setTotp(req.user.id, secret, true);

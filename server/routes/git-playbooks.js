@@ -51,15 +51,18 @@ router.post('/settings', (req, res) => {
 
 // POST /api/playbooks-git/setup  (initial config + clone/init)
 router.post('/setup', async (req, res) => {
-  const { repoUrl, authToken, autoPull, autoPush, userName, userEmail } = req.body;
-  if (!repoUrl || typeof repoUrl !== 'string') return res.status(400).json({ error: 'repoUrl required' });
-  if (!/^(git@|https?:\/\/|ssh:\/\/)/.test(repoUrl)) return res.status(400).json({ error: 'Invalid git URL' });
+  const { repoUrl, authToken, autoPull, autoPush, userName, userEmail, branch } = req.body;
+  const urlCheck = gitSync.validateGitUrl(repoUrl);
+  if (!urlCheck.ok) return res.status(400).json({ error: urlCheck.error });
+  if (branch !== undefined && !gitSync.validateBranchName(branch)) {
+    return res.status(400).json({ error: 'Invalid branch name' });
+  }
   try { requireBool(autoPull, 'autoPull'); requireBool(autoPush, 'autoPush'); }
   catch (e) { return res.status(400).json({ error: e.message }); }
 
   try {
-    const result = await gitSync.setup({ repoUrl, authToken, autoPull, autoPush, userName, userEmail });
-    if (!result.success) return res.status(500).json({ error: result.error });
+    const result = await gitSync.setup({ repoUrl, authToken, autoPull, autoPush, userName, userEmail, branch });
+    if (!result.success) return res.status(400).json({ error: result.error });
     res.json({ success: true, pullOutput: result.pullOutput });
   } catch (e) {
     serverError(res, e, 'git setup');
@@ -88,8 +91,7 @@ router.get('/branches', async (req, res) => {
 // POST /api/playbooks-git/checkout
 router.post('/checkout', async (req, res) => {
   const { branch } = req.body;
-  if (!branch || typeof branch !== 'string') return res.status(400).json({ error: 'branch required' });
-  if (!/^[a-zA-Z0-9._\-/]+$/.test(branch)) return res.status(400).json({ error: 'Invalid branch name' });
+  if (!gitSync.validateBranchName(branch)) return res.status(400).json({ error: 'Invalid branch name' });
   try {
     const r = await gitSync.checkout(branch);
     if (!r.success) return res.status(500).json({ error: r.stderr });

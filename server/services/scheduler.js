@@ -42,7 +42,7 @@ const DEFAULTS = {
 function getPollingConfig() {
   const g = (key) => db.settings.get(key) ?? DEFAULTS[key];
   const safeMs = (key, fallback) => {
-    const val = parseInt(g(key));
+    const val = parseInt(g(key, 10));
     return (Number.isFinite(val) && val > 0 ? val : fallback) * 60 * 1000;
   };
   return {
@@ -229,7 +229,7 @@ function startAgentMetricsRetention() {
   if (agentMetricsPruner) clearInterval(agentMetricsPruner);
   agentMetricsPruner = setInterval(() => {
     try {
-      const days = parseInt(db.settings.get('agent_metrics_retention_days') || '7', 10);
+      const days = parseInt(db.settings.get('agent_metrics_retention_days', 10) || '7', 10);
       db.agentMetrics.pruneOlderThanDays(days);
     } catch (err) {
       log.debug({ err }, 'Agent metrics retention prune failed');
@@ -307,6 +307,15 @@ async function checkCustomTask(server, task) {
     }
   }
 
+  if (task.latest_command) {
+    try {
+      const result = await sshManager.execCommand(server, task.latest_command);
+      if (result.code === 0) lastVersion = result.stdout.trim() || lastVersion;
+    } catch (err) {
+      log.debug({ err, server: server.name, task: task.name }, 'Latest version command failed');
+    }
+  }
+
   if (task.check_command) {
     try {
       const result = await sshManager.execCommand(server, task.check_command);
@@ -316,14 +325,17 @@ async function checkCustomTask(server, task) {
     }
   }
 
+  const normalize = v => v ? v.trim().replace(/^v/i, '') : v;
+  currentVersion = normalize(currentVersion);
+  lastVersion = normalize(lastVersion);
+
   if (task.type === 'trigger') {
     lastVersion = task.trigger_output || null;
     hasUpdate = typeof currentVersion === 'string'
       && typeof task.trigger_output === 'string'
       && currentVersion.trim() === task.trigger_output.trim();
   } else {
-    const normalize = v => v ? v.trim().replace(/^v/i, '') : v;
-    hasUpdate = !!(lastVersion && currentVersion && normalize(lastVersion) !== normalize(currentVersion));
+    hasUpdate = !!(lastVersion && currentVersion && lastVersion !== currentVersion);
   }
 
   db.customUpdateTasks.setVersionInfo(task.id, currentVersion, lastVersion, hasUpdate);
@@ -389,11 +401,31 @@ function startPolling() {
 
 /**
  * Restart pollers with current DB config (called after settings change).
+ * Debounced to coalesce rapid successive calls (e.g. bulk settings updates).
  */
+let restartPollingTimer = null;
+const RESTART_POLLING_DEBOUNCE_MS = 500;
 function restartPolling() {
-  stopPolling();
-  setupPollingIntervals();
-  log.info('Poller restarted with new config');
+  if (restartPollingTimer) clearTimeout(restartPollingTimer);
+  restartPollingTimer = setTimeout(() => {
+    restartPollingTimer = null;
+    stopPolling();
+    setupPollingIntervals();
+    log.info('Poller restarted with new config');
+  }, RESTART_POLLING_DEBOUNCE_MS);
+}
+
+/**
+ * Flush any pending debounced restart immediately (used in tests/shutdown).
+ */
+function flushRestartPolling() {
+  if (restartPollingTimer) {
+    clearTimeout(restartPollingTimer);
+    restartPollingTimer = null;
+    stopPolling();
+    setupPollingIntervals();
+    log.info('Poller restarted with new config');
+  }
 }
 
 /**
@@ -431,8 +463,9 @@ function stopJobs() {
  * Full shutdown: stop pollers and all cron jobs.
  */
 function shutdown() {
+  if (restartPollingTimer) { clearTimeout(restartPollingTimer); restartPollingTimer = null; }
   stopPolling();
   stopJobs();
 }
 
-module.exports = { init, register, unregister, reload, startPolling, stopPolling, stopJobs, shutdown, restartPolling, onClientConnect, checkCustomTask, getPollingConfig, DEFAULTS };
+module.exports = { init, register, unregister, reload, startPolling, stopPolling, stopJobs, shutdown, restartPolling, flushRestartPolling, onClientConnect, checkCustomTask, getPollingConfig, DEFAULTS };

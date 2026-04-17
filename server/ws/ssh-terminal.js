@@ -38,8 +38,8 @@ function attachSshTerminal(wssSsh) {
     let stream = null;
 
     conn.on('ready', () => {
-      const cols = Math.min(Math.max(parseInt(url.searchParams.get('cols')) || 80, 10), 500);
-      const rows = Math.min(Math.max(parseInt(url.searchParams.get('rows')) || 24, 2), 200);
+      const cols = Math.min(Math.max(parseInt(url.searchParams.get('cols', 10)) || 80, 10), 500);
+      const rows = Math.min(Math.max(parseInt(url.searchParams.get('rows', 10)) || 24, 2), 200);
 
       conn.shell({ term: 'xterm-256color', cols, rows }, (err, sh) => {
         if (err) {
@@ -61,7 +61,12 @@ function attachSshTerminal(wssSsh) {
     });
 
     conn.on('error', err => {
-      if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'error', message: err.message }));
+      const stored = db.servers.getHostFingerprint(server.id);
+      const looksLikeHostKey = stored && /handshake|host key|verification|All configured/i.test(err.message || '');
+      const message = looksLikeHostKey
+        ? `Host key verification failed for ${server.ip_address}. The remote host key does not match the trusted fingerprint. If the host was reinstalled, run "Reset host key" for this server.`
+        : err.message;
+      if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'error', message }));
       ws.close();
       conn.end();
     });
@@ -73,8 +78,8 @@ function attachSshTerminal(wssSsh) {
         const msg = JSON.parse(raw);
         if (msg.type === 'input' && typeof msg.data === 'string') stream.write(msg.data);
         if (msg.type === 'resize') {
-          const rows = Math.min(Math.max(parseInt(msg.rows) || 24, 2), 200);
-          const cols = Math.min(Math.max(parseInt(msg.cols) || 80, 10), 500);
+          const rows = Math.min(Math.max(parseInt(msg.rows, 10) || 24, 2), 200);
+          const cols = Math.min(Math.max(parseInt(msg.cols, 10) || 80, 10), 500);
           stream.setWindow(rows, cols, 0, 0);
         }
       } catch (e) {
@@ -93,6 +98,10 @@ function attachSshTerminal(wssSsh) {
       username: server.ssh_user || 'root',
       privateKey,
       readyTimeout: 10000,
+      hostVerifier: sshManager.makeHostVerifier({
+        serverId: server.id,
+        hostLabel: server.ip_address,
+      }),
     });
   });
 }

@@ -88,6 +88,15 @@ router.post('/deploy', adminOnly, deployLimiter, async (req, res) => {
       return res.status(400).json({ error: 'ip_address and password are required' });
     }
     const result = await sshManager.deployKey(ip_address, ssh_user || 'root', password, ssh_port || 22);
+    // If a server with this IP exists and has no fingerprint yet, persist what we just learned (TOFU).
+    try {
+      if (result?.fingerprint) {
+        const match = db.servers.getAll().find(s => s.ip_address === ip_address);
+        if (match && !db.servers.getHostFingerprint(match.id)) {
+          db.servers.setHostFingerprint(match.id, result.fingerprint);
+        }
+      }
+    } catch {}
     db.auditLog.write('ssh.deploy', `SSH key deployed to ${ip_address}`, req.ip, result.success !== false, req.user?.username);
     res.json(result);
   } catch (error) {
@@ -118,7 +127,7 @@ router.post('/deploy-all', adminOnly, deployLimiter, async (req, res) => {
     const results = [];
     for (const s of targets) {
       try {
-        await sshManager.deployKey(s.ip_address, s.ssh_user || 'root', password, s.ssh_port || 22);
+        await sshManager.deployKey(s.ip_address, s.ssh_user || 'root', password, s.ssh_port || 22, { serverId: s.id });
         results.push({ id: s.id, name: s.name, ip_address: s.ip_address, success: true });
       } catch (e) {
         results.push({ id: s.id, name: s.name, ip_address: s.ip_address, success: false, error: e.message });
@@ -177,7 +186,14 @@ router.put('/settings', adminOnly, (req, res) => {
     if (accentColor   !== undefined) db.settings.set('wl_accent_color', str(accentColor, 20));
     if (showIcon      !== undefined) db.settings.set('wl_show_icon',    showIcon ? '1' : '0');
     if (logoIcon      !== undefined) db.settings.set('wl_logo_icon',    str(logoIcon, 64));
-    if (logoImage     !== undefined) db.settings.set('wl_logo_image',   str(logoImage, 200000));
+    if (logoImage     !== undefined) {
+      if (typeof logoImage !== 'string') return res.status(400).json({ error: 'logoImage must be a string' });
+      // Cap strictly: this value is exposed on the unauthenticated /api/auth/status
+      // endpoint, so we want to limit payload size. Reject rather than truncate,
+      // because slicing a base64 data URL corrupts the image.
+      if (logoImage.length > 32768) return res.status(400).json({ error: 'logoImage too large (max 32 KB)' });
+      db.settings.set('wl_logo_image', logoImage);
+    }
     if (theme         !== undefined) db.settings.set('ui_theme',        str(theme, 20));
     if (timeFormat    !== undefined) db.settings.set('ui_time_format',  str(timeFormat, 10));
     if (agentEnabled !== undefined) {
@@ -187,7 +203,7 @@ router.put('/settings', adminOnly, (req, res) => {
     if (webhookUrl    !== undefined) db.settings.set('webhook_url',     str(webhookUrl, 1000));
     if (webhookSecret !== undefined) setSecret(db, 'webhook_secret',  str(webhookSecret, 500));
     if (smtpHost      !== undefined) db.settings.set('smtp_host',       str(smtpHost, 255));
-    if (smtpPort      !== undefined) db.settings.set('smtp_port',       String(parseInt(smtpPort) || 587));
+    if (smtpPort      !== undefined) db.settings.set('smtp_port',       String(parseInt(smtpPort, 10) || 587));
     if (smtpUser      !== undefined) db.settings.set('smtp_user',       str(smtpUser, 256));
     if (smtpPass      !== undefined) setSecret(db, 'smtp_pass',       str(smtpPass, 500));
     if (smtpFrom      !== undefined) db.settings.set('smtp_from',       str(smtpFrom, 256));
@@ -233,10 +249,10 @@ router.post('/smtp-test', adminOnly, async (req, res) => {
 router.get('/polling-config', (req, res) => {
   const g = (key) => db.settings.get(key) ?? scheduler.DEFAULTS[key];
   res.json({
-    info:          { enabled: g('poll_info_enabled') !== '0',          intervalMin: parseInt(g('poll_info_interval_min')) },
-    updates:       { enabled: g('poll_updates_enabled') !== '0',       intervalMin: parseInt(g('poll_updates_interval_min')) },
-    imageUpdates:  { enabled: g('poll_image_updates_enabled') !== '0', intervalMin: parseInt(g('poll_image_updates_interval_min')) },
-    customUpdates: { enabled: g('poll_custom_updates_enabled') !== '0',intervalMin: parseInt(g('poll_custom_updates_interval_min')) },
+    info:          { enabled: g('poll_info_enabled') !== '0',          intervalMin: parseInt(g('poll_info_interval_min', 10)) },
+    updates:       { enabled: g('poll_updates_enabled') !== '0',       intervalMin: parseInt(g('poll_updates_interval_min', 10)) },
+    imageUpdates:  { enabled: g('poll_image_updates_enabled') !== '0', intervalMin: parseInt(g('poll_image_updates_interval_min', 10)) },
+    customUpdates: { enabled: g('poll_custom_updates_enabled') !== '0',intervalMin: parseInt(g('poll_custom_updates_interval_min', 10)) },
   });
 });
 
@@ -250,10 +266,10 @@ router.put('/polling-config', adminOnly, (req, res) => {
   };
   if (checkEnabled(info, 'info') || checkEnabled(updates, 'updates') ||
       checkEnabled(imageUpdates, 'imageUpdates') || checkEnabled(customUpdates, 'customUpdates')) return;
-  if (info)          { save('poll_info_enabled', info.enabled ? '1' : '0');                   save('poll_info_interval_min', Math.max(1, parseInt(info.intervalMin) || 5)); }
-  if (updates)       { save('poll_updates_enabled', updates.enabled ? '1' : '0');             save('poll_updates_interval_min', Math.max(1, parseInt(updates.intervalMin) || 60)); }
-  if (imageUpdates)  { save('poll_image_updates_enabled', imageUpdates.enabled ? '1' : '0'); save('poll_image_updates_interval_min', Math.max(1, parseInt(imageUpdates.intervalMin) || 360)); }
-  if (customUpdates) { save('poll_custom_updates_enabled', customUpdates.enabled ? '1' : '0');save('poll_custom_updates_interval_min', Math.max(1, parseInt(customUpdates.intervalMin) || 360)); }
+  if (info)          { save('poll_info_enabled', info.enabled ? '1' : '0');                   save('poll_info_interval_min', Math.max(1, parseInt(info.intervalMin, 10) || 5)); }
+  if (updates)       { save('poll_updates_enabled', updates.enabled ? '1' : '0');             save('poll_updates_interval_min', Math.max(1, parseInt(updates.intervalMin, 10) || 60)); }
+  if (imageUpdates)  { save('poll_image_updates_enabled', imageUpdates.enabled ? '1' : '0'); save('poll_image_updates_interval_min', Math.max(1, parseInt(imageUpdates.intervalMin, 10) || 360)); }
+  if (customUpdates) { save('poll_custom_updates_enabled', customUpdates.enabled ? '1' : '0');save('poll_custom_updates_interval_min', Math.max(1, parseInt(customUpdates.intervalMin, 10) || 360)); }
   scheduler.restartPolling();
   db.auditLog.write('system.polling', 'Polling configuration updated', req.ip, true, req.user?.username);
   res.json({ success: true });
@@ -281,8 +297,8 @@ router.post('/onboarding-complete', adminOnly, (req, res) => {
 router.get('/audit', adminOnly, (req, res) => {
   try {
     const { action, user, ip, success, from, to } = req.query;
-    const limit = Math.min(parseInt(req.query.limit) || 200, 500);
-    const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+    const limit = Math.min(parseInt(req.query.limit, 10) || 200, 500);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
     const rows = db.auditLog.query({ action, user, ip, success, from, to, limit, offset });
     res.json(rows);
   } catch (error) {

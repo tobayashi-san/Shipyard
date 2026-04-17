@@ -58,8 +58,8 @@ function parseDfTotals(text, excludedPaths = new Set()) {
     if (cols.length < 6) continue;
     const mountPath = cols.slice(5).join(' ');
     if (excludedPaths.has(mountPath)) continue;
-    const total = parseInt(String(cols[1]).replace(/M$/, ''), 10);
-    const used = parseInt(String(cols[2]).replace(/M$/, ''), 10);
+    const total = parseInt(String(cols[1], 10).replace(/M$/, ''), 10);
+    const used = parseInt(String(cols[2], 10).replace(/M$/, ''), 10);
     if (Number.isFinite(total)) totalMb += total;
     if (Number.isFinite(used)) usedMb += used;
   }
@@ -132,7 +132,7 @@ function toServerInfo(serverId, report) {
   const prettyOs = extractOsValue(osInfoRaw, 'PRETTY_NAME') || osInfo.PRETTY_NAME || null;
   const nameOs = extractOsValue(osInfoRaw, 'NAME') || osInfo.NAME || null;
   const uptimeVal = Number.parseFloat(normalizeCollectorOutput(collectors.get('uptime')?.output || '').trim());
-  const cores = Number.parseInt(normalizeCollectorOutput(collectors.get('nproc')?.output || '').trim(), 10);
+  const cores = Number.parseInt(normalizeCollectorOutput(collectors.get('nproc', 10)?.output || '').trim(), 10);
   const prevCpu = getPreviousCollectorOutput(serverId, 'cpu');
   const cpuPct = computeCpuPct(prevCpu, collectors.get('cpu')?.output || '');
 

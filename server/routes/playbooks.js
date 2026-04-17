@@ -131,7 +131,7 @@ router.get('/:filename/history/:version', (req, res, next) => { if (!can(getPerm
   try {
     const resolved = resolvePlaybookPath(req.params.filename);
     if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
-    const version  = parseInt(req.params.version);
+    const version  = parseInt(req.params.version, 10);
     if (!version || version < 1 || version > MAX_BACKUPS) {
       return res.status(400).json({ error: 'Invalid version' });
     }
@@ -149,7 +149,7 @@ router.post('/:filename/restore/:version', (req, res, next) => { if (!can(getPer
   try {
     const resolved = resolvePlaybookPath(req.params.filename);
     if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
-    const version  = parseInt(req.params.version);
+    const version  = parseInt(req.params.version, 10);
     if (!version || version < 1 || version > MAX_BACKUPS) {
       return res.status(400).json({ error: 'Invalid version' });
     }

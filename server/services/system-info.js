@@ -66,7 +66,7 @@ class SystemInfoService {
         os: results.os || 'Unknown',
         kernel: results.kernel || 'Unknown',
         cpu: results.cpu || 'Unknown',
-        cpu_cores: parseInt(results.cpu_cores) || 0,
+        cpu_cores: parseInt(results.cpu_cores, 10) || 0,
         ram_total_mb: ramTotal,
         ram_used_mb: ramUsed,
         disk_total_gb: diskTotal,
@@ -76,7 +76,7 @@ class SystemInfoService {
         load_avg: results.load || '0 0 0',
         hostname: results.hostname || server.hostname,
         reboot_required: (results.reboot && results.reboot.trim() === '1'),
-        cpu_usage_pct: Math.min(100, Math.max(0, parseInt(results.cpu_usage) || 0)),
+        cpu_usage_pct: Math.min(100, Math.max(0, parseInt(results.cpu_usage, 10) || 0)),
         zfs_pools: parseZfsData(results.zpool_list, results.zpool_status, results.zfs_list),
       };
     } catch (error) {

@@ -67,11 +67,72 @@ function readPrivateKey(keyPath) {
   return plaintext;
 }
 
+/**
+ * Compute the SSH host-key fingerprint in the OpenSSH-style "SHA256:<base64>" form
+ * (no padding), matching what `ssh-keygen -lf` prints.
+ */
+function fingerprintHostKey(keyBuf) {
+  const digest = crypto.createHash('sha256').update(keyBuf).digest('base64').replace(/=+$/, '');
+  return `SHA256:${digest}`;
+}
+
+/**
+ * Build a hostVerifier callback for ssh2/node-ssh that implements
+ * trust-on-first-use against the per-server host_fingerprint stored in DB.
+ *
+ * Behaviour:
+ *   - If no fingerprint is stored yet, accept the connection AND persist the
+ *     learned fingerprint (TOFU). The captured fingerprint is also returned via
+ *     the `out.fingerprint` field for callers that want to react.
+ *   - If a fingerprint is stored and matches, accept.
+ *   - If a fingerprint is stored and does NOT match, refuse — this is the
+ *     critical security guarantee. Operator must explicitly run reset-host-key.
+ *
+ * `serverId` may be null (e.g. deployKey before the server row is saved); in
+ * that case we do not persist but still return the fingerprint for the caller
+ * to optionally store it.
+ */
+function makeHostVerifier({ serverId, expectedFingerprint, out, hostLabel }) {
+  return (key, verify) => {
+    let fp;
+    try { fp = fingerprintHostKey(key); }
+    catch (e) {
+      log.warn({ err: e, serverId }, 'Failed to compute host key fingerprint');
+      return verify(false);
+    }
+    if (out) out.fingerprint = fp;
+    const stored = expectedFingerprint || (serverId ? db.servers.getHostFingerprint(serverId) : '');
+    if (!stored) {
+      // TOFU: accept and persist
+      if (serverId) {
+        try { db.servers.setHostFingerprint(serverId, fp); }
+        catch (e) { log.warn({ err: e, serverId }, 'Failed to persist host fingerprint'); }
+        log.info({ serverId, host: hostLabel, fingerprint: fp }, 'Trusted SSH host key on first use');
+      }
+      return verify(true);
+    }
+    if (stored === fp) return verify(true);
+    log.error(
+      { serverId, host: hostLabel, expected: stored, got: fp },
+      'SSH host key MISMATCH — refusing connection'
+    );
+    return verify(false);
+  };
+}
+
+class HostKeyMismatchError extends Error {
+  constructor(host) {
+    super(`SSH host key verification failed for ${host}. The remote host key does not match the trusted fingerprint. If the host was reinstalled, run "Reset host key" for this server.`);
+    this.code = 'HOST_KEY_MISMATCH';
+  }
+}
+
 class SSHManager {
   constructor() {
     this.connections = new Map(); // key → NodeSSH
     this.lastUsed    = new Map(); // key → timestamp
     this.connecting  = new Map(); // key → pending connect promise
+    this.refCounts   = new Map(); // key → number of in-flight users (eviction-safe)
     fs.mkdirSync(SSH_DIR, { recursive: true });
 
     this._cleanupTimer = setInterval(() => this._evictIdle(), CLEANUP_INTERVAL);
@@ -79,10 +140,26 @@ class SSHManager {
     if (this._cleanupTimer.unref) this._cleanupTimer.unref();
   }
 
+  _refInc(key) {
+    this.refCounts.set(key, (this.refCounts.get(key) || 0) + 1);
+  }
+
+  _refDec(key) {
+    const n = (this.refCounts.get(key) || 0) - 1;
+    if (n <= 0) this.refCounts.delete(key);
+    else this.refCounts.set(key, n);
+    this.lastUsed.set(key, Date.now());
+  }
+
+  _isInUse(key) {
+    return (this.refCounts.get(key) || 0) > 0;
+  }
+
   /** Close connections that have been idle longer than IDLE_TIMEOUT_MS */
   _evictIdle() {
     const now = Date.now();
     for (const [key, ts] of this.lastUsed) {
+      if (this._isInUse(key)) continue;
       if (now - ts > IDLE_TIMEOUT_MS) {
         const conn = this.connections.get(key);
         if (conn) {
@@ -95,11 +172,12 @@ class SSHManager {
     }
   }
 
-  /** Evict the least-recently-used connection to make room */
+  /** Evict the least-recently-used IDLE connection to make room. Skips in-use ones. */
   _evictLRU() {
     let oldestKey = null;
     let oldestTs  = Infinity;
     for (const [key, ts] of this.lastUsed) {
+      if (this._isInUse(key)) continue;
       if (ts < oldestTs) { oldestTs = ts; oldestKey = key; }
     }
     if (oldestKey) {
@@ -110,7 +188,9 @@ class SSHManager {
       }
       this.connections.delete(oldestKey);
       this.lastUsed.delete(oldestKey);
+      return true;
     }
+    return false;
   }
 
   /**
@@ -312,9 +392,11 @@ class SSHManager {
   }
 
   /**
-   * Deploy SSH key to a remote server (requires password for first connection)
+   * Deploy SSH key to a remote server (requires password for first connection).
+   * If `serverId` is given, the learned host fingerprint is persisted (TOFU).
    */
-  async deployKey(serverIp, sshUser, password, sshPort = 22) {
+  async deployKey(serverIp, sshUser, password, sshPort = 22, opts = {}) {
+    const { serverId = null } = opts;
     const keyInfo = this.getKeyInfo();
     if (!keyInfo) {
       this.generateKey();
@@ -325,6 +407,7 @@ class SSHManager {
 
     // Connect with password and add key
     const ssh = new NodeSSH();
+    const out = { fingerprint: null };
     try {
       await ssh.connect({
         host: serverIp,
@@ -332,6 +415,7 @@ class SSHManager {
         username: sshUser,
         password: password,
         tryKeyboard: true,
+        hostVerifier: makeHostVerifier({ serverId, out, hostLabel: serverIp }),
       });
 
       // Ensure .ssh directory exists with correct permissions
@@ -362,7 +446,7 @@ class SSHManager {
       }
 
       ssh.dispose();
-      return { success: true, message: 'SSH key deployed successfully' };
+      return { success: true, message: 'SSH key deployed successfully', fingerprint: out.fingerprint };
     } catch (error) {
       ssh.dispose();
       throw new Error(`Failed to deploy SSH key: ${error.message}`);
@@ -374,7 +458,7 @@ class SSHManager {
    * Enforces MAX_CONNECTIONS via LRU eviction.
    */
   async getConnection(server) {
-    const key = `${server.ssh_user || 'root'}@${server.ip_address}:${server.ssh_port}`;
+    const key = this._connectionKey(server);
 
     if (this.connections.has(key)) {
       const conn = this.connections.get(key);
@@ -391,20 +475,26 @@ class SSHManager {
       return this.connecting.get(key);
     }
 
-    // Enforce connection cap before opening a new one
+    // Enforce connection cap before opening a new one. Only IDLE connections
+    // are evicted; if all slots are in-use, refuse rather than break a stream.
     if (this.connections.size >= MAX_CONNECTIONS) {
-      this._evictLRU();
+      const evicted = this._evictLRU();
+      if (!evicted) {
+        throw new Error(`SSH connection pool exhausted (${MAX_CONNECTIONS} active). Try again later.`);
+      }
     }
 
     const privateKey = readPrivateKey(this.getPrivateKeyPath());
     const ssh = new NodeSSH();
+    const host = server.ip_address;
 
     const connectPromise = ssh.connect({
-      host: server.ip_address,
+      host,
       port: server.ssh_port || 22,
       username: server.ssh_user || 'root',
       privateKey,
       readyTimeout: 10000,
+      hostVerifier: makeHostVerifier({ serverId: server.id, hostLabel: host }),
     }).then(() => {
       this.connections.set(key, ssh);
       this.lastUsed.set(key, Date.now());
@@ -412,39 +502,69 @@ class SSHManager {
       return ssh;
     }).catch(error => {
       this.connecting.delete(key);
-      throw new Error(`SSH connection failed to ${server.ip_address}: ${error.message}`);
+      // ssh2 surfaces a hostVerifier rejection as a "Handshake failed" / "All
+      // configured authentication methods failed" style error. Detect by checking
+      // the stored fingerprint vs none-collected (verifier rejected before auth).
+      const stored = db.servers.getHostFingerprint(server.id);
+      if (stored && /handshake|host key|verification|All configured/i.test(error.message || '')) {
+        throw new HostKeyMismatchError(host);
+      }
+      throw new Error(`SSH connection failed to ${host}: ${error.message}`);
     });
 
     this.connecting.set(key, connectPromise);
     return connectPromise;
   }
 
+  _connectionKey(server) {
+    return `${server.ssh_user || 'root'}@${server.ip_address}:${server.ssh_port}`;
+  }
+
   /**
    * Execute a command on a remote server
    */
   async execCommand(server, command) {
+    const key = this._connectionKey(server);
     const ssh = await this.getConnection(server);
-    const key = `${server.ssh_user || 'root'}@${server.ip_address}:${server.ssh_port}`;
-    const result = await ssh.execCommand(command);
-    this.lastUsed.set(key, Date.now());
-    return {
-      stdout: result.stdout,
-      stderr: result.stderr,
-      code: result.code,
-    };
+    this._refInc(key);
+    try {
+      const result = await ssh.execCommand(command);
+      return {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        code: result.code,
+      };
+    } finally {
+      this._refDec(key);
+    }
   }
 
   /**
-   * Execute a command with streaming stdout/stderr callbacks
+   * Execute a command with streaming stdout/stderr callbacks.
+   * The connection is reference-counted for the duration of the stream so it
+   * cannot be evicted by the cleanup timer or by another caller's _evictLRU.
    */
   async execStream(server, command, onData) {
+    const key = this._connectionKey(server);
     const ssh = await this.getConnection(server);
+    this._refInc(key);
     return new Promise((resolve, reject) => {
       ssh.connection.exec(command, (err, stream) => {
-        if (err) return reject(err);
-        stream.on('data', chunk => onData(chunk.toString()));
-        stream.stderr.on('data', chunk => onData(chunk.toString()));
-        stream.on('close', code => resolve(code));
+        if (err) {
+          this._refDec(key);
+          return reject(err);
+        }
+        const bump = () => this.lastUsed.set(key, Date.now());
+        stream.on('data', chunk => { bump(); onData(chunk.toString()); });
+        stream.stderr.on('data', chunk => { bump(); onData(chunk.toString()); });
+        stream.on('close', code => {
+          this._refDec(key);
+          resolve(code);
+        });
+        stream.on('error', e => {
+          this._refDec(key);
+          reject(e);
+        });
       });
     });
   }
@@ -471,7 +591,11 @@ class SSHManager {
     }
     this.connections.clear();
     this.lastUsed.clear();
+    this.refCounts.clear();
   }
 }
 
 module.exports = new SSHManager();
+module.exports.makeHostVerifier = makeHostVerifier;
+module.exports.HostKeyMismatchError = HostKeyMismatchError;
+module.exports.fingerprintHostKey = fingerprintHostKey;

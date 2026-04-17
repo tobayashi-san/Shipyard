@@ -60,7 +60,7 @@ class AnsibleRunner {
 
     let inventory = '[all]\n';
     servers.forEach(server => {
-      inventory += `${safe(server.name)} ansible_host=${safe(server.ip_address)} ansible_port=${parseInt(server.ssh_port) || 22} ansible_user=${safe(server.ssh_user)} ansible_ssh_private_key_file=${keyPath}\n`;
+      inventory += `${safe(server.name)} ansible_host=${safe(server.ip_address)} ansible_port=${parseInt(server.ssh_port, 10) || 22} ansible_user=${safe(server.ssh_user)} ansible_ssh_private_key_file=${keyPath}\n`;
     });
 
     // Group servers by tags

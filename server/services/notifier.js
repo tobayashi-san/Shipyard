@@ -119,6 +119,8 @@ async function sendWebhook(title, message, success) {
     if (secret) headers['Authorization'] = `Bearer ${secret}`;
 
     return new Promise((resolve) => {
+      let settled = false;
+      const done = (result) => { if (!settled) { settled = true; resolve(result); } };
       const req = (parsedUrl.protocol === 'https:' ? https : http).request(
         {
           hostname: parsedUrl.hostname,
@@ -129,12 +131,23 @@ async function sendWebhook(title, message, success) {
           timeout: 10000,
         },
         (res) => {
-          res.resume();
-          resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode });
+          // Cap response body to 64 KB and abort slow-drip responses.
+          // Body is discarded, but we must not let a malicious endpoint hold
+          // the connection open indefinitely by trickling bytes.
+          let received = 0;
+          const MAX_BYTES = 64 * 1024;
+          const result = { ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode };
+          res.on('data', (chunk) => {
+            received += chunk.length;
+            if (received > MAX_BYTES) res.destroy();
+          });
+          res.on('end',   () => done(result));
+          res.on('close', () => done(result));
+          res.on('error', () => done({ ok: false }));
         }
       );
-      req.on('error', () => resolve({ ok: false }));
-      req.on('timeout', () => { req.destroy(); resolve({ ok: false }); });
+      req.on('error', () => done({ ok: false }));
+      req.on('timeout', () => { req.destroy(); done({ ok: false }); });
       req.write(body);
       req.end();
     });
@@ -155,7 +168,7 @@ async function sendEmail(title, message, success) {
 
   const nodemailer = require('nodemailer');
 
-  const port     = parseInt(db.settings.get('smtp_port') || '587');
+  const port     = parseInt(db.settings.get('smtp_port', 10) || '587');
   const user     = db.settings.get('smtp_user') || '';
   const pass     = getSecret(db, 'smtp_pass') || '';
   const from     = db.settings.get('smtp_from') || user;

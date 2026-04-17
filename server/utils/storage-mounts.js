@@ -75,7 +75,7 @@ function parseDfRows(text) {
     const availableRaw = cols[3];
     const pctRaw = cols[4];
     const path = cols.slice(5).join(' ');
-    const usagePct = Number.parseInt(String(pctRaw).replace('%', ''), 10);
+    const usagePct = Number.parseInt(String(pctRaw, 10).replace('%', ''), 10);
 
     return {
       filesystem,

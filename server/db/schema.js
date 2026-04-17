@@ -15,6 +15,7 @@ function applySchema(db) {
       last_seen TEXT,
       notes TEXT NOT NULL DEFAULT '',
       group_id TEXT,
+      host_fingerprint TEXT DEFAULT '',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -128,8 +129,9 @@ function applySchema(db) {
       type TEXT NOT NULL DEFAULT 'script',
       check_command TEXT,
       github_repo TEXT,
-      update_command TEXT NOT NULL,
+      update_command TEXT DEFAULT '',
       trigger_output TEXT,
+      latest_command TEXT,
       last_version TEXT,
       current_version TEXT,
       has_update INTEGER DEFAULT 0,

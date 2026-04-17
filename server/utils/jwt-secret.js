@@ -8,6 +8,15 @@ let _warnedOnce = false;
 function getJwtSecret() {
   // Prefer environment variable – avoids storing the secret in the DB at rest
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+
+  // Fail closed in production: a DB-stored secret can be forged by anyone with
+  // DB access, especially when SHIPYARD_KEY_SECRET is also missing (plaintext).
+  if (process.env.NODE_ENV === 'production') {
+    log.fatal('JWT_SECRET env var is required in production. Refusing to start.');
+    // Throw so startup code (app.js / index.js) aborts with a clear error.
+    throw new Error('JWT_SECRET must be set in production');
+  }
+
   if (!_warnedOnce) {
     log.warn('JWT_SECRET env var not set — falling back to DB-stored secret. Set JWT_SECRET for production use.');
     _warnedOnce = true;

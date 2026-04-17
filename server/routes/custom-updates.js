@@ -15,7 +15,7 @@ function guard(cap) {
 const GITHUB_REPO_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
 
 // Returns an error string or null if valid
-function validateTaskInput({ name, type, update_command, check_command, github_repo, trigger_output }) {
+function validateTaskInput({ name, type, update_command, check_command, github_repo, trigger_output, latest_command }) {
   if (!name || !['script', 'github', 'trigger'].includes(type))
     return 'name and type (script|github|trigger) are required';
   if (typeof name !== 'string' || name.length > 200) return 'name too long (max 200)';
@@ -25,8 +25,8 @@ function validateTaskInput({ name, type, update_command, check_command, github_r
     return 'check_command too long (max 5000)';
   if (trigger_output !== undefined && trigger_output !== null && (typeof trigger_output !== 'string' || trigger_output.length > 5000))
     return 'trigger_output too long (max 5000)';
-  if ((type === 'script' || type === 'github') && !update_command)
-    return 'update_command is required for type=script and type=github';
+  if (latest_command !== undefined && latest_command !== null && (typeof latest_command !== 'string' || latest_command.length > 5000))
+    return 'latest_command too long (max 5000)';
   if (type === 'github' && (!github_repo || !GITHUB_REPO_RE.test(github_repo)))
     return 'github_repo must be "owner/repo" for type=github';
   if (type === 'trigger' && !check_command)
@@ -43,10 +43,10 @@ router.get('/', guardServerAccess, guard('canViewCustomUpdates'), (req, res) => 
 
 // POST /api/servers/:id/custom-updates
 router.post('/', guardServerAccess, guard('canEditCustomUpdates'), (req, res) => {
-  const { name, type, check_command, github_repo, update_command, trigger_output } = req.body;
-  const validationError = validateTaskInput({ name, type, update_command, check_command, github_repo, trigger_output });
+  const { name, type, check_command, github_repo, update_command, trigger_output, latest_command } = req.body;
+  const validationError = validateTaskInput({ name, type, update_command, check_command, github_repo, trigger_output, latest_command });
   if (validationError) return res.status(400).json({ error: validationError });
-  const task = db.customUpdateTasks.create(req.params.id, { name, type, check_command, github_repo, update_command, trigger_output });
+  const task = db.customUpdateTasks.create(req.params.id, { name, type, check_command, github_repo, update_command, trigger_output, latest_command });
   res.status(201).json(task);
 });
 
@@ -54,10 +54,10 @@ router.post('/', guardServerAccess, guard('canEditCustomUpdates'), (req, res) =>
 router.put('/:taskId', guardServerAccess, guard('canEditCustomUpdates'), (req, res) => {
   const task = db.customUpdateTasks.getById(req.params.taskId);
   if (!task || task.server_id !== req.params.id) return res.status(404).json({ error: 'Task not found' });
-  const { name, type, check_command, github_repo, update_command, trigger_output } = req.body;
-  const validationError = validateTaskInput({ name, type, update_command, check_command, github_repo, trigger_output });
+  const { name, type, check_command, github_repo, update_command, trigger_output, latest_command } = req.body;
+  const validationError = validateTaskInput({ name, type, update_command, check_command, github_repo, trigger_output, latest_command });
   if (validationError) return res.status(400).json({ error: validationError });
-  res.json(db.customUpdateTasks.update(req.params.taskId, { name, type, check_command, github_repo, update_command, trigger_output }));
+  res.json(db.customUpdateTasks.update(req.params.taskId, { name, type, check_command, github_repo, update_command, trigger_output, latest_command }));
 });
 
 // DELETE /api/servers/:id/custom-updates/:taskId

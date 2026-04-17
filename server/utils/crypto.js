@@ -36,13 +36,21 @@ function decrypt(value) {
   if (!value || !value.startsWith('enc:')) return value;
   const masterKey = getMasterKey();
   if (!masterKey) return value; // can't decrypt without key — return opaque blob
-  const buf = Buffer.from(value.slice(4), 'base64');
-  const iv = buf.subarray(0, 16);
-  const tag = buf.subarray(16, 32);
-  const ciphertext = buf.subarray(32);
-  const decipher = crypto.createDecipheriv(ALGORITHM, masterKey, iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+  try {
+    const buf = Buffer.from(value.slice(4), 'base64');
+    if (buf.length < 33) throw new Error('ciphertext too short');
+    const iv = buf.subarray(0, 16);
+    const tag = buf.subarray(16, 32);
+    const ciphertext = buf.subarray(32);
+    const decipher = crypto.createDecipheriv(ALGORITHM, masterKey, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+  } catch (err) {
+    // Corrupt ciphertext, wrong key, or tampering. Return null so callers can
+    // handle "secret unavailable" instead of the route crashing with a 500.
+    log.warn({ err: err.message }, 'decrypt failed — returning null');
+    return null;
+  }
 }
 
 /**

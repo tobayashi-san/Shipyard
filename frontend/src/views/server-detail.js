@@ -1490,15 +1490,20 @@ function showCustomTaskModal(serverId, task) {
           <input class="form-input mono" id="ctm-trigger-output" value="${esc(task?.trigger_output || '')}" placeholder="AVAILABLE">
           <div style="margin-top:4px;font-size:11px;color:var(--text-muted);">${t('det.taskTriggerOutputHint')}</div>
         </div>
+        <div class="form-group" id="ctm-latest-row" style="${(!task || task.type === 'script') ? '' : 'display:none;'}">
+          <label class="form-label">${t('det.taskLatestCommand')}</label>
+          <input class="form-input mono" id="ctm-latest-cmd" value="${esc(task?.latest_command || '')}" placeholder="curl -s https://api.example.com/latest | jq -r .version">
+          <div style="margin-top:4px;font-size:11px;color:var(--text-muted);">${t('det.taskLatestCommandHint')}</div>
+        </div>
         <div class="form-group">
           <label class="form-label">${t('det.taskCheckCommand')}</label>
           <input class="form-input mono" id="ctm-check-cmd" value="${esc(task?.check_command || '')}" placeholder="immich --version">
           <div id="ctm-check-hint" style="margin-top:4px;font-size:11px;color:var(--text-muted);">${task?.type === 'trigger' ? t('det.taskCheckCommandHintTrigger') : t('det.taskCheckCommandHint')}</div>
         </div>
         <div class="form-group">
-          <label class="form-label">${t('det.taskUpdateCommand')} <span id="ctm-update-required" style="color:var(--danger);font-size:11px;${task?.type === 'trigger' ? 'display:none;' : ''}">*</span></label>
+          <label class="form-label">${t('det.taskUpdateCommand')}</label>
           <input class="form-input mono" id="ctm-update-cmd" value="${esc(task?.update_command || '')}" placeholder="https://get.glennr.nl/unifi/update/unifi-update.sh">
-          <div id="ctm-update-hint" style="margin-top:4px;font-size:11px;color:var(--text-muted);">${task?.type === 'trigger' ? t('det.taskUpdateCommandOptionalHint') : t('det.taskUpdateCommandHint')}</div>
+          <div id="ctm-update-hint" style="margin-top:4px;font-size:11px;color:var(--text-muted);">${t('det.taskUpdateCommandHint')}</div>
         </div>
       </div>
       <div class="modal-footer">
@@ -1526,16 +1531,17 @@ function showCustomTaskModal(serverId, task) {
   function syncCustomTaskTypeUi(type) {
     const isGithub = type === 'github';
     const isTrigger = type === 'trigger';
+    const isScript = type === 'script';
     document.getElementById('ctm-github-row').style.display = isGithub ? '' : 'none';
     document.getElementById('ctm-trigger-row').style.display = isTrigger ? '' : 'none';
+    document.getElementById('ctm-latest-row').style.display = isScript ? '' : 'none';
     document.getElementById('ctm-type-desc').textContent = isGithub
       ? t('det.taskTypeGithubDesc')
       : isTrigger
         ? t('det.taskTypeTriggerDesc')
         : t('det.taskTypeScriptDesc');
     document.getElementById('ctm-check-hint').textContent = isTrigger ? t('det.taskCheckCommandHintTrigger') : t('det.taskCheckCommandHint');
-    document.getElementById('ctm-update-hint').textContent = isTrigger ? t('det.taskUpdateCommandOptionalHint') : t('det.taskUpdateCommandHint');
-    document.getElementById('ctm-update-required').style.display = isTrigger ? 'none' : '';
+    document.getElementById('ctm-update-hint').textContent = t('det.taskUpdateCommandHint');
   }
 
   document.getElementById('ctm-type').addEventListener('change', e => syncCustomTaskTypeUi(e.target.value));
@@ -1553,13 +1559,10 @@ function showCustomTaskModal(serverId, task) {
       check_command: document.getElementById('ctm-check-cmd').value.trim() || null,
       update_command: document.getElementById('ctm-update-cmd').value.trim(),
       trigger_output: document.getElementById('ctm-trigger-output').value.trim() || null,
+      latest_command: document.getElementById('ctm-latest-cmd').value.trim() || null,
     };
     if (!data.name) {
       showToast(t('common.errorPrefix', { msg: t('det.taskNameRequired') }), 'error');
-      return;
-    }
-    if ((data.type === 'script' || data.type === 'github') && !data.update_command) {
-      showToast(t('common.errorPrefix', { msg: t('common.nameAndCmdRequired') }), 'error');
       return;
     }
     if (data.type === 'trigger' && (!data.check_command || !data.trigger_output)) {

@@ -9,7 +9,7 @@ router.get('/', (req, res) => {
   if (!can(getPermissions(req.user), 'canViewSchedules')) {
     return res.status(403).json({ error: 'Permission denied' });
   }
-  const limit = Math.min(500, Math.max(1, parseInt(req.query.limit) || 100));
+  const limit = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 100));
   const scheduleId = req.query.scheduleId || null;
 
   const perms = getPermissions(req.user);

@@ -96,6 +96,30 @@ describe('crypto with SHIPYARD_KEY_SECRET', () => {
     assert.equal(encrypt(undefined), undefined);
   });
 
+  test('decrypt returns null (not throw) on corrupt ciphertext', () => {
+    process.env.SHIPYARD_KEY_SECRET = 'test-master-key-for-crypto';
+    delete require.cache[require.resolve('../utils/crypto')];
+    const { decrypt } = require('../utils/crypto');
+    // Too short
+    assert.equal(decrypt('enc:YWJj'), null);
+    // Garbage
+    assert.equal(decrypt('enc:!!!not-base64!!!'), null);
+  });
+
+  test('decrypt returns null (not throw) when key changes', () => {
+    process.env.SHIPYARD_KEY_SECRET = 'original-key';
+    delete require.cache[require.resolve('../utils/crypto')];
+    const { encrypt } = require('../utils/crypto');
+    const encrypted = encrypt('secret-value');
+
+    // Change the key and re-import
+    process.env.SHIPYARD_KEY_SECRET = 'different-key';
+    delete require.cache[require.resolve('../utils/crypto')];
+    const { decrypt } = require('../utils/crypto');
+    // Auth tag verification fails → must return null, not throw
+    assert.equal(decrypt(encrypted), null);
+  });
+
   after(() => {
     delete process.env.SHIPYARD_KEY_SECRET;
   });

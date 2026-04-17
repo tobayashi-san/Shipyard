@@ -55,6 +55,72 @@ function isConfigured() {
   return !!db.settings.get('git_repo_url');
 }
 
+// ── Validation ────────────────────────────────────────────────
+
+/**
+ * Validate a git remote URL. Accepts:
+ *   - https://host/path  http://host/path
+ *   - ssh://[user@]host[:port]/path
+ *   - user@host:path  (SCP-like)
+ *
+ * Rejects file://, leading "-" anywhere in URL or hostname (CVE-2017-1000117 class),
+ * embedded credentials in https URLs (use authToken setting instead), control chars,
+ * whitespace, and unknown schemes.
+ *
+ * Returns { ok: true } on success or { ok: false, error: '...' }.
+ */
+function validateGitUrl(url) {
+  if (!url || typeof url !== 'string') return { ok: false, error: 'repoUrl required' };
+  const trimmed = url.trim();
+  if (!trimmed) return { ok: false, error: 'repoUrl required' };
+  if (trimmed.length > 2048) return { ok: false, error: 'repoUrl too long' };
+  // No control chars or whitespace
+  if (/[\s\x00-\x1f\x7f]/.test(trimmed)) return { ok: false, error: 'repoUrl contains invalid characters' };
+  // Defuse argument-injection: never accept anything that starts with "-"
+  if (trimmed.startsWith('-')) return { ok: false, error: 'repoUrl must not start with "-"' };
+
+  // SCP-like: user@host:path  (host must not start with "-")
+  const scp = /^([A-Za-z0-9_.\-]+)@([A-Za-z0-9.\-]+):([A-Za-z0-9_./\-~]*)$/;
+  const scpMatch = trimmed.match(scp);
+  if (scpMatch) {
+    const host = scpMatch[2];
+    if (host.startsWith('-')) return { ok: false, error: 'host must not start with "-"' };
+    return { ok: true };
+  }
+
+  // URL form
+  let u;
+  try { u = new URL(trimmed); }
+  catch { return { ok: false, error: 'Invalid git URL' }; }
+
+  const allowedSchemes = new Set(['https:', 'http:', 'ssh:', 'git:']);
+  if (!allowedSchemes.has(u.protocol)) {
+    return { ok: false, error: `Unsupported URL scheme: ${u.protocol}` };
+  }
+  if (!u.hostname) return { ok: false, error: 'URL missing hostname' };
+  if (u.hostname.startsWith('-')) return { ok: false, error: 'host must not start with "-"' };
+  // Reject userinfo in https URLs to prevent token leaking via getStatus()/logs
+  if ((u.protocol === 'https:' || u.protocol === 'http:') && (u.username || u.password)) {
+    return { ok: false, error: 'embed credentials via authToken, not in URL' };
+  }
+  return { ok: true };
+}
+
+/**
+ * Validate a git branch / ref name. Conservative subset of git's rules:
+ * alphanumerics, dot, underscore, slash, hyphen. Cannot start with "-" or ".",
+ * cannot contain "..", cannot end with ".lock" or "/".
+ */
+function validateBranchName(name) {
+  if (!name || typeof name !== 'string') return false;
+  if (name.length > 200) return false;
+  if (!/^[A-Za-z0-9._\-/]+$/.test(name)) return false;
+  if (name.startsWith('-') || name.startsWith('.') || name.startsWith('/')) return false;
+  if (name.endsWith('/') || name.endsWith('.lock')) return false;
+  if (name.includes('..')) return false;
+  return true;
+}
+
 // ── Helpers ───────────────────────────────────────────────────
 
 function buildAuthUrl(url, token) {
@@ -281,8 +347,7 @@ async function getBranches() {
 }
 
 async function checkout(branch) {
-  if (!branch || typeof branch !== 'string') return { success: false, stderr: 'Branch name required' };
-  if (!/^[a-zA-Z0-9._\-/]+$/.test(branch)) return { success: false, stderr: 'Invalid branch name' };
+  if (!validateBranchName(branch)) return { success: false, stderr: 'Invalid branch name' };
 
   // Try existing local branch first
   let r = await runGit(['checkout', branch]);
@@ -304,6 +369,7 @@ async function checkout(branch) {
 async function pull() {
   const cfg = getConfig();
   if (!cfg.repoUrl) return { success: false, stderr: 'No repository configured' };
+  if (!validateBranchName(cfg.branch)) return { success: false, stderr: 'Invalid configured branch name' };
   if (!await isGitRepo()) return { success: false, stderr: 'Git workspace not initialized – run setup first' };
 
   await applyGitIdentity();
@@ -334,6 +400,7 @@ async function commit(message) {
 async function push(message) {
   const cfg = getConfig();
   if (!cfg.repoUrl) return { success: false, stderr: 'No repository configured' };
+  if (!validateBranchName(cfg.branch)) return { success: false, stderr: 'Invalid configured branch name' };
 
   await applyGitIdentity();
 
@@ -377,6 +444,7 @@ async function autoPull() {
 async function autoPush(message = 'Update playbooks') {
   const cfg = getConfig();
   if (!cfg.autoPush || !cfg.repoUrl) return;
+  if (!validateBranchName(cfg.branch)) return;
   if (!await isGitRepo()) return;
 
   try {
@@ -407,8 +475,10 @@ async function autoPush(message = 'Update playbooks') {
  * First-time setup: save config, init workspace, set remote, initial pull.
  */
 async function setup({ repoUrl, authToken, autoPull: ap, autoPush: ap2, userName, userEmail, branch }) {
-  if (!repoUrl) return { success: false, error: 'repoUrl required' };
+  const urlCheck = validateGitUrl(repoUrl);
+  if (!urlCheck.ok) return { success: false, error: urlCheck.error };
   const targetBranch = (branch || 'main').trim();
+  if (!validateBranchName(targetBranch)) return { success: false, error: 'Invalid branch name' };
 
   db.settings.set('git_repo_url',   repoUrl);
   setSecret(db, 'git_auth_token', authToken || '');
@@ -467,4 +537,4 @@ process.on('exit', () => {
   }
 });
 
-module.exports = { getConfig, isConfigured, getStatus, getLog, getBranches, checkout, pull, commit, push, autoPull, autoPush, setup, registerSyncHook };
+module.exports = { getConfig, isConfigured, getStatus, getLog, getBranches, checkout, pull, commit, push, autoPull, autoPush, setup, registerSyncHook, validateGitUrl, validateBranchName };

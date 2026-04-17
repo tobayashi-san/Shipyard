@@ -32,8 +32,20 @@ function createApp({ isHttps = false } = {}) {
   let broadcast = () => {};
   const emit = (payload) => broadcast(payload);
 
-  if (process.env.TRUST_PROXY === '1') {
-    app.set('trust proxy', 1);
+  // TRUST_PROXY: accepts '1' (single hop), numeric hop count ('2', '3', …),
+  // 'true'/'false', or an Express-compatible value like a CIDR/IP list
+  // (e.g. '10.0.0.0/8,192.168.0.0/16'). Backward-compatible with prior '1'-only behaviour.
+  const tp = process.env.TRUST_PROXY;
+  if (tp !== undefined && tp !== '' && tp !== '0' && tp.toLowerCase() !== 'false') {
+    const asNum = Number.parseInt(tp, 10);
+    if (Number.isFinite(asNum) && String(asNum) === tp.trim()) {
+      app.set('trust proxy', asNum);
+    } else if (tp.toLowerCase() === 'true') {
+      app.set('trust proxy', true);
+    } else {
+      // IP/CIDR list – Express accepts comma-separated string or array.
+      app.set('trust proxy', tp.split(',').map(s => s.trim()).filter(Boolean));
+    }
   }
 
   const allowedOrigins = parseAllowedOrigins(process.env.ALLOWED_ORIGINS);

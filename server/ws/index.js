@@ -66,7 +66,10 @@ function createWebSocketHub({ server, allowedOrigins }) {
 
   server.on('upgrade', (req, socket, head) => {
     const origin = req.headers.origin;
-    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    // Only honor X-Forwarded-Host when an upstream proxy is trusted; otherwise
+    // a malicious client could spoof the "same-host" origin check.
+    const trustProxy = process.env.TRUST_PROXY === '1';
+    const host = (trustProxy && req.headers['x-forwarded-host']) || req.headers.host;
     if (origin && !isAllowedRequestOrigin(allowedOrigins, origin, host)) {
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();

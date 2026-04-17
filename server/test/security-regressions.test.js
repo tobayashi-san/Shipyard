@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 process.env.DB_PATH = path.join(os.tmpdir(), `lab_test_security_${Date.now()}.db`);
 process.env.JWT_SECRET = 'test-jwt-secret-security';
+process.env.SHIPYARD_KEY_SECRET = 'test-master-key-security';
 process.env.NODE_ENV = 'test';
 
 const { test, after } = require('node:test');
@@ -207,7 +208,10 @@ test('admin can disable another user\'s 2FA from user management', async () => {
 
   const before = db.users.getByUsername('viewer2fa');
   assert.equal(before.totp_enabled, 1);
-  assert.equal(before.totp_secret, 'ACTIVE_SECRET');
+  // Stored row must NOT contain the plaintext secret (encrypted at rest);
+  // helper returns the decrypted value.
+  assert.notEqual(before.totp_secret, 'ACTIVE_SECRET');
+  assert.equal(db.users.getTotpSecret(created.id), 'ACTIVE_SECRET');
   assert.equal(before.token_version || 0, 0);
 
   const adminToken = await login('admin', 'testpass12345');

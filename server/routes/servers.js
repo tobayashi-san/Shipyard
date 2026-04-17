@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const log = require('../utils/logger').child('routes:servers');
 const db = require('../db');
 const sshManager = require('../services/ssh-manager');
@@ -186,9 +187,15 @@ router.get('/export', guard('canExportImportServers'), (req, res) => {
     if (!['json', 'csv'].includes(format)) return res.status(400).json({ error: 'Invalid format. Use json or csv.' });
 
     if (format === 'csv') {
+      // Defuse CSV formula injection (CWE-1236): values starting with =, +, -, @,
+      // tab or CR are interpreted as formulas by Excel/LibreOffice/Sheets.
+      // Prefix such values with a single quote and always wrap them in quotes.
+      const FORMULA_PREFIX = /^[=+\-@\t\r]/;
       const escape = v => {
-        const s = String(v ?? '');
-        return s.includes(',') || s.includes('"') || s.includes('\n')
+        let s = String(v ?? '');
+        const needsFormulaGuard = FORMULA_PREFIX.test(s);
+        if (needsFormulaGuard) s = `'${s}`;
+        return needsFormulaGuard || s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')
           ? `"${s.replace(/"/g, '""')}"` : s;
       };
       const header = 'name,hostname,ip_address,ssh_port,ssh_user,tags,services,links,storage_mounts';
@@ -239,7 +246,7 @@ router.post('/import', guard('canExportImportServers'), (req, res) => {
           name:      String(s.name).slice(0, 100),
           hostname:  String(s.hostname  || s.ip_address).slice(0, 255),
           ip_address: String(s.ip_address).slice(0, 45),
-          ssh_port:  parseInt(s.ssh_port) || 22,
+          ssh_port:  parseInt(s.ssh_port, 10) || 22,
           ssh_user:  String(s.ssh_user || 'root').slice(0, 100),
           tags:      normalizedTags,
           services:  Array.isArray(s.services) ? s.services : [],
@@ -383,7 +390,7 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
       name: name.slice(0, 100),
       hostname: (hostname || ip_address).slice(0, 255),
       ip_address: ip_address.slice(0, 45),
-      ssh_port: Math.min(65535, Math.max(1, parseInt(ssh_port) || 22)),
+      ssh_port: Math.min(65535, Math.max(1, parseInt(ssh_port, 10) || 22)),
       ssh_user: (ssh_user || 'root').slice(0, 100),
       tags: normalizedTags,
       services: Array.isArray(services) ? services.filter(s => typeof s === 'string').map(s => s.slice(0, 100)) : [],
@@ -413,7 +420,7 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
     const sName   = name !== undefined ? String(name).slice(0, 100) : existing.name;
     const sHost   = hostname !== undefined ? String(hostname).slice(0, 255) : existing.hostname;
     const sIp     = ip_address !== undefined ? String(ip_address).slice(0, 45) : existing.ip_address;
-    const sPort   = ssh_port !== undefined ? Math.min(65535, Math.max(1, parseInt(ssh_port) || 22)) : existing.ssh_port;
+    const sPort   = ssh_port !== undefined ? Math.min(65535, Math.max(1, parseInt(ssh_port, 10) || 22)) : existing.ssh_port;
     const sUser   = ssh_user !== undefined ? String(ssh_user).slice(0, 100) : existing.ssh_user;
     const sTags   = Array.isArray(tags) ? tags.filter(t => typeof t === 'string').map(t => t.slice(0, 100)) : JSON.parse(existing.tags || '[]');
     const sSvcs   = Array.isArray(services) ? services.filter(s => typeof s === 'string').map(s => s.slice(0, 100)) : JSON.parse(existing.services || '[]');
@@ -452,7 +459,14 @@ router.delete('/:id', guardServerAccess, guard('canDeleteServers'), (req, res) =
 });
 
 // POST /api/servers/:id/test - Test SSH connection
-router.post('/:id/test', guardServerAccess, guard('canUseTerminal'), async (req, res) => {
+const testConnectionLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many SSH test requests. Please slow down.' },
+});
+router.post('/:id/test', testConnectionLimiter, guardServerAccess, guard('canUseTerminal'), async (req, res) => {
   try {
     const server = req.server;
     const connected = await sshManager.testConnection(server);
@@ -461,18 +475,21 @@ router.post('/:id/test', guardServerAccess, guard('canUseTerminal'), async (req,
     res.json({ connected, status: connected ? 'online' : 'offline' });
   } catch (error) {
     db.servers.updateStatus(req.params.id, 'error');
-    res.json({ connected: false, status: 'error', error: error.message });
+    log.warn({ err: error, serverId: req.params.id }, 'SSH test failed');
+    res.json({ connected: false, status: 'error', error: 'Connection test failed' });
   }
 });
 
-// POST /api/servers/:id/reset-host-key - Remove stale known_hosts entries
+// POST /api/servers/:id/reset-host-key - Remove stale known_hosts entries and clear stored host fingerprint
 router.post('/:id/reset-host-key', guardServerAccess, guard('canUseTerminal'), (req, res) => {
   try {
     const server = req.server;
     const result = sshManager.removeKnownHostEntries([server.ip_address, server.hostname]);
+    // Clear the trust-on-first-use fingerprint so the next connect re-learns it.
+    try { db.servers.setHostFingerprint(server.id, ''); } catch {}
     db.auditLog.write(
       'server.reset_host_key',
-      `server="${server.name}" removed=${result.removed.join(',') || '-'} missing=${result.missing.join(',') || '-'}`,
+      `server="${server.name}" removed=${result.removed.join(',') || '-'} missing=${result.missing.join(',') || '-'} fingerprint=cleared`,
       req.ip,
       true,
       req.user?.username
@@ -540,7 +557,9 @@ router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, 
       })
       .catch(err => {
         log.debug({ err, server: server.name }, 'Background info refresh failed');
-        try { db.servers.updateStatus(server.id, 'offline'); } catch {}
+        try { db.servers.updateStatus(server.id, 'offline'); } catch (updateErr) {
+          log.warn({ err: updateErr, server: server.name }, 'Failed to update server status to offline');
+        }
       });
     return;
   }
@@ -582,7 +601,7 @@ router.get('/:id/updates', guardServerAccess, guard('canViewUpdates'), async (re
     res.json(cached.map(u => ({ ...u, _cached: true })));
     systemInfo.getAvailableUpdates(server)
       .then(updates => db.updatesCache.set(server.id, updates))
-      .catch(() => {});
+      .catch(err => { log.debug({ err, server: server.name }, 'Background updates cache refresh failed'); });
     return;
   }
 
@@ -599,7 +618,7 @@ router.get('/:id/updates', guardServerAccess, guard('canViewUpdates'), async (re
 // GET /api/servers/:id/history - Get update history + scheduled playbook runs
 router.get('/:id/history', guardServerAccess, guard('canViewServers'), (req, res) => {
   try {
-    const server = db.servers.getById(req.params.id);
+    const server = req.server;
     const manualHistory = db.updateHistory.getByServer(req.params.id);
 
     // Also fetch scheduled playbook runs that targeted this server
@@ -671,7 +690,7 @@ async function refreshDockerCache(server) {
   if (jsonEnd === -1) return;
   const jsonStr = result.stdout.substring(arrayStart, jsonEnd + 1);
   try {
-    const containers = JSON.parse(jsonStr).filter(line => line.trim()).map(line => {
+    const containers = JSON.parse(jsonStr).filter(line => typeof line === 'string' && line.trim()).map(line => {
       const parts = line.split('|');
       return {
         name: parts[0] || 'Unknown',
@@ -698,7 +717,7 @@ router.get('/:id/docker', guardServerAccess, guard('canViewDocker'), async (req,
 
   if (cached.length > 0 && !force) {
     res.json(cached.map(c => ({ ...c, _cached: true })));
-    refreshDockerCache(server).catch(() => {});
+    refreshDockerCache(server).catch(err => { log.debug({ err, server: server.name }, 'Background docker cache refresh failed'); });
     return;
   }
 
@@ -720,14 +739,14 @@ router.get('/:id/docker/:container/logs', guardServerAccess, guard('canViewDocke
     return res.status(400).json({ error: 'Invalid container name' });
   }
 
-  const tailRaw = parseInt(req.query.tail);
+  const tailRaw = parseInt(req.query.tail, 10);
   const tail = Math.max(1, Math.min(Number.isFinite(tailRaw) ? tailRaw : 200, 2000));
 
   try {
     const result = await ansibleRunner.runAdHoc(
       server.name,
       'shell',
-      `$(command -v docker 2>/dev/null || command -v podman 2>/dev/null) logs --tail ${tail} --timestamps ${container} 2>&1`,
+      `$(command -v docker 2>/dev/null || command -v podman 2>/dev/null) logs --tail "${tail}" --timestamps "${container}" 2>&1`,
       () => {},
       { become: true }
     );
