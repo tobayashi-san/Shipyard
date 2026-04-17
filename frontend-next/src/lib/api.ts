@@ -222,9 +222,12 @@ export const api = {
   // Git
   getGitConfig:      () => apiFetch<AnyObj>('/playbooks-git/config'),
   saveGitConfig:     (data: AnyObj) => apiFetch('/playbooks-git/config', { method: 'PUT', body: data }),
+  saveGitSettings:   (data: AnyObj) => apiFetch('/playbooks-git/settings', { method: 'POST', body: data }),
+  gitDisconnect:     () => apiFetch('/playbooks-git/disconnect', { method: 'POST' }),
   gitSetup:          (data: AnyObj) => apiFetch('/playbooks-git/setup', { method: 'POST', body: data }),
   getGitStatus:      () => apiFetch<AnyObj>('/playbooks-git/status'),
-  getGitLog:         () => apiFetch<AnyObj[]>('/playbooks-git/log'),
+  getGitLog:         (page?: number, limit?: number) =>
+    apiFetch<AnyObj>(`/playbooks-git/log${page || limit ? `?page=${page || 1}&limit=${limit || 10}` : ''}`),
   getGitBranches:    () => apiFetch<AnyObj>('/playbooks-git/branches'),
   gitCheckout:       (branch: string) => apiFetch('/playbooks-git/checkout', { method: 'POST', body: { branch } }),
   gitCommit:         (message: string) => apiFetch('/playbooks-git/commit', { method: 'POST', body: { message } }),
