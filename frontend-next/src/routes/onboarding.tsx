@@ -24,7 +24,7 @@ interface Branding {
 
 function Stepper({ current }: { current: number }) {
   return (
-    <div className="mb-6 flex items-center justify-center gap-2">
+    <div className="mb-4 flex items-center justify-center gap-2">
       {Array.from({ length: STEPS }).map((_, i) => (
         <span
           key={i}
@@ -83,7 +83,7 @@ export function OnboardingPage() {
     nextDisabled?: boolean;
     extra?: React.ReactNode;
   }) => (
-    <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
+    <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
       {props.onPrev && (
         <Button variant="ghost" onClick={props.onPrev}>
           <ArrowLeft className="h-4 w-4" /> {t('ob.prev')}
@@ -104,7 +104,7 @@ export function OnboardingPage() {
   return (
     <div className="grid min-h-screen place-items-center bg-gradient-to-br from-background via-background to-muted/40 p-4">
       <Card className="w-full max-w-lg shadow-lg">
-        <CardContent className="p-8">
+        <CardContent className="p-6">
           {Logo}
           <Stepper current={step} />
           {step === 0 && <WelcomeStep onNext={() => setStep(1)} NavRow={NavRow} />}
@@ -380,7 +380,7 @@ function DoneStep({ onFinish }: { onFinish: () => void }) {
   const { t } = useTranslation();
   return (
     <div className="space-y-4 text-center">
-      <div className="text-5xl">🎉</div>
+      <div className="text-3xl">🎉</div>
       <h2 className="text-xl font-semibold">{t('ob.done')}</h2>
       <p className="text-sm text-muted-foreground">{t('ob.doneDesc')}</p>
       <Button onClick={onFinish} className="mx-auto">

@@ -11,6 +11,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Skeleton, SkeletonRow } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
 import { SettingsRow, SettingsSection } from '../_row';
 
 interface GitConfig {
@@ -23,7 +25,6 @@ interface GitConfig {
 }
 
 export function GitTab() {
-  const { t } = useTranslation();
   const cfgQ = useQuery<GitConfig>({
     queryKey: ['git-config'],
     queryFn: async () => {
@@ -33,7 +34,12 @@ export function GitTab() {
   });
 
   if (cfgQ.isLoading) {
-    return <div className="text-sm text-muted-foreground">{t('common.loading')}</div>;
+    return (
+      <div className="space-y-2">
+        <Skeleton className="h-4 w-1/3" />
+        <Skeleton className="h-3 w-2/3" />
+      </div>
+    );
   }
   const cfg = cfgQ.data || {};
   return cfg.repoUrl ? <GitDashboard cfg={cfg} /> : <GitSetup />;
@@ -74,7 +80,7 @@ function GitSetup() {
   return (
     <SettingsSection
       icon={<GitBranch className="h-4 w-4" />}
-      title="Git Sync"
+      title={t('git.title')}
       description={t('git.setupHint')}
     >
       <SettingsRow label={t('git.repoUrl')} hint={t('git.repoUrlSmallHint')}>
@@ -159,14 +165,14 @@ function GitDashboard({ cfg }: { cfg: GitConfig }) {
 
   const pull = useMutation({
     mutationFn: () => api.gitPull(),
-    onMutate: () => setStatusMsg(t('git.pulling') || 'Pulling…'),
+    onMutate: () => setStatusMsg(t('git.pulling')),
     onSuccess: () => { setStatusMsg(t('git.pullSuccess')); qc.invalidateQueries({ queryKey: ['git-log'] }); },
     onError: (e) => setStatusMsg(t('git.pullFailed', { msg: (e as Error).message })),
   });
 
   const push = useMutation({
     mutationFn: () => api.gitPush(),
-    onMutate: () => setStatusMsg(t('git.pushing') || 'Pushing…'),
+    onMutate: () => setStatusMsg(t('git.pushing')),
     onSuccess: () => { setStatusMsg(t('git.pushSuccess')); qc.invalidateQueries({ queryKey: ['git-log'] }); },
     onError: (e) => setStatusMsg(t('git.pushFailed', { msg: (e as Error).message })),
   });
@@ -192,8 +198,8 @@ function GitDashboard({ cfg }: { cfg: GitConfig }) {
   });
 
   return (
-    <div className="space-y-6">
-      <SettingsSection icon={<GitBranch className="h-4 w-4" />} title="Git Sync">
+    <div className="space-y-4">
+      <SettingsSection icon={<GitBranch className="h-4 w-4" />} title={t('git.syncTitle')}>
         <div className="flex justify-end pt-3">
           <Button variant="destructive" size="sm" onClick={() => setConfirmDisconnect(true)}>
             <Unplug className="h-4 w-4" /> {t('git.disconnectBtn')}
@@ -329,8 +335,18 @@ function GitLogPanel() {
 
       {logQ.isError ? (
         <div className="py-4 text-xs text-destructive">{t('git.logLoadFailed')}{(logQ.error as Error)?.message}</div>
-      ) : commits.length === 0 && !logQ.isLoading ? (
-        <div className="py-4 text-xs text-muted-foreground">{t('git.noCommitsYet')}</div>
+      ) : logQ.isLoading && commits.length === 0 ? (
+        <div className="py-2">
+          <SkeletonRow cols={3} />
+          <SkeletonRow cols={3} />
+          <SkeletonRow cols={3} />
+        </div>
+      ) : commits.length === 0 ? (
+        <EmptyState
+          compact
+          icon={<GitCommit className="h-5 w-5" />}
+          title={t('git.noCommitsYet')}
+        />
       ) : (
         <div className="font-mono text-xs">
           {commits.map((c, i) => (

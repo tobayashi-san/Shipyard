@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import { Puzzle, RotateCw, AlertTriangle, CircleAlert } from 'lucide-react';
 import { api } from '@/lib/api';
 import { showToast } from '@/lib/toast';
@@ -9,6 +10,9 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { SkeletonRow } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { SettingsRow, SettingsSection } from '../_row';
 
 export function PluginsTab() {
@@ -26,7 +30,7 @@ export function PluginsTab() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <SettingsSection
         icon={<Puzzle className="h-4 w-4" />}
         title={t('set.plugins')}
@@ -39,9 +43,11 @@ export function PluginsTab() {
         </div>
 
         {isLoading && (
-          <SettingsRow noBorder>
-            <span className="text-sm text-muted-foreground">{t('common.loading')}</span>
-          </SettingsRow>
+          <div className="py-2">
+            <SkeletonRow cols={3} />
+            <SkeletonRow cols={3} />
+            <SkeletonRow cols={3} />
+          </div>
         )}
         {isError && (
           <SettingsRow noBorder>
@@ -49,12 +55,11 @@ export function PluginsTab() {
           </SettingsRow>
         )}
         {!isLoading && !isError && plugins && plugins.length === 0 && (
-          <SettingsRow noBorder>
-            <div className="flex w-full flex-col items-center gap-2 py-6 text-sm text-muted-foreground">
-              <Puzzle className="h-6 w-6 opacity-40" />
-              <span>{t('set.pluginsEmpty')}</span>
-            </div>
-          </SettingsRow>
+          <EmptyState
+            compact
+            icon={<Puzzle className="h-5 w-5" />}
+            title={t('set.pluginsEmpty')}
+          />
         )}
         {!isLoading && plugins && plugins.length > 0 && (
           <PluginList plugins={plugins} />
@@ -129,14 +134,19 @@ function PluginList({ plugins }: { plugins: PluginInfo[] }) {
             </>
           }
         >
+          {p.enabled && p.hasUi !== false && (
+            <Link to="/plugins/$id" params={{ id: p.id }}>
+              <Button variant="outline" size="sm">{t('plugins.open')}</Button>
+            </Link>
+          )}
           <Switch
             checked={!!p.enabled}
             disabled={!p.loaded || busyId === p.id}
             onCheckedChange={(v) => onToggle(p, v)}
           />
-          <span className="text-xs text-muted-foreground">
+          <StatusBadge tone={p.enabled ? 'success' : 'muted'} dot>
             {p.enabled ? t('set.pluginsEnabled') : t('set.pluginsDisabled')}
-          </span>
+          </StatusBadge>
         </SettingsRow>
       ))}
 
@@ -148,18 +158,16 @@ function PluginList({ plugins }: { plugins: PluginInfo[] }) {
           <DialogHeader>
             <DialogTitle>{t('set.pluginsEnableTitle')}</DialogTitle>
           </DialogHeader>
-          <div
-            className="text-sm text-muted-foreground"
-            dangerouslySetInnerHTML={{
-              __html: t('set.pluginsEnableWarning', { name: confirmTarget?.name || confirmTarget?.id || '' }),
-            }}
-          />
+          <p className="text-sm text-muted-foreground">
+            {t('set.pluginsEnableWarningPre')}{' '}
+            <strong>{confirmTarget?.name || confirmTarget?.id || ''}</strong>{' '}
+            {t('set.pluginsEnableWarningPost')}
+          </p>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setConfirmTarget(null)}>
               {t('common.cancel')}
             </Button>
             <Button
-              variant="destructive"
               onClick={() => {
                 const p = confirmTarget;
                 setConfirmTarget(null);

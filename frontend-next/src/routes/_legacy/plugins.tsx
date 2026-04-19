@@ -7,6 +7,9 @@ import { api, apiFetch } from '@/lib/api';
 import { ws } from '@/lib/ws';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
+import { useProfile, useSettings } from '@/lib/queries';
+import { showToast as pushToast } from '@/lib/toast';
 
 interface PluginInfo {
   id: string;
@@ -34,7 +37,7 @@ interface PluginCtx {
   navigate: (to: string) => void;
   refreshServersState: () => Promise<unknown[]>;
   showToast: (msg: string, kind?: string) => void;
-  showConfirm: (msg: string) => Promise<boolean>;
+  showConfirm: (msg: string, options?: { title?: string; confirmText?: string; danger?: boolean }) => Promise<boolean>;
   onWsMessage: (fn: (data: unknown) => void) => () => void;
 }
 
@@ -66,13 +69,15 @@ export function PluginsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('plugins.title')}</h1>
-        <Button variant="outline" size="sm" onClick={() => reload.mutate()} disabled={reload.isPending}>
-          <RefreshCw className={`h-4 w-4 ${reload.isPending ? 'animate-spin' : ''}`} />
-          {t('plugins.reload')}
-        </Button>
-      </div>
+      <PageHeader
+        title={t('plugins.title')}
+        actions={
+          <Button variant="outline" size="sm" onClick={() => reload.mutate()} disabled={reload.isPending}>
+            <RefreshCw className={`h-4 w-4 ${reload.isPending ? 'animate-spin' : ''}`} />
+            {t('plugins.reload')}
+          </Button>
+        }
+      />
 
       {isLoading ? (
         <Card><CardContent className="p-6 text-sm text-muted-foreground">{t('common.loading')}</CardContent></Card>
@@ -137,17 +142,26 @@ export function PluginsPage() {
 
 export function PluginHostPage() {
   const { t } = useTranslation();
+  const qc = useQueryClient();
   const { id } = useParams({ from: '/_protected/plugins/$id' });
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const moduleRef = useRef<PluginModule | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const { data: profile } = useProfile();
+  const { data: settings } = useSettings();
 
   const { data: plugins } = useQuery<PluginInfo[]>({
     queryKey: ['plugins'],
     queryFn: async () => ((await api.getPlugins()) as unknown as PluginInfo[]) ?? [],
   });
+  const { data: servers } = useQuery<unknown[]>({
+    queryKey: ['servers'],
+    queryFn: async () => ((await api.getServers()) as unknown as unknown[]) ?? [],
+  });
+
+  const pluginInfo = plugins?.find(p => p.id === id);
 
   useEffect(() => {
     let cancelled = false;
@@ -178,18 +192,37 @@ export function PluginHostPage() {
           state: {
             currentView: 'plugin',
             selectedServerId: null,
-            servers: [],
+            servers: servers ?? [],
             plugins: plugins ?? [],
-            user: null,
-            whiteLabel: {},
+            user: profile ?? null,
+            whiteLabel: settings ?? {},
           },
-          navigate: (to: string) => navigate({ to }),
+          navigate: (to: string) => {
+            // Map legacy shorthand routes to full paths used by the new frontend
+            const routeMap: Record<string, string> = {
+              dashboard: '/',
+              servers: '/servers',
+              playbooks: '/playbooks',
+              settings: '/settings/git',
+            };
+            navigate({ to: routeMap[to] ?? to });
+          },
           refreshServersState: async () => {
-            try { return ((await api.getServers()) as unknown as unknown[]) ?? []; }
+            try {
+              const nextServers = ((await api.getServers()) as unknown as unknown[]) ?? [];
+              await Promise.all([
+                qc.invalidateQueries({ queryKey: ['servers'] }),
+                qc.invalidateQueries({ queryKey: ['server'] }),
+              ]);
+              return nextServers;
+            }
             catch { return []; }
           },
-          showToast: (msg) => { console.info('[plugin toast]', msg); },
-          showConfirm: async (msg) => window.confirm(msg),
+          showToast: (msg, kind) => { pushToast(msg, (kind as 'success' | 'error' | 'warning' | 'info' | undefined) ?? 'info'); },
+          showConfirm: async (msg, options) => {
+            const detail = options?.title ? `${options.title}\n\n${msg}` : msg;
+            return window.confirm(detail);
+          },
           onWsMessage: (fn) => ws.subscribe(fn),
         };
 
@@ -218,19 +251,24 @@ export function PluginHostPage() {
       const container = containerRef.current;
       if (container) container.innerHTML = '';
     };
-  }, [id, navigate, t, plugins]);
+  }, [id, navigate, t, plugins, servers, profile, settings, qc]);
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <Link to="/settings/$tab" params={{ tab: 'plugins' }}>
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4" /> {t('plugins.back')}
-          </Button>
-        </Link>
-        <h1 className="text-lg font-medium">{id}</h1>
-        <div className="w-24" />
-      </div>
+      <PageHeader
+        title={pluginInfo?.name || id}
+        badge={pluginInfo?.version
+          ? <span className="font-mono text-sm font-normal text-muted-foreground">{pluginInfo.version}</span>
+          : undefined}
+        description={pluginInfo?.description || undefined}
+        back={
+          <Link to="/settings/$tab" params={{ tab: 'plugins' }}>
+            <Button variant="ghost" size="sm" className="-ml-2">
+              <ArrowLeft className="h-4 w-4" /> {t('plugins.back')}
+            </Button>
+          </Link>
+        }
+      />
 
       {loading && !error && (
         <Card><CardContent className="p-6 text-sm text-muted-foreground">{t('common.loading')}</CardContent></Card>

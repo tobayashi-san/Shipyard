@@ -7,6 +7,7 @@ import {
   FileText, Plus, Save, Trash2, Play, History, Search, ChevronDown,
   FolderCog, Folder, ArrowLeft, X, Eye, Undo2, Clock, SlidersHorizontal,
   GitBranch, ArrowDown, ArrowUp, Settings2, Terminal,
+  KeyRound, Calendar, GitCommit,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
@@ -20,6 +21,11 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
+import { PageHeader } from '@/components/ui/page-header';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Skeleton, SkeletonRow } from '@/components/ui/skeleton';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useUi } from '@/lib/store';
 import { useProfile, hasCap } from '@/lib/queries';
 import { showToast } from '@/lib/toast';
@@ -191,13 +197,11 @@ export function PlaybooksPage() {
   return (
     <div className="space-y-4">
       {/* Header + Git widget */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t('pb.title')}</h1>
-          <p className="text-sm text-muted-foreground">{t('pb.subtitle')}</p>
-        </div>
-        <GitWidget onGoSettings={() => navigate({ to: '/settings' })} />
-      </div>
+      <PageHeader
+        title={t('pb.title')}
+        description={t('pb.subtitle')}
+        actions={<GitWidget onGoSettings={() => navigate({ to: '/settings' })} />}
+      />
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
@@ -225,7 +229,7 @@ export function PlaybooksPage() {
 function GitWidget({ onGoSettings }: { onGoSettings: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const { data: cfg } = useQuery({ queryKey: ['gitConfig'], queryFn: () => api.getGitConfig() as Promise<Record<string, unknown>> });
+  const { data: cfg } = useQuery({ queryKey: ['git-config'], queryFn: () => api.getGitConfig() as Promise<Record<string, unknown>> });
   const branch = (cfg?.branch as string) || 'main';
   const configured = !!cfg?.repoUrl;
 
@@ -281,6 +285,7 @@ function TemplatesTab() {
   const [runFilename, setRunFilename] = useState('');
   const [runDescription, setRunDescription] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const { data: playbooks } = useQuery<Playbook[]>({
     queryKey: ['playbooks'],
@@ -318,6 +323,7 @@ function TemplatesTab() {
     user.forEach(p => { const c = p.category || t('pb.custom'); (catMap[c] ??= []).push(p); });
     return { catMap, internal };
   }, [playbooks, filter, t]);
+  const canOpenTemplates = hasCap(profile, 'canEditPlaybooks') || hasCap(profile, 'canDeletePlaybooks');
 
   const toggleCat = (key: string) => {
     setCollapsed(prev => {
@@ -380,6 +386,7 @@ function TemplatesTab() {
     mutationFn: () => api.deletePlaybook(selected!),
     onSuccess: () => {
       showToast(t('pb.deleted', { name: selected }), 'success');
+      setDeleteConfirmOpen(false);
       setPanel('none');
       setSelected(null);
       qc.invalidateQueries({ queryKey: ['playbooks'] });
@@ -390,7 +397,7 @@ function TemplatesTab() {
   const closePanel = () => { setPanel('none'); setSelected(null); };
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
+    <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
       {/* ── List panel ─────────────────────────── */}
       <Card className="lg:max-h-[calc(100vh-14rem)] lg:overflow-y-auto">
         <CardContent className="p-0">
@@ -420,7 +427,7 @@ function TemplatesTab() {
                   </button>
                   {open && grouped.catMap[cat].map(p => (
                     <PlaybookListItem key={p.filename} p={p} active={selected === p.filename}
-                      onSelect={() => selectPb(p.filename, false)}
+                      onSelect={canOpenTemplates ? () => selectPb(p.filename, false) : undefined}
                       onRun={hasCap(profile, 'canRunPlaybooks') ? () => openRun(p.filename, p.description ?? p.filename) : undefined}
                     />
                   ))}
@@ -440,13 +447,13 @@ function TemplatesTab() {
                   </button>
                   {open && grouped.internal.map(p => (
                     <PlaybookListItem key={p.filename} p={p} active={selected === p.filename}
-                      onSelect={() => selectPb(p.filename, true)} />
+                      onSelect={canOpenTemplates ? () => selectPb(p.filename, true) : undefined} />
                   ))}
                 </div>
               );
             })()}
             {Object.keys(grouped.catMap).length === 0 && grouped.internal.length === 0 && (
-              <div className="py-8 text-center text-sm text-muted-foreground">{t('pb.noPlaybooks')}</div>
+              <div className="py-4 text-center text-sm text-muted-foreground">{t('pb.noPlaybooks')}</div>
             )}
           </div>
         </CardContent>
@@ -455,16 +462,18 @@ function TemplatesTab() {
       {/* ── Right panel ────────────────────────── */}
       {panel === 'none' && (
         <Card>
-          <CardContent className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
-            <Terminal className="h-8 w-8" />
-            <h3 className="font-medium">{t('pb.noPlaybooks')}</h3>
-            <p className="text-sm">{t('pb.selectHint')}</p>
+          <CardContent className="p-6">
+            <EmptyState
+              icon={<Terminal className="h-5 w-5" />}
+              title={t('pb.noPlaybooks')}
+              description={t('pb.selectHint')}
+            />
           </CardContent>
         </Card>
       )}
 
       {panel === 'editor' && (
-        <Card>
+        <Card className="min-w-0">
           <CardContent className="space-y-3 p-4">
             {/* Editor header */}
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -479,7 +488,7 @@ function TemplatesTab() {
                   </Button>
                 )}
                 {!isNew && !selectedPb?.isInternal && hasCap(profile, 'canDeletePlaybooks') && (
-                  <Button variant="destructive" size="sm" onClick={() => deleteMut.mutate()} disabled={deleteMut.isPending}>
+                  <Button variant="destructive" size="sm" onClick={() => setDeleteConfirmOpen(true)} disabled={deleteMut.isPending}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 )}
@@ -519,15 +528,28 @@ function TemplatesTab() {
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
         <PlaybookHistoryDialog filename={selected ?? ''} onRestore={(c: string) => { setContent(c); setHistoryOpen(false); }} />
       </Dialog>
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title={t('common.delete')}
+        description={<>
+          <div>{t('pb.confirmDelete', { name: selected ?? '' })}</div>
+          <div className="mt-2 text-xs">{t('pb.confirmDeleteHint')}</div>
+        </>}
+        confirmLabel={t('common.delete')}
+        variant="destructive"
+        onConfirm={() => deleteMut.mutate()}
+        isPending={deleteMut.isPending}
+      />
     </div>
   );
 }
 
 function PlaybookListItem({ p, active, onSelect, onRun }: {
-  p: Playbook; active: boolean; onSelect: () => void; onRun?: () => void;
+  p: Playbook; active: boolean; onSelect?: () => void; onRun?: () => void;
 }) {
   return (
-    <div className={`group flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm cursor-pointer transition ${active ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'}`}
+    <div className={`group flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition ${onSelect ? 'cursor-pointer' : ''} ${active ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'}`}
       onClick={onSelect}>
       <FileText className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate" title={p.filename}>{p.description || p.filename}</span>
@@ -553,6 +575,7 @@ function TemplateRunPanel({ filename, description, onClose }: { filename: string
   const [busy, setBusy] = useState(false);
   const [lines, setLines] = useState<{ text: string; cls: string }[]>([]);
   const [showOutput, setShowOutput] = useState(false);
+  const [confirmAllOpen, setConfirmAllOpen] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const addLine = (text: string, cls: string) => { setLines(prev => [...prev, { text, cls }]); };
@@ -560,10 +583,15 @@ function TemplateRunPanel({ filename, description, onClose }: { filename: string
 
   const run = async () => {
     if (!target) { showToast(t('run.needTarget'), 'warning'); return; }
+    if (target === 'all') { setConfirmAllOpen(true); return; }
+    await startRun(target);
+  };
+
+  const startRun = async (targetValue: string) => {
     setBusy(true);
     setShowOutput(true);
     setLines([]);
-    const finalTarget = target === 'all' ? buildAllExceptTargets([...excluded]) : target;
+    const finalTarget = targetValue === 'all' ? buildAllExceptTargets([...excluded]) : targetValue;
     try {
       const res = await api.runPlaybook(filename, finalTarget, {}) as unknown as { historyId?: string };
       addLine(t('pb.started'), 'text-green-500');
@@ -581,7 +609,7 @@ function TemplateRunPanel({ filename, description, onClose }: { filename: string
   };
 
   return (
-    <Card>
+    <Card className="min-w-0">
       <CardContent className="space-y-3 p-4">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -617,9 +645,9 @@ function TemplateRunPanel({ filename, description, onClose }: { filename: string
                       setExcluded(prev => { const n = new Set(prev); if (e.target.checked) n.add(nm); else n.delete(nm); return n; });
                     }} />
                     <span>{nm}</span>
-                    <Badge variant={s.status === 'online' ? 'default' : 'secondary'} className="ml-auto text-[10px]">
+                    <StatusBadge tone={s.status === 'online' ? 'success' : 'muted'} className="ml-auto">
                       {s.status === 'online' ? t('common.online') : t('common.offline')}
-                    </Badge>
+                    </StatusBadge>
                   </label>
                 );
               })}
@@ -639,6 +667,16 @@ function TemplateRunPanel({ filename, description, onClose }: { filename: string
             </div>
           </div>
         )}
+        <ConfirmDialog
+          open={confirmAllOpen}
+          onOpenChange={setConfirmAllOpen}
+          title={t('run.confirmAllServersTitle')}
+          description={t('run.confirmAllServersMessage')}
+          confirmLabel={t('common.run')}
+          variant="destructive"
+          onConfirm={() => { void startRun('all'); }}
+          isPending={busy}
+        />
       </CardContent>
     </Card>
   );
@@ -662,6 +700,7 @@ function QuickRunTab() {
   const [busy, setBusy] = useState(false);
   const [lines, setLines] = useState<{ text: string; cls: string }[]>([]);
   const [started, setStarted] = useState(false);
+  const [confirmAllOpen, setConfirmAllOpen] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const addLine = (text: string, cls: string) => { setLines(prev => [...prev, { text, cls }]); };
@@ -673,8 +712,13 @@ function QuickRunTab() {
 
   const run = async () => {
     if (!selPb) { showToast(t('qr.selectPlaybook'), 'warning'); return; }
+    if (allChecked) { setConfirmAllOpen(true); return; }
+    await startRun(false);
+  };
+
+  const startRun = async (allMode: boolean) => {
     let targets: string;
-    if (allChecked) {
+    if (allMode) {
       const excl = [...checked].filter(v => v !== 'localhost');
       targets = buildAllExceptTargets(excl);
     } else {
@@ -735,9 +779,9 @@ function QuickRunTab() {
                   <label key={nm} className={`flex items-center gap-2 text-sm ${dis ? 'opacity-50' : ''}`}>
                     <input type="checkbox" disabled={dis} checked={checked.has(nm)} onChange={() => toggleServer(nm)} />
                     <span>{nm}</span>
-                    <Badge variant={s.status === 'online' ? 'default' : 'secondary'} className="ml-auto text-[10px]">
+                    <StatusBadge tone={s.status === 'online' ? 'success' : 'muted'} className="ml-auto">
                       {s.status === 'online' ? t('common.online') : t('common.offline')}
-                    </Badge>
+                    </StatusBadge>
                   </label>
                 );
               })}
@@ -748,12 +792,22 @@ function QuickRunTab() {
             </div>
           </div>
           <div className="space-y-1">
-            <Label>{t('qr.extraVars')} <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <Label>{t('qr.extraVars')} <span className="text-muted-foreground font-normal">({t('common.optional')})</span></Label>
             <Input value={extraVars} onChange={e => setExtraVars(e.target.value)} placeholder='{"key": "value"}' className="font-mono text-sm" />
           </div>
           <Button onClick={run} disabled={busy}>
             <Play className="h-4 w-4" /> {busy ? t('qr.running') : t('qr.run')}
           </Button>
+          <ConfirmDialog
+            open={confirmAllOpen}
+            onOpenChange={setConfirmAllOpen}
+            title={t('run.confirmAllServersTitle')}
+            description={t('run.confirmAllServersMessage')}
+            confirmLabel={t('common.run')}
+            variant="destructive"
+            onConfirm={() => { void startRun(true); }}
+            isPending={busy}
+          />
         </CardContent>
       </Card>
 
@@ -764,7 +818,7 @@ function QuickRunTab() {
             <Terminal className="h-4 w-4" /> {t('pb.output')}
           </div>
           {!started ? (
-            <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground text-sm">
+            <div className="flex flex-col items-center justify-center gap-2 py-10 text-muted-foreground text-sm">
               <Play className="h-6 w-6" />
               {t('pb.quickRunPlaceholder')}
             </div>
@@ -797,6 +851,7 @@ function VarsTab() {
   const [key, setKey] = useState('');
   const [value, setValue] = useState('');
   const [desc, setDesc] = useState('');
+  const [deleteItem, setDeleteItem] = useState<AnsibleVar | null>(null);
 
   const openNew = () => { setEditId(null); setKey(''); setValue(''); setDesc(''); setFormOpen(true); };
   const openEdit = (v: AnsibleVar) => { setEditId(v.id); setKey(v.key); setValue(v.value); setDesc(v.description ?? ''); setFormOpen(true); };
@@ -813,7 +868,7 @@ function VarsTab() {
 
   const delMut = useMutation({
     mutationFn: (id: string) => api.deleteAnsibleVar(id),
-    onSuccess: () => { showToast(t('vars.deleted'), 'success'); qc.invalidateQueries({ queryKey: ['ansibleVars'] }); },
+    onSuccess: () => { showToast(t('vars.deleted'), 'success'); setDeleteItem(null); qc.invalidateQueries({ queryKey: ['ansibleVars'] }); },
     onError: (e: Error) => showToast(e.message, 'error'),
   });
 
@@ -830,9 +885,18 @@ function VarsTab() {
             )}
           </div>
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">{t('pb.loading')}</p>
+            <div className="space-y-1">
+              <SkeletonRow cols={4} />
+              <SkeletonRow cols={4} />
+              <SkeletonRow cols={4} />
+              <SkeletonRow cols={4} />
+            </div>
           ) : !vars || vars.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">{t('vars.noVars')}</p>
+            <EmptyState
+              compact
+              icon={<KeyRound className="h-5 w-5" />}
+              title={t('vars.noVars')}
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -856,7 +920,7 @@ function VarsTab() {
                             <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => openEdit(v)}><Settings2 className="h-3.5 w-3.5" /></Button>
                           )}
                           {hasCap(profile, 'canDeleteVars') && (
-                            <Button variant="destructive" size="icon" className="h-7 w-7" onClick={() => delMut.mutate(v.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                            <Button variant="destructive" size="icon" className="h-7 w-7" onClick={() => setDeleteItem(v)}><Trash2 className="h-3.5 w-3.5" /></Button>
                           )}
                         </div>
                       </td>
@@ -898,6 +962,16 @@ function VarsTab() {
           </CardContent>
         </Card>
       )}
+      <ConfirmDialog
+        open={!!deleteItem}
+        onOpenChange={(open) => { if (!open) setDeleteItem(null); }}
+        title={t('common.delete')}
+        description={t('vars.confirmDelete', { key: deleteItem?.key ?? '' })}
+        confirmLabel={t('common.delete')}
+        variant="destructive"
+        onConfirm={() => { if (deleteItem) delMut.mutate(deleteItem.id); }}
+        isPending={delMut.isPending}
+      />
     </div>
   );
 }
@@ -917,6 +991,7 @@ function SchedulesTab() {
   });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const toggleMut = useMutation({
     mutationFn: (id: string) => api.toggleSchedule(id),
@@ -926,7 +1001,7 @@ function SchedulesTab() {
 
   const delMut = useMutation({
     mutationFn: (id: string) => api.deleteSchedule(id),
-    onSuccess: () => { showToast(t('sc.deleted'), 'success'); qc.invalidateQueries({ queryKey: ['schedules'] }); },
+    onSuccess: () => { showToast(t('sc.deleted'), 'success'); setDeleteId(null); qc.invalidateQueries({ queryKey: ['schedules'] }); },
     onError: (e: Error) => showToast(e.message, 'error'),
   });
 
@@ -946,9 +1021,17 @@ function SchedulesTab() {
             )}
           </div>
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">{t('pb.loading')}</p>
+            <div className="space-y-1">
+              <SkeletonRow cols={3} />
+              <SkeletonRow cols={3} />
+              <SkeletonRow cols={3} />
+            </div>
           ) : !schedules || schedules.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">{t('sc.noSchedules')}</p>
+            <EmptyState
+              compact
+              icon={<Calendar className="h-5 w-5" />}
+              title={t('sc.noSchedules')}
+            />
           ) : (
             <div className="space-y-2">
               {schedules.map(s => (
@@ -964,7 +1047,7 @@ function SchedulesTab() {
                       <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{cronLabel(s.cron_expression)}</span>
                       {s.last_run && (
                         <span>
-                          <Badge variant={s.last_status === 'success' ? 'default' : 'destructive'} className="text-[10px]">{s.last_status}</Badge>
+                          <StatusBadge tone={s.last_status === 'success' ? 'success' : 'danger'}>{s.last_status}</StatusBadge>
                           {' '}<span className="opacity-70">{fmtDate(s.last_run)}</span>
                         </span>
                       )}
@@ -975,7 +1058,7 @@ function SchedulesTab() {
                       <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => openEdit(s.id)}><Settings2 className="h-3.5 w-3.5" /></Button>
                     )}
                     {hasCap(profile, 'canDeleteSchedules') && (
-                      <Button variant="destructive" size="icon" className="h-7 w-7" onClick={() => delMut.mutate(s.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                      <Button variant="destructive" size="icon" className="h-7 w-7" onClick={() => setDeleteId(s.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
                     )}
                   </div>
                 </div>
@@ -988,6 +1071,16 @@ function SchedulesTab() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <ScheduleDialog editId={editId} schedules={schedules ?? []} onSaved={() => { setDialogOpen(false); qc.invalidateQueries({ queryKey: ['schedules'] }); }} />
       </Dialog>
+      <ConfirmDialog
+        open={!!deleteId}
+        onOpenChange={(open) => { if (!open) setDeleteId(null); }}
+        title={t('common.delete')}
+        description={t('sc.confirmDelete')}
+        confirmLabel={t('common.delete')}
+        variant="destructive"
+        onConfirm={() => { if (deleteId) delMut.mutate(deleteId); }}
+        isPending={delMut.isPending}
+      />
     </>
   );
 }
@@ -1062,7 +1155,7 @@ function ScheduleDialog({ editId, schedules, onSaved }: { editId: string | null;
             <Label>{t('sc.playbook')}</Label>
             <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm" value={playbook} onChange={e => setPlaybook(e.target.value)} required>
               <option value="">{t('sc.selectPlaybook')}</option>
-              {userPbs.map(p => <option key={p.filename} value={p.filename}>{p.description} ({p.filename})</option>)}
+              {userPbs.map(p => <option key={p.filename} value={p.filename}>{p.description ? `${p.description} (${p.filename})` : p.filename}</option>)}
             </select>
           </div>
 
@@ -1178,9 +1271,18 @@ function HistoryTab() {
             </select>
           </div>
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">{t('pb.loading')}</p>
+            <div className="space-y-1">
+              <SkeletonRow cols={5} />
+              <SkeletonRow cols={5} />
+              <SkeletonRow cols={5} />
+              <SkeletonRow cols={5} />
+            </div>
           ) : !history || history.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">{t('hist.noHistory')}</p>
+            <EmptyState
+              compact
+              icon={<History className="h-5 w-5" />}
+              title={t('hist.noHistory')}
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -1199,16 +1301,16 @@ function HistoryTab() {
                     <tr key={h.id} className="border-b last:border-0">
                       <td className="py-2 pr-3 font-medium">
                         {h.schedule_id === null
-                          ? <Badge variant="secondary" className="text-[10px]">{h.schedule_name}</Badge>
+                          ? <StatusBadge tone="muted">{h.schedule_name}</StatusBadge>
                           : h.schedule_name}
                       </td>
                       <td className="py-2 pr-3 font-mono text-xs">{h.playbook}</td>
                       <td className="py-2 pr-3 text-xs">{h.targets || 'all'}</td>
                       <td className="py-2 pr-3 text-xs text-muted-foreground">{fmtDate(h.started_at)}</td>
                       <td className="py-2 pr-3">
-                        <Badge variant={h.status === 'success' ? 'default' : h.status === 'running' ? 'secondary' : 'destructive'} className="text-[10px]">
+                        <StatusBadge tone={h.status === 'success' ? 'success' : h.status === 'running' ? 'info' : 'danger'}>
                           {h.status === 'success' ? t('hist.success') : h.status === 'running' ? t('hist.running') : t('hist.failed')}
-                        </Badge>
+                        </StatusBadge>
                       </td>
                       <td className="py-2 text-right">
                         <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => showOutput(h.id)} title={t('hist.output')}>
@@ -1259,6 +1361,7 @@ function PlaybookHistoryDialog({ filename, onRestore }: { filename: string; onRe
   const [previewVer, setPreviewVer] = useState<number | null>(null);
   const [previewContent, setPreviewContent] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [restoreVersion, setRestoreVersion] = useState<number | null>(null);
 
   const loadPreview = async (v: number) => {
     if (previewVer === v) { setPreviewVer(null); setPreviewContent(null); return; }
@@ -1274,6 +1377,7 @@ function PlaybookHistoryDialog({ filename, onRestore }: { filename: string; onRe
   const restoreMut = useMutation({
     mutationFn: (v: number) => api.restorePlaybook(filename, v),
     onSuccess: async () => {
+      setRestoreVersion(null);
       showToast(t('pb.restored'), 'success');
       try {
         const data = await api.getPlaybook(filename);
@@ -1290,9 +1394,17 @@ function PlaybookHistoryDialog({ filename, onRestore }: { filename: string; onRe
       </DialogHeader>
       <div className="max-h-96 space-y-2 overflow-y-auto py-2">
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">{t('pb.loading')}</p>
+          <div className="space-y-2">
+            <SkeletonRow cols={2} />
+            <SkeletonRow cols={2} />
+            <SkeletonRow cols={2} />
+          </div>
         ) : !versions || versions.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('pb.noHistory')}</p>
+          <EmptyState
+            compact
+            icon={<GitCommit className="h-5 w-5" />}
+            title={t('pb.noHistory')}
+          />
         ) : versions.map(v => (
           <div key={v.version} className="rounded-md border p-2">
             <div className="flex items-center justify-between gap-2">
@@ -1304,7 +1416,7 @@ function PlaybookHistoryDialog({ filename, onRestore }: { filename: string; onRe
                 <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => loadPreview(v.version)} title={t('pb.historyPreview')}>
                   <Eye className={`h-3.5 w-3.5 ${previewVer === v.version ? 'text-primary' : ''}`} />
                 </Button>
-                <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => restoreMut.mutate(v.version)} disabled={restoreMut.isPending} title={t('pb.restore')}>
+                <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setRestoreVersion(v.version)} disabled={restoreMut.isPending} title={t('pb.restore')}>
                   <Undo2 className="h-3.5 w-3.5" />
                 </Button>
               </div>
@@ -1323,6 +1435,15 @@ function PlaybookHistoryDialog({ filename, onRestore }: { filename: string; onRe
           </div>
         ))}
       </div>
+      <ConfirmDialog
+        open={restoreVersion !== null}
+        onOpenChange={(open) => { if (!open) setRestoreVersion(null); }}
+        title={t('pb.history')}
+        description={t('pb.restoreConfirm')}
+        confirmLabel={t('common.save')}
+        onConfirm={() => { if (restoreVersion !== null) restoreMut.mutate(restoreVersion); }}
+        isPending={restoreMut.isPending}
+      />
     </DialogContent>
   );
 }

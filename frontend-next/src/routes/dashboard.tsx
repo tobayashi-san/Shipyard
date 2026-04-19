@@ -1,16 +1,22 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import {
   Server, CheckCircle2, XCircle, RotateCcw, ArrowUp, AlertTriangle, RefreshCw,
   HeartPulse, Bell, Clock, Filter, Plus, Bot, Package, Box, Cog,
   HardDrive, Cpu, MemoryStick,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useUi } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/ui/page-header';
+import { LiveDot, StatusBadge } from '@/components/ui/status-badge';
+import { MetricBar, metricTextClass } from '@/components/ui/metric-bar';
+import { EmptyState } from '@/components/ui/empty-state';
+import { SkeletonRow } from '@/components/ui/skeleton';
 
 // ---- types ----
 
@@ -88,14 +94,17 @@ function formatRelativeTime(dateStr: string | undefined, t: (k: string, o?: Reco
   } catch { return '—'; }
 }
 
-function formatCurrentTime() {
-  return new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+function formatCurrentTime(hour12: boolean) {
+  return new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12 });
 }
 
 // ---- component ----
 
 export function DashboardPage() {
   const { t } = useTranslation();
+  const timeFormat = useUi((s) => s.timeFormat);
+  const hour12 = timeFormat === '12h';
+  useEffect(() => { sessionStorage.setItem('shipyard.lastNonDetailRoute', '/'); }, []);
   const { data, isLoading, isError, error, refetch } = useQuery<DashboardData>({
     queryKey: ['dashboard'],
     queryFn: () => api.getDashboard() as unknown as Promise<DashboardData>,
@@ -135,19 +144,17 @@ export function DashboardPage() {
   const updatesServerCount = servers.filter(s => (s.updates_count ?? 0) > 0 || (s.image_updates_count ?? 0) > 0 || (s.custom_updates_count ?? 0) > 0).length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t('dash.title')}</h1>
-          <p className="text-sm text-muted-foreground">
-            {isLoading ? t('dash.loading') : t('dash.updatedAt', { time: formatCurrentTime() })}
-          </p>
-        </div>
-        <Button variant="secondary" size="sm" onClick={() => refetch()}>
-          <RefreshCw className="h-4 w-4" /> {t('common.refresh')}
-        </Button>
-      </div>
+      <PageHeader
+        title={t('dash.title')}
+        description={isLoading ? t('dash.loading') : t('dash.updatedAt', { time: formatCurrentTime(hour12) })}
+        actions={
+          <Button variant="secondary" size="sm" onClick={() => refetch()}>
+            <RefreshCw className="h-4 w-4" /> {t('common.refresh')}
+          </Button>
+        }
+      />
 
       {isError && (
         <p className="text-sm text-destructive">{(error as Error)?.message}</p>
@@ -176,10 +183,10 @@ export function DashboardPage() {
       </div>
 
       {/* Main grid: health table + side */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_340px]">
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[1fr_340px]">
         {/* Server Health */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 py-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <HeartPulse className="h-4 w-4 text-muted-foreground" />
               {t('dash.serverHealth')}
@@ -194,15 +201,21 @@ export function DashboardPage() {
             )}
           </CardHeader>
           <CardContent className="p-0">
-            {servers.length === 0 && !isLoading ? (
-              <div className="flex flex-col items-center gap-3 py-12 text-sm text-muted-foreground">
-                <Server className="h-8 w-8 opacity-40" />
-                <p className="font-medium">{t('dash.noServers')}</p>
-                <p>{t('dash.noServersHint')}</p>
-                <Link to="/servers">
-                  <Button size="sm"><Plus className="h-4 w-4" /> {t('servers.addServer')}</Button>
-                </Link>
+            {isLoading && servers.length === 0 ? (
+              <div className="py-2">
+                {Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={6} />)}
               </div>
+            ) : servers.length === 0 ? (
+              <EmptyState
+                icon={<Server className="h-5 w-5" />}
+                title={t('dash.noServers')}
+                description={t('dash.noServersHint')}
+                action={
+                  <Link to="/servers">
+                    <Button size="sm"><Plus className="h-4 w-4" /> {t('servers.addServer')}</Button>
+                  </Link>
+                }
+              />
             ) : (
               <>
                 {/* Desktop table */}
@@ -234,24 +247,24 @@ export function DashboardPage() {
         </Card>
 
         {/* Side column */}
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-4">
           {/* Alerts */}
           <Card>
-            <CardHeader className="flex flex-row items-center gap-2 space-y-0 pb-3">
+            <CardHeader className="flex flex-row items-center gap-2 space-y-0 px-4 py-3">
               <Bell className="h-4 w-4 text-amber-500" />
               <CardTitle className="text-base">{t('dash.alerts')}</CardTitle>
               {alerts.length > 0 && <Badge variant="secondary">{alerts.length}</Badge>}
             </CardHeader>
             <CardContent className="space-y-0 p-0">
               {alerts.length === 0 ? (
-                <div className="flex items-center gap-2 px-5 py-4 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
                   <CheckCircle2 className="h-4 w-4 text-emerald-500" /> {t('dash.allClear')}
                 </div>
               ) : (
                 <div className="max-h-[320px] overflow-y-auto">
                   {alerts.map((a, i) => (
                     <Link key={i} to="/servers/$id" params={{ id: String(a.serverId) }}
-                      className="flex items-center gap-2.5 border-b px-5 py-2.5 text-sm transition-colors last:border-b-0 hover:bg-muted/50">
+                      className="flex items-center gap-2.5 border-b px-4 py-2 text-sm transition-colors last:border-b-0 hover:bg-muted/50">
                       <span className={
                         a.level === 'error' ? 'text-destructive' :
                         a.level === 'warning' ? 'text-amber-500' : 'text-blue-500'
@@ -268,16 +281,16 @@ export function DashboardPage() {
 
           {/* Recent Activity */}
           <Card>
-            <CardHeader className="flex flex-row items-center gap-2 space-y-0 pb-3">
+            <CardHeader className="flex flex-row items-center gap-2 space-y-0 px-4 py-3">
               <Clock className="h-4 w-4 text-muted-foreground" />
               <CardTitle className="text-base">{t('dash.recentActivity')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-0 p-0">
               {recentHistory.length === 0 ? (
-                <div className="px-5 py-4 text-sm text-muted-foreground">{t('dash.noActivity')}</div>
+                <div className="px-4 py-3 text-sm text-muted-foreground">{t('dash.noActivity')}</div>
               ) : (
                 recentHistory.map((h, i) => (
-                  <div key={h.id ?? i} className="flex items-center gap-3 border-b px-5 py-2.5 text-sm last:border-b-0">
+                  <div key={h.id ?? i} className="flex items-center gap-3 border-b px-4 py-2 text-sm last:border-b-0">
                     <span className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${
                       h.status === 'success' ? 'bg-emerald-500' :
                       h.status === 'failed' ? 'bg-destructive' : 'bg-muted-foreground'
@@ -288,9 +301,9 @@ export function DashboardPage() {
                         {h.action} · {formatRelativeTime(h.started_at, t)}
                       </div>
                     </div>
-                    <Badge variant={h.status === 'success' ? 'default' : h.status === 'failed' ? 'destructive' : 'secondary'}>
+                    <StatusBadge tone={h.status === 'success' ? 'success' : h.status === 'failed' ? 'danger' : 'muted'}>
                       {h.status}
-                    </Badge>
+                    </StatusBadge>
                   </div>
                 ))
               )}
@@ -312,13 +325,13 @@ function StatCard({ icon, value, label, color, footer }: {
     color === 'success' ? 'text-emerald-500' : 'text-foreground';
   return (
     <Card>
-      <CardContent className="p-4">
+      <CardContent className="p-3">
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">{icon}</span>
           <span className="text-xs text-muted-foreground">{label}</span>
         </div>
-        <div className={`mt-2 text-2xl font-semibold tabular-nums ${valueClass}`}>{value}</div>
-        <div className="mt-1 text-[11px] text-muted-foreground">{footer}</div>
+        <div className={`mt-1 text-2xl font-semibold tabular-nums ${valueClass}`}>{value}</div>
+        <div className="mt-0.5 text-[11px] text-muted-foreground">{footer}</div>
       </CardContent>
     </Card>
   );
@@ -326,13 +339,10 @@ function StatCard({ icon, value, label, color, footer }: {
 
 function MiniBar({ pct }: { pct: number | null | undefined }) {
   if (pct == null) return <span className="text-xs text-muted-foreground">—</span>;
-  const cls = pct > 90 ? 'bg-destructive' : pct > 70 ? 'bg-amber-500' : 'bg-emerald-500';
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1.5 w-full min-w-[60px] overflow-hidden rounded-full bg-muted">
-        <div className={`h-full rounded-full ${cls}`} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="tabular-nums text-xs font-mono">{pct}%</span>
+      <MetricBar pct={pct} size="sm" className="min-w-[60px]" />
+      <span className={`tabular-nums text-xs font-mono ${metricTextClass(pct)}`}>{pct}%</span>
     </div>
   );
 }
@@ -360,35 +370,36 @@ function UpdatesCell({ s }: { s: ServerInfo }) {
   if ((s.image_updates_count ?? 0) > 0) parts.push(<span key="i" className="flex items-center gap-0.5" title={t('dash.colImageUpdates')}><Box className="h-3 w-3" />{s.image_updates_count}</span>);
   if ((s.custom_updates_count ?? 0) > 0) parts.push(<span key="c" className="flex items-center gap-0.5" title={t('dash.colCustomUpdates')}><Cog className="h-3 w-3" />{s.custom_updates_count}</span>);
   if (parts.length === 0) return <span title={t('dash.allClear')}><CheckCircle2 className="h-4 w-4 text-emerald-500" /></span>;
-  return <Badge variant="outline" className="gap-1.5 text-amber-600">{parts}</Badge>;
+  return <StatusBadge tone="warning" className="gap-1.5">{parts}</StatusBadge>;
 }
 
 function ServerRow({ s, t }: { s: ServerInfo; t: (k: string) => string }) {
-  const dotCls = s.status === 'online' ? 'bg-emerald-500' : s.status === 'offline' ? 'bg-destructive' : 'bg-muted-foreground';
+  const navigate = useNavigate();
   const tags = s.tags ?? [];
   return (
-    <tr className="border-b transition-colors last:border-b-0 hover:bg-muted/50">
+    <tr className="border-b transition-colors last:border-b-0 hover:bg-muted/50 cursor-pointer"
+      onClick={() => navigate({ to: '/servers/$id', params: { id: String(s.id) } })}>
       <td className="px-4 py-2.5">
-        <Link to="/servers/$id" params={{ id: String(s.id) }} className="block">
-          <span className={`inline-block h-2 w-2 rounded-full ${dotCls}`} />
-        </Link>
+        {s.status === 'online' ? (
+          <LiveDot tone="success" />
+        ) : (
+          <span className={`inline-block h-2 w-2 rounded-full ${s.status === 'offline' ? 'bg-destructive' : 'bg-muted-foreground'}`} />
+        )}
       </td>
       <td className="px-2 py-2.5">
-        <Link to="/servers/$id" params={{ id: String(s.id) }} className="block">
-          <div className="flex items-center gap-1.5">
-            <span className="font-medium">{s.name}</span>
-            <AgentBadge s={s} />
-            <span className="font-mono text-[11px] text-muted-foreground">{s.ip_address}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="font-medium">{s.name}</span>
+          <AgentBadge s={s} />
+          <span className="font-mono text-[11px] text-muted-foreground">{s.ip_address}</span>
+        </div>
+        {tags.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {tags.slice(0, 3).map(tag => (
+              <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[10px]">{tag}</span>
+            ))}
+            {tags.length > 3 && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">+{tags.length - 3}</span>}
           </div>
-          {tags.length > 0 && (
-            <div className="mt-1 flex flex-wrap gap-1">
-              {tags.slice(0, 3).map(tag => (
-                <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[10px]">{tag}</span>
-              ))}
-              {tags.length > 3 && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">+{tags.length - 3}</span>}
-            </div>
-          )}
-        </Link>
+        )}
       </td>
       <td className="px-2 py-2.5"><MiniBar pct={s.ram_pct} /></td>
       <td className="px-2 py-2.5"><MiniBar pct={s.disk_pct} /></td>
@@ -413,7 +424,7 @@ function ServerCard({ s, t }: { s: ServerInfo; t: (k: string) => string }) {
       <div className="flex items-center gap-2">
         <span className={`inline-block h-2 w-2 rounded-full ${dotCls}`} />
         <span className="font-medium">{s.name}</span>
-        <Badge variant="secondary" className="ml-auto text-[10px]">{statusLabel}</Badge>
+        <StatusBadge tone={s.status === 'online' ? 'success' : s.status === 'offline' ? 'danger' : 'muted'} className="ml-auto">{statusLabel}</StatusBadge>
       </div>
       <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
         <AgentBadge s={s} />
@@ -439,16 +450,13 @@ function ServerCard({ s, t }: { s: ServerInfo; t: (k: string) => string }) {
 }
 
 function MobileMetric({ label, pct }: { label: string; pct?: number | null }) {
-  const cls = (pct ?? 0) > 90 ? 'bg-destructive' : (pct ?? 0) > 70 ? 'bg-amber-500' : 'bg-emerald-500';
   return (
     <div>
       <div className="flex justify-between text-[10px] text-muted-foreground">
         <span>{label}</span>
-        <span className="font-mono">{pct == null ? '—' : `${pct}%`}</span>
+        <span className={`font-mono ${metricTextClass(pct)}`}>{pct == null ? '—' : `${pct}%`}</span>
       </div>
-      <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-muted">
-        <div className={`h-full rounded-full ${cls}`} style={{ width: `${pct || 0}%` }} />
-      </div>
+      <MetricBar pct={pct} size="xs" className="mt-0.5" />
     </div>
   );
 }
@@ -456,10 +464,10 @@ function MobileMetric({ label, pct }: { label: string; pct?: number | null }) {
 function UpdatesChips({ s }: { s: ServerInfo }) {
   const { t } = useTranslation();
   const chips: React.ReactNode[] = [];
-  if (s.reboot_required) chips.push(<Badge key="rb" variant="outline" className="text-amber-600"><RotateCcw className="mr-1 h-3 w-3" />{t('dash.needsReboot')}</Badge>);
-  if ((s.updates_count ?? 0) > 0) chips.push(<Badge key="u" variant="outline" className="text-amber-600"><Package className="mr-1 h-3 w-3" />{s.updates_count} {t('dash.colUpdates')}</Badge>);
-  if ((s.image_updates_count ?? 0) > 0) chips.push(<Badge key="i" variant="outline" className="text-amber-600"><Box className="mr-1 h-3 w-3" />{s.image_updates_count} {t('dash.colImageUpdates')}</Badge>);
-  if ((s.custom_updates_count ?? 0) > 0) chips.push(<Badge key="c" variant="outline" className="text-amber-600"><Cog className="mr-1 h-3 w-3" />{s.custom_updates_count} {t('dash.colCustomUpdates')}</Badge>);
-  if (chips.length === 0) return <Badge variant="outline" className="text-emerald-600"><CheckCircle2 className="mr-1 h-3 w-3" />{t('dash.allClear')}</Badge>;
+  if (s.reboot_required) chips.push(<StatusBadge key="rb" tone="warning"><RotateCcw className="mr-1 h-3 w-3" />{t('dash.needsReboot')}</StatusBadge>);
+  if ((s.updates_count ?? 0) > 0) chips.push(<StatusBadge key="u" tone="warning"><Package className="mr-1 h-3 w-3" />{s.updates_count} {t('dash.colUpdates')}</StatusBadge>);
+  if ((s.image_updates_count ?? 0) > 0) chips.push(<StatusBadge key="i" tone="warning"><Box className="mr-1 h-3 w-3" />{s.image_updates_count} {t('dash.colImageUpdates')}</StatusBadge>);
+  if ((s.custom_updates_count ?? 0) > 0) chips.push(<StatusBadge key="c" tone="warning"><Cog className="mr-1 h-3 w-3" />{s.custom_updates_count} {t('dash.colCustomUpdates')}</StatusBadge>);
+  if (chips.length === 0) return <StatusBadge tone="success"><CheckCircle2 className="mr-1 h-3 w-3" />{t('dash.allClear')}</StatusBadge>;
   return <>{chips}</>;
 }

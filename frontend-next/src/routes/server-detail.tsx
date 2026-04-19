@@ -1,18 +1,21 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useParams, Link } from '@tanstack/react-router';
+import { useParams, Link, useNavigate } from '@tanstack/react-router';
 import {
   ArrowLeft, RefreshCw, CircleDot, Cpu, HardDrive, MemoryStick, Clock,
   HeartPulse, Box, Satellite, Boxes, ExternalLink, Copy, Info,
-  Terminal, Pencil, MoreVertical, ArrowUp, Key, Power,
+  Terminal, Pencil, ArrowUp, Key, Power,
   Play, Square, CloudDownload, FileText, RotateCw, Plus, Trash2,
   ChevronDown, ChevronRight, Layers, Settings2, StickyNote, Eye, Bot,
-  Download, Shield, Sliders,
+  Download, Shield, Sliders, History,
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useProfile, useSettings, hasCap } from '@/lib/queries';
+import { useUi } from '@/lib/store';
 import { showToast } from '@/lib/toast';
+import { SshTerminal } from '@/components/SshTerminal';
+import { CreateServerDialog } from '@/components/CreateServerDialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -22,6 +25,15 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
+import { PageHeader, SectionLabel } from '@/components/ui/page-header';
+import { StatusBadge, LiveDot } from '@/components/ui/status-badge';
+import { Skeleton, SkeletonRow } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
+import { OverflowMenu, OverflowItem, OverflowSep } from '@/components/ui/overflow-menu';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { MetricBar, metricTextClass } from '@/components/ui/metric-bar';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 // ─── Types ────────────────────────────────────────────────────
 interface ServerDetail {
@@ -103,35 +115,25 @@ function formatBytes(mb: number | null | undefined): string {
   return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`;
 }
 
-function formatDate(d?: string): string {
+function formatDate(d?: string, hour12?: boolean): string {
   if (!d) return '—';
   const utc = !d.endsWith('Z') ? d.replace(' ', 'T') + 'Z' : d;
-  try { return new Date(utc).toLocaleString(); } catch { return d; }
+  try { return new Date(utc).toLocaleString(undefined, hour12 !== undefined ? { hour12 } : undefined); } catch { return d; }
 }
 
 function ThresholdBar({ pct }: { pct: number | null }) {
-  if (pct === null) return <div className="h-2.5 rounded bg-muted" />;
-  const safe = Math.max(0, Math.min(100, pct));
-  const color = safe >= 95 ? 'bg-red-500' : safe >= 85 ? 'bg-amber-500' : safe >= 70 ? 'bg-yellow-500' : 'bg-emerald-500';
-  return (
-    <div className="relative h-2.5 rounded bg-muted overflow-hidden">
-      <div className={`absolute inset-y-0 left-0 rounded ${color}`} style={{ width: `${safe}%` }} />
-      <div className="absolute inset-y-0 left-[70%] w-px bg-border" />
-      <div className="absolute inset-y-0 left-[85%] w-px bg-border" />
-      <div className="absolute inset-y-0 left-[95%] w-px bg-border" />
-    </div>
-  );
+  return <MetricBar pct={pct} size="md" showTicks />;
 }
 
 function StatCard({ icon, label, value, hint, variant }: {
   icon: React.ReactNode; label: string; value: string; hint?: string;
-  variant?: 'ok' | 'warning' | 'muted';
+  variant?: 'ok' | 'warning' | 'error' | 'muted';
 }) {
-  const valColor = variant === 'ok' ? 'text-emerald-500' : variant === 'warning' ? 'text-amber-500' : '';
+  const valColor = variant === 'ok' ? 'text-emerald-500' : variant === 'warning' ? 'text-amber-500' : variant === 'error' ? 'text-destructive' : '';
   return (
     <Card>
-      <CardContent className="flex items-center gap-3 p-4">
-        <div className={`flex h-10 w-10 items-center justify-center rounded-md ${variant === 'ok' ? 'bg-emerald-500/10 text-emerald-500' : variant === 'warning' ? 'bg-amber-500/10 text-amber-500' : 'bg-primary/10 text-primary'}`}>{icon}</div>
+      <CardContent className="flex items-center gap-3 p-3">
+        <div className={`flex h-9 w-9 items-center justify-center rounded-md ${variant === 'ok' ? 'bg-emerald-500/10 text-emerald-500' : variant === 'warning' ? 'bg-amber-500/10 text-amber-500' : variant === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'}`}>{icon}</div>
         <div className="min-w-0">
           <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
           <div className={`truncate font-semibold ${valColor}`}>{value}</div>
@@ -155,33 +157,26 @@ function CopyButton({ value, label }: { value: string; label: string }) {
   );
 }
 
-// ─── OverflowMenu ─────────────────────────────────────────────
-function OverflowMenu({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('click', h);
-    return () => document.removeEventListener('click', h);
-  }, [open]);
-  return (
-    <div className="relative" ref={ref}>
-      <Button variant="ghost" size="icon" onClick={() => setOpen(!open)}><MoreVertical className="h-4 w-4" /></Button>
-      {open && <div className="absolute right-0 top-full mt-1 z-50 w-52 rounded-md border bg-popover p-1 shadow-md" onClick={() => setOpen(false)}>{children}</div>}
-    </div>
-  );
-}
-
 // ═══════════════════════════════════════════════════════════════
 export function ServerDetailPage() {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const params = useParams({ strict: false }) as { id?: string };
   const id = params.id ?? '';
+  const navigate = useNavigate();
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [confirmRunUpdate, setConfirmRunUpdate] = useState(false);
+  const [confirmResetHostKey, setConfirmResetHostKey] = useState(false);
+  const [confirmReboot, setConfirmReboot] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmDeleteTask, setConfirmDeleteTask] = useState<CustomTask | null>(null);
+  const [actionOutput, setActionOutput] = useState<{ title: string; lines: { text: string; cls?: string }[] } | null>(null);
   const { data: profile } = useProfile();
   const { data: settings } = useSettings();
   const agentEnabled = !!(settings as Record<string, unknown>)?.agentEnabled;
+  const timeFormat = useUi((s) => s.timeFormat);
+  const hour12 = timeFormat === '12h';
 
   // ── Data queries ────────────────────────────────────────────
   const { data: rawServer, isLoading } = useQuery({
@@ -209,13 +204,13 @@ export function ServerDetailPage() {
   });
 
   // ── Stat card queries (lazy-ish but auto) ───────────────────
-  const { data: dockerContainers } = useQuery({
+  const { data: dockerContainers, isFetching: fetchingDocker } = useQuery({
     queryKey: ['server', id, 'docker'],
     queryFn: () => api.getServerDocker(id) as unknown as Promise<ContainerRow[]>,
     enabled: !!id && hasCap(profile, 'canViewDocker'),
     staleTime: 60_000,
   });
-  const { data: rawUpdates } = useQuery({
+  const { data: rawUpdates, isFetching: fetchingUpdates } = useQuery({
     queryKey: ['server', id, 'updates'],
     queryFn: () => api.getServerUpdates(id) as unknown as Promise<Record<string, unknown>[] | { updates: Record<string, unknown>[] }>,
     enabled: !!id && hasCap(profile, 'canViewUpdates'),
@@ -275,8 +270,12 @@ export function ServerDetailPage() {
   // ── Mutations ───────────────────────────────────────────────
   const runUpdateMut = useMutation({
     mutationFn: () => api.runUpdate(id),
+    onMutate: () => setActionOutput({ title: `${t('det.updates')} · ${server?.name || ''}`, lines: [{ text: t('det.updateStarted'), cls: 'text-green-500' }] }),
     onSuccess: () => { showToast(t('det.updateStarted'), 'success'); void qc.invalidateQueries({ queryKey: ['server', id] }); },
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
+    onError: (e: Error) => {
+      setActionOutput(prev => prev ? { ...prev, lines: [...prev.lines, { text: t('common.errorPrefix', { msg: e.message }), cls: 'text-red-400' }] } : prev);
+      showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+    },
   });
   const runRebootMut = useMutation({
     mutationFn: () => api.runReboot(id),
@@ -293,10 +292,23 @@ export function ServerDetailPage() {
     onSuccess: (r) => showToast(t('srv.resetHostKeyDone', { entries: r.removed?.join(', ') || t('srv.resetHostKeyNoEntries') }), 'success'),
     onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
   });
+  const deleteServerMut = useMutation({
+    mutationFn: () => api.deleteServer(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['servers'] });
+      void navigate({ to: '/servers' });
+      showToast(t('srv.deleted'), 'success');
+    },
+    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
+  });
   const restartContainerMut = useMutation({
     mutationFn: (name: string) => api.restartContainer(id, name),
+    onMutate: (name) => setActionOutput({ title: `${t('det.output')} · ${name}`, lines: [{ text: t('det.containerRestarted'), cls: 'text-green-500' }] }),
     onSuccess: () => { showToast(t('det.containerRestarted'), 'success'); setTimeout(() => qc.invalidateQueries({ queryKey: ['server', id, 'docker'] }), 3000); },
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
+    onError: (e: Error) => {
+      setActionOutput(prev => prev ? { ...prev, lines: [...prev.lines, { text: t('common.errorPrefix', { msg: e.message }), cls: 'text-red-400' }] } : prev);
+      showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+    },
   });
 
   // ── Container logs state ────────────────────────────────────
@@ -356,8 +368,15 @@ export function ServerDetailPage() {
 
   const runTaskMut = useMutation({
     mutationFn: (taskId: string) => api.runCustomUpdateTask(id, taskId),
+    onMutate: (taskId) => {
+      const task = (customTasks ?? []).find(t2 => t2.id === taskId);
+      setActionOutput({ title: `${t('det.output')} · ${task?.name || t('det.customUpdates')}`, lines: [{ text: t('det.runUpdateStarted', { name: task?.name || '' }), cls: 'text-green-500' }] });
+    },
     onSuccess: () => showToast(t('det.runUpdateStarted', { name: '' }), 'success'),
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
+    onError: (e: Error) => {
+      setActionOutput(prev => prev ? { ...prev, lines: [...prev.lines, { text: t('common.errorPrefix', { msg: e.message }), cls: 'text-red-400' }] } : prev);
+      showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+    },
   });
 
   // ── Check image updates ─────────────────────────────────────
@@ -371,6 +390,65 @@ export function ServerDetailPage() {
     },
     onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
   });
+
+  // ── Compose actions ─────────────────────────────────────────
+  const composeActionMut = useMutation({
+    mutationFn: ({ dir, action }: { dir: string; action: string }) => api.composeAction(id, dir, action),
+    onMutate: ({ dir, action }) => setActionOutput({ title: `${t('det.output')} · docker compose ${action}`, lines: [{ text: dir, cls: 'text-muted-foreground' }, { text: t('det.composeActionDone', { action }), cls: 'text-green-500' }] }),
+    onSuccess: (_, { action }) => {
+      showToast(t('det.composeActionDone', { action }), 'success');
+      setTimeout(() => qc.invalidateQueries({ queryKey: ['server', id, 'docker'] }), 3000);
+    },
+    onError: (e: Error) => {
+      setActionOutput(prev => prev ? { ...prev, lines: [...prev.lines, { text: t('common.errorPrefix', { msg: e.message }), cls: 'text-red-400' }] } : prev);
+      showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+    },
+  });
+
+  // ── Compose editor dialog ───────────────────────────────────
+  const [composeDialog, setComposeDialog] = useState<{ open: boolean; mode: 'edit' | 'add'; dir: string; content: string; loading: boolean }>({ open: false, mode: 'add', dir: '', content: '', loading: false });
+
+  const openEditCompose = useCallback(async (dir: string) => {
+    setComposeDialog({ open: true, mode: 'edit', dir, content: '', loading: true });
+    try {
+      const r = await api.getDockerCompose(id, dir) as unknown as { content: string };
+      setComposeDialog(prev => ({ ...prev, content: r.content || '', loading: false }));
+    } catch (e) {
+      showToast(t('common.errorPrefix', { msg: (e as Error).message }), 'error');
+      setComposeDialog(prev => ({ ...prev, loading: false }));
+    }
+  }, [id, t]);
+
+  const saveComposeMut = useMutation({
+    mutationFn: () => api.writeDockerCompose(id, composeDialog.dir, composeDialog.content),
+    onSuccess: () => {
+      showToast(t('det.composeSaved'), 'success');
+      setComposeDialog(prev => ({ ...prev, open: false }));
+      void qc.invalidateQueries({ queryKey: ['server', id, 'docker'] });
+    },
+    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
+  });
+
+  // ── Latency ping ────────────────────────────────────────────
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      const times: number[] = [];
+      for (let i = 0; i < 3; i++) {
+        const start = performance.now();
+        try {
+          await api.ping();
+          times.push(performance.now() - start);
+        } catch { /* ignore */ }
+      }
+      if (!cancelled && times.length > 0) {
+        setLatencyMs(Math.round(times.reduce((a, b) => a + b, 0) / times.length));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [id]);
 
   // ── Agent mutations ─────────────────────────────────────────
   const [agentUrl, setAgentUrl] = useState('');
@@ -442,73 +520,146 @@ export function ServerDetailPage() {
   }, [containers]);
 
   // ── Loading / not found ─────────────────────────────────────
-  if (isLoading) return <div className="text-sm text-muted-foreground">{t('common.loading')}</div>;
-  if (!server) return (
-    <div className="space-y-3">
-      <Button variant="ghost" size="sm" asChild><Link to="/servers"><ArrowLeft className="h-4 w-4 mr-1" />{t('common.back')}</Link></Button>
-      <p className="text-sm text-muted-foreground">{t('det.notFound')}</p>
+  if (isLoading) return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <Skeleton className="h-8 w-8 rounded-md" />
+        <div className="space-y-2">
+          <Skeleton className="h-5 w-48" />
+          <Skeleton className="h-3 w-64" />
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-24 w-full" />
+        ))}
+      </div>
     </div>
+  );
+  if (!server) return (
+    <EmptyState
+      icon={<ArrowLeft className="h-6 w-6" />}
+      title={t('det.notFound')}
+      action={<Button variant="secondary" size="sm" asChild><Link to="/servers"><ArrowLeft className="h-4 w-4 mr-1" />{t('common.back')}</Link></Button>}
+    />
   );
 
   // ═══════════════════════════════════════════════════════════
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* ── Header ──────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild><Link to="/servers"><ArrowLeft className="h-4 w-4" /></Link></Button>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight">{server.name}</h1>
-              <Badge variant={server.status === 'online' ? 'default' : 'secondary'}>
-                <CircleDot className={`h-2.5 w-2.5 mr-1 ${server.status === 'online' ? 'text-emerald-500' : server.status === 'offline' ? 'text-rose-500' : 'text-muted-foreground'}`} />
-                {server.status === 'online' ? t('common.online') : server.status === 'offline' ? t('common.offline') : t('common.unknown')}
-              </Badge>
-            </div>
-            <p className="text-sm text-muted-foreground tabular-nums">
-              {server.ip_address}{server.hostname && server.hostname !== server.ip_address ? ` · ${server.hostname}` : ''}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {hasCap(profile, 'canUseTerminal') && (
-            <Button size="sm"><Terminal className="h-3.5 w-3.5 mr-1" />{t('common.terminal')}</Button>
-          )}
-          {hasCap(profile, 'canEditServers') && (
-            <Button size="sm" variant="secondary"><Pencil className="h-3.5 w-3.5 mr-1" />{t('common.edit')}</Button>
-          )}
-          <OverflowMenu>
-            {hasCap(profile, 'canRunUpdates') && (
-              <button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
-                onClick={() => { if (confirm(t('det.confirmUpdate', { name: server.name }))) runUpdateMut.mutate(); }}>
-                <ArrowUp className="h-3.5 w-3.5" /> {t('det.updates')}
-              </button>
-            )}
+      <PageHeader
+        back={<Button variant="ghost" size="icon" onClick={() => navigate({ to: (sessionStorage.getItem('shipyard.lastNonDetailRoute') as '/' | '/servers' | '/playbooks' | '/settings' | '/profile' | null) ?? '/servers' })}><ArrowLeft className="h-4 w-4" /></Button>}
+        title={server.name}
+        badge={
+          server.status === 'online' ? (
+            <StatusBadge tone="success"><LiveDot tone="success" />{t('common.online')}</StatusBadge>
+          ) : server.status === 'offline' ? (
+            <StatusBadge tone="danger">{t('common.offline')}</StatusBadge>
+          ) : (
+            <StatusBadge tone="muted">{t('common.unknown')}</StatusBadge>
+          )
+        }
+        description={`${server.ip_address}${server.hostname && server.hostname !== server.ip_address ? ` · ${server.hostname}` : ''}`}
+        actions={
+          <>
             {hasCap(profile, 'canUseTerminal') && (
-              <button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
-                onClick={() => resetHostKeyMut.mutate()}>
-                <Key className="h-3.5 w-3.5" /> {t('srv.resetHostKey')}
-              </button>
+              <Button size="sm" onClick={() => setTerminalOpen(true)}><Terminal className="h-3.5 w-3.5 mr-1" />{t('common.terminal')}</Button>
             )}
-            {hasCap(profile, 'canRebootServers') && (
-              <>
-                <div className="my-1 h-px bg-border" />
-                <button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive hover:bg-accent"
-                  onClick={() => { if (confirm(t('det.confirmReboot', { name: server.name }))) runRebootMut.mutate(); }}>
-                  <Power className="h-3.5 w-3.5" /> {t('det.reboot')}
-                </button>
-              </>
+            <OverflowMenu width="w-52">
+              {hasCap(profile, 'canEditServers') && (
+                <>
+                  <OverflowItem icon={Pencil} onClick={() => setEditOpen(true)}>
+                    {t('common.edit')}
+                  </OverflowItem>
+                  <OverflowSep />
+                </>
+              )}
+              {hasCap(profile, 'canRunUpdates') && (
+                <OverflowItem icon={ArrowUp}
+                  onClick={() => setConfirmRunUpdate(true)}>
+                  {t('det.updates')}
+                </OverflowItem>
+              )}
+              {hasCap(profile, 'canUseTerminal') && (
+                <OverflowItem icon={Key} onClick={() => setConfirmResetHostKey(true)}>
+                  {t('srv.resetHostKey')}
+                </OverflowItem>
+              )}
+              {hasCap(profile, 'canRebootServers') && (
+                <>
+                  <OverflowSep />
+                  <OverflowItem icon={Power} warning onClick={() => setConfirmReboot(true)}>
+                    {t('det.reboot')}
+                  </OverflowItem>
+                </>
+              )}
+              {hasCap(profile, 'canDeleteServers') && (
+                <>
+                  <OverflowSep />
+                  <OverflowItem icon={Trash2} danger onClick={() => setConfirmDelete(true)}>
+                    {t('common.delete')}
+                  </OverflowItem>
+                </>
+              )}
+            </OverflowMenu>
+            {hasCap(profile, 'canEditServers') && (
+              <CreateServerDialog
+                editServer={server}
+                open={editOpen}
+                onOpenChange={setEditOpen}
+                onSuccess={() => { qc.invalidateQueries({ queryKey: ['server', id] }); }}
+              />
             )}
-          </OverflowMenu>
-        </div>
-      </div>
+            <ConfirmDialog
+              open={confirmRunUpdate}
+              onOpenChange={setConfirmRunUpdate}
+              title={t('det.updates')}
+              description={t('det.confirmUpdate', { name: server.name })}
+              confirmLabel={t('det.updates')}
+              onConfirm={() => runUpdateMut.mutate()}
+              isPending={runUpdateMut.isPending}
+            />
+            <ConfirmDialog
+              open={confirmResetHostKey}
+              onOpenChange={setConfirmResetHostKey}
+              title={t('srv.resetHostKeyConfirmTitle')}
+              description={t('srv.resetHostKeyConfirmBody')}
+              confirmLabel={t('srv.resetHostKeyConfirmText')}
+              variant="destructive"
+              onConfirm={() => resetHostKeyMut.mutate()}
+              isPending={resetHostKeyMut.isPending}
+            />
+            <ConfirmDialog
+              open={confirmReboot}
+              onOpenChange={setConfirmReboot}
+              title={t('det.reboot')}
+              description={t('det.confirmReboot', { name: server.name })}
+              confirmLabel={t('det.reboot')}
+              variant="warning"
+              onConfirm={() => runRebootMut.mutate()}
+              isPending={runRebootMut.isPending}
+            />
+            <ConfirmDialog
+              open={confirmDelete}
+              onOpenChange={setConfirmDelete}
+              title={t('common.delete')}
+              description={t('det.confirmDeleteServer', { name: server.name })}
+              confirmLabel={t('common.delete')}
+              variant="destructive"
+              onConfirm={() => deleteServerMut.mutate()}
+              isPending={deleteServerMut.isPending}
+            />
+          </>
+        }
+      />
 
       {/* ── Tabs ─────────────────────────────────────────────── */}
       <Tabs defaultValue="overview">
         <TabsList className="flex-wrap">
           <TabsTrigger value="overview">{t('det.tabOverview')}</TabsTrigger>
           {hasCap(profile, 'canViewDocker') && <TabsTrigger value="docker">{t('det.tabDocker')}</TabsTrigger>}
-          {(hasCap(profile, 'canViewUpdates') || hasCap(profile, 'canViewCustomUpdates')) && <TabsTrigger value="updates">{t('det.tabUpdates')}</TabsTrigger>}
+          {(hasCap(profile, 'canViewUpdates') || hasCap(profile, 'canRunUpdates') || hasCap(profile, 'canRebootServers') || hasCap(profile, 'canViewCustomUpdates') || hasCap(profile, 'canRunCustomUpdates') || hasCap(profile, 'canEditCustomUpdates') || hasCap(profile, 'canDeleteCustomUpdates')) && <TabsTrigger value="updates">{t('det.tabUpdates')}</TabsTrigger>}
           <TabsTrigger value="history">{t('det.tabHistory')}</TabsTrigger>
           {agentEnabled && profile?.role === 'admin' && <TabsTrigger value="agent">{t('det.tabAgent')}</TabsTrigger>}
           {hasCap(profile, 'canViewNotes') && (
@@ -520,24 +671,24 @@ export function ServerDetailPage() {
         </TabsList>
 
         {/* ════ OVERVIEW ════ */}
-        <TabsContent value="overview" className="space-y-4">
+        <TabsContent value="overview" className="space-y-3">
           {/* Stat cards */}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard icon={<HeartPulse className="h-5 w-5" />} label="Health"
-              value={info?._cached ? 'Cached' : (info?.updates_count ?? 0) > 0 ? 'Attention' : 'Healthy'}
-              variant={info?._cached || (info?.updates_count ?? 0) > 0 ? 'warning' : 'ok'} />
+            <StatCard icon={<HeartPulse className="h-5 w-5" />} label={t('det.health')}
+              value={server.status === 'offline' ? t('common.offline') : info?._cached ? t('det.statusCached') : (info?.updates_count ?? 0) > 0 ? t('det.statusAttention') : t('det.statusHealthy')}
+              variant={server.status === 'offline' ? 'error' : info?._cached || (info?.updates_count ?? 0) > 0 ? 'warning' : 'ok'} />
             <StatCard icon={<Box className="h-5 w-5" />} label={t('det.tabUpdates')}
-              value={String(updatesList.length)} variant={updatesList.length > 0 ? 'warning' : 'ok'} />
-            <StatCard icon={<Satellite className="h-5 w-5" />} label={t('det.latency')} value="—" />
+              value={server.status === 'offline' ? '—' : String(updatesList.length)} variant={server.status === 'offline' ? 'muted' : updatesList.length > 0 ? 'warning' : 'ok'} />
+            <StatCard icon={<Satellite className="h-5 w-5" />} label={t('det.latency')} value={server.status === 'offline' ? '—' : latencyMs !== null ? `${latencyMs} ms` : '—'} variant={server.status === 'offline' ? 'muted' : latencyMs !== null ? (latencyMs > 500 ? 'warning' : 'ok') : 'muted'} />
             <StatCard icon={<Boxes className="h-5 w-5" />} label={t('det.tabDocker')}
-              value={containers.length ? String(containers.length) : 'Idle'} variant={containers.length ? undefined : 'muted'} />
+              value={server.status === 'offline' ? '—' : containers.length ? String(containers.length) : t('det.statusIdle')} variant={server.status === 'offline' ? 'muted' : containers.length ? undefined : 'muted'} />
           </div>
 
           {/* Quick links */}
           {(server.links || []).length > 0 && (
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">{t('det.quickLinks')}</CardTitle></CardHeader>
-              <CardContent className="flex flex-wrap gap-2">
+              <CardHeader className="px-4 py-3"><CardTitle className="text-sm">{t('det.quickLinks')}</CardTitle></CardHeader>
+              <CardContent className="px-4 pb-4 pt-0 flex flex-wrap gap-2">
                 {server.links!.map((l, i) => (
                   <a key={i} href={l.url} target="_blank" rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm hover:bg-accent">
@@ -548,11 +699,11 @@ export function ServerDetailPage() {
             </Card>
           )}
 
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-3 lg:grid-cols-2">
             {/* System info */}
             <Card>
-              <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Info className="h-4 w-4" />{t('det.sysinfo')}</CardTitle></CardHeader>
-              <CardContent className="space-y-1">
+              <CardHeader className="px-4 py-3"><CardTitle className="text-sm flex items-center gap-2"><Info className="h-4 w-4" />{t('det.sysinfo')}</CardTitle></CardHeader>
+              <CardContent className="px-4 pb-4 pt-0 space-y-1">
                 <dl className="grid gap-y-1.5 text-sm">
                   {([
                     [t('det.os'), info?.os],
@@ -568,8 +719,8 @@ export function ServerDetailPage() {
                     </div>
                   ))}
                 </dl>
-                <Separator className="my-3" />
-                <div className="text-xs font-medium text-muted-foreground mb-2">{t('det.network')}</div>
+                <div className="mt-4 -mx-4 border-t px-4 pt-3">
+                <SectionLabel className="mb-2">{t('det.network')}</SectionLabel>
                 <dl className="grid gap-y-1.5 text-sm">
                   <div className="flex items-center justify-between border-b border-dashed py-1">
                     <dt className="text-muted-foreground">{t('det.ipAddress')}</dt>
@@ -589,33 +740,34 @@ export function ServerDetailPage() {
                     <dt className="text-muted-foreground">{t('det.sshUser')}</dt>
                     <dd className="font-mono text-xs">{server.ssh_user || 'root'}</dd>
                   </div>
-                </dl>
+                 </dl>
+                </div>
               </CardContent>
             </Card>
 
             {/* Resources */}
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
+              <CardHeader className="px-4 py-3 flex flex-row items-center justify-between">
                 <CardTitle className="text-sm">{t('det.resources')}</CardTitle>
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => refetchInfo()} disabled={fetchingInfo}>
                   <RefreshCw className={`h-3.5 w-3.5 ${fetchingInfo ? 'animate-spin' : ''}`} />
                 </Button>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="px-4 pb-4 pt-0 space-y-4">
                 {cpuPct === null && info?.ram_used_mb == null ? (
                   <p className="text-sm text-muted-foreground text-center py-4">{t('det.offline')}</p>
                 ) : (
                   <>
                     {cpuPct !== null && (
                       <div>
-                        <div className="flex justify-between text-sm mb-1"><span>{t('det.cpu')}</span><span className={`font-medium ${cpuPct > 90 ? 'text-red-500' : cpuPct > 70 ? 'text-amber-500' : ''}`}>{cpuPct}%</span></div>
+                        <div className="flex justify-between text-sm mb-1"><span>{t('det.cpu')}</span><span className={`font-medium ${metricTextClass(cpuPct)}`}>{cpuPct}%</span></div>
                         <ThresholdBar pct={cpuPct} />
                       </div>
                     )}
                     <div>
                       <div className="flex justify-between text-sm mb-1">
-                        <span>RAM</span>
-                        <span className={`font-medium ${(ramPct ?? 0) >= 95 ? 'text-red-500' : (ramPct ?? 0) >= 85 ? 'text-amber-500' : ''}`}>
+                        <span>{t('det.ram')}</span>
+                        <span className={`font-medium ${metricTextClass(ramPct)}`}>
                           {formatBytes(info?.ram_used_mb)} / {formatBytes(info?.ram_total_mb)} · {ramPct ?? 0}%
                         </span>
                       </div>
@@ -624,7 +776,7 @@ export function ServerDetailPage() {
                     <div>
                       <div className="flex justify-between text-sm mb-1">
                         <span>{t('det.disk')}</span>
-                        <span className={`font-medium ${(diskPct ?? 0) >= 95 ? 'text-red-500' : (diskPct ?? 0) >= 85 ? 'text-amber-500' : ''}`}>
+                        <span className={`font-medium ${metricTextClass(diskPct)}`}>
                           {info?.disk_used_gb?.toFixed(1) ?? '—'} / {info?.disk_total_gb?.toFixed(1) ?? '—'} GB · {diskPct ?? 0}%
                         </span>
                       </div>
@@ -634,7 +786,7 @@ export function ServerDetailPage() {
                     {/* Storage mounts */}
                     {(info?.storage_mount_metrics ?? []).length > 0 && (
                       <>
-                        <div className="text-xs font-medium text-muted-foreground pt-2">{t('det.storageMounts')}</div>
+                        <SectionLabel className="pt-2">{t('det.storageMounts')}</SectionLabel>
                         {info!.storage_mount_metrics!.map((m, i) => {
                           const pct = m.usage_pct ?? null;
                           return (
@@ -653,15 +805,16 @@ export function ServerDetailPage() {
                     {/* ZFS pools */}
                     {(info?.zfs_pools ?? []).length > 0 && (
                       <>
-                        <div className="text-xs font-medium text-muted-foreground pt-2">{t('det.zfsPools')}</div>
+                        <SectionLabel className="pt-2">{t('det.zfsPools')}</SectionLabel>
                         {info!.zfs_pools!.map((p, i) => {
                           const pct = p.size_gb ? Math.round((p.alloc_gb! / p.size_gb) * 100) : 0;
                           return (
                             <div key={i}>
                               <div className="flex justify-between text-xs mb-1">
-                                <span className="font-medium">{p.name} <Badge variant={p.health === 'ONLINE' ? 'default' : 'destructive'} className="text-[9px] ml-1">{p.health}</Badge></span>
+                                <span className="font-medium">{p.name} <StatusBadge tone={p.health === 'ONLINE' ? 'success' : 'danger'} className="ml-1">{p.health}</StatusBadge></span>
                                 <span>{p.alloc_gb?.toFixed(1)} / {p.size_gb?.toFixed(1)} GB · {pct}%</span>
                               </div>
+                              {p.scrub && <div className="mb-1 text-[11px] text-muted-foreground">Last scrub: {p.scrub}</div>}
                               <ThresholdBar pct={pct} />
                             </div>
                           );
@@ -679,12 +832,17 @@ export function ServerDetailPage() {
         {hasCap(profile, 'canViewDocker') && (
           <TabsContent value="docker" className="space-y-4">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
+              <CardHeader className="px-4 py-3 flex flex-row items-center justify-between">
                 <CardTitle className="text-sm flex items-center gap-2"><Boxes className="h-4 w-4" />{t('det.docker')}</CardTitle>
                 <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => qc.invalidateQueries({ queryKey: ['server', id, 'docker'] })}>
-                    <RefreshCw className="h-3.5 w-3.5" />
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => qc.invalidateQueries({ queryKey: ['server', id, 'docker'] })} disabled={fetchingDocker}>
+                    <RefreshCw className={`h-3.5 w-3.5 ${fetchingDocker ? 'animate-spin' : ''}`} />
                   </Button>
+                  {hasCap(profile, 'canManageDockerCompose') && (
+                    <Button size="sm" variant="secondary" onClick={() => setComposeDialog({ open: true, mode: 'add', dir: '', content: '', loading: false })}>
+                      <Plus className="h-3.5 w-3.5 mr-1" /> {t('det.addComposeStack')}
+                    </Button>
+                  )}
                   {hasCap(profile, 'canPullDocker') && (
                     <Button size="sm" variant="secondary" disabled={checkImageMut.isPending}
                       onClick={() => checkImageMut.mutate()}>
@@ -695,11 +853,7 @@ export function ServerDetailPage() {
               </CardHeader>
               <CardContent className="p-0">
                 {containers.length === 0 ? (
-                  <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
-                    <Boxes className="h-8 w-8" />
-                    <h3 className="font-medium">{t('det.noContainers')}</h3>
-                    <span className="text-sm">{t('det.noContainersHint')}</span>
-                  </div>
+                  <EmptyState compact icon={<Boxes className="h-5 w-5" />} title={t('det.noContainers')} description={t('det.noContainersHint')} />
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -724,14 +878,15 @@ export function ServerDetailPage() {
                                   <Layers className="h-3.5 w-3.5 text-primary" />
                                   <strong className="text-sm">{proj}</strong>
                                   <span className="font-mono text-[10px] text-muted-foreground">{data.dir}</span>
-                                  {allDown && <Badge variant="secondary" className="text-[10px]">{t('common.offline')}</Badge>}
+                                  {allDown && <StatusBadge tone="danger">{t('common.offline')}</StatusBadge>}
                                 </span>
                               </td>
                               <td className="px-3 py-2">
                                 <div className="flex items-center gap-0.5">
-                                  {hasCap(profile, 'canPullDocker') && <Button variant="ghost" size="icon" className="h-6 w-6" title="pull"><CloudDownload className="h-3 w-3" /></Button>}
-                                  {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6" title="up -d"><Play className="h-3 w-3" /></Button>}
-                                  {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" title="down"><Square className="h-3 w-3" /></Button>}
+                                  {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6" title={t('det.editCompose')} onClick={() => openEditCompose(data.dir)}><FileText className="h-3 w-3" /></Button>}
+                                  {hasCap(profile, 'canPullDocker') && <Button variant="ghost" size="icon" className="h-6 w-6" title="pull" onClick={() => composeActionMut.mutate({ dir: data.dir, action: 'pull' })} disabled={composeActionMut.isPending}><CloudDownload className="h-3 w-3" /></Button>}
+                                  {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6" title="up -d" onClick={() => composeActionMut.mutate({ dir: data.dir, action: 'up' })} disabled={composeActionMut.isPending}><Play className="h-3 w-3" /></Button>}
+                                  {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" title="down" onClick={() => composeActionMut.mutate({ dir: data.dir, action: 'down' })} disabled={composeActionMut.isPending}><Square className="h-3 w-3" /></Button>}
                                 </div>
                               </td>
                             </tr>,
@@ -775,15 +930,15 @@ export function ServerDetailPage() {
         )}
 
         {/* ════ UPDATES ════ */}
-        {(hasCap(profile, 'canViewUpdates') || hasCap(profile, 'canViewCustomUpdates')) && (
+        {(hasCap(profile, 'canViewUpdates') || hasCap(profile, 'canRunUpdates') || hasCap(profile, 'canRebootServers') || hasCap(profile, 'canViewCustomUpdates') || hasCap(profile, 'canRunCustomUpdates') || hasCap(profile, 'canEditCustomUpdates') || hasCap(profile, 'canDeleteCustomUpdates')) && (
           <TabsContent value="updates" className="space-y-4">
             {hasCap(profile, 'canViewUpdates') && (
               <Card>
-                <CardHeader className="flex flex-row items-center justify-between">
+                <CardHeader className="px-4 py-3 flex flex-row items-center justify-between">
                   <CardTitle className="text-sm">{t('det.tabUpdates')}</CardTitle>
                   <Button variant="ghost" size="icon" className="h-7 w-7"
-                    onClick={() => qc.invalidateQueries({ queryKey: ['server', id, 'updates'] })}>
-                    <RefreshCw className="h-3.5 w-3.5" />
+                    onClick={() => qc.invalidateQueries({ queryKey: ['server', id, 'updates'] })} disabled={fetchingUpdates}>
+                    <RefreshCw className={`h-3.5 w-3.5 ${fetchingUpdates ? 'animate-spin' : ''}`} />
                   </Button>
                 </CardHeader>
                 <CardContent className="p-0">
@@ -823,7 +978,7 @@ export function ServerDetailPage() {
                   )}
                   {hasCap(profile, 'canRunUpdates') && updatesList.length > 0 && (
                     <div className="p-3 border-t">
-                      <Button size="sm" onClick={() => runUpdateMut.mutate()} disabled={runUpdateMut.isPending}>
+                      <Button size="sm" onClick={() => setConfirmRunUpdate(true)} disabled={runUpdateMut.isPending}>
                         <ArrowUp className="h-3.5 w-3.5 mr-1" /> {t('det.runUpdate')}
                       </Button>
                     </div>
@@ -833,9 +988,9 @@ export function ServerDetailPage() {
             )}
 
             {/* Custom tasks */}
-            {hasCap(profile, 'canViewCustomUpdates') && (
+            {(hasCap(profile, 'canViewCustomUpdates') || hasCap(profile, 'canRunCustomUpdates') || hasCap(profile, 'canEditCustomUpdates') || hasCap(profile, 'canDeleteCustomUpdates')) && (
               <Card>
-                <CardHeader className="flex flex-row items-center justify-between">
+                <CardHeader className="px-4 py-3 flex flex-row items-center justify-between">
                   <CardTitle className="text-sm">{t('det.customUpdates')}</CardTitle>
                   {hasCap(profile, 'canEditCustomUpdates') && (
                     <Button size="sm" onClick={() => setTaskDialog({ open: true, task: null })}>
@@ -866,7 +1021,7 @@ export function ServerDetailPage() {
                             <td className="px-3 py-2 font-mono text-xs">{task.current_version || '—'}</td>
                             <td className="px-3 py-2 font-mono text-xs">{task.type === 'trigger' ? (task.trigger_output || task.last_version || '—') : (task.last_version || '—')}</td>
                             <td className="px-3 py-2">
-                              {task.has_update ? <Badge variant="default" className="text-[10px] bg-amber-500">{t('det.imageUpdateAvail')}</Badge>
+                              {task.has_update ? <StatusBadge tone="warning">{t('det.imageUpdateAvail')}</StatusBadge>
                                 : task.last_checked_at ? <span className="text-xs text-emerald-500">✓ {t('det.imageUpToDate')}</span>
                                 : <span className="text-xs text-muted-foreground">—</span>}
                             </td>
@@ -875,7 +1030,7 @@ export function ServerDetailPage() {
                                 {hasCap(profile, 'canRunCustomUpdates') && <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => checkTaskMut.mutate(task.id)}><RefreshCw className="h-3 w-3" /></Button>}
                                 {hasCap(profile, 'canRunCustomUpdates') && task.update_command && <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => runTaskMut.mutate(task.id)}><Play className="h-3 w-3" /></Button>}
                                 {hasCap(profile, 'canEditCustomUpdates') && <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setTaskDialog({ open: true, task })}><Pencil className="h-3 w-3" /></Button>}
-                                {hasCap(profile, 'canDeleteCustomUpdates') && <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => { if (confirm(t('det.confirmDeleteTask', { name: task.name }))) deleteTaskMut.mutate(task.id); }}><Trash2 className="h-3 w-3" /></Button>}
+                                {hasCap(profile, 'canDeleteCustomUpdates') && <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => setConfirmDeleteTask(task)}><Trash2 className="h-3 w-3" /></Button>}
                               </div>
                             </td>
                           </tr>
@@ -894,7 +1049,7 @@ export function ServerDetailPage() {
           <Card>
             <CardContent className="p-0">
               {histItems.length === 0 ? (
-                <div className="p-6 text-sm text-muted-foreground">{t('det.noHistory')}</div>
+                <EmptyState compact icon={<History className="h-5 w-5" />} title={t('det.noHistory')} />
               ) : (
                 <>
                   <table className="w-full text-sm">
@@ -911,17 +1066,17 @@ export function ServerDetailPage() {
                       {histPage_.map(h => (
                         <tr key={h.id}>
                           <td className="px-3 py-2 font-mono text-xs">
-                            {h._type === 'schedule' && <Badge variant="secondary" className="text-[9px] mr-1">{t('det.playbookBadge')}</Badge>}
+                            {h._type === 'schedule' && <StatusBadge tone="muted" className="mr-1">{t('det.playbookBadge')}</StatusBadge>}
                             {h.action || h.playbook_name || '—'}
                           </td>
                           <td className="px-3 py-2 text-xs text-muted-foreground">{h.triggered_by || 'system'}</td>
                           <td className="px-3 py-2">
-                            <Badge variant={h.status === 'success' ? 'default' : h.status === 'failed' ? 'destructive' : 'secondary'} className="text-[10px]">
+                            <StatusBadge tone={h.status === 'success' ? 'success' : h.status === 'failed' ? 'danger' : 'muted'}>
                               {h.status || '—'}
-                            </Badge>
+                            </StatusBadge>
                           </td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{formatDate(h.started_at)}</td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{formatDate(h.completed_at)}</td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{formatDate(h.started_at, hour12)}</td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{formatDate(h.completed_at, hour12)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -953,7 +1108,7 @@ export function ServerDetailPage() {
         {agentEnabled && profile?.role === 'admin' && (
           <TabsContent value="agent" className="space-y-4">
             <Card>
-              <CardContent className="space-y-4 p-6">
+              <CardContent className="px-4 pb-4 pt-4 space-y-4">
                 <p className="text-sm text-muted-foreground">{t('det.agentDescription')}</p>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <StatCard icon={<Settings2 className="h-5 w-5" />} label={t('det.agentMode')} value={agentStatus?.mode || 'legacy'} />
@@ -983,7 +1138,7 @@ export function ServerDetailPage() {
                 )}
                 <div className="space-y-2 max-w-xl">
                   <Label className="text-xs">{t('det.agentShipyardUrl')}</Label>
-                  <Input value={agentUrl} onChange={e => setAgentUrl(e.target.value)} placeholder="https://shipyard.example.com" />
+                  <Input value={agentUrl} onChange={e => setAgentUrl(e.target.value)} placeholder={t('det.agentUrlPlaceholder')} />
                   <Label className="text-xs">{t('det.agentCaPem')}</Label>
                   <Textarea value={agentCa} onChange={e => setAgentCa(e.target.value)} rows={4} className="font-mono text-xs" placeholder={t('det.agentCaPemPlaceholder')} />
                 </div>
@@ -996,7 +1151,7 @@ export function ServerDetailPage() {
         {hasCap(profile, 'canViewNotes') && (
           <TabsContent value="notes">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
+              <CardHeader className="px-4 py-3 flex flex-row items-center justify-between">
                 <CardTitle className="text-sm">{t('det.tabNotes')}</CardTitle>
                 {hasCap(profile, 'canEditNotes') && (
                   <Button size="sm" variant="secondary" onClick={() => setNotesEditing(!notesEditing)}>
@@ -1004,13 +1159,13 @@ export function ServerDetailPage() {
                   </Button>
                 )}
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 pb-4 pt-0">
                 {notesEditing ? (
                   <Textarea value={notes} rows={16} placeholder={t('det.notesPlaceholder')} className="font-mono text-sm"
                     onChange={e => { setNotes(e.target.value); autoSaveNotes(e.target.value); }} />
                 ) : (
                   <div className="prose prose-sm dark:prose-invert max-w-none min-h-[200px]">
-                    {notes.trim() ? <div dangerouslySetInnerHTML={{ __html: notes.replace(/</g, '&lt;').replace(/\n/g, '<br/>') }} /> : <p className="text-muted-foreground">{t('det.notesEmpty')}</p>}
+                    {notes.trim() ? <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(notes) as string) }} /> : <p className="text-muted-foreground">{t('det.notesEmpty')}</p>}
                   </div>
                 )}
               </CardContent>
@@ -1047,6 +1202,63 @@ export function ServerDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Compose editor dialog */}
+      <Dialog open={composeDialog.open} onOpenChange={v => { if (!v) setComposeDialog(prev => ({ ...prev, open: false })); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>{composeDialog.mode === 'edit' ? t('det.editCompose') : t('det.addComposeStack')}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            {composeDialog.mode === 'add' && (
+              <div className="space-y-1">
+                <Label>{t('det.composePath')}</Label>
+                <Input value={composeDialog.dir} onChange={e => setComposeDialog(prev => ({ ...prev, dir: e.target.value }))} placeholder="/opt/myapp" className="font-mono" />
+              </div>
+            )}
+            <div className="space-y-1">
+              <Label>docker-compose.yml</Label>
+              {composeDialog.loading ? (
+                <div className="space-y-1 py-2"><SkeletonRow cols={3} /><SkeletonRow cols={3} /><SkeletonRow cols={3} /></div>
+              ) : (
+                <Textarea value={composeDialog.content} onChange={e => setComposeDialog(prev => ({ ...prev, content: e.target.value }))}
+                  rows={20} className="font-mono text-xs" />
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setComposeDialog(prev => ({ ...prev, open: false }))}>{t('common.cancel')}</Button>
+            <Button onClick={() => { if (!composeDialog.dir.trim()) { showToast(t('det.composePathRequired'), 'error'); return; } saveComposeMut.mutate(); }}
+              disabled={saveComposeMut.isPending || composeDialog.loading}>{t('common.save')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* SSH Terminal overlay */}
+      {terminalOpen && (
+        <SshTerminal server={server} onClose={() => setTerminalOpen(false)} />
+      )}
+      <Dialog open={!!actionOutput} onOpenChange={(open) => { if (!open) setActionOutput(null); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>{actionOutput?.title || t('det.output')}</DialogTitle></DialogHeader>
+          <div className="rounded-md border bg-muted/30">
+            <div className="max-h-96 overflow-y-auto p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
+              {(actionOutput?.lines ?? []).map((line, i) => <div key={i} className={line.cls}>{line.text}</div>)}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setActionOutput(null)}>{t('common.close')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <ConfirmDialog
+        open={!!confirmDeleteTask}
+        onOpenChange={(open) => { if (!open) setConfirmDeleteTask(null); }}
+        title={t('common.delete')}
+        description={t('det.confirmDeleteTask', { name: confirmDeleteTask?.name || '' })}
+        confirmLabel={t('common.delete')}
+        variant="destructive"
+        onConfirm={() => { if (confirmDeleteTask) deleteTaskMut.mutate(confirmDeleteTask.id); }}
+        isPending={deleteTaskMut.isPending}
+      />
     </div>
   );
 
@@ -1056,14 +1268,14 @@ export function ServerDetailPage() {
     const upd = imageUpdates[c.image] || imageUpdates[c.image + ':latest'];
     return (
       <tr key={c.container_name}>
-        <td className="px-3 py-2 pl-6"><CircleDot className={`h-3 w-3 ${isUp ? 'text-emerald-500' : 'text-rose-500'}`} /></td>
+        <td className="px-3 py-2 pl-6">{isUp ? <LiveDot tone="success" /> : <span className="inline-block h-2 w-2 rounded-full bg-rose-500" />}</td>
         <td className="px-3 py-2 font-mono text-xs">{c.container_name}</td>
         <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground">{c.image}</td>
         <td className="px-3 py-2"><span className={`text-xs ${isUp ? 'text-emerald-500' : 'text-rose-500'}`}>{c.status || c.state}</span></td>
         <td className="px-3 py-2">
-          {upd === 'update_available' ? <Badge className="text-[10px] bg-amber-500">{t('det.imageUpdateAvail')}</Badge>
+          {upd === 'update_available' ? <StatusBadge tone="warning">{t('det.imageUpdateAvail')}</StatusBadge>
             : upd === 'up_to_date' ? <span className="text-xs text-muted-foreground">✓ {t('det.imageUpToDate')}</span>
-            : upd === 'updated' ? <Badge className="text-[10px] bg-emerald-500">{t('det.imageUpdated')}</Badge>
+            : upd === 'updated' ? <StatusBadge tone="success">{t('det.imageUpdated')}</StatusBadge>
             : <span className="text-xs text-muted-foreground">—</span>}
         </td>
         <td className="px-3 py-2">
@@ -1074,7 +1286,7 @@ export function ServerDetailPage() {
               </Button>
             )}
             {hasCap(profile, 'canRestartDocker') && (
-              <Button variant="ghost" size="icon" className="h-6 w-6" title="Restart"
+              <Button variant="ghost" size="icon" className="h-6 w-6" title={t('common.restart')}
                 onClick={() => { if (confirm(t('det.confirmRestartContainer', { name: c.container_name }))) restartContainerMut.mutate(c.container_name); }}>
                 <RotateCw className="h-3 w-3" />
               </Button>

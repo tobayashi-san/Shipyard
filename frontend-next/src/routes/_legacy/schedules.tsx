@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger,
 } from '@/components/ui/dialog';
+import { PageHeader } from '@/components/ui/page-header';
 
 interface Schedule {
   id: number | string;
@@ -58,20 +59,22 @@ export function SchedulesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('nav.schedules')}</h1>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild>
-            <Button><Plus className="h-4 w-4" /> {t('sc.new')}</Button>
-          </DialogTrigger>
-          <CreateScheduleDialog
-            onCreated={() => {
-              setCreateOpen(false);
-              qc.invalidateQueries({ queryKey: ['schedules'] });
-            }}
-          />
-        </Dialog>
-      </div>
+      <PageHeader
+        title={t('nav.schedules')}
+        actions={
+          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+            <DialogTrigger asChild>
+              <Button><Plus className="h-4 w-4" /> {t('sc.new')}</Button>
+            </DialogTrigger>
+            <CreateScheduleDialog
+              onCreated={() => {
+                setCreateOpen(false);
+                qc.invalidateQueries({ queryKey: ['schedules'] });
+              }}
+            />
+          </Dialog>
+        }
+      />
 
       <Card>
         <CardContent className="p-0">

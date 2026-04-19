@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PageHeader } from '@/components/ui/page-header';
 
 interface AuditRow {
   action?: string;
@@ -84,18 +85,20 @@ export function AuditPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('audit.title')}</h1>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">
-            {t('audit.total', { n: meta?.count ?? 0 })} · {t('audit.retention')}
-          </span>
-          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
-            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-            {t('common.refresh')}
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title={t('audit.title')}
+        actions={
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-muted-foreground">
+              {t('audit.total', { n: meta?.count ?? 0 })} · {t('audit.retention')}
+            </span>
+            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
+              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+              {t('common.refresh')}
+            </Button>
+          </div>
+        }
+      />
 
       <Card>
         <CardContent className="space-y-4 p-4">

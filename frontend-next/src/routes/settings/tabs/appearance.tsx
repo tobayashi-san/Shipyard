@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Paintbrush, Save, Image as ImageIcon, X } from 'lucide-react';
+import { Paintbrush, Save, Image as ImageIcon, X, Anchor, Server, Terminal, Shield, Boxes, Network } from 'lucide-react';
 import { api } from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { useSettings } from '@/lib/queries';
@@ -10,13 +10,13 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { SettingsRow, SettingsSection } from '../_row';
 
-const LOGO_ICONS: Array<[string, string]> = [
-  ['fa-ship', 'Ship'],
-  ['fa-server', 'Server'],
-  ['fa-terminal', 'Terminal'],
-  ['fa-shield-halved', 'Shield'],
-  ['fa-cubes', 'Cubes'],
-  ['fa-network-wired', 'Network'],
+export const LOGO_ICONS: Array<{ value: string; label: string; Icon: React.ComponentType<{ className?: string }> }> = [
+  { value: 'anchor', label: 'Anchor', Icon: Anchor },
+  { value: 'server', label: 'Server', Icon: Server },
+  { value: 'terminal', label: 'Terminal', Icon: Terminal },
+  { value: 'shield', label: 'Shield', Icon: Shield },
+  { value: 'boxes', label: 'Boxes', Icon: Boxes },
+  { value: 'network', label: 'Network', Icon: Network },
 ];
 
 const DEFAULTS = {
@@ -24,7 +24,7 @@ const DEFAULTS = {
   appTagline: '',
   accentColor: '#3b82f6',
   showIcon: true,
-  logoIcon: 'fa-ship',
+  logoIcon: 'anchor',
   logoImage: '',
 };
 
@@ -41,7 +41,7 @@ export function AppearanceTab() {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const { data: settings } = useSettings();
-  const wl = ((settings as { whiteLabel?: WhiteLabel } | undefined)?.whiteLabel) || {};
+  const wl = (settings as unknown as WhiteLabel) || {};
 
   const [appName, setAppName]       = useState(wl.appName || '');
   const [tagline, setTagline]       = useState(wl.appTagline || '');
@@ -97,17 +97,17 @@ export function AppearanceTab() {
   const handleFile = (file: File | null) => {
     if (!file) return;
     if (file.size > 150 * 1024) {
-      showToast('Logo file too large (max 150 KB)', 'error');
+      showToast(t('set.logoTooLarge'), 'error');
       return;
     }
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') {
         setLogoImage(reader.result);
-        showToast('Logo loaded. Save to apply.', 'success');
+        showToast(t('set.logoLoaded'), 'success');
       }
     };
-    reader.onerror = () => showToast('Failed to read logo file', 'error');
+    reader.onerror = () => showToast(t('set.logoReadError'), 'error');
     reader.readAsDataURL(file);
   };
 
@@ -161,7 +161,7 @@ export function AppearanceTab() {
             onChange={(e) => setLogoIcon(e.target.value)}
             className="h-9 rounded-md border border-input bg-background px-2 text-sm"
           >
-            {LOGO_ICONS.map(([value, label]) => (
+            {LOGO_ICONS.map(({ value, label }) => (
               <option key={value} value={value}>{label}</option>
             ))}
           </select>
@@ -173,7 +173,7 @@ export function AppearanceTab() {
             onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
           />
           <Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()}>
-            <ImageIcon className="h-4 w-4" /> Logo Upload
+            <ImageIcon className="h-4 w-4" /> {t('set.logoUpload')}
           </Button>
           {logoImage && (
             <Button
@@ -181,7 +181,7 @@ export function AppearanceTab() {
               size="sm"
               onClick={() => { setLogoImage(''); if (fileRef.current) fileRef.current.value = ''; }}
             >
-              <X className="h-4 w-4" /> Remove logo
+              <X className="h-4 w-4" /> {t('set.removeLogo')}
             </Button>
           )}
         </div>

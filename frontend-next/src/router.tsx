@@ -7,6 +7,7 @@ import { ServersPage } from '@/routes/servers';
 import { ServerDetailPage } from '@/routes/server-detail';
 import { PlaybooksPage } from '@/routes/playbooks';
 import { SettingsPage } from '@/routes/settings';
+import { ProfilePage } from '@/routes/profile';
 import { PluginHostPage } from '@/routes/_legacy/plugins';
 import { getToken } from '@/lib/auth';
 
@@ -44,6 +45,7 @@ const dashboardRoute  = createRoute({ getParentRoute: () => protectedLayout, pat
 const serversRoute    = createRoute({ getParentRoute: () => protectedLayout, path: '/servers',      component: ServersPage });
 const serverDetail    = createRoute({ getParentRoute: () => protectedLayout, path: '/servers/$id',  component: ServerDetailPage });
 const playbooksRoute  = createRoute({ getParentRoute: () => protectedLayout, path: '/playbooks',    component: PlaybooksPage });
+const profileRoute    = createRoute({ getParentRoute: () => protectedLayout, path: '/profile',      component: ProfilePage });
 // Settings is the single page that hosts: appearance, ssh, system, agent-manifest,
 // notifications, git, plugins, users-roles, audit, danger — matching the legacy UI.
 // Tab is selected via the optional :tab path segment (default = appearance).
@@ -60,6 +62,7 @@ const routeTree = rootRoute.addChildren([
     serversRoute,
     serverDetail,
     playbooksRoute,
+    profileRoute,
     settingsRoute,
     settingsTabRoute,
     pluginHostRoute,

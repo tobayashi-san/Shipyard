@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Bot, Clock, RotateCw, Save } from 'lucide-react';
+import { Bot, Clock, History, RotateCw, Save } from 'lucide-react';
 import { api } from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Skeleton, SkeletonRow } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
 import { SettingsRow, SettingsSection } from '../_row';
 
 interface ManifestResp {
@@ -71,7 +73,7 @@ export function AgentManifestTab() {
   const history = historyQ.data || [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <SettingsSection
         icon={<Bot className="h-4 w-4" />}
         title={t('set.agentManifestTitle')}
@@ -87,10 +89,8 @@ export function AgentManifestTab() {
           </Button>
         </div>
 
-        <SettingsRow label={t('set.agentManifestVersion', { version: manifestQ.data?.version || 1 })}>
-          <span className="text-xs text-muted-foreground">
-            {manifestQ.isLoading ? t('common.loading') : ''}
-          </span>
+        <SettingsRow label={t('set.agentManifestVersion', { version: manifestQ.data?.version ?? 1 })}>
+          {manifestQ.isLoading ? <Skeleton className="h-3 w-24" /> : null}
         </SettingsRow>
 
         <SettingsRow label="JSON" align="start">
@@ -118,13 +118,17 @@ export function AgentManifestTab() {
 
       <SettingsSection icon={<Clock className="h-4 w-4" />} title={t('set.agentManifestHistory')}>
         {historyQ.isLoading ? (
-          <SettingsRow noBorder>
-            <span className="text-sm text-muted-foreground">{t('common.loading')}</span>
-          </SettingsRow>
+          <div className="py-2">
+            <SkeletonRow cols={3} />
+            <SkeletonRow cols={3} />
+            <SkeletonRow cols={3} />
+          </div>
         ) : history.length === 0 ? (
-          <SettingsRow noBorder>
-            <span className="text-sm text-muted-foreground">{t('set.agentManifestNoHistory')}</span>
-          </SettingsRow>
+          <EmptyState
+            compact
+            icon={<History className="h-5 w-5" />}
+            title={t('set.agentManifestNoHistory')}
+          />
         ) : (
           history.map((h, i) => (
             <div

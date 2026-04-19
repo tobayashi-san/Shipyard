@@ -4,7 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import { ScrollText, RotateCw, ClipboardList } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { SkeletonRow } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
 import { SettingsSection } from '../_row';
 
 interface AuditMeta { actions?: string[]; users?: string[]; count?: number }
@@ -69,7 +71,7 @@ export function AuditTab() {
   };
 
   const meta = metaQ.data || { actions: [], users: [], count: 0 };
-  const hasMore = (rowsQ.data?.length || 0) >= filters.limit;
+  const hasMore = allRows.length < (meta.count || 0);
 
   return (
     <SettingsSection icon={<ScrollText className="h-4 w-4" />} title={t('set.auditTitle')}>
@@ -131,21 +133,27 @@ export function AuditTab() {
       </div>
 
       {rowsQ.isLoading && allRows.length === 0 ? (
-        <div className="py-8 text-center text-sm text-muted-foreground">{t('common.loading')}</div>
+        <div className="py-2">
+          <SkeletonRow cols={4} />
+          <SkeletonRow cols={4} />
+          <SkeletonRow cols={4} />
+          <SkeletonRow cols={4} />
+        </div>
       ) : rowsQ.isError ? (
         <div className="py-4 text-sm text-destructive">
           {t('set.auditLoadError')}: {(rowsQ.error as Error)?.message}
         </div>
       ) : allRows.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 py-8 text-sm text-muted-foreground">
-          <ClipboardList className="h-6 w-6 opacity-40" />
-          <span>{t('set.auditEmpty')}</span>
-        </div>
+        <EmptyState
+          compact
+          icon={<ClipboardList className="h-5 w-5" />}
+          title={t('set.auditEmpty')}
+        />
       ) : (
         <div>
           {allRows.map((r, i) => (
             <div
-              key={i}
+              key={`${r.created_at ?? ''}-${r.action ?? ''}-${r.user ?? ''}-${i}`}
               className={`flex items-start justify-between gap-3 py-3 ${i === allRows.length - 1 ? '' : 'border-b border-border/60'}`}
             >
               <div className="min-w-0 flex-1">
@@ -163,9 +171,9 @@ export function AuditTab() {
                 </div>
               </div>
               <div className="flex flex-shrink-0 flex-col items-end gap-1.5">
-                <Badge variant={r.success ? 'success' : 'destructive'} className="text-[11px]">
+                <StatusBadge tone={r.success ? 'success' : 'danger'}>
                   {r.success ? t('set.auditStatusOk') : t('set.auditStatusFailed')}
-                </Badge>
+                </StatusBadge>
                 <span className="text-[11px] text-muted-foreground">{r.created_at || ''}</span>
               </div>
             </div>

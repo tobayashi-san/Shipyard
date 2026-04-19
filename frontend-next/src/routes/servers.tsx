@@ -1,25 +1,38 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import {
-  Search, Server as ServerIcon, Plus, RefreshCw, MoreVertical,
+  Search, Server as ServerIcon, Plus, RefreshCw,
   FolderPlus, Tags, FileJson, FileSpreadsheet, FileUp, Download,
   Play, ChevronRight, ChevronDown, Folder, FolderOpen,
-  Pencil, Trash2, FolderTree, CircleDot, Info, Lock, LockOpen,
-  X,
+  Pencil, Trash2, FolderTree, CircleDot, Info,
+  X, Rows3, Rows2, AlignJustify, CheckCircle2, Hash,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useProfile, hasCap } from '@/lib/queries';
 import { showToast } from '@/lib/toast';
+import { CreateServerDialog } from '@/components/CreateServerDialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page-header';
+import { LiveDot, StatusBadge } from '@/components/ui/status-badge';
+import { EmptyState } from '@/components/ui/empty-state';
+import { SkeletonRow } from '@/components/ui/skeleton';
+import { OverflowMenu, OverflowItem, OverflowSep } from '@/components/ui/overflow-menu';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+
+function buildAllExceptTargets(excluded: string[]): string {
+  const unique = [...new Set(excluded.map(v => String(v || '').trim()).filter(Boolean))];
+  if (unique.length === 0) return 'all';
+  return `all:${unique.map(v => `!${v}`).join(':')}`;
+}
 
 // ─── Types ────────────────────────────────────────────────────
 interface ServerRow {
@@ -63,7 +76,6 @@ interface ServerInfo {
 // ─── Constants ────────────────────────────────────────────────
 const PAGE_SIZE = 20;
 const STORAGE_KEY_COLLAPSED = 'shipyard.ui.servers.collapsedGroups';
-const STORAGE_KEY_EDIT = 'shipyard.ui.servers.editMode';
 const PRESET_COLORS = ['#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f97316'];
 
 function normalizeServer(s: Record<string, unknown>): ServerRow {
@@ -89,13 +101,6 @@ function loadCollapsedGroups(): Set<string> {
 function saveCollapsedGroups(s: Set<string>) {
   try { localStorage.setItem(STORAGE_KEY_COLLAPSED, JSON.stringify([...s])); } catch { /* */ }
 }
-function loadEditMode(): boolean {
-  try { return localStorage.getItem(STORAGE_KEY_EDIT) === '1'; } catch { return false; }
-}
-function saveEditMode(v: boolean) {
-  try { localStorage.setItem(STORAGE_KEY_EDIT, v ? '1' : '0'); } catch { /* */ }
-}
-
 function buildGroupTree(groups: ServerGroup[], parentId: string | null = null, visited = new Set<string>()): GroupNode[] {
   if (parentId !== null && visited.has(parentId)) return [];
   if (parentId !== null) visited.add(parentId);
@@ -300,50 +305,6 @@ function MoveDropdown({ groups, onSelect, anchorRef }: {
   );
 }
 
-// ─── OverflowMenu ─────────────────────────────────────────────
-function OverflowMenu({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('click', handler);
-    return () => document.removeEventListener('click', handler);
-  }, [open]);
-
-  return (
-    <div className="relative" ref={ref}>
-      <Button variant="ghost" size="icon" onClick={() => setOpen(!open)} title="Actions">
-        <MoreVertical className="h-4 w-4" />
-      </Button>
-      {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-md border bg-popover p-1 shadow-md"
-          onClick={() => setOpen(false)}>
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function OverflowItem({ icon: Icon, onClick, children, danger }: {
-  icon: React.ComponentType<{ className?: string }>;
-  onClick: () => void;
-  children: React.ReactNode;
-  danger?: boolean;
-}) {
-  return (
-    <button onClick={onClick}
-      className={`flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent ${danger ? 'text-destructive' : ''}`}>
-      <Icon className="h-3.5 w-3.5" /> {children}
-    </button>
-  );
-}
-function OverflowSep() { return <div className="my-1 h-px bg-border" />; }
-
 // ═══════════════════════════════════════════════════════════════
 // ─── Main ServersPage ─────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -351,6 +312,8 @@ export function ServersPage() {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const { data: profile } = useProfile();
+  const navigate = useNavigate();
+  useEffect(() => { sessionStorage.setItem('shipyard.lastNonDetailRoute', '/servers'); }, []);
 
   // ── Data queries ────────────────────────────────────────────
   const { data: rawServers, isLoading } = useQuery({
@@ -371,7 +334,6 @@ export function ServersPage() {
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsedGroups);
-  const [editMode, setEditMode] = useState(loadEditMode);
   const [groupDialog, setGroupDialog] = useState<{
     open: boolean; title: string; confirmText: string;
     name?: string; color?: string; parentId?: string | null; editId?: string | null;
@@ -380,6 +342,11 @@ export function ServersPage() {
   const moveRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [density, setDensity] = useState<'compact' | 'cozy' | 'comfortable'>(() => {
+    const saved = localStorage.getItem('shipyard-next.density');
+    return (saved === 'compact' || saved === 'comfortable') ? saved : 'cozy';
+  });
+  useEffect(() => { localStorage.setItem('shipyard-next.density', density); }, [density]);
 
   // ── Derived data ────────────────────────────────────────────
   const allTags = useMemo(() => [...new Set(servers.flatMap(s => s.tags || []))].sort(), [servers]);
@@ -468,6 +435,48 @@ export function ServersPage() {
     onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
   });
 
+  // ── Playbook run dialog state ─────────────────────────────
+  const [playbookDialogOpen, setPlaybookDialogOpen] = useState(false);
+  const [selectedPlaybook, setSelectedPlaybook] = useState('');
+  const [playbookTargets, setPlaybookTargets] = useState<string[]>([]);
+  const [playbookUseAll, setPlaybookUseAll] = useState(false);
+  const [playbookExcluded, setPlaybookExcluded] = useState<Set<string>>(new Set());
+  const [playbookExtraVars, setPlaybookExtraVars] = useState('');
+  const [confirmDeleteServer, setConfirmDeleteServer] = useState<ServerRow | null>(null);
+  const [confirmDeleteGroup, setConfirmDeleteGroup] = useState<ServerGroup | null>(null);
+  const { data: playbooks } = useQuery({
+    queryKey: ['playbooks'],
+    queryFn: () => api.getPlaybooks() as Promise<{ filename: string; description?: string; isInternal?: boolean; [k: string]: unknown }[]>,
+    enabled: playbookDialogOpen,
+  });
+
+  const handleBulkRunPlaybook = useCallback(async () => {
+    if (!selectedPlaybook) return;
+    const names = playbookTargets;
+    if (!playbookUseAll && !names.length) return;
+    try {
+      let extraVars: Record<string, unknown> = {};
+      if (playbookExtraVars.trim()) {
+        try { extraVars = JSON.parse(playbookExtraVars); }
+        catch {
+          showToast(t('run.invalidJson'), 'error');
+          return;
+        }
+      }
+      const targets = playbookUseAll ? buildAllExceptTargets([...playbookExcluded]) : names.join(',');
+      await api.runPlaybook(selectedPlaybook, targets, extraVars);
+      showToast(t('srv.playbookStarted', { playbook: selectedPlaybook, count: playbookUseAll ? servers.length - playbookExcluded.size : names.length }), 'success');
+      setPlaybookDialogOpen(false);
+      setSelectedPlaybook('');
+      setPlaybookTargets([]);
+      setPlaybookUseAll(false);
+      setPlaybookExcluded(new Set());
+      setPlaybookExtraVars('');
+    } catch (e: unknown) {
+      showToast(t('common.errorPrefix', { msg: (e as Error).message }), 'error');
+    }
+  }, [playbookTargets, playbookUseAll, playbookExcluded, playbookExtraVars, selectedPlaybook, servers.length, t]);
+
   // ── Handlers ────────────────────────────────────────────────
   const toggleCollapsed = useCallback((id: string) => {
     setCollapsed(prev => {
@@ -476,10 +485,6 @@ export function ServersPage() {
       saveCollapsedGroups(next);
       return next;
     });
-  }, []);
-
-  const toggleEditMode = useCallback(() => {
-    setEditMode(prev => { const v = !prev; saveEditMode(v); return v; });
   }, []);
 
   const toggleSelect = useCallback((id: string) => {
@@ -526,16 +531,21 @@ export function ServersPage() {
     importMut.mutate(rows);
   }, [importMut, t]);
 
+  useEffect(() => {
+    if (!playbookDialogOpen) return;
+    setPlaybookTargets(servers.filter(s => selectedIds.has(s.id)).map(s => s.name));
+    setPlaybookUseAll(false);
+    setPlaybookExcluded(new Set());
+    setPlaybookExtraVars('');
+  }, [playbookDialogOpen, servers, selectedIds]);
+
   const handleDeleteServer = useCallback((id: string, name: string) => {
-    if (!confirm(`${t('srv.confirmDelete', { name })}\n${t('srv.cantUndone')}`)) return;
-    deleteMut.mutate(id);
-    setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n; });
-  }, [deleteMut, t]);
+    setConfirmDeleteServer(servers.find(s => s.id === id) ?? { id, name } as ServerRow);
+  }, [servers]);
 
   const handleDeleteGroup = useCallback((id: string, name: string) => {
-    if (!confirm(`${t('srv.confirmDeleteFolder', { name })}\n${t('srv.folderNote')}`)) return;
-    groupDeleteMut.mutate(id);
-  }, [groupDeleteMut, t]);
+    setConfirmDeleteGroup(groups.find(g => g.id === id) ?? { id, name } as ServerGroup);
+  }, [groups]);
 
   const handleBulkUpdate = useCallback(async () => {
     const names = servers.filter(s => selectedIds.has(s.id)).map(s => s.name);
@@ -612,6 +622,7 @@ export function ServersPage() {
         onDragEnd={() => setDragItem(null)}
         onClick={(e) => {
           if ((e.target as HTMLElement).closest('.srv-actions') || (e.target as HTMLElement).closest('.srv-checkbox')) return;
+          navigate({ to: '/servers/$id', params: { id: s.id } });
         }}
       >
         <td className="px-2 py-2.5 w-9 srv-checkbox" style={folderColor ? { borderLeft: `3px solid ${folderColor}` } : undefined}
@@ -620,10 +631,14 @@ export function ServersPage() {
             onChange={() => toggleSelect(s.id)} />
         </td>
         <td className="px-1 py-2.5 w-3">
-          <CircleDot className={`h-3 w-3 ${s.status === 'online' ? 'text-emerald-500' : s.status === 'offline' ? 'text-rose-500' : 'text-muted-foreground'}`} />
+          {s.status === 'online' ? (
+            <LiveDot tone="success" />
+          ) : (
+            <CircleDot className={`h-3 w-3 ${s.status === 'offline' ? 'text-rose-500' : 'text-muted-foreground'}`} />
+          )}
         </td>
         <td className="px-3 py-2.5" style={{ paddingLeft: depth > 0 ? `${14 + (depth - 1) * 14}px` : undefined }}>
-          <Link to="/servers/$id" params={{ id: s.id }} className="font-medium hover:underline">{s.name}</Link>
+                <Link to="/servers/$id" params={{ id: s.id }} className="font-medium hover:underline">{s.name}</Link>
           {(s.tags || []).length > 0 && (
             <span className="ml-2 inline-flex gap-1">
               {s.tags!.map(tag => <Badge key={tag} variant="secondary" className="text-[10px] px-1.5 py-0">{tag}</Badge>)}
@@ -636,8 +651,8 @@ export function ServersPage() {
         <td className="px-3 py-2.5"><MetricBar pct={ramPct} /></td>
         <td className="px-3 py-2.5"><MetricBar pct={diskPct} /></td>
         <td className="px-3 py-2.5 text-muted-foreground text-xs tabular-nums">{lastSeen}</td>
-        <td className="px-3 py-2.5 srv-actions" onClick={e => e.stopPropagation()}>
-          <div className="flex items-center gap-0.5">
+         <td className="px-3 py-2.5 w-[100px] srv-actions" onClick={e => e.stopPropagation()}>
+           <div className="flex items-center justify-start gap-0.5">
             {useGroups && hasCap(profile, 'canEditServers') && (
               <div className="relative" ref={moveFor === s.id ? moveRef : undefined}>
                 <Button variant="ghost" size="icon" className="h-7 w-7" title={t('srv.moveTo')}
@@ -679,46 +694,53 @@ export function ServersPage() {
         <tr
           className={`group-row cursor-pointer hover:bg-accent/30 ${isDragOver ? 'bg-accent/50' : ''}`}
           onClick={() => toggleCollapsed(node.id)}
-          draggable={editMode}
-          onDragStart={e => { e.stopPropagation(); e.dataTransfer.setData('text/plain', `group:${node.id}`); setDragItem({ type: 'group', id: node.id }); }}
+          draggable={hasCap(profile, 'canEditServers')}
+          onDragStart={e => {
+            e.stopPropagation();
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', `group:${node.id}`);
+            setDragItem({ type: 'group', id: node.id });
+          }}
           onDragEnd={() => setDragItem(null)}
           onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverGroup(node.id); }}
           onDragLeave={e => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDragOverGroup(null); }}
           onDrop={e => { e.preventDefault(); handleDrop(node.id); }}
         >
-          <td colSpan={10} style={{ borderLeft: `3px solid ${color}` }}>
-            <div className="flex items-center gap-2 py-2" style={{ paddingLeft: `${12 + depth * 20}px` }}>
+          <td colSpan={9} style={{ borderLeft: `3px solid ${color}` }}>
+            <div className="flex items-center gap-2 py-1.5" style={{ paddingLeft: `${12 + depth * 20}px` }}>
               {isCollapsed ? <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" /> : <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
               {isCollapsed ? <Folder className="h-4 w-4 flex-shrink-0" style={{ color }} /> : <FolderOpen className="h-4 w-4 flex-shrink-0" style={{ color }} />}
               <span className="font-medium text-sm">{node.name}</span>
-              <div className="flex items-center gap-0.5 ml-auto" onClick={e => e.stopPropagation()}>
-                {hasCap(profile, 'canAddServers') && (
-                  <Button variant="ghost" size="icon" className="h-6 w-6" title={t('srv.createSubfolder')}
-                    onClick={() => setGroupDialog({ open: true, title: t('srv.newSubfolderIn', { parent: node.name }), confirmText: t('common.create'), parentId: node.id, editId: null })}>
-                    <FolderPlus className="h-3 w-3" />
-                  </Button>
-                )}
-                {hasCap(profile, 'canEditServers') && (
-                  <Button variant="ghost" size="icon" className="h-6 w-6" title={t('srv.editFolder')}
-                    onClick={() => setGroupDialog({ open: true, title: t('srv.editFolderTitle'), confirmText: t('common.save'), name: node.name, color: node.color, parentId: node.parent_id, editId: node.id })}>
-                    <Pencil className="h-3 w-3" />
-                  </Button>
-                )}
-                {hasCap(profile, 'canDeleteServers') && (
-                  <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" title={t('srv.deleteFolder')}
-                    onClick={() => handleDeleteGroup(node.id, node.name)}>
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                )}
-              </div>
               <Badge variant="secondary" className="text-[10px] ml-1">{total}</Badge>
+            </div>
+          </td>
+          <td className="px-3 py-1.5 w-[100px] srv-actions" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-start gap-0.5">
+              {hasCap(profile, 'canAddServers') && (
+                <Button variant="ghost" size="icon" className="h-7 w-7" title={t('srv.createSubfolder')}
+                  onClick={() => setGroupDialog({ open: true, title: t('srv.newSubfolderIn', { parent: node.name }), confirmText: t('common.create'), parentId: node.id, editId: null })}>
+                  <FolderPlus className="h-3.5 w-3.5" />
+                </Button>
+              )}
+              {hasCap(profile, 'canEditServers') && (
+                <Button variant="ghost" size="icon" className="h-7 w-7" title={t('srv.editFolder')}
+                  onClick={() => setGroupDialog({ open: true, title: t('srv.editFolderTitle'), confirmText: t('common.save'), name: node.name, color: node.color, parentId: node.parent_id, editId: node.id })}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              )}
+              {hasCap(profile, 'canDeleteServers') && (
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" title={t('srv.deleteFolder')}
+                  onClick={() => handleDeleteGroup(node.id, node.name)}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
             </div>
           </td>
         </tr>
         {!isCollapsed && (
           <>
             {members.length === 0 && node.children.length === 0 && (
-              <tr><td colSpan={10}><div className="flex items-center gap-1.5 text-muted-foreground text-xs py-2" style={{ paddingLeft: `${34 + depth * 20}px` }}>
+              <tr><td colSpan={10}><div className="flex items-center gap-1.5 text-muted-foreground text-xs py-1.5" style={{ paddingLeft: `${34 + depth * 20}px` }}>
                 <Info className="h-3 w-3" /> {t('srv.emptyGroup')}
               </div></td></tr>
             )}
@@ -753,23 +775,48 @@ export function ServersPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t('srv.title')}</h1>
-          <p className="text-sm text-muted-foreground">{t('srv.count', { total: servers.length, online: onlineCount, offline: offlineCount })}{activeTag ? ` · ${t('srv.filtered', { tag: activeTag })}` : ''}</p>
-        </div>
-        <div className="flex items-center gap-2">
+      <PageHeader
+        title={t('srv.title')}
+        description={`${t('srv.count', { total: servers.length, online: onlineCount, offline: offlineCount })}${activeTag ? ` · ${t('srv.filtered', { tag: activeTag })}` : ''}`}
+        actions={
+          <>
           {hasCap(profile, 'canAddServers') && (
-            <Button asChild>
-              <Link to="/servers/$id" params={{ id: 'new' }}>
-                <Plus className="h-4 w-4 mr-1" /> {t('srv.add')}
-              </Link>
-            </Button>
+            <CreateServerDialog />
           )}
+          <div className="hidden sm:inline-flex items-center rounded-md border bg-background p-0.5">
+            {([
+              { val: 'compact' as const, Icon: Rows3, label: t('srv.densityCompact') },
+              { val: 'cozy' as const, Icon: Rows2, label: t('srv.densityCozy') },
+              { val: 'comfortable' as const, Icon: AlignJustify, label: t('srv.densityComfortable') },
+            ]).map(({ val, Icon, label }) => (
+              <button key={val} type="button" title={label} aria-label={label}
+                onClick={() => setDensity(val)}
+                className={`inline-flex h-7 w-7 items-center justify-center rounded-sm transition-colors ${density === val ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'}`}>
+                <Icon className="h-3.5 w-3.5" />
+              </button>
+            ))}
+          </div>
           <Button variant="ghost" size="icon" onClick={handleRefresh} disabled={refreshing} title={t('common.refresh')}>
             <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
           </Button>
           <OverflowMenu>
+            <div className="sm:hidden">
+              <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {t('srv.density')}
+              </div>
+              {([
+                { val: 'compact' as const, Icon: Rows3, label: t('srv.densityCompact') },
+                { val: 'cozy' as const, Icon: Rows2, label: t('srv.densityCozy') },
+                { val: 'comfortable' as const, Icon: AlignJustify, label: t('srv.densityComfortable') },
+              ]).map(({ val, Icon, label }) => (
+                <button key={val} onClick={() => setDensity(val)}
+                  className={`flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent ${density === val ? 'bg-accent/60 text-foreground' : ''}`}>
+                  <Icon className="h-3.5 w-3.5" /> {label}
+                  {density === val && <span className="ml-auto text-xs text-muted-foreground">✓</span>}
+                </button>
+              ))}
+              <OverflowSep />
+            </div>
             {hasCap(profile, 'canAddServers') && (
               <OverflowItem icon={FolderPlus} onClick={() => setGroupDialog({ open: true, title: t('srv.createFolder'), confirmText: t('common.create'), editId: null })}>
                 {t('srv.folder')}
@@ -778,11 +825,6 @@ export function ServersPage() {
             {hasCap(profile, 'canEditServers') && (
               <OverflowItem icon={Tags} onClick={() => autoGroupMut.mutate()}>
                 {t('srv.autoGroupFromTags')}
-              </OverflowItem>
-            )}
-            {useGroups && hasCap(profile, 'canEditServers') && (
-              <OverflowItem icon={editMode ? LockOpen : Lock} onClick={toggleEditMode}>
-                {editMode ? 'Done' : 'Edit'}
               </OverflowItem>
             )}
             {hasCap(profile, 'canExportImportServers') && (
@@ -802,24 +844,27 @@ export function ServersPage() {
           </OverflowMenu>
           <input ref={fileInputRef} type="file" accept=".json,.csv" className="hidden"
             onChange={e => { const f = e.target.files?.[0]; if (f) handleImportFile(f); e.target.value = ''; }} />
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {/* Bulk bar */}
       {selectedIds.size > 0 && (
-        <div className="flex items-center gap-3 rounded-md border bg-muted/40 px-4 py-2">
+        <div className="flex items-center gap-3 rounded-lg border border-primary/25 bg-primary/[0.04] px-4 py-2.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-200">
+          <CheckCircle2 className="h-4 w-4 text-primary" />
           <span className="text-sm font-medium">{t('srv.selected', { count: selectedIds.size })}</span>
-          <div className="flex items-center gap-2 ml-auto">
+          <div className="ml-auto flex items-center gap-2">
             {hasCap(profile, 'canRunUpdates') && (
-              <Button size="sm" variant="secondary" onClick={handleBulkUpdate}>
+              <Button size="sm" onClick={handleBulkUpdate}>
                 <Download className="h-3.5 w-3.5 mr-1" /> {t('srv.startUpdates')}
               </Button>
             )}
             {hasCap(profile, 'canRunPlaybooks') && (
-              <Button size="sm" variant="secondary">
+              <Button size="sm" variant="outline" onClick={() => setPlaybookDialogOpen(true)}>
                 <Play className="h-3.5 w-3.5 mr-1" /> {t('srv.runPlaybook')}
               </Button>
             )}
+            <div className="h-5 w-px bg-border" />
             <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
               <X className="h-3.5 w-3.5 mr-1" /> {t('srv.deselect')}
             </Button>
@@ -829,13 +874,31 @@ export function ServersPage() {
 
       {/* Tag filter bar */}
       {allTags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          <Button size="sm" variant={activeTag === null ? 'default' : 'ghost'} className="h-7 text-xs"
-            onClick={() => { setActiveTag(null); setPage(1); }}>{t('srv.filterAll')}</Button>
-          {allTags.map(tag => (
-            <Button key={tag} size="sm" variant={activeTag === tag ? 'default' : 'ghost'} className="h-7 text-xs"
-              onClick={() => { setActiveTag(tag); setPage(1); }}>{tag}</Button>
-          ))}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button type="button"
+            onClick={() => { setActiveTag(null); setPage(1); }}
+            className={`inline-flex h-7 items-center rounded-full px-3 text-xs font-medium transition-colors ${
+              activeTag === null
+                ? 'bg-primary text-primary-foreground border border-primary'
+                : 'border border-border bg-background text-muted-foreground hover:border-foreground/30 hover:text-foreground'
+            }`}>
+            {t('srv.filterAll')}
+          </button>
+          {allTags.map(tag => {
+            const active = activeTag === tag;
+            return (
+              <button key={tag} type="button"
+                onClick={() => { setActiveTag(tag); setPage(1); }}
+                className={`inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-xs font-medium transition-colors ${
+                  active
+                    ? 'bg-primary text-primary-foreground border border-primary'
+                    : 'border border-border bg-background text-muted-foreground hover:border-foreground/30 hover:text-foreground'
+                }`}>
+                <Hash className={`h-3 w-3 ${active ? '' : 'opacity-60'}`} />
+                {tag}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -843,25 +906,21 @@ export function ServersPage() {
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
-            <div className="p-6 text-sm text-muted-foreground">{t('common.loading')}</div>
-          ) : servers.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
-              <ServerIcon className="h-8 w-8" />
-              <h3 className="font-medium">{t('srv.noServers')}</h3>
-              <span className="text-sm">{t('srv.noServersHint')}</span>
-              {hasCap(profile, 'canAddServers') && (
-                <Button className="mt-2" asChild>
-                  <Link to="/servers/$id" params={{ id: 'new' }}>
-                    <Plus className="h-4 w-4 mr-1" /> {t('srv.add')}
-                  </Link>
-                </Button>
-              )}
+            <div className="py-2">
+              {Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} cols={6} />)}
             </div>
+          ) : servers.length === 0 ? (
+            <EmptyState
+              icon={<ServerIcon className="h-5 w-5" />}
+              title={t('srv.noServers')}
+              description={t('srv.noServersHint')}
+              action={hasCap(profile, 'canAddServers') ? <CreateServerDialog /> : undefined}
+            />
           ) : (
             <>
               {/* Desktop table */}
               <div className="hidden md:block overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm" data-density={density}>
                   <thead className="border-b bg-muted/30 text-left text-xs uppercase tracking-wider text-muted-foreground">
                     <tr>
                       <th className="px-2 py-2 w-9">
@@ -877,7 +936,7 @@ export function ServersPage() {
                       <th className="px-3 py-2 w-[140px]">{t('srv.colRam')}</th>
                       <th className="px-3 py-2 w-[140px]">{t('srv.colDisk')}</th>
                       <th className="px-3 py-2">{t('srv.colLastSeen')}</th>
-                      <th className="px-3 py-2">{t('common.actions')}</th>
+                      <th className="px-3 py-2 w-[100px]">{t('common.actions')}</th>
                     </tr>
                   </thead>
                   {useGroups ? (
@@ -925,17 +984,25 @@ export function ServersPage() {
                     const ramPct = info?.ram_total_mb ? Math.round((info.ram_used_mb! / info.ram_total_mb) * 100) : null;
                     const diskPct = info?.disk_total_gb ? Math.round((info.disk_used_gb! / info.disk_total_gb) * 100) : null;
                     return (
-                      <div key={s.id} className={`px-4 py-3 ${selectedIds.has(s.id) ? 'bg-accent/20' : ''}`}>
+                      <div key={s.id} className={`px-4 py-3 cursor-pointer hover:bg-accent/40 ${selectedIds.has(s.id) ? 'bg-accent/20' : ''}`}
+                        onClick={(e) => {
+                          if ((e.target as HTMLElement).closest('input[type="checkbox"]') || (e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('a')) return;
+                          navigate({ to: '/servers/$id', params: { id: s.id } });
+                        }}>
                         <div className="flex items-start gap-2">
                           <input type="checkbox" className="rounded mt-1" checked={selectedIds.has(s.id)}
                             onChange={() => toggleSelect(s.id)} />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
-                              <CircleDot className={`h-3 w-3 flex-shrink-0 ${s.status === 'online' ? 'text-emerald-500' : s.status === 'offline' ? 'text-rose-500' : 'text-muted-foreground'}`} />
+                              {s.status === 'online' ? (
+                                <LiveDot tone="success" className="flex-shrink-0" />
+                              ) : (
+                                <CircleDot className={`h-3 w-3 flex-shrink-0 ${s.status === 'offline' ? 'text-rose-500' : 'text-muted-foreground'}`} />
+                              )}
                               <Link to="/servers/$id" params={{ id: s.id }} className="font-medium text-sm truncate hover:underline">{s.name}</Link>
-                              <Badge variant={s.status === 'online' ? 'default' : 'secondary'} className="text-[10px] px-1.5">
+                              <StatusBadge tone={s.status === 'online' ? 'success' : s.status === 'offline' ? 'danger' : 'muted'}>
                                 {s.status === 'online' ? t('common.online') : s.status === 'offline' ? t('common.offline') : t('common.unknown')}
-                              </Badge>
+                              </StatusBadge>
                             </div>
                             {(s.tags || []).length > 0 && (
                               <div className="flex flex-wrap gap-1 mt-1">
@@ -1012,6 +1079,125 @@ export function ServersPage() {
         defaultName={groupDialog.name}
         defaultColor={groupDialog.color}
         defaultParentId={groupDialog.parentId}
+      />
+
+      {/* Playbook run dialog */}
+      <Dialog open={playbookDialogOpen} onOpenChange={v => {
+        if (!v) {
+          setPlaybookDialogOpen(false);
+          setSelectedPlaybook('');
+          setPlaybookTargets([]);
+          setPlaybookUseAll(false);
+          setPlaybookExcluded(new Set());
+          setPlaybookExtraVars('');
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{t('srv.runPlaybook')}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">{t('srv.runPlaybookHint', { count: selectedIds.size })}</p>
+            <div className="space-y-1.5">
+              <Label>{t('run.target')}</Label>
+              <div className="flex flex-wrap gap-2 rounded-md border p-3">
+                <label className="flex items-center gap-2 text-sm font-medium">
+                  <input
+                    type="checkbox"
+                    checked={playbookUseAll}
+                    onChange={(e) => {
+                      setPlaybookUseAll(e.target.checked);
+                      setPlaybookExcluded(new Set());
+                    }}
+                  />
+                  {t('pb.allServers')}
+                </label>
+                {!playbookUseAll && playbookTargets.map(name => (
+                  <span key={name} className="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs">
+                    {name}
+                    <button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => setPlaybookTargets(prev => prev.filter(v => v !== name))}>
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+                {!playbookUseAll && (
+                  <button type="button" className="text-xs text-primary hover:underline" onClick={() => setPlaybookTargets(servers.map(s => s.name))}>
+                    {t('run.addAll')}
+                  </button>
+                )}
+              </div>
+              {playbookUseAll && (
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground">{t('run.excludeHint')}</p>
+                  <div className="max-h-44 overflow-y-auto rounded-md border p-2 space-y-1">
+                    {servers.filter(s => s.name !== 'localhost').map(s => (
+                      <label key={s.id} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={playbookExcluded.has(s.name)}
+                          onChange={(e) => {
+                            setPlaybookExcluded(prev => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(s.name); else next.delete(s.name);
+                              return next;
+                            });
+                          }}
+                        />
+                        <span>{s.name}</span>
+                        <StatusBadge tone={s.status === 'online' ? 'success' : 'muted'} className="ml-auto">
+                          {s.status === 'online' ? t('common.online') : t('common.offline')}
+                        </StatusBadge>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t('srv.selectPlaybook')}</Label>
+              <select value={selectedPlaybook} onChange={e => setSelectedPlaybook(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+                <option value="">{t('srv.choosePlaybook')}</option>
+                {(playbooks ?? []).filter(p => !p.isInternal).map(p => <option key={p.filename} value={p.filename}>{p.description || p.filename}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t('run.extraVars')}</Label>
+              <Input value={playbookExtraVars} onChange={e => setPlaybookExtraVars(e.target.value)} placeholder='{"key": "value"}' className="font-mono text-sm" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setPlaybookDialogOpen(false); setSelectedPlaybook(''); setPlaybookTargets([]); setPlaybookUseAll(false); setPlaybookExcluded(new Set()); setPlaybookExtraVars(''); }}>{t('common.cancel')}</Button>
+            <Button onClick={handleBulkRunPlaybook} disabled={!selectedPlaybook || (!playbookUseAll && playbookTargets.length === 0)}>{t('srv.runPlaybook')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <ConfirmDialog
+        open={!!confirmDeleteServer}
+        onOpenChange={(open) => { if (!open) setConfirmDeleteServer(null); }}
+        title={t('common.delete')}
+        description={<><div>{t('srv.confirmDelete', { name: confirmDeleteServer?.name || '' })}</div><div className="mt-2 text-xs">{t('srv.cantUndone')}</div></>}
+        confirmLabel={t('common.delete')}
+        variant="destructive"
+        onConfirm={() => {
+          if (!confirmDeleteServer) return;
+          deleteMut.mutate(confirmDeleteServer.id);
+          setSelectedIds(prev => { const n = new Set(prev); n.delete(confirmDeleteServer.id); return n; });
+          setConfirmDeleteServer(null);
+        }}
+        isPending={deleteMut.isPending}
+      />
+      <ConfirmDialog
+        open={!!confirmDeleteGroup}
+        onOpenChange={(open) => { if (!open) setConfirmDeleteGroup(null); }}
+        title={t('common.delete')}
+        description={<><div>{t('srv.confirmDeleteFolder', { name: confirmDeleteGroup?.name || '' })}</div><div className="mt-2 text-xs">{t('srv.folderNote')}</div></>}
+        confirmLabel={t('common.delete')}
+        variant="destructive"
+        onConfirm={() => {
+          if (!confirmDeleteGroup) return;
+          groupDeleteMut.mutate(confirmDeleteGroup.id);
+          setConfirmDeleteGroup(null);
+        }}
+        isPending={groupDeleteMut.isPending}
       />
     </div>
   );

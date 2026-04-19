@@ -80,7 +80,7 @@ type AnyObj = Record<string, unknown>;
 
 export const api = {
   // Auth
-  authStatus:        () => apiFetch<{ configured: boolean; appName?: string; appTagline?: string; accentColor?: string; showIcon?: boolean; logoIcon?: string }>('/auth/status', { skipAuth: true }),
+  authStatus:        () => apiFetch<{ configured: boolean; appName?: string; appTagline?: string; accentColor?: string; showIcon?: boolean; logoIcon?: string; logoImage?: string }>('/auth/status', { skipAuth: true }),
   authSetup:         (username: string, password: string) =>
     apiFetch<{ token: string }>('/auth/setup', { method: 'POST', body: { username, password }, skipAuth: true }),
   authLogin:         (username: string, password: string) =>

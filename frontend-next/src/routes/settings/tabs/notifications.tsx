@@ -25,10 +25,10 @@ interface WhiteLabel {
 export function NotificationsTab() {
   const { t } = useTranslation();
   const { data: settings } = useSettings();
-  const wl = ((settings?.whiteLabel as WhiteLabel) || {});
+  const wl = (settings as unknown as WhiteLabel) || {};
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <SettingsSection icon={<Globe className="h-4 w-4" />} title={t('set.webhooks')}>
         <WebhookForm wl={wl} />
       </SettingsSection>
@@ -39,8 +39,8 @@ export function NotificationsTab() {
 
       <SettingsSection
         icon={<Bell className="h-4 w-4" />}
-        title="Notification Events"
-        description="Choose which failures trigger a notification. Notifications are sent only if webhook or email is configured above."
+        title={t('set.notificationEvents')}
+        description={t('set.notificationEventsHint')}
       >
         <NotificationToggles wl={wl} />
       </SettingsSection>
@@ -177,7 +177,7 @@ function SmtpForm({ wl }: { wl: WhiteLabel }) {
           <Save className="h-4 w-4" /> {t('common.save')}
         </Button>
         <Button variant="secondary" size="sm" onClick={() => test.mutate()} disabled={test.isPending}>
-          <Send className="h-4 w-4" /> {t('set.webhookTest')}
+          <Send className="h-4 w-4" /> {t('set.smtpTest')}
         </Button>
       </SettingsRow>
     </>
@@ -193,8 +193,8 @@ function NotificationToggles({ wl }: { wl: WhiteLabel }) {
   const qc = useQueryClient();
 
   const items: { key: 'notifPlaybookFailed' | 'notifUpdateFailed'; label: string; hint: string }[] = [
-    { key: 'notifPlaybookFailed', label: 'Playbook failure', hint: 'Notify when an Ansible playbook fails' },
-    { key: 'notifUpdateFailed',   label: 'Update failure',   hint: 'Notify when a system or bulk update fails' },
+    { key: 'notifPlaybookFailed', label: t('set.notifyPlaybookFailure'), hint: t('set.notifyPlaybookFailureHint') },
+    { key: 'notifUpdateFailed',   label: t('set.notifyUpdateFailure'),   hint: t('set.notifyUpdateFailureHint') },
   ];
 
   const save = useMutation({

@@ -7,15 +7,16 @@ import { showToast } from '@/lib/toast';
 import { useSettings } from '@/lib/queries';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Skeleton } from '@/components/ui/skeleton';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { SettingsRow, SettingsSection } from '../_row';
 
 export function SystemTab() {
   const { t } = useTranslation();
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <SettingsSection icon={<Terminal className="h-4 w-4" />} title={t('set.ansible')}>
         <AnsibleStatus />
       </SettingsSection>
@@ -56,7 +57,7 @@ function AnsibleStatus() {
   if (isLoading) {
     return (
       <SettingsRow label={t('set.ansibleLabel')} noBorder>
-        <span className="text-sm text-muted-foreground">{t('common.loading')}</span>
+        <Skeleton className="h-4 w-32" />
       </SettingsRow>
     );
   }
@@ -72,13 +73,13 @@ function AnsibleStatus() {
     <>
       <SettingsRow label={t('set.ansibleLabel')} noBorder={!data?.version && installed}>
         {installed ? (
-          <Badge variant="success"><CheckCircle2 className="h-3 w-3" /> {t('set.installed')}</Badge>
+          <StatusBadge tone="success"><CheckCircle2 className="h-3 w-3" /> {t('set.installed')}</StatusBadge>
         ) : (
-          <Badge variant="muted"><XCircle className="h-3 w-3" /> {t('set.notInstalled')}</Badge>
+          <StatusBadge tone="muted"><XCircle className="h-3 w-3" /> {t('set.notInstalled')}</StatusBadge>
         )}
       </SettingsRow>
       {data?.version && (
-        <SettingsRow label="Version" noBorder={installed}>
+        <SettingsRow label={t('set.version')} noBorder={installed}>
           <span className="font-mono text-xs">{data.version}</span>
         </SettingsRow>
       )}
@@ -134,7 +135,7 @@ function PollingConfig() {
   if (isLoading || !draft) {
     return (
       <SettingsRow noBorder>
-        <span className="text-sm text-muted-foreground">{t('common.loading')}</span>
+        <Skeleton className="h-4 w-full max-w-sm" />
       </SettingsRow>
     );
   }
@@ -176,7 +177,7 @@ function PollingConfig() {
                 onChange={(e) => update(p.key, { intervalMin: parseInt(e.target.value, 10) || cfg.intervalMin })}
                 className="w-20 text-center"
               />
-              <span className="text-xs text-muted-foreground">min</span>
+              <span className="text-xs text-muted-foreground">{t('set.minutesShort')}</span>
             </div>
           </SettingsRow>
         );
@@ -203,10 +204,10 @@ function AgentToggle() {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const { data: settings } = useSettings();
-  const wl = (settings?.whiteLabel as { agentEnabled?: boolean } | undefined) || {};
-  const [checked, setChecked] = useState<boolean>(!!wl.agentEnabled);
+  const agentEnabled = Boolean((settings as Record<string, unknown>)?.agentEnabled);
+  const [checked, setChecked] = useState<boolean>(agentEnabled);
 
-  useEffect(() => { setChecked(!!wl.agentEnabled); }, [wl.agentEnabled]);
+  useEffect(() => { setChecked(agentEnabled); }, [agentEnabled]);
 
   const save = useMutation({
     mutationFn: (v: boolean) => api.saveSettings({ agentEnabled: v }),

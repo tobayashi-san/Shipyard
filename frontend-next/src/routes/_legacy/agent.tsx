@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+import { PageHeader } from '@/components/ui/page-header';
 
 interface ManifestResponse {
   content?: string;
@@ -45,8 +46,8 @@ interface AgentStatus {
 export function AgentPage() {
   const { t } = useTranslation();
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">{t('nav.agent')}</h1>
+    <div className="space-y-4">
+      <PageHeader title={t('nav.agent')} />
       <ManifestCard />
       <ServersCard />
     </div>

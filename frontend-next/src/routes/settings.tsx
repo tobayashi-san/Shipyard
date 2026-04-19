@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, useParams } from '@tanstack/react-router';
 import { useSettings } from '@/lib/queries';
 import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/ui/page-header';
 
 import { AppearanceTab } from './settings/tabs/appearance';
 import { SshTab } from './settings/tabs/ssh';
@@ -41,7 +42,7 @@ export function SettingsPage() {
   const { data: settings } = useSettings();
 
   const agentEnabled = Boolean(
-    (settings as { whiteLabel?: { agentEnabled?: boolean } } | undefined)?.whiteLabel?.agentEnabled
+    (settings as Record<string, unknown> | undefined)?.agentEnabled
   );
 
   const visibleTabs = TABS.filter((tab) => !tab.agentOnly || agentEnabled);
@@ -49,13 +50,10 @@ export function SettingsPage() {
   const ActiveComponent = visibleTabs.find((tab) => tab.id === activeId)?.Component;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{t('set.title')}</h1>
-        <p className="text-sm text-muted-foreground">{t('set.subtitle')}</p>
-      </div>
+    <div className="space-y-4">
+      <PageHeader title={t('set.title')} description={t('set.subtitle')} />
 
-      <div className="flex flex-col gap-6 lg:flex-row">
+      <div className="flex flex-col gap-4 lg:flex-row">
         <nav className="lg:w-56 shrink-0">
           <ul className="flex flex-row gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
             {visibleTabs.map((tab) => {

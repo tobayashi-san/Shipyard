@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -13,10 +13,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+import { SkeletonRow } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
 import { SettingsRow, SettingsSection } from '../_row';
 
 // -------------------- types --------------------
@@ -105,9 +108,11 @@ function UsersPanel() {
       }
     >
       {usersQ.isLoading && (
-        <SettingsRow noBorder>
-          <span className="text-sm text-muted-foreground">{t('common.loading')}</span>
-        </SettingsRow>
+        <div className="py-2">
+          <SkeletonRow cols={3} />
+          <SkeletonRow cols={3} />
+          <SkeletonRow cols={3} />
+        </div>
       )}
       {usersQ.isError && (
         <SettingsRow noBorder>
@@ -115,12 +120,11 @@ function UsersPanel() {
         </SettingsRow>
       )}
       {!usersQ.isLoading && users.length === 0 && (
-        <SettingsRow noBorder>
-          <div className="flex w-full flex-col items-center gap-2 py-6 text-sm text-muted-foreground">
-            <Users className="h-6 w-6 opacity-40" />
-            <span>{t('set.noUsersFound')}</span>
-          </div>
-        </SettingsRow>
+        <EmptyState
+          compact
+          icon={<Users className="h-5 w-5" />}
+          title={t('set.noUsersFound')}
+        />
       )}
       {users.map((u, i) => {
         const roleName = roles.find(r => r.id === u.role)?.name || u.role;
@@ -143,7 +147,7 @@ function UsersPanel() {
               </span>
             }
           >
-            <Badge variant={u.role === 'admin' ? 'default' : 'secondary'}>{roleName}</Badge>
+            <StatusBadge tone={u.role === 'admin' ? 'info' : 'neutral'}>{roleName}</StatusBadge>
             <div className="flex gap-1">
               <Button variant="ghost" size="icon" title={t('common.edit')} onClick={() => setEditing(u)}>
                 <Pencil className="h-4 w-4" />
@@ -151,7 +155,7 @@ function UsersPanel() {
               <Button variant="ghost" size="icon" title={t('set.resetPassword')} onClick={() => setResetTarget(u)}>
                 <KeyRound className="h-4 w-4" />
               </Button>
-              {u.totp_enabled && (
+              {Boolean(u.totp_enabled) && (
                 <Button variant="ghost" size="icon" title={t('set.disable2fa')} onClick={() => setConfirm2fa(u)}>
                   <ShieldAlert className="h-4 w-4 text-amber-500" />
                 </Button>
@@ -253,7 +257,7 @@ function UserFormDialog({
             >
               {roles.map(r => (
                 <option key={r.id} value={r.id}>
-                  {r.name}{r.is_system ? '' : ' (custom)'}
+                {r.name}{r.is_system ? '' : ` ${t('set.roleCustomSuffix')}`}
                 </option>
               ))}
             </select>
@@ -381,7 +385,7 @@ function RolesPanel() {
   const custom = roles.filter(r => !r.is_system);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <SettingsSection
         icon={<ShieldCheck className="h-4 w-4" />}
         title={t('set.roleManagement')}
@@ -409,27 +413,28 @@ function RolesPanel() {
         }
       >
         {rolesQ.isLoading && (
-          <SettingsRow noBorder>
-            <span className="text-sm text-muted-foreground">{t('common.loading')}</span>
-          </SettingsRow>
+          <div className="py-2">
+            <SkeletonRow cols={3} />
+            <SkeletonRow cols={3} />
+          </div>
         )}
         {!rolesQ.isLoading && custom.length === 0 && (
-          <SettingsRow noBorder>
-            <div className="flex w-full flex-col items-center gap-2 py-6 text-sm text-muted-foreground">
-              <ShieldCheck className="h-6 w-6 opacity-40" />
-              <span>No custom roles yet. Create one to restrict user access.</span>
-            </div>
-          </SettingsRow>
+          <EmptyState
+            compact
+            icon={<ShieldCheck className="h-5 w-5" />}
+            title={t('set.noCustomRoles')}
+            description={t('set.noCustomRolesHint')}
+          />
         )}
         {custom.map((r, i) => {
           const p = r.permissions || {};
           const serverSummary = p.servers === 'all' || p.servers == null
-            ? 'All servers'
+            ? t('set.allServers')
             : `${p.servers.groups?.length || 0} group(s), ${p.servers.servers?.length || 0} server(s)`;
           const pbSummary = p.playbooks === 'all' || p.playbooks == null
-            ? 'All playbooks' : `${(p.playbooks as string[]).length} playbook(s)`;
+            ? t('set.allPlaybooks') : `${(p.playbooks as string[]).length} playbook(s)`;
           const plSummary = p.plugins === 'all' || p.plugins == null
-            ? 'All plugins' : `${(p.plugins as string[]).length} plugin(s)`;
+            ? t('set.allPlugins') : `${(p.plugins as string[]).length} plugin(s)`;
           return (
             <SettingsRow
               key={r.id}
@@ -474,7 +479,7 @@ function DeleteRoleDialog({ role, onClose }: { role: RoleRow; onClose: () => voi
     <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="max-w-md">
         <DialogHeader><DialogTitle>{t('common.delete')}</DialogTitle></DialogHeader>
-        <p className="text-sm text-muted-foreground">Delete role "{role.name}"?</p>
+        <p className="text-sm text-muted-foreground">{t('set.deleteRoleConfirm', { name: role.name })}</p>
         <DialogFooter>
           <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
           <Button variant="destructive" onClick={() => m.mutate()} disabled={m.isPending}>
@@ -587,7 +592,7 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
 
   const save = useMutation({
     mutationFn: async () => {
-      if (!name.trim()) throw new Error('Name required');
+      if (!name.trim()) throw new Error(t('sc.nameRequired') as string);
       const permissions: RolePermissions = { ...caps };
       permissions.servers = serversMode === 'all'
         ? 'all'
@@ -616,7 +621,7 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className="space-y-4">
           {/* Name */}
           <div>
             <Label>{t('set.roleName')}</Label>
@@ -624,7 +629,7 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
           </div>
 
           {/* Servers */}
-          <Section icon={<ServerIcon className="h-3.5 w-3.5" />} title="Servers"
+          <Section icon={<ServerIcon className="h-3.5 w-3.5" />} title={t('set.capServers')}
             onSelectAll={() => setCaps(c => bulkToggle(c, SERVER_CAPS.concat(DOCKER_CAPS)))}>
             <RadioRow name="servers" mode={serversMode} setMode={setServersMode} />
             {serversMode === 'restricted' && (
@@ -639,7 +644,7 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
                           onChange={() => toggleSet(groupsSel, setGroupsSel, String(g.id))}
                           label={
                             <span className="flex items-center gap-2">
-                              <span className="inline-block h-2 w-2 rounded-sm" style={{ background: g.color || 'var(--accent, currentColor)' }} />
+                              <span className="inline-block h-2 w-2 rounded-sm" style={{ background: g.color || 'var(--brand, currentColor)' }} />
                               {g.name}
                             </span>
                           } />
@@ -674,13 +679,13 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
           </Section>
 
           {/* Updates */}
-          <Section icon={<ArrowUp className="h-3.5 w-3.5" />} title="Updates"
+          <Section icon={<ArrowUp className="h-3.5 w-3.5" />} title={t('set.capUpdates')}
             onSelectAll={() => setCaps(c => bulkToggle(c, UPDATE_CAPS))}>
             <CapGrid caps={UPDATE_CAPS} caps2={caps} setCaps={setCaps} />
           </Section>
 
           {/* Playbooks */}
-          <Section icon={<Terminal className="h-3.5 w-3.5" />} title="Playbooks"
+          <Section icon={<Terminal className="h-3.5 w-3.5" />} title={t('set.capPlaybooks')}
             onSelectAll={() => setCaps(c => bulkToggle(c, PLAYBOOK_CAPS))}>
             <RadioRow name="playbooks" mode={pbMode} setMode={setPbMode} />
             {pbMode === 'restricted' && (
@@ -698,19 +703,19 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
           </Section>
 
           {/* Schedules */}
-          <Section icon={<Clock className="h-3.5 w-3.5" />} title="Schedules"
+          <Section icon={<Clock className="h-3.5 w-3.5" />} title={t('set.capSchedules')}
             onSelectAll={() => setCaps(c => bulkToggle(c, SCHEDULE_CAPS))}>
             <CapGrid caps={SCHEDULE_CAPS} caps2={caps} setCaps={setCaps} />
           </Section>
 
           {/* Variables */}
-          <Section icon={<SlidersHorizontal className="h-3.5 w-3.5" />} title="Variables"
+          <Section icon={<SlidersHorizontal className="h-3.5 w-3.5" />} title={t('set.capVariables')}
             onSelectAll={() => setCaps(c => bulkToggle(c, VAR_CAPS))}>
             <CapGrid caps={VAR_CAPS} caps2={caps} setCaps={setCaps} />
           </Section>
 
           {/* Plugins */}
-          <Section icon={<Puzzle className="h-3.5 w-3.5" />} title="Plugins">
+          <Section icon={<Puzzle className="h-3.5 w-3.5" />} title={t('set.capPlugins')}>
             {sidebarPlugins.length === 0 ? (
               <p className="text-xs text-muted-foreground">{t('set.noPluginsWithUi')}</p>
             ) : (
@@ -736,7 +741,7 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
           </Section>
 
           {/* Other */}
-          <Section icon={<MoreHorizontal className="h-3.5 w-3.5" />} title="Other"
+          <Section icon={<MoreHorizontal className="h-3.5 w-3.5" />} title={t('set.capOther')}
             onSelectAll={() => setCaps(c => bulkToggle(c, OTHER_CAPS))}>
             <CapGrid caps={OTHER_CAPS} caps2={caps} setCaps={setCaps} />
           </Section>
@@ -785,15 +790,16 @@ function Section({
 function RadioRow({
   name, mode, setMode,
 }: { name: string; mode: 'all' | 'restricted'; setMode: (m: 'all' | 'restricted') => void }) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-wrap gap-4 text-sm">
       <label className="flex items-center gap-2">
         <input type="radio" name={`rf-${name}`} checked={mode === 'all'} onChange={() => setMode('all')} />
-        All
+        {t('set.accessAll')}
       </label>
       <label className="flex items-center gap-2">
         <input type="radio" name={`rf-${name}`} checked={mode === 'restricted'} onChange={() => setMode('restricted')} />
-        Restrict access
+        {t('set.accessRestrict')}
       </label>
     </div>
   );
@@ -825,6 +831,3 @@ function CheckRow({
     </label>
   );
 }
-
-// avoid "imported but never used" for useEffect/useMemo in some build setups
-void useEffect; void useMemo;

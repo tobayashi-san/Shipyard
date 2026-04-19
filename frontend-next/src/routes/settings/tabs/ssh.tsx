@@ -6,8 +6,9 @@ import { api } from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Skeleton } from '@/components/ui/skeleton';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { SettingsRow, SettingsSection } from '../_row';
 
 interface SSHKey {
@@ -31,11 +32,11 @@ export function SshTab() {
   const refresh = () => qc.invalidateQueries({ queryKey: ['ssh-key'] });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <SettingsSection icon={<Key className="h-4 w-4" />} title={t('set.sshTitle')}>
         {isLoading ? (
           <SettingsRow label={t('set.sshStatus')} noBorder>
-            <span className="text-sm text-muted-foreground">{t('common.loading')}</span>
+            <Skeleton className="h-4 w-32" />
           </SettingsRow>
         ) : data && data.publicKey ? (
           <SshKeyView ssh={data} onChanged={refresh} />
@@ -86,9 +87,9 @@ function SshKeyView({ ssh, onChanged }: { ssh: SSHKey; onChanged: () => void }) 
       </SettingsRow>
       <SettingsRow label={t('set.sshStatus')}>
         {ssh.exists !== false ? (
-          <Badge variant="success"><CheckCircle2 className="h-3 w-3" /> {t('set.sshActive')}</Badge>
+          <StatusBadge tone="success"><CheckCircle2 className="h-3 w-3" /> {t('set.sshActive')}</StatusBadge>
         ) : (
-          <Badge variant="muted"><XCircle className="h-3 w-3" /> {t('set.sshNotFound')}</Badge>
+          <StatusBadge tone="muted"><XCircle className="h-3 w-3" /> {t('set.sshNotFound')}</StatusBadge>
         )}
       </SettingsRow>
 
@@ -120,10 +121,10 @@ function SshKeyView({ ssh, onChanged }: { ssh: SSHKey; onChanged: () => void }) 
 
       <SettingsRow label={t('set.manageKey')} hint={t('set.manageKeyHint')} noBorder>
         <Button variant="secondary" size="sm" onClick={() => setExportOpen(true)}>
-          <Download className="h-4 w-4" /> Export Key
+          <Download className="h-4 w-4" /> {t('set.exportKeyTitle')}
         </Button>
         <Button variant="secondary" size="sm" onClick={onPickImport}>
-          <Upload className="h-4 w-4" /> Import Key
+          <Upload className="h-4 w-4" /> {t('set.importKeyTitle')}
         </Button>
       </SettingsRow>
 
@@ -176,7 +177,7 @@ function SshKeyMissing({ isError, onChanged }: { isError?: boolean; onChanged: (
           <Key className="h-4 w-4" /> {t('set.sshGenerate')}
         </Button>
         <Button variant="secondary" size="sm" onClick={onPickImport}>
-          <Upload className="h-4 w-4" /> Import Key
+          <Upload className="h-4 w-4" /> {t('set.importKeyTitle')}
         </Button>
       </SettingsRow>
       <ImportKeyDialog
@@ -335,7 +336,7 @@ function DeployForm() {
         <Button
           variant="secondary" size="sm"
           onClick={() => {
-            if (!pw) { showToast(t('set.serverPasswordPlaceholder'), 'error'); return; }
+            if (!pw) { showToast(t('set.passwordRequired'), 'error'); return; }
             setConfirmAll(true);
           }}
           disabled={busyAll}

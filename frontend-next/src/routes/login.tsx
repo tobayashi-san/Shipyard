@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Anchor, Lock, LogIn } from 'lucide-react';
-import { useEffect } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { setToken } from '@/lib/auth';
+import { applyWhiteLabel } from '@/lib/whitelabel';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -24,6 +24,11 @@ export function LoginPage() {
   const isSetup = status ? !status.configured : false;
   const appName = status?.appName || 'Shipyard';
   const appTagline = status?.appTagline || 'Infrastructure';
+
+  // Apply branding from auth status (no settings query on login)
+  useEffect(() => {
+    if (status) applyWhiteLabel({ appName: status.appName, appTagline: status.appTagline, accentColor: status.accentColor, logoImage: status.logoImage, showIcon: status.showIcon, logoIcon: status.logoIcon });
+  }, [status]);
 
   // Redirect unconfigured installs to /onboarding for the richer wizard.
   useEffect(() => {
@@ -152,7 +157,7 @@ export function LoginPage() {
             <form onSubmit={onTotpSubmit} className="space-y-4">
               <p className="text-sm text-muted-foreground">{t('login.totpHint')}</p>
               <div className="space-y-1.5">
-                <Label htmlFor="totp">000 000</Label>
+                <Label htmlFor="totp">{t('login.totpTitle')}</Label>
                 <Input
                   id="totp"
                   inputMode="numeric"

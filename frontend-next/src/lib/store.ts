@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 type Theme = 'light' | 'dark' | 'system';
+type TimeFormat = '24h' | '12h';
 
 interface UiState {
   sidebarCollapsed: boolean;
@@ -10,10 +11,13 @@ interface UiState {
   setTheme: (t: Theme) => void;
   language: 'de' | 'en';
   setLanguage: (l: 'de' | 'en') => void;
+  timeFormat: TimeFormat;
+  setTimeFormat: (f: TimeFormat) => void;
 }
 
 const THEME_KEY = 'shipyard_theme_next';
 const SIDEBAR_KEY = 'shipyard_sidebar_collapsed_next';
+const TIME_FORMAT_KEY = 'timeFormat';
 
 function readTheme(): Theme {
   try {
@@ -34,6 +38,14 @@ function readLang(): 'de' | 'en' {
   } catch { /* ignore */ }
   const nav = (typeof navigator !== 'undefined' ? navigator.language : 'de').toLowerCase();
   return nav.startsWith('en') ? 'en' : 'de';
+}
+
+function readTimeFormat(): TimeFormat {
+  try {
+    const v = localStorage.getItem(TIME_FORMAT_KEY);
+    if (v === '12h' || v === '24h') return v;
+  } catch { /* ignore */ }
+  return '24h';
 }
 
 export const useUi = create<UiState>((set) => ({
@@ -61,6 +73,12 @@ export const useUi = create<UiState>((set) => ({
     set(() => {
       try { localStorage.setItem('shipyard_lang', l); } catch { /* ignore */ }
       return { language: l };
+    }),
+  timeFormat: readTimeFormat(),
+  setTimeFormat: (f) =>
+    set(() => {
+      try { localStorage.setItem(TIME_FORMAT_KEY, f); } catch { /* ignore */ }
+      return { timeFormat: f };
     }),
 }));
 
