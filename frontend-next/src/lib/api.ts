@@ -157,6 +157,8 @@ export const api = {
     apiFetch(`/servers/${id}/docker/compose/write`, { method: 'POST', body: { path: p, content } }),
   composeAction:     (id: string | number, p: string, action: string) =>
     apiFetch(`/servers/${id}/docker/compose/action`, { method: 'POST', body: { path: p, action } }),
+  deleteComposeStack:(id: string | number, p: string) =>
+    apiFetch(`/servers/${id}/docker/compose/stack?path=${encodeURIComponent(p)}`, { method: 'DELETE' }),
 
   // SSH / System
   getSSHKey:         () => apiFetch<{ publicKey: string }>('/system/key'),

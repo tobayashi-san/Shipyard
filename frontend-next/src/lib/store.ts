@@ -13,11 +13,14 @@ interface UiState {
   setLanguage: (l: 'de' | 'en') => void;
   timeFormat: TimeFormat;
   setTimeFormat: (f: TimeFormat) => void;
+  dashAttentionOnly: boolean;
+  setDashAttentionOnly: (v: boolean) => void;
 }
 
 const THEME_KEY = 'shipyard_theme_next';
 const SIDEBAR_KEY = 'shipyard_sidebar_collapsed_next';
 const TIME_FORMAT_KEY = 'timeFormat';
+const DASH_ATTENTION_KEY = 'shipyard_dash_attention';
 
 function readTheme(): Theme {
   try {
@@ -46,6 +49,10 @@ function readTimeFormat(): TimeFormat {
     if (v === '12h' || v === '24h') return v;
   } catch { /* ignore */ }
   return '24h';
+}
+
+function readDashAttention(): boolean {
+  try { return localStorage.getItem(DASH_ATTENTION_KEY) === '1'; } catch { return false; }
 }
 
 export const useUi = create<UiState>((set) => ({
@@ -79,6 +86,12 @@ export const useUi = create<UiState>((set) => ({
     set(() => {
       try { localStorage.setItem(TIME_FORMAT_KEY, f); } catch { /* ignore */ }
       return { timeFormat: f };
+    }),
+  dashAttentionOnly: readDashAttention(),
+  setDashAttentionOnly: (v) =>
+    set(() => {
+      try { localStorage.setItem(DASH_ATTENTION_KEY, v ? '1' : '0'); } catch { /* ignore */ }
+      return { dashAttentionOnly: v };
     }),
 }));
 

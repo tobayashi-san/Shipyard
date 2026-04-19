@@ -16,6 +16,7 @@ function applySchema(db) {
       notes TEXT NOT NULL DEFAULT '',
       group_id TEXT,
       host_fingerprint TEXT DEFAULT '',
+      docker_enabled INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );

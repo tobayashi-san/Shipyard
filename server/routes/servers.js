@@ -416,7 +416,7 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
     const existing = req.server;
     const allGroups = db.serverGroups.getAll();
 
-    const { name, hostname, ip_address, ssh_port, ssh_user, tags, services, links, storage_mounts } = req.body;
+    const { name, hostname, ip_address, ssh_port, ssh_user, tags, services, links, storage_mounts, dockerEnabled } = req.body;
     const sName   = name !== undefined ? String(name).slice(0, 100) : existing.name;
     const sHost   = hostname !== undefined ? String(hostname).slice(0, 255) : existing.hostname;
     const sIp     = ip_address !== undefined ? String(ip_address).slice(0, 45) : existing.ip_address;
@@ -426,11 +426,13 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
     const sSvcs   = Array.isArray(services) ? services.filter(s => typeof s === 'string').map(s => s.slice(0, 100)) : JSON.parse(existing.services || '[]');
     const sLinks  = links !== undefined ? normalizeServerLinks(links) : parseServerLinks(existing.links);
     const sMounts = storage_mounts !== undefined ? normalizeStorageMounts(storage_mounts) : parseConfiguredStorageMounts(existing.storage_mounts);
+    const sDockerEnabled = dockerEnabled !== undefined ? (dockerEnabled ? 1 : 0) : (existing.docker_enabled || 0);
     const server = db.servers.update(req.params.id, {
       name: sName, hostname: sHost, ip_address: sIp,
       ssh_port: sPort, ssh_user: sUser, tags: sTags, services: sSvcs,
       links: sLinks,
       storage_mounts: sMounts,
+      docker_enabled: sDockerEnabled,
     });
     if (tags !== undefined) {
       const autoGroupId = resolveGroupIdByTags(sTags, allGroups);
@@ -554,6 +556,9 @@ router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, 
       .then(info => {
         db.serverInfo.upsert(server.id, info);
         db.servers.updateStatus(server.id, 'online');
+        if (info.docker_detected && !server.docker_enabled) {
+          db.servers.setDockerEnabled(server.id, 1);
+        }
       })
       .catch(err => {
         log.debug({ err, server: server.name }, 'Background info refresh failed');
@@ -569,6 +574,9 @@ router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, 
     const info = await systemInfo.getSystemInfo(server);
     db.serverInfo.upsert(server.id, info);
     db.servers.updateStatus(server.id, 'online');
+    if (info.docker_detected && !server.docker_enabled) {
+      db.servers.setDockerEnabled(server.id, 1);
+    }
     res.json(info);
   } catch (error) {
     db.servers.updateStatus(req.params.id, 'offline');

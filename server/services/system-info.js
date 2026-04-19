@@ -36,6 +36,8 @@ class SystemInfoService {
         "if command -v zpool >/dev/null 2>&1; then zpool list -Hp -o name,size,alloc,free,health 2>/dev/null; else echo __NO_ZFS__; fi",
         "if command -v zpool >/dev/null 2>&1; then zpool status 2>/dev/null; else echo __NO_ZFS__; fi",
         "if command -v zfs >/dev/null 2>&1; then zfs list -Hp -o name,used,avail,refer,mountpoint,type 2>/dev/null; else echo __NO_ZFS__; fi",
+        // Docker/Podman presence detection
+        "if command -v docker >/dev/null 2>&1 || command -v podman >/dev/null 2>&1; then echo 1; else echo 0; fi",
       ].join('; echo "---SEP---"; ');
 
       const result = await sshManager.execCommand(server, script);
@@ -57,6 +59,7 @@ class SystemInfoService {
         zpool_list:   parts[12] || '',
         zpool_status: parts[13] || '',
         zfs_list:     parts[14] || '',
+        docker_detected: (parts[15] || '').trim() === '1',
       };
 
       const [ramTotal, ramUsed] = (results.ram || '0 0').split(' ').map(Number);
@@ -78,6 +81,7 @@ class SystemInfoService {
         reboot_required: (results.reboot && results.reboot.trim() === '1'),
         cpu_usage_pct: Math.min(100, Math.max(0, parseInt(results.cpu_usage, 10) || 0)),
         zfs_pools: parseZfsData(results.zpool_list, results.zpool_status, results.zfs_list),
+        docker_detected: results.docker_detected,
       };
     } catch (error) {
       throw new Error(`Failed to gather system info: ${error.message}`);

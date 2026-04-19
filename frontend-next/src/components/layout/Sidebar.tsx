@@ -273,11 +273,11 @@ export function Sidebar() {
         collapsed ? 'w-16' : 'w-60'
       )}
     >
-      <div className="flex h-14 items-center gap-2 border-b px-3">
+      <div className={cn('flex h-14 items-center gap-2 border-b px-3', collapsed && 'justify-center px-2')}>
         {logoImage ? (
-          <img src={logoImage} alt={appName} className="h-6 w-6 object-contain" />
+          <img src={logoImage} alt={appName} className="h-4 w-4 flex-shrink-0 object-contain" />
         ) : showIcon ? (
-          <LogoIcon className="h-6 w-6 text-brand" />
+          <LogoIcon className="h-4 w-4 flex-shrink-0 text-brand" />
         ) : null}
         {!collapsed && (
           <div className="flex flex-col leading-tight">

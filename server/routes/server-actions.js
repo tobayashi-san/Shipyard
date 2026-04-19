@@ -318,6 +318,21 @@ function createServerActionsRouter({ broadcast } = {}) {
     }
   });
 
+  router.delete('/:id/docker/compose/stack', guardServerAccess, (req, res) => {
+    if (!can(getPermissions(req.user), 'canManageDockerCompose')) return res.status(403).json({ error: 'Permission denied' });
+    const { id: serverId } = req.params;
+    const { path: remotePath } = req.query;
+    if (!remotePath || typeof remotePath !== 'string') return res.status(400).json({ error: 'path query param required' });
+    try {
+      const projectName = remotePath.split('/').filter(Boolean).pop() || remotePath;
+      db.composeProjects.delete(serverId, projectName);
+      db.auditLog.write('compose.delete', `server=${req.server.name} path=${remotePath}`, req.ip, true, req.user?.username);
+      res.json({ status: 'deleted' });
+    } catch (err) {
+      serverError(res, err, 'delete compose stack');
+    }
+  });
+
   return router;
 }
 

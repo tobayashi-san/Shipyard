@@ -132,7 +132,10 @@ export function DashboardPage() {
   const summary = data?.summary ?? { total: 0, online: 0, offline: 0, rebootRequired: 0, totalUpdates: 0, criticalDisk: 0, criticalRam: 0 };
   const servers = data?.servers ?? [];
   const recentHistory = data?.recentHistory ?? [];
-  const [attentionOnly, setAttentionOnly] = useState(false);
+  const [attentionOnly, setAttentionOnly] = [
+    useUi((s) => s.dashAttentionOnly),
+    useUi((s) => s.setDashAttentionOnly),
+  ];
   const attentionCount = useMemo(() => servers.filter(needsAttention).length, [servers]);
 
   const visible = attentionOnly ? servers.filter(needsAttention) : servers;

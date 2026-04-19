@@ -65,7 +65,7 @@ const serverQueries = {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `),
   update: db.prepare(`
-    UPDATE servers SET name = ?, hostname = ?, ip_address = ?, ssh_port = ?, ssh_user = ?, tags = ?, services = ?, links = ?, storage_mounts = ?, updated_at = datetime('now')
+    UPDATE servers SET name = ?, hostname = ?, ip_address = ?, ssh_port = ?, ssh_user = ?, tags = ?, services = ?, links = ?, storage_mounts = ?, docker_enabled = ?, updated_at = datetime('now')
     WHERE id = ?
   `),
   delete: db.prepare('DELETE FROM servers WHERE id = ?'),
@@ -210,6 +210,7 @@ module.exports = {
         JSON.stringify(server.services || []),
         JSON.stringify(server.links || []),
         JSON.stringify(server.storage_mounts || []),
+        server.docker_enabled ? 1 : 0,
         id
       );
       return serverQueries.getById.get(id);
@@ -220,6 +221,7 @@ module.exports = {
       else serverQueries.updateStatus.run(status, id);
     },
     setNotes: (id, notes) => db.prepare("UPDATE servers SET notes = ? WHERE id = ?").run(notes, id),
+    setDockerEnabled: (id, value) => db.prepare("UPDATE servers SET docker_enabled = ? WHERE id = ?").run(value ? 1 : 0, id),
     getHostFingerprint: (id) => {
       const row = db.prepare("SELECT host_fingerprint FROM servers WHERE id = ?").get(id);
       return row ? (row.host_fingerprint || '') : '';

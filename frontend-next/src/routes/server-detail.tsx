@@ -52,6 +52,7 @@ interface ServerDetail {
   links?: { name: string; url: string }[];
   storage_mounts?: { name: string; path: string }[];
   notes?: string;
+  docker_enabled?: number;
   [k: string]: unknown;
 }
 
@@ -254,7 +255,7 @@ export function ServerDetailPage() {
   const { data: dockerContainers, isFetching: fetchingDocker } = useQuery({
     queryKey: ['server', id, 'docker'],
     queryFn: () => api.getServerDocker(id) as unknown as Promise<ContainerRow[]>,
-    enabled: !!id && hasCap(profile, 'canViewDocker'),
+    enabled: !!id && hasCap(profile, 'canViewDocker') && !!server?.docker_enabled,
     staleTime: 60_000,
   });
   const { data: rawUpdates, isFetching: fetchingUpdates } = useQuery({
@@ -460,6 +461,17 @@ export function ServerDetailPage() {
 
   // ── Compose editor dialog ───────────────────────────────────
   const [composeDialog, setComposeDialog] = useState<{ open: boolean; mode: 'edit' | 'add'; dir: string; content: string; loading: boolean }>({ open: false, mode: 'add', dir: '', content: '', loading: false });
+
+  const [confirmDeleteStack, setConfirmDeleteStack] = useState<{ proj: string; dir: string } | null>(null);
+  const deleteStackMut = useMutation({
+    mutationFn: (dir: string) => api.deleteComposeStack(id, dir),
+    onSuccess: () => {
+      showToast(t('det.stackRemoved'), 'success');
+      setConfirmDeleteStack(null);
+      void qc.invalidateQueries({ queryKey: ['serverInfo', id] });
+    },
+    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
+  });
 
   const openEditCompose = useCallback(async (dir: string) => {
     setComposeDialog({ open: true, mode: 'edit', dir, content: '', loading: true });
@@ -711,7 +723,7 @@ export function ServerDetailPage() {
       <Tabs defaultValue="overview">
         <TabsList className="flex-wrap">
           <TabsTrigger value="overview">{t('det.tabOverview')}</TabsTrigger>
-          {hasCap(profile, 'canViewDocker') && <TabsTrigger value="docker">{t('det.tabDocker')}</TabsTrigger>}
+          {hasCap(profile, 'canViewDocker') && !!server.docker_enabled && <TabsTrigger value="docker">{t('det.tabDocker')}</TabsTrigger>}
           {(hasCap(profile, 'canViewUpdates') || hasCap(profile, 'canRunUpdates') || hasCap(profile, 'canRebootServers') || hasCap(profile, 'canViewCustomUpdates') || hasCap(profile, 'canRunCustomUpdates') || hasCap(profile, 'canEditCustomUpdates') || hasCap(profile, 'canDeleteCustomUpdates')) && <TabsTrigger value="updates">{t('det.tabUpdates')}</TabsTrigger>}
           <TabsTrigger value="history">{t('det.tabHistory')}</TabsTrigger>
           {agentEnabled && profile?.role === 'admin' && <TabsTrigger value="agent">{t('det.tabAgent')}</TabsTrigger>}
@@ -882,7 +894,7 @@ export function ServerDetailPage() {
         </TabsContent>
 
         {/* ════ DOCKER ════ */}
-        {hasCap(profile, 'canViewDocker') && (
+        {hasCap(profile, 'canViewDocker') && !!server.docker_enabled && (
           <TabsContent value="docker" className="space-y-4">
             <Card>
               <CardHeader className="px-4 py-3 flex flex-row items-center justify-between">
@@ -936,10 +948,11 @@ export function ServerDetailPage() {
                               </td>
                               <td className="px-3 py-2">
                                 <div className="flex items-center gap-0.5">
-                                  {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6" title={t('det.editCompose')} onClick={() => openEditCompose(data.dir)}><FileText className="h-3 w-3" /></Button>}
-                                  {hasCap(profile, 'canPullDocker') && <Button variant="ghost" size="icon" className="h-6 w-6" title="pull" onClick={() => composeActionMut.mutate({ dir: data.dir, action: 'pull' })} disabled={composeActionMut.isPending}><CloudDownload className="h-3 w-3" /></Button>}
-                                  {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6" title="up -d" onClick={() => composeActionMut.mutate({ dir: data.dir, action: 'up' })} disabled={composeActionMut.isPending}><Play className="h-3 w-3" /></Button>}
-                                  {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" title="down" onClick={() => composeActionMut.mutate({ dir: data.dir, action: 'down' })} disabled={composeActionMut.isPending}><Square className="h-3 w-3" /></Button>}
+                                 {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6" title={t('det.editCompose')} onClick={() => openEditCompose(data.dir)}><FileText className="h-3 w-3" /></Button>}
+                                   {hasCap(profile, 'canPullDocker') && <Button variant="ghost" size="icon" className="h-6 w-6" title="pull" onClick={() => composeActionMut.mutate({ dir: data.dir, action: 'pull' })} disabled={composeActionMut.isPending}><CloudDownload className="h-3 w-3" /></Button>}
+                                   {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6" title="up -d" onClick={() => composeActionMut.mutate({ dir: data.dir, action: 'up' })} disabled={composeActionMut.isPending}><Play className="h-3 w-3" /></Button>}
+                                   {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" title="down" onClick={() => composeActionMut.mutate({ dir: data.dir, action: 'down' })} disabled={composeActionMut.isPending}><Square className="h-3 w-3" /></Button>}
+                                   {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" title={t('det.removeStack')} onClick={() => setConfirmDeleteStack({ proj, dir: data.dir })} disabled={deleteStackMut.isPending}><Trash2 className="h-3 w-3" /></Button>}
                                 </div>
                               </td>
                             </tr>,
@@ -1305,6 +1318,16 @@ export function ServerDetailPage() {
         variant="destructive"
         onConfirm={() => { if (confirmDeleteTask) deleteTaskMut.mutate(confirmDeleteTask.id); }}
         isPending={deleteTaskMut.isPending}
+      />
+      <ConfirmDialog
+        open={!!confirmDeleteStack}
+        onOpenChange={(open) => { if (!open) setConfirmDeleteStack(null); }}
+        title={t('det.removeStack')}
+        description={t('det.confirmRemoveStack', { name: confirmDeleteStack?.proj || '' })}
+        confirmLabel={t('common.delete')}
+        variant="destructive"
+        onConfirm={() => { if (confirmDeleteStack) deleteStackMut.mutate(confirmDeleteStack.dir); }}
+        isPending={deleteStackMut.isPending}
       />
     </div>
   );

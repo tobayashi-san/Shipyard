@@ -12,7 +12,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Plus, Trash2, KeyRound, Server, Wifi, Tag, Link2, HardDrive } from 'lucide-react';
+import { Plus, Trash2, KeyRound, Server, Wifi, Tag, Link2, HardDrive, Container } from 'lucide-react';
 
 type AnyObj = Record<string, unknown>;
 
@@ -86,6 +86,7 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
   const [links, setLinks] = React.useState<LinkEntry[]>([]);
   const [mounts, setMounts] = React.useState<MountEntry[]>([]);
   const [sshPassword, setSshPassword] = React.useState('');
+  const [dockerEnabled, setDockerEnabled] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   const reset = React.useCallback(() => {
@@ -101,11 +102,13 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
       setLinks(ls.map((l) => ({ ...l })));
       const ms = (editServer.storage_mounts as MountEntry[]) || [];
       setMounts(ms.map((m) => ({ ...m })));
+      setDockerEnabled(!!(editServer.docker_enabled));
     } else {
       setName(''); setIp(''); setHostname(''); setSshUser('root'); setSshPort('22');
       setServices(''); setTags('');
       setLinks([]);
       setMounts([]);
+      setDockerEnabled(false);
     }
     setSshPassword('');
     setError(null);
@@ -135,6 +138,7 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
         tags: tags.split(',').map((s) => s.trim()).filter(Boolean),
         links: links.filter((l) => l.name || l.url),
         storage_mounts: mounts.filter((m) => m.path),
+        ...(isEdit && { dockerEnabled }),
       };
 
       let savedServer: AnyObj;
@@ -381,6 +385,24 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
                 </div>
               ))}
             </div>
+          )}
+
+          {/* ── Docker (edit-only) ─────────────────────── */}
+          {isEdit && (
+            <>
+              <SectionHeading icon={<Container className="h-3.5 w-3.5" />} title={t('add.dockerSection')} />
+              <FieldRow label={t('add.dockerEnabled')} hint={t('add.dockerEnabledHint')}>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={dockerEnabled}
+                  onClick={() => setDockerEnabled(v => !v)}
+                  className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${dockerEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${dockerEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                </button>
+              </FieldRow>
+            </>
           )}
 
           {/* ── SSH Key (add-only) ──────────────────────── */}

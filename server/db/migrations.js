@@ -10,6 +10,7 @@ function applyMigrations(db) {
   try { db.exec('ALTER TABLE custom_update_tasks ADD COLUMN latest_command TEXT'); } catch {}
   // Trust-on-first-use SSH host key fingerprint, sha256 base64 of server-presented host key.
   try { db.exec("ALTER TABLE servers ADD COLUMN host_fingerprint TEXT DEFAULT ''"); } catch {}
+  try { db.exec('ALTER TABLE servers ADD COLUMN docker_enabled INTEGER DEFAULT 0'); } catch {}
 }
 
 module.exports = { applyMigrations };
