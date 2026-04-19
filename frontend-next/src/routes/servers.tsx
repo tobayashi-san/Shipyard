@@ -186,6 +186,17 @@ function MetricBar({ pct }: { pct: number | null }) {
 // ─── useServerInfo hook ───────────────────────────────────────
 function useServerInfoMap(serverIds: string[]) {
   const [infoMap, setInfoMap] = useState<Record<string, ServerInfo>>({});
+
+  const loadInfos = useCallback((ids: string[], force = false) => {
+    if (ids.length === 0) return;
+    ids.forEach(id => {
+      api.getServerInfo(id, force).then(info => {
+        if (!info) return;
+        setInfoMap(prev => ({ ...prev, [id]: info as unknown as ServerInfo }));
+      }).catch(() => { /* ignore */ });
+    });
+  }, []);
+
   useEffect(() => {
     if (serverIds.length === 0) return;
     let cancelled = false;
@@ -197,7 +208,8 @@ function useServerInfoMap(serverIds: string[]) {
     });
     return () => { cancelled = true; };
   }, [serverIds.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
-  return infoMap;
+
+  return { infoMap, loadInfos };
 }
 
 // ─── GroupDialog Component ────────────────────────────────────
@@ -365,7 +377,7 @@ export function ServersPage() {
     if (useGroups) return filtered.map(s => s.id);
     return pageServers.map(s => s.id);
   }, [useGroups, filtered, pageServers]);
-  const infoMap = useServerInfoMap(visibleIds);
+  const { infoMap, loadInfos } = useServerInfoMap(visibleIds);
 
   // ── Mutations ───────────────────────────────────────────────
   const invalidateAll = useCallback(() => {
@@ -505,10 +517,17 @@ export function ServersPage() {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    try { await qc.invalidateQueries({ queryKey: ['servers'] }); }
-    catch { /* */ }
+    try {
+      await qc.invalidateQueries({ queryKey: ['servers'] });
+      const onlineIds = visibleIds.filter(id => {
+        const s = servers.find(s => s.id === id);
+        return s?.status === 'online';
+      });
+      await Promise.allSettled(onlineIds.map(id => api.getServerInfo(id, true)));
+      loadInfos(onlineIds, true);
+    } catch { /* */ }
     setRefreshing(false);
-  }, [qc]);
+  }, [qc, visibleIds, servers, loadInfos]);
 
   const handleImportFile = useCallback(async (file: File) => {
     const text = await file.text();

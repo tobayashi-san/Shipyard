@@ -1126,6 +1126,7 @@
     "addAll": "Alle Server hinzufügen",
     "excludeServers": "Server ausschliessen",
     "excludeHint": "Wenn \"Alle Server\" aktiv ist, werden markierte Server ausgelassen.",
+    "excluded": "Ausgeschlossen",
     "includeHint": "Wenn \"Alle Server\" deaktiviert ist, werden nur markierte Server ausgeführt.",
     "confirmAllServersTitle": "Alle Server ausführen?",
     "confirmAllServersMessage": "Dieses Playbook wird auf allen ausgewählten Servern ausgeführt. Bitte nur bestätigen, wenn das wirklich gewollt ist.",

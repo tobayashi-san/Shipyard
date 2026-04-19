@@ -639,12 +639,14 @@ function TemplateRunPanel({ filename, description, onClose }: { filename: string
             <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border p-2">
               {srvList.map(s => {
                 const nm = String(s.name);
+                const isExcluded = excluded.has(nm);
                 return (
-                  <label key={nm} className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={excluded.has(nm)} onChange={e => {
+                  <label key={nm} className={`flex items-center gap-2 text-sm rounded px-1 py-0.5 transition-colors ${isExcluded ? 'bg-destructive/10 text-destructive' : ''}`}>
+                    <input type="checkbox" checked={isExcluded} onChange={e => {
                       setExcluded(prev => { const n = new Set(prev); if (e.target.checked) n.add(nm); else n.delete(nm); return n; });
-                    }} />
+                    }} className={isExcluded ? 'accent-destructive' : ''} />
                     <span>{nm}</span>
+                    {isExcluded && <span className="ml-1 text-xs font-medium text-destructive">{t('run.excluded')}</span>}
                     <StatusBadge tone={s.status === 'online' ? 'success' : 'muted'} className="ml-auto">
                       {s.status === 'online' ? t('common.online') : t('common.offline')}
                     </StatusBadge>
@@ -775,19 +777,22 @@ function QuickRunTab() {
               {srvList.map(s => {
                 const nm = String(s.name);
                 const dis = allChecked && nm === 'localhost';
+                const isExcluded = allChecked && checked.has(nm);
                 return (
-                  <label key={nm} className={`flex items-center gap-2 text-sm ${dis ? 'opacity-50' : ''}`}>
-                    <input type="checkbox" disabled={dis} checked={checked.has(nm)} onChange={() => toggleServer(nm)} />
+                  <label key={nm} className={`flex items-center gap-2 text-sm rounded px-1 py-0.5 transition-colors ${dis ? 'opacity-40' : ''} ${isExcluded ? 'bg-destructive/10 text-destructive' : ''}`}>
+                    <input type="checkbox" disabled={dis} checked={checked.has(nm)} onChange={() => toggleServer(nm)} className={isExcluded ? 'accent-destructive' : ''} />
                     <span>{nm}</span>
+                    {isExcluded && <span className="text-xs font-medium text-destructive">{t('run.excluded')}</span>}
                     <StatusBadge tone={s.status === 'online' ? 'success' : 'muted'} className="ml-auto">
                       {s.status === 'online' ? t('common.online') : t('common.offline')}
                     </StatusBadge>
                   </label>
                 );
               })}
-              <label className={`flex items-center gap-2 text-sm ${allChecked ? 'opacity-50' : ''}`}>
+              <label className={`flex items-center gap-2 text-sm rounded px-1 py-0.5 transition-colors ${allChecked && checked.has('localhost') ? 'bg-destructive/10 text-destructive' : allChecked ? 'opacity-40' : ''}`}>
                 <input type="checkbox" disabled={allChecked} checked={checked.has('localhost')} onChange={() => toggleServer('localhost')} />
                 <span>localhost</span>
+                {allChecked && checked.has('localhost') && <span className="text-xs font-medium text-destructive">{t('run.excluded')}</span>}
               </label>
             </div>
           </div>
@@ -1112,6 +1117,21 @@ function ScheduleDialog({ editId, schedules, onSaved }: { editId: string | null;
   const [monthday, setMonthday] = useState(parsed.monthday);
   const [busy, setBusy] = useState(false);
 
+  // Re-initialize form state whenever the schedule being edited changes
+  useEffect(() => {
+    const p = existing ? cronToSelectors(existing.cron_expression) : { interval: 'daily', hour: 3, minute: 0, weekday: 1, monthday: 1 };
+    const pt = parsePlaybookTargets(existing?.targets ?? 'all');
+    setName(existing?.name ?? '');
+    setPlaybook(existing?.playbook ?? '');
+    setAllChecked(pt.mode === 'all');
+    setChecked(new Set(pt.mode === 'all' ? pt.excluded : pt.included));
+    setInterval2(p.interval);
+    setHour(p.hour);
+    setMinute(p.minute);
+    setWeekday(p.weekday);
+    setMonthday(p.monthday);
+  }, [editId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const iv = INTERVALS.find(i => i.value === interval);
 
   const toggleSrv = (nm: string) => {
@@ -1170,17 +1190,20 @@ function ScheduleDialog({ editId, schedules, onSaved }: { editId: string | null;
               </label>
               <Separator />
               {srvList.map(s => {
-                const nm = String(s.name);
-                return (
-                  <label key={nm} className={`flex items-center gap-2 text-sm ${allChecked && nm === 'localhost' ? 'opacity-50' : ''}`}>
-                    <input type="checkbox" disabled={allChecked && nm === 'localhost'} checked={checked.has(nm)} onChange={() => toggleSrv(nm)} />
-                    <span>{nm}</span>
-                  </label>
-                );
-              })}
-              <label className={`flex items-center gap-2 text-sm ${allChecked ? 'opacity-50' : ''}`}>
+                  const nm = String(s.name);
+                  const isExcluded = allChecked && checked.has(nm);
+                  return (
+                    <label key={nm} className={`flex items-center gap-2 text-sm rounded px-1 py-0.5 transition-colors ${allChecked && nm === 'localhost' ? 'opacity-40' : ''} ${isExcluded ? 'bg-destructive/10 text-destructive' : ''}`}>
+                      <input type="checkbox" disabled={allChecked && nm === 'localhost'} checked={checked.has(nm)} onChange={() => toggleSrv(nm)} className={isExcluded ? 'accent-destructive' : ''} />
+                      <span>{nm}</span>
+                      {isExcluded && <span className="text-xs font-medium text-destructive">{t('run.excluded')}</span>}
+                    </label>
+                  );
+                })}
+              <label className={`flex items-center gap-2 text-sm rounded px-1 py-0.5 transition-colors ${allChecked && checked.has('localhost') ? 'bg-destructive/10 text-destructive' : allChecked ? 'opacity-40' : ''}`}>
                 <input type="checkbox" disabled={allChecked} checked={checked.has('localhost')} onChange={() => toggleSrv('localhost')} />
                 <span>localhost</span>
+                {allChecked && checked.has('localhost') && <span className="text-xs font-medium text-destructive">{t('run.excluded')}</span>}
               </label>
             </div>
           </div>

@@ -885,7 +885,7 @@ async function renderWorkspaceDetail(ws) {
 
   document.getElementById('tofu-btn-edit').addEventListener('click', () => openWorkspaceModal(ws));
   document.getElementById('tofu-btn-delete').addEventListener('click', async () => {
-    if (!await _showConfirm(`Delete workspace "${ws.name}"?`, { title:'Delete', confirmText:'Delete', danger:true })) return;
+    if (!await _internalConfirm(`Delete workspace "${ws.name}"?`, { title:'Delete', confirmText:'Delete', danger:true })) return;
     await _pluginApi.request(`/workspaces/${ws.id}`, { method:'DELETE' });
     _workspaces = _workspaces.filter(w => w.id !== ws.id);
     _selected   = _workspaces[0]?.id || null;
@@ -1058,17 +1058,19 @@ function showRunOutputModal(run) {
     <div class="tp-form-actions">
       ${btn('secondary', 'run-modal-close', 'Close')}
     </div>
-  `, { maxWidth: '700px' });
+  `, { maxWidth: '700px', onReady: () => {
+    document.getElementById('run-modal-close')?.addEventListener('click', closeModal);
+  }});
 }
 
 async function executeAction(ws, action) {
   if (_runId) return;
   if (action === 'destroy') {
-    if (!await _showConfirm(`Destroy all resources in "${ws.name}"? This cannot be undone.`,
+    if (!await _internalConfirm(`Destroy all resources in "${ws.name}"? This cannot be undone.`,
       { title:'Destroy', confirmText:'Destroy', danger:true })) return;
   }
   if (action === 'apply') {
-    if (!await _showConfirm(`Apply changes in "${ws.name}"?`,
+    if (!await _internalConfirm(`Apply changes in "${ws.name}"?`,
       { title:'Apply', confirmText:'Apply', danger:false })) return;
   }
   const body = document.getElementById('tofu-terminal-body');
@@ -1366,7 +1368,7 @@ async function loadFilesTab(el, ws) {
     const genBtn = document.getElementById('tofu-btn-generate-output');
     if (!genBtn) return;
     if (_openFile?.path === 'outputs.tf' && _openFile?.dirty) {
-      const discard = await _showConfirm('Discard unsaved changes in outputs.tf and regenerate the Shipyard output block?', {
+      const discard = await _internalConfirm('Discard unsaved changes in outputs.tf and regenerate the Shipyard output block?', {
         title: 'Regenerate outputs.tf',
         confirmText: 'Regenerate',
         danger: true,
@@ -1439,7 +1441,7 @@ function bindTreeEvents(ws) {
   document.querySelectorAll('[data-delete]').forEach(delBtn => {
     delBtn.addEventListener('click', async e => {
       e.stopPropagation();
-      if (!await _showConfirm(`Delete "${delBtn.dataset.delete}"?`, { title:'Delete', confirmText:'Delete', danger:true })) return;
+      if (!await _internalConfirm(`Delete "${delBtn.dataset.delete}"?`, { title:'Delete', confirmText:'Delete', danger:true })) return;
       try {
         await _pluginApi.request(`/workspaces/${ws.id}/file?path=${encodeURIComponent(delBtn.dataset.delete)}`, { method:'DELETE' });
         if (_openFile?.path === delBtn.dataset.delete) { _openFile = null; }
@@ -1451,7 +1453,7 @@ function bindTreeEvents(ws) {
 
 async function openFileEditor(ws, relPath) {
   if (_openFile?.dirty) {
-    if (!await _showConfirm('Discard unsaved changes?', { title:'Discard', confirmText:'Discard', danger:true })) return;
+    if (!await _internalConfirm('Discard unsaved changes?', { title:'Discard', confirmText:'Discard', danger:true })) return;
   }
   const editorPanel = document.getElementById('tofu-file-editor-panel');
   if (!editorPanel) return;
@@ -1582,13 +1584,15 @@ function showModal(innerHTML, { maxWidth = '520px', onReady } = {}) {
     return;
   }
 
-  // New frontend: create our own overlay inside the plugin container
+  // New frontend: create our own overlay — always attach to document.body
+  // so that position:fixed is relative to the true viewport and not clipped
+  // by any overflow/transform ancestor in the plugin host.
   if (_modalOverlay) _modalOverlay.remove();
   _modalOverlay = document.createElement('div');
-  _modalOverlay.className = 'tp-overlay';
+  _modalOverlay.className = 'tp-overlay tofu-plugin';
   _modalOverlay.innerHTML = `<div class="tp-modal" style="max-width:${maxWidth};">${innerHTML}</div>`;
   _modalOverlay.addEventListener('click', e => { if (e.target === _modalOverlay) closeModal(); });
-  (_container || document.body).appendChild(_modalOverlay);
+  document.body.appendChild(_modalOverlay);
   if (onReady) onReady();
 }
 
@@ -1602,7 +1606,22 @@ function closeModal() {
   if (_modalOverlay) { _modalOverlay.remove(); _modalOverlay = null; }
 }
 
-// ── Workspace Modal ───────────────────────────────────────────────────────
+// ── Internal confirm dialog (replaces window.confirm for in-plugin use) ───
+function _internalConfirm(message, { title = 'Confirm', confirmText = 'Confirm', danger = false } = {}) {
+  return new Promise(resolve => {
+    showModal(`
+      <h2 style="margin:0 0 12px;">${esc(title)}</h2>
+      <p style="margin:0 0 20px;color:var(--tp-fg-muted);font-size:14px;">${esc(message)}</p>
+      <div class="tp-form-actions">
+        ${btn('secondary', 'confirm-cancel', 'Cancel')}
+        ${btn(danger ? 'danger' : 'primary', 'confirm-ok', esc(confirmText))}
+      </div>
+    `, { maxWidth: '420px', onReady: () => {
+      document.getElementById('confirm-cancel').addEventListener('click', () => { closeModal(); resolve(false); });
+      document.getElementById('confirm-ok').addEventListener('click', () => { closeModal(); resolve(true); });
+    }});
+  });
+}
 function openWorkspaceModal(ws) {
   const vars = ws?.env_vars || {};
   const envLines = Object.entries(vars).map(([k,v]) => `${k}=${v}`).join('\n');

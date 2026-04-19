@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
@@ -111,15 +111,31 @@ export function DashboardPage() {
     refetchInterval: 30_000,
   });
 
-  const [attentionOnly, setAttentionOnly] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const onlineIds = (data?.servers ?? [])
+        .filter(s => s.status === 'online')
+        .map(s => s.id);
+      // Force-refresh system info for all online servers in parallel
+      await Promise.allSettled(onlineIds.map(id => api.getServerInfo(id, true)));
+    } finally {
+      await refetch();
+      setRefreshing(false);
+    }
+  }, [data?.servers, refetch]);
+
+  const isBusy = isFetching || refreshing;
 
   const summary = data?.summary ?? { total: 0, online: 0, offline: 0, rebootRequired: 0, totalUpdates: 0, criticalDisk: 0, criticalRam: 0 };
   const servers = data?.servers ?? [];
   const recentHistory = data?.recentHistory ?? [];
+  const [attentionOnly, setAttentionOnly] = useState(false);
   const attentionCount = useMemo(() => servers.filter(needsAttention).length, [servers]);
-  const visible = attentionOnly ? servers.filter(needsAttention) : servers;
 
-  // Alerts
+  const visible = attentionOnly ? servers.filter(needsAttention) : servers;
   const alerts = useMemo(() => {
     const out: { level: string; icon: React.ReactNode; text: string; serverId: string | number }[] = [];
     servers.forEach(s => {
@@ -150,8 +166,8 @@ export function DashboardPage() {
         title={t('dash.title')}
         description={isLoading ? t('dash.loading') : t('dash.updatedAt', { time: formatCurrentTime(hour12) })}
         actions={
-          <Button variant="secondary" size="sm" onClick={() => refetch()} disabled={isFetching}>
-            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} /> {t('common.refresh')}
+          <Button variant="secondary" size="sm" onClick={handleRefresh} disabled={isBusy}>
+            <RefreshCw className={`h-4 w-4 ${isBusy ? 'animate-spin' : ''}`} /> {t('common.refresh')}
           </Button>
         }
       />

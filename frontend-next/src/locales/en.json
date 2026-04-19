@@ -1131,6 +1131,7 @@
     "addAll": "Add all servers",
     "excludeServers": "Exclude Servers",
     "excludeHint": "When \"All Servers\" is enabled, checked servers are skipped.",
+    "excluded": "Excluded",
     "includeHint": "When \"All Servers\" is disabled, only checked servers are targeted.",
     "confirmAllServersTitle": "Run on all servers?",
     "confirmAllServersMessage": "This playbook will run on all selected servers. Confirm only if that is really intended.",
