@@ -325,7 +325,9 @@
     "statusAttention": "Handlungsbedarf",
     "statusHealthy": "Gesund",
     "statusIdle": "Inaktiv",
-    "agentUrlPlaceholder": "https://shipyard.example.com"
+    "agentUrlPlaceholder": "https://shipyard.example.com",
+    "actionSuccess": "Erfolgreich abgeschlossen.",
+    "actionFailed": "Aktion fehlgeschlagen."
   },
   "ob": {
     "welcome": "Willkommen!",

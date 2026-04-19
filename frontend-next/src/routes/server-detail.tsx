@@ -11,6 +11,7 @@ import {
   Download, Shield, Sliders, History,
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
+import { ws } from '@/lib/ws';
 import { useProfile, useSettings, hasCap } from '@/lib/queries';
 import { useUi } from '@/lib/store';
 import { showToast } from '@/lib/toast';
@@ -32,6 +33,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { OverflowMenu, OverflowItem, OverflowSep } from '@/components/ui/overflow-menu';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { MetricBar, metricTextClass } from '@/components/ui/metric-bar';
+import { ActionRunDialog, type OutputLine, type RunStatus } from '@/components/ui/action-run-dialog';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 
@@ -171,12 +173,56 @@ export function ServerDetailPage() {
   const [confirmReboot, setConfirmReboot] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmDeleteTask, setConfirmDeleteTask] = useState<CustomTask | null>(null);
-  const [actionOutput, setActionOutput] = useState<{ title: string; lines: { text: string; cls?: string }[] } | null>(null);
+  const [actionRun, setActionRun] = useState<{ title: string; status: RunStatus; lines: OutputLine[]; historyId?: string } | null>(null);
   const { data: profile } = useProfile();
   const { data: settings } = useSettings();
   const agentEnabled = !!(settings as Record<string, unknown>)?.agentEnabled;
   const timeFormat = useUi((s) => s.timeFormat);
   const hour12 = timeFormat === '12h';
+
+  // ── Action run helpers ───────────────────────────────────────
+  const startActionRun = useCallback((title: string, historyId?: string) => {
+    setActionRun({ title, status: 'running', lines: [], historyId });
+  }, []);
+
+  // WS listener for action output/completion
+  useEffect(() => {
+    const unsub = ws.subscribe((raw) => {
+      const data = raw as Record<string, unknown>;
+      setActionRun(prev => {
+        if (!prev || prev.status !== 'running') return prev;
+        if (prev.historyId && data.historyId !== prev.historyId) return prev;
+
+        if (data.type === 'update_output') {
+          const text = String(data.data ?? '');
+          const lines = text.split('\n').filter(l => l !== '');
+          return {
+            ...prev,
+            lines: [...prev.lines, ...lines.map(l => ({ text: l, cls: data.stream === 'stderr' ? 'text-amber-400' : undefined }))],
+          };
+        }
+        if (data.type === 'update_complete') {
+          const success = !!data.success;
+          return { ...prev, status: success ? 'success' : 'failed' };
+        }
+        if (data.type === 'update_error') {
+          return { ...prev, status: 'failed', lines: [...prev.lines, { text: String(data.error ?? 'Unknown error'), cls: 'text-red-400' }] };
+        }
+        return prev;
+      });
+    });
+    return unsub;
+  }, []);
+
+  // Refresh relevant queries when an action run finishes
+  useEffect(() => {
+    if (!actionRun || actionRun.status === 'running') return;
+    void qc.invalidateQueries({ queryKey: ['server', id] });
+    void qc.invalidateQueries({ queryKey: ['server', id, 'docker'] });
+    void qc.invalidateQueries({ queryKey: ['server', id, 'history'] });
+    void qc.invalidateQueries({ queryKey: ['server', id, 'updates'] });
+    void qc.invalidateQueries({ queryKey: ['server', id, 'customTasks'] });
+  }, [actionRun?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Data queries ────────────────────────────────────────────
   const { data: rawServer, isLoading } = useQuery({
@@ -269,11 +315,14 @@ export function ServerDetailPage() {
 
   // ── Mutations ───────────────────────────────────────────────
   const runUpdateMut = useMutation({
-    mutationFn: () => api.runUpdate(id),
-    onMutate: () => setActionOutput({ title: `${t('det.updates')} · ${server?.name || ''}`, lines: [{ text: t('det.updateStarted'), cls: 'text-green-500' }] }),
-    onSuccess: () => { showToast(t('det.updateStarted'), 'success'); void qc.invalidateQueries({ queryKey: ['server', id] }); },
+    mutationFn: () => api.runUpdate(id) as unknown as Promise<{ historyId: string }>,
+    onMutate: () => startActionRun(`${t('det.updates')} · ${server?.name || ''}`),
+    onSuccess: (data) => {
+      setActionRun(prev => prev ? { ...prev, historyId: data.historyId } : prev);
+      void qc.invalidateQueries({ queryKey: ['server', id] });
+    },
     onError: (e: Error) => {
-      setActionOutput(prev => prev ? { ...prev, lines: [...prev.lines, { text: t('common.errorPrefix', { msg: e.message }), cls: 'text-red-400' }] } : prev);
+      setActionRun(prev => prev ? { ...prev, status: 'failed', lines: [...prev.lines, { text: t('common.errorPrefix', { msg: e.message }), cls: 'text-red-400' }] } : prev);
       showToast(t('common.errorPrefix', { msg: e.message }), 'error');
     },
   });
@@ -302,11 +351,13 @@ export function ServerDetailPage() {
     onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
   });
   const restartContainerMut = useMutation({
-    mutationFn: (name: string) => api.restartContainer(id, name),
-    onMutate: (name) => setActionOutput({ title: `${t('det.output')} · ${name}`, lines: [{ text: t('det.containerRestarted'), cls: 'text-green-500' }] }),
-    onSuccess: () => { showToast(t('det.containerRestarted'), 'success'); setTimeout(() => qc.invalidateQueries({ queryKey: ['server', id, 'docker'] }), 3000); },
+    mutationFn: (name: string) => api.restartContainer(id, name) as unknown as Promise<{ historyId: string }>,
+    onMutate: (name) => startActionRun(`${t('det.output')} · ${name}`),
+    onSuccess: (data) => {
+      setActionRun(prev => prev ? { ...prev, historyId: data.historyId } : prev);
+    },
     onError: (e: Error) => {
-      setActionOutput(prev => prev ? { ...prev, lines: [...prev.lines, { text: t('common.errorPrefix', { msg: e.message }), cls: 'text-red-400' }] } : prev);
+      setActionRun(prev => prev ? { ...prev, status: 'failed', lines: [...prev.lines, { text: t('common.errorPrefix', { msg: e.message }), cls: 'text-red-400' }] } : prev);
       showToast(t('common.errorPrefix', { msg: e.message }), 'error');
     },
   });
@@ -367,14 +418,16 @@ export function ServerDetailPage() {
   });
 
   const runTaskMut = useMutation({
-    mutationFn: (taskId: string) => api.runCustomUpdateTask(id, taskId),
+    mutationFn: (taskId: string) => api.runCustomUpdateTask(id, taskId) as unknown as Promise<{ historyId: string }>,
     onMutate: (taskId) => {
       const task = (customTasks ?? []).find(t2 => t2.id === taskId);
-      setActionOutput({ title: `${t('det.output')} · ${task?.name || t('det.customUpdates')}`, lines: [{ text: t('det.runUpdateStarted', { name: task?.name || '' }), cls: 'text-green-500' }] });
+      startActionRun(`${t('det.output')} · ${task?.name || t('det.customUpdates')}`);
     },
-    onSuccess: () => showToast(t('det.runUpdateStarted', { name: '' }), 'success'),
+    onSuccess: (data) => {
+      setActionRun(prev => prev ? { ...prev, historyId: data.historyId } : prev);
+    },
     onError: (e: Error) => {
-      setActionOutput(prev => prev ? { ...prev, lines: [...prev.lines, { text: t('common.errorPrefix', { msg: e.message }), cls: 'text-red-400' }] } : prev);
+      setActionRun(prev => prev ? { ...prev, status: 'failed', lines: [...prev.lines, { text: t('common.errorPrefix', { msg: e.message }), cls: 'text-red-400' }] } : prev);
       showToast(t('common.errorPrefix', { msg: e.message }), 'error');
     },
   });
@@ -393,14 +446,13 @@ export function ServerDetailPage() {
 
   // ── Compose actions ─────────────────────────────────────────
   const composeActionMut = useMutation({
-    mutationFn: ({ dir, action }: { dir: string; action: string }) => api.composeAction(id, dir, action),
-    onMutate: ({ dir, action }) => setActionOutput({ title: `${t('det.output')} · docker compose ${action}`, lines: [{ text: dir, cls: 'text-muted-foreground' }, { text: t('det.composeActionDone', { action }), cls: 'text-green-500' }] }),
-    onSuccess: (_, { action }) => {
-      showToast(t('det.composeActionDone', { action }), 'success');
-      setTimeout(() => qc.invalidateQueries({ queryKey: ['server', id, 'docker'] }), 3000);
+    mutationFn: ({ dir, action }: { dir: string; action: string }) => api.composeAction(id, dir, action) as unknown as Promise<{ historyId: string }>,
+    onMutate: ({ action }) => startActionRun(`docker compose ${action} · ${server?.name || ''}`),
+    onSuccess: (data) => {
+      setActionRun(prev => prev ? { ...prev, historyId: data.historyId } : prev);
     },
     onError: (e: Error) => {
-      setActionOutput(prev => prev ? { ...prev, lines: [...prev.lines, { text: t('common.errorPrefix', { msg: e.message }), cls: 'text-red-400' }] } : prev);
+      setActionRun(prev => prev ? { ...prev, status: 'failed', lines: [...prev.lines, { text: t('common.errorPrefix', { msg: e.message }), cls: 'text-red-400' }] } : prev);
       showToast(t('common.errorPrefix', { msg: e.message }), 'error');
     },
   });
@@ -1236,19 +1288,13 @@ export function ServerDetailPage() {
       {terminalOpen && (
         <SshTerminal server={server} onClose={() => setTerminalOpen(false)} />
       )}
-      <Dialog open={!!actionOutput} onOpenChange={(open) => { if (!open) setActionOutput(null); }}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader><DialogTitle>{actionOutput?.title || t('det.output')}</DialogTitle></DialogHeader>
-          <div className="rounded-md border bg-muted/30">
-            <div className="max-h-96 overflow-y-auto p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
-              {(actionOutput?.lines ?? []).map((line, i) => <div key={i} className={line.cls}>{line.text}</div>)}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setActionOutput(null)}>{t('common.close')}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ActionRunDialog
+        open={!!actionRun}
+        title={actionRun?.title || t('det.output')}
+        status={actionRun?.status || 'running'}
+        lines={actionRun?.lines || []}
+        onClose={() => setActionRun(null)}
+      />
       <ConfirmDialog
         open={!!confirmDeleteTask}
         onOpenChange={(open) => { if (!open) setConfirmDeleteTask(null); }}

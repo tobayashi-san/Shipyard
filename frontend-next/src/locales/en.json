@@ -330,7 +330,9 @@
     "statusAttention": "Attention",
     "statusHealthy": "Healthy",
     "statusIdle": "Idle",
-    "agentUrlPlaceholder": "https://shipyard.example.com"
+    "agentUrlPlaceholder": "https://shipyard.example.com",
+    "actionSuccess": "Completed successfully.",
+    "actionFailed": "Action failed."
   },
   "ob": {
     "welcome": "Welcome!",
