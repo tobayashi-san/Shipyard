@@ -164,6 +164,10 @@ export function PluginHostPage() {
   const pluginInfo = plugins?.find(p => p.id === id);
 
   useEffect(() => {
+    ws.connect();
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     setError(null);
     setLoading(true);

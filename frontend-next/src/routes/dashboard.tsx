@@ -105,7 +105,7 @@ export function DashboardPage() {
   const timeFormat = useUi((s) => s.timeFormat);
   const hour12 = timeFormat === '12h';
   useEffect(() => { sessionStorage.setItem('shipyard.lastNonDetailRoute', '/'); }, []);
-  const { data, isLoading, isError, error, refetch } = useQuery<DashboardData>({
+  const { data, isLoading, isFetching, isError, error, refetch } = useQuery<DashboardData>({
     queryKey: ['dashboard'],
     queryFn: () => api.getDashboard() as unknown as Promise<DashboardData>,
     refetchInterval: 30_000,
@@ -132,11 +132,11 @@ export function DashboardPage() {
       if ((s.ram_pct ?? 0) >= 90)
         out.push({ level: 'warning', icon: <MemoryStick className="h-3.5 w-3.5" />, text: t('dash.alertRam', { name: s.name, pct: s.ram_pct }), serverId: s.id });
       if ((s.updates_count ?? 0) > 0)
-        out.push({ level: 'info', icon: <ArrowUp className="h-3.5 w-3.5" />, text: `${s.name} — ${t('dash.alertUpdates', { count: s.updates_count })}`, serverId: s.id });
+        out.push({ level: 'info', icon: <ArrowUp className="h-3.5 w-3.5" />, text: t('dash.alertUpdates', { name: s.name, count: s.updates_count }), serverId: s.id });
       if ((s.image_updates_count ?? 0) > 0)
-        out.push({ level: 'info', icon: <Box className="h-3.5 w-3.5" />, text: `${s.name} — ${t('dash.alertImageUpdates', { count: s.image_updates_count })}`, serverId: s.id });
+        out.push({ level: 'info', icon: <Box className="h-3.5 w-3.5" />, text: t('dash.alertImageUpdates', { name: s.name, count: s.image_updates_count }), serverId: s.id });
       if ((s.custom_updates_count ?? 0) > 0)
-        out.push({ level: 'info', icon: <Cog className="h-3.5 w-3.5" />, text: `${s.name} — ${t('dash.alertCustomUpdates', { count: s.custom_updates_count })}`, serverId: s.id });
+        out.push({ level: 'info', icon: <Cog className="h-3.5 w-3.5" />, text: t('dash.alertCustomUpdates', { name: s.name, count: s.custom_updates_count }), serverId: s.id });
     });
     return out;
   }, [servers, t]);
@@ -150,8 +150,8 @@ export function DashboardPage() {
         title={t('dash.title')}
         description={isLoading ? t('dash.loading') : t('dash.updatedAt', { time: formatCurrentTime(hour12) })}
         actions={
-          <Button variant="secondary" size="sm" onClick={() => refetch()}>
-            <RefreshCw className="h-4 w-4" /> {t('common.refresh')}
+          <Button variant="secondary" size="sm" onClick={() => refetch()} disabled={isFetching}>
+            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} /> {t('common.refresh')}
           </Button>
         }
       />

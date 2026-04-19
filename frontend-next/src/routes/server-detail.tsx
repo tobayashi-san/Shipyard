@@ -187,6 +187,7 @@ export function ServerDetailPage() {
 
   // WS listener for action output/completion
   useEffect(() => {
+    ws.connect();
     const unsub = ws.subscribe((raw) => {
       const data = raw as Record<string, unknown>;
       setActionRun(prev => {
@@ -727,8 +728,8 @@ export function ServerDetailPage() {
           {/* Stat cards */}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard icon={<HeartPulse className="h-5 w-5" />} label={t('det.health')}
-              value={server.status === 'offline' ? t('common.offline') : info?._cached ? t('det.statusCached') : (info?.updates_count ?? 0) > 0 ? t('det.statusAttention') : t('det.statusHealthy')}
-              variant={server.status === 'offline' ? 'error' : info?._cached || (info?.updates_count ?? 0) > 0 ? 'warning' : 'ok'} />
+              value={server.status === 'offline' ? t('common.offline') : (info?.updates_count ?? 0) > 0 ? t('det.statusAttention') : info ? t('det.statusHealthy') : t('det.statusCached')}
+              variant={server.status === 'offline' ? 'error' : (info?.updates_count ?? 0) > 0 ? 'warning' : info ? 'ok' : 'warning'} />
             <StatCard icon={<Box className="h-5 w-5" />} label={t('det.tabUpdates')}
               value={server.status === 'offline' ? '—' : String(updatesList.length)} variant={server.status === 'offline' ? 'muted' : updatesList.length > 0 ? 'warning' : 'ok'} />
             <StatCard icon={<Satellite className="h-5 w-5" />} label={t('det.latency')} value={server.status === 'offline' ? '—' : latencyMs !== null ? `${latencyMs} ms` : '—'} variant={server.status === 'offline' ? 'muted' : latencyMs !== null ? (latencyMs > 500 ? 'warning' : 'ok') : 'muted'} />
