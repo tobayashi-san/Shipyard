@@ -1,5 +1,6 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator } = require('express-rate-limit');
 const router = express.Router();
 const ansibleRunner = require('../services/ansible-runner');
 const fs = require('fs');
@@ -17,7 +18,7 @@ const writeLimiter = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.user?.id || req.ip,
+  keyGenerator: (req) => req.user?.id ? `u:${req.user.id}` : ipKeyGenerator(req.ip),
   message: { error: 'Too many playbook write/delete requests (max 30/min).' },
 });
 

@@ -1,5 +1,6 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator } = require('express-rate-limit');
 const db = require('../db');
 const ansibleRunner = require('../services/ansible-runner');
 const gitSync = require('../services/git-sync');
@@ -17,7 +18,7 @@ function createAnsibleRouter({ broadcast } = {}) {
     max: 20,
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => req.user?.id || req.ip,
+    keyGenerator: (req) => req.user?.id ? `u:${req.user.id}` : ipKeyGenerator(req.ip),
     message: { error: 'Too many playbook runs, please slow down (max 20/min).' },
   });
 
