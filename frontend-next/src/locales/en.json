@@ -319,7 +319,7 @@
     "hostname": "Hostname",
     "sshPort": "SSH Port",
     "sshUser": "SSH User",
-    "latency": "Latency",
+    "latency": "API Latency",
     "output": "Output",
     "logs": "Logs",
     "standalone": "Standalone",

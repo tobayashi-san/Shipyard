@@ -314,7 +314,7 @@
     "hostname": "Hostname",
     "sshPort": "SSH-Port",
     "sshUser": "SSH-Benutzer",
-    "latency": "Latenz",
+    "latency": "API-Latenz",
     "output": "Ausgabe",
     "logs": "Logs",
     "standalone": "Standalone",

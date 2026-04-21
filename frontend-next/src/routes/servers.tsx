@@ -184,29 +184,35 @@ function MetricBar({ pct }: { pct: number | null }) {
 }
 
 // ─── useServerInfo hook ───────────────────────────────────────
+const BATCH_SIZE = 5;
+const BATCH_DELAY_MS = 150;
+
 function useServerInfoMap(serverIds: string[]) {
   const [infoMap, setInfoMap] = useState<Record<string, ServerInfo>>({});
 
-  const loadInfos = useCallback((ids: string[], force = false) => {
-    if (ids.length === 0) return;
-    ids.forEach(id => {
-      api.getServerInfo(id, force).then(info => {
-        if (!info) return;
-        setInfoMap(prev => ({ ...prev, [id]: info as unknown as ServerInfo }));
-      }).catch(() => { /* ignore */ });
+  const loadBatch = useCallback((ids: string[], force = false, signal?: AbortSignal) => {
+    ids.forEach((id, i) => {
+      const delay = Math.floor(i / BATCH_SIZE) * BATCH_DELAY_MS;
+      setTimeout(() => {
+        if (signal?.aborted) return;
+        api.getServerInfo(id, force).then(info => {
+          if (signal?.aborted || !info) return;
+          setInfoMap(prev => ({ ...prev, [id]: info as unknown as ServerInfo }));
+        }).catch(() => { /* ignore */ });
+      }, delay);
     });
   }, []);
 
+  const loadInfos = useCallback((ids: string[], force = false) => {
+    if (ids.length === 0) return;
+    loadBatch(ids, force);
+  }, [loadBatch]);
+
   useEffect(() => {
     if (serverIds.length === 0) return;
-    let cancelled = false;
-    serverIds.forEach(id => {
-      api.getServerInfo(id).then(info => {
-        if (cancelled || !info) return;
-        setInfoMap(prev => ({ ...prev, [id]: info as unknown as ServerInfo }));
-      }).catch(() => { /* ignore */ });
-    });
-    return () => { cancelled = true; };
+    const controller = new AbortController();
+    loadBatch(serverIds, false, controller.signal);
+    return () => { controller.abort(); };
   }, [serverIds.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return { infoMap, loadInfos };

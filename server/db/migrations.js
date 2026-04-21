@@ -11,6 +11,7 @@ function applyMigrations(db) {
   // Trust-on-first-use SSH host key fingerprint, sha256 base64 of server-presented host key.
   try { db.exec("ALTER TABLE servers ADD COLUMN host_fingerprint TEXT DEFAULT ''"); } catch {}
   try { db.exec('ALTER TABLE servers ADD COLUMN docker_enabled INTEGER DEFAULT 0'); } catch {}
+  try { db.exec("ALTER TABLE update_history ADD COLUMN triggered_by TEXT"); } catch {}
 }
 
 module.exports = { applyMigrations };

@@ -95,7 +95,7 @@ const infoQueries = {
 // Update History
 const historyQueries = {
   getByServer: db.prepare('SELECT * FROM update_history WHERE server_id = ? ORDER BY started_at DESC LIMIT 20'),
-  insert: db.prepare('INSERT INTO update_history (id, server_id, action, status) VALUES (?, ?, ?, ?)'),
+  insert: db.prepare('INSERT INTO update_history (id, server_id, action, status, triggered_by) VALUES (?, ?, ?, ?, ?)'),
   updateStatus: db.prepare(`UPDATE update_history SET status = ?, output = ?, completed_at = datetime('now') WHERE id = ?`),
 };
 
@@ -262,10 +262,10 @@ module.exports = {
   },
   updateHistory: {
     getByServer: (serverId) => historyQueries.getByServer.all(serverId),
-    create: (serverId, action) => {
+    create: (serverId, action, triggeredBy = null) => {
       const id = uuidv4();
       try {
-        historyQueries.insert.run(id, serverId, action, 'pending');
+        historyQueries.insert.run(id, serverId, action, 'pending', triggeredBy);
       } catch (e) {
         if (e.code !== 'SQLITE_CONSTRAINT_FOREIGNKEY') {
           throw e;

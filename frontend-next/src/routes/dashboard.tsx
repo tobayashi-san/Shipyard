@@ -67,7 +67,7 @@ interface DashboardData {
 function needsAttention(s: ServerInfo) {
   return s.status === 'offline' || s.reboot_required ||
     (s.updates_count ?? 0) > 0 || (s.image_updates_count ?? 0) > 0 ||
-    (s.custom_updates_count ?? 0) > 0 || (s.disk_pct ?? 0) >= 85 || (s.ram_pct ?? 0) >= 90;
+    (s.custom_updates_count ?? 0) > 0 || (s.disk_pct ?? 0) > 85 || (s.ram_pct ?? 0) > 85;
 }
 
 function formatUptime(seconds?: number | null) {

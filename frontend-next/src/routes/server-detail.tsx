@@ -174,6 +174,8 @@ export function ServerDetailPage() {
   const [confirmReboot, setConfirmReboot] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmDeleteTask, setConfirmDeleteTask] = useState<CustomTask | null>(null);
+  const [confirmAgentInstall, setConfirmAgentInstall] = useState(false);
+  const [confirmAgentRemove, setConfirmAgentRemove] = useState(false);
   const [actionRun, setActionRun] = useState<{ title: string; status: RunStatus; lines: OutputLine[]; historyId?: string } | null>(null);
   const { data: profile } = useProfile();
   const { data: settings } = useSettings();
@@ -468,7 +470,7 @@ export function ServerDetailPage() {
     onSuccess: () => {
       showToast(t('det.stackRemoved'), 'success');
       setConfirmDeleteStack(null);
-      void qc.invalidateQueries({ queryKey: ['serverInfo', id] });
+      void qc.invalidateQueries({ queryKey: ['server', id, 'docker'] });
     },
     onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
   });
@@ -714,6 +716,25 @@ export function ServerDetailPage() {
               variant="destructive"
               onConfirm={() => deleteServerMut.mutate()}
               isPending={deleteServerMut.isPending}
+            />
+            <ConfirmDialog
+              open={confirmAgentInstall}
+              onOpenChange={setConfirmAgentInstall}
+              title={t('det.agentInstall')}
+              description={t('det.agentInstallConfirm')}
+              confirmLabel={t('det.agentInstall')}
+              onConfirm={() => agentInstallMut.mutate()}
+              isPending={agentInstallMut.isPending}
+            />
+            <ConfirmDialog
+              open={confirmAgentRemove}
+              onOpenChange={setConfirmAgentRemove}
+              title={t('det.agentRemove')}
+              description={t('det.agentRemoveConfirm')}
+              confirmLabel={t('det.agentRemove')}
+              variant="destructive"
+              onConfirm={() => agentRemoveMut.mutate()}
+              isPending={agentRemoveMut.isPending}
             />
           </>
         }
@@ -1184,7 +1205,7 @@ export function ServerDetailPage() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {!agentStatus?.installed ? (
-                    <Button size="sm" onClick={() => { if (confirm(t('det.agentInstallConfirm'))) agentInstallMut.mutate(); }} disabled={agentBusy}>
+                    <Button size="sm" onClick={() => setConfirmAgentInstall(true)} disabled={agentBusy}>
                       <Download className="h-3.5 w-3.5 mr-1" /> {t('det.agentInstall')}
                     </Button>
                   ) : (
@@ -1192,7 +1213,7 @@ export function ServerDetailPage() {
                       <Button size="sm" variant="secondary" onClick={() => agentUpdateMut.mutate()} disabled={agentBusy}><RotateCw className="h-3.5 w-3.5 mr-1" />{t('det.agentUpdate')}</Button>
                       <Button size="sm" variant="secondary" onClick={() => agentConfigMut.mutate()} disabled={agentBusy}><Sliders className="h-3.5 w-3.5 mr-1" />{t('det.agentConfigure')}</Button>
                       <Button size="sm" variant="secondary" onClick={() => agentRotateMut.mutate()} disabled={agentBusy}><Key className="h-3.5 w-3.5 mr-1" />{t('det.agentRotateToken')}</Button>
-                      <Button size="sm" variant="destructive" onClick={() => { if (confirm(t('det.agentRemoveConfirm'))) agentRemoveMut.mutate(); }} disabled={agentBusy}><Trash2 className="h-3.5 w-3.5 mr-1" />{t('det.agentRemove')}</Button>
+                      <Button size="sm" variant="destructive" onClick={() => setConfirmAgentRemove(true)} disabled={agentBusy}><Trash2 className="h-3.5 w-3.5 mr-1" />{t('det.agentRemove')}</Button>
                     </>
                   )}
                 </div>

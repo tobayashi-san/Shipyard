@@ -108,7 +108,10 @@ router.get('/', (req, res) => {
       if (allowedServerNames.has(h.server_id)) return true;
       if (!isServerRestricted) return true;
       return false;
-    }).slice(0, 8);
+    }).map(h => ({
+      ...h,
+      server_name: h.server_name || (h.server_id === 'bulk_update' ? 'Bulk Update' : h.server_id),
+    })).slice(0, 8);
 
     res.json({
       summary: { total: servers.length, online, offline, unknown: servers.length - online - offline, rebootRequired, totalUpdates, criticalDisk, criticalRam },

@@ -8,6 +8,7 @@ const { notify } = require('../services/notifier');
 const { createComposeTempFile, buildComposeWriteOperations } = require('../utils/compose-write');
 const { getPermissions, can, guardServerAccess } = require('../utils/permissions');
 const { serverError } = require('../utils/http-error');
+const log = require('../utils/logger');
 
 function createServerActionsRouter({ broadcast } = {}) {
   const router = express.Router();
@@ -60,7 +61,7 @@ function createServerActionsRouter({ broadcast } = {}) {
     const serverId = req.params.id;
     const server = req.server;
 
-    const historyId = db.updateHistory.create(serverId, 'system_update');
+    const historyId = db.updateHistory.create(serverId, 'system_update', req.user?.username || null);
 
     res.json({ historyId, status: 'started' });
 
@@ -91,7 +92,7 @@ function createServerActionsRouter({ broadcast } = {}) {
     if (!can(getPermissions(req.user), 'canRunUpdates')) return res.status(403).json({ error: 'Permission denied' });
     next();
   }, async (req, res) => {
-    const historyId = db.updateHistory.create('bulk_update', 'system_update_all');
+    const historyId = db.updateHistory.create('bulk_update', 'system_update_all', req.user?.username || null);
     res.json({ historyId, status: 'started' });
 
     try {
@@ -123,7 +124,7 @@ function createServerActionsRouter({ broadcast } = {}) {
     const serverId = req.params.id;
     const server = req.server;
 
-    const historyId = db.updateHistory.create(serverId, 'reboot');
+    const historyId = db.updateHistory.create(serverId, 'reboot', req.user?.username || null);
     res.json({ historyId, status: 'started' });
 
     try {
@@ -162,7 +163,7 @@ function createServerActionsRouter({ broadcast } = {}) {
     if (!/^[a-zA-Z0-9_.-]+$/.test(container) || container.startsWith('-')) return res.status(400).json({ error: 'Invalid container name' });
     const server = req.server;
 
-    const historyId = db.updateHistory.create(serverId, `restart_docker_${container}`);
+    const historyId = db.updateHistory.create(serverId, `restart_docker_${container}`, req.user?.username || null);
     res.json({ historyId, status: 'started' });
 
     try {
@@ -197,7 +198,7 @@ function createServerActionsRouter({ broadcast } = {}) {
       return res.status(400).json({ error: 'No update command configured for this task' });
     }
 
-    const historyId = db.updateHistory.create(server.id, `custom_update:${task.name}`);
+    const historyId = db.updateHistory.create(server.id, `custom_update:${task.name}`, req.user?.username || null);
     res.json({ historyId, status: 'started' });
 
     emit({ type: 'update_output', serverId: server.id, historyId, stream: 'stdout', data: `Running: ${task.name}\n` });
@@ -287,7 +288,7 @@ function createServerActionsRouter({ broadcast } = {}) {
     if (!/^[a-zA-Z0-9/_.-]+$/.test(remotePath) || remotePath.includes('..')) return res.status(400).json({ error: 'Invalid path format' });
     if (isBlockedRemotePath(remotePath)) return res.status(400).json({ error: 'Path not allowed: system directories are protected' });
 
-    const historyId = db.updateHistory.create(serverId, `compose_${action}_${remotePath.split('/').pop()}`);
+    const historyId = db.updateHistory.create(serverId, `compose_${action}_${remotePath.split('/').pop()}`, req.user?.username || null);
     res.json({ historyId, status: 'started' });
 
     try {
@@ -318,13 +319,23 @@ function createServerActionsRouter({ broadcast } = {}) {
     }
   });
 
-  router.delete('/:id/docker/compose/stack', guardServerAccess, (req, res) => {
+  router.delete('/:id/docker/compose/stack', guardServerAccess, async (req, res) => {
     if (!can(getPermissions(req.user), 'canManageDockerCompose')) return res.status(403).json({ error: 'Permission denied' });
     const { id: serverId } = req.params;
     const { path: remotePath } = req.query;
     if (!remotePath || typeof remotePath !== 'string') return res.status(400).json({ error: 'path query param required' });
     try {
       const projectName = remotePath.split('/').filter(Boolean).pop() || remotePath;
+
+      // Best-effort: stop containers before removing from DB.
+      // Errors are logged but do not block deletion so the UI stays consistent.
+      try {
+        const downCmd = `cd ${remotePath} && docker compose down 2>&1 || true`;
+        await sshManager.execCommand(req.server, downCmd);
+      } catch (sshErr) {
+        log.warn({ err: sshErr }, 'compose down failed during stack delete – continuing');
+      }
+
       db.composeProjects.delete(serverId, projectName);
       db.auditLog.write('compose.delete', `server=${req.server.name} path=${remotePath}`, req.ip, true, req.user?.username);
       res.json({ status: 'deleted' });

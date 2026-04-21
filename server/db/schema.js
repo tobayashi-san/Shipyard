@@ -49,6 +49,7 @@ function applySchema(db) {
       output TEXT,
       started_at TEXT DEFAULT (datetime('now')),
       completed_at TEXT,
+      triggered_by TEXT,
       FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
     );
 

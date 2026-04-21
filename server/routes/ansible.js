@@ -47,7 +47,7 @@ function createAnsibleRouter({ broadcast } = {}) {
       return res.status(400).json({ error: 'extraVars too large (max 4KB)' });
     }
 
-    const historyId = db.updateHistory.create(normalizedTargets, `ansible:${playbook}`);
+    const historyId = db.updateHistory.create(normalizedTargets, `ansible:${playbook}`, req.user?.username || null);
     const resolvedTargets = resolveTargets(normalizedTargets, db.servers.getAll());
     const schedHistId = db.scheduleHistory.create(null, 'Quick Run', playbook, resolvedTargets);
 
