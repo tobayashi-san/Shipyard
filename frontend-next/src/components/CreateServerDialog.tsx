@@ -397,7 +397,7 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
                   role="switch"
                   aria-checked={dockerEnabled}
                   onClick={() => setDockerEnabled(v => !v)}
-                  className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${dockerEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+                  className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${dockerEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
                 >
                   <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${dockerEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
                 </button>

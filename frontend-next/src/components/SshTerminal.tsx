@@ -34,6 +34,7 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
   useEffect(() => {
     let disposed = false;
     let resizeObs: ResizeObserver | null = null;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
 
     (async () => {
       const [{ Terminal }, { FitAddon }] = await Promise.all([
@@ -101,7 +102,7 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
               if (msg.type === 'ready') {
                 ready = true;
                 const userLabel = (server.ssh_user as string) || 'root';
-                setStatus('online', `Connected as ${userLabel}`);
+                setStatus('online', t('term.connectedAs', { user: userLabel }));
               } else if (msg.type === 'error') {
                 setStatus('offline', t('term.error'));
                 term.write(`\r\n\x1b[31m${t('term.error')}: ${msg.message}\x1b[0m\r\n`);
@@ -153,6 +154,10 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
       resizeObs?.disconnect();
       wsRef.current?.close();
       termRef.current?.dispose();
+      // Restore focus to whichever element opened the terminal
+      if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+        try { previouslyFocused.focus(); } catch { /* ignore */ }
+      }
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -167,6 +172,9 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('term.dialogLabel', { name: serverName || hostname || 'server' })}
         className="flex h-[75vh] w-[90vw] max-w-[1100px] flex-col overflow-hidden rounded-xl border border-[#30363d] bg-[#0d1117] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
@@ -183,12 +191,14 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
               {userLabel}@{hostname} &middot; {ip}
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <span ref={dotRef} className="inline-block h-2 w-2 animate-pulse rounded-full bg-yellow-500" />
+          <div className="flex items-center gap-3" aria-live="polite">
+            <span ref={dotRef} aria-hidden="true" className="inline-block h-2 w-2 animate-pulse rounded-full bg-yellow-500" />
             <span ref={statusRef} className="text-xs text-[#8b949e]">{t('term.connecting')}</span>
             <button
+              type="button"
               onClick={onClose}
-              className="rounded p-1 text-[#8b949e] hover:bg-[#21262d] hover:text-[#c9d1d9]"
+              aria-label={t('common.close')}
+              className="rounded p-1 text-[#8b949e] hover:bg-[#21262d] hover:text-[#c9d1d9] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               title={`${t('common.close')} (Esc)`}
             >
               <X className="h-4 w-4" />

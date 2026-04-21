@@ -8,6 +8,8 @@ import {
   HardDrive, Cpu, MemoryStick,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { showToast } from '@/lib/toast';
+import { actionLabel, statusLabel } from '@/lib/history-labels';
 import { useUi } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -120,12 +122,20 @@ export function DashboardPage() {
         .filter(s => s.status === 'online')
         .map(s => s.id);
       // Force-refresh system info for all online servers in parallel
-      await Promise.allSettled(onlineIds.map(id => api.getServerInfo(id, true)));
+      const results = await Promise.allSettled(onlineIds.map(id => api.getServerInfo(id, true)));
+      const failed = results.filter(r => r.status === 'rejected').length;
+      if (failed > 0) {
+        if (failed === onlineIds.length) {
+          showToast(t('dash.refreshFailed', { n: failed }), 'error');
+        } else {
+          showToast(t('dash.refreshPartial', { failed, total: onlineIds.length }), 'warning');
+        }
+      }
     } finally {
       await refetch();
       setRefreshing(false);
     }
-  }, [data?.servers, refetch]);
+  }, [data?.servers, refetch, t]);
 
   const isBusy = isFetching || refreshing;
 
@@ -317,11 +327,11 @@ export function DashboardPage() {
                     <div className="min-w-0 flex-1">
                       <div className="font-medium">{h.server_name || '–'}</div>
                       <div className="text-xs text-muted-foreground">
-                        {h.action} · {formatRelativeTime(h.started_at, t)}
+                        {actionLabel(t, h.action)} · {formatRelativeTime(h.started_at, t)}
                       </div>
                     </div>
                     <StatusBadge tone={h.status === 'success' ? 'success' : h.status === 'failed' ? 'danger' : 'muted'}>
-                      {h.status}
+                      {statusLabel(t, h.status)}
                     </StatusBadge>
                   </div>
                 ))

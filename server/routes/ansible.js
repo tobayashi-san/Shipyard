@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const db = require('../db');
 const ansibleRunner = require('../services/ansible-runner');
 const gitSync = require('../services/git-sync');
@@ -10,7 +11,17 @@ function createAnsibleRouter({ broadcast } = {}) {
   const router = express.Router();
   const emit = typeof broadcast === 'function' ? broadcast : () => {};
 
-  router.post('/run', async (req, res) => {
+  // Limit ansible-playbook spawns to prevent fork-bomb / runaway scheduling.
+  const runLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => req.user?.id || req.ip,
+    message: { error: 'Too many playbook runs, please slow down (max 20/min).' },
+  });
+
+  router.post('/run', runLimiter, async (req, res) => {
     const perms = getPermissions(req.user);
     if (!can(perms, 'canRunPlaybooks')) return res.status(403).json({ error: 'Permission denied' });
     const { playbook, targets, extraVars } = req.body;

@@ -189,14 +189,20 @@ const BATCH_DELAY_MS = 150;
 
 function useServerInfoMap(serverIds: string[]) {
   const [infoMap, setInfoMap] = useState<Record<string, ServerInfo>>({});
+  // Per-server monotonic sequence so older in-flight responses can't overwrite newer ones.
+  const seqRef = useRef<Record<string, number>>({});
 
   const loadBatch = useCallback((ids: string[], force = false, signal?: AbortSignal) => {
     ids.forEach((id, i) => {
+      const mySeq = (seqRef.current[id] || 0) + 1;
+      seqRef.current[id] = mySeq;
       const delay = Math.floor(i / BATCH_SIZE) * BATCH_DELAY_MS;
       setTimeout(() => {
         if (signal?.aborted) return;
         api.getServerInfo(id, force).then(info => {
           if (signal?.aborted || !info) return;
+          // Drop result if a newer request for this server has been issued.
+          if (seqRef.current[id] !== mySeq) return;
           setInfoMap(prev => ({ ...prev, [id]: info as unknown as ServerInfo }));
         }).catch(() => { /* ignore */ });
       }, delay);
@@ -291,9 +297,10 @@ function GroupDialog({ open, onClose, onSubmit, title, confirmText, groups, edit
 }
 
 // ─── MoveToGroupDropdown ──────────────────────────────────────
-function MoveDropdown({ groups, onSelect, anchorRef }: {
+function MoveDropdown({ groups, onSelect, onClose, anchorRef }: {
   groups: ServerGroup[];
   onSelect: (groupId: string | null) => void;
+  onClose: () => void;
   anchorRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const { t } = useTranslation();
@@ -301,11 +308,14 @@ function MoveDropdown({ groups, onSelect, anchorRef }: {
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onSelect(undefined as unknown as null); // close without action
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
-    setTimeout(() => document.addEventListener('click', handler), 0);
-    return () => document.removeEventListener('click', handler);
-  }, [onSelect]);
+    const timer = setTimeout(() => document.addEventListener('click', handler), 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('click', handler);
+    };
+  }, [onClose]);
 
   return (
     <div ref={ref} className="absolute right-0 top-full mt-1 z-50 w-48 rounded-md border bg-popover p-1 shadow-md">
@@ -536,6 +546,12 @@ export function ServersPage() {
   }, [qc, visibleIds, servers, loadInfos]);
 
   const handleImportFile = useCallback(async (file: File) => {
+    const MAX_BYTES = 2 * 1024 * 1024; // 2 MB
+    const MAX_ROWS = 1000;
+    if (file.size > MAX_BYTES) {
+      showToast(t('srv.fileTooLarge'), 'error');
+      return;
+    }
     const text = await file.text();
     let rows: Record<string, unknown>[] = [];
     try {
@@ -551,6 +567,10 @@ export function ServersPage() {
     }
     if (rows.length === 0) {
       showToast(t('srv.noValidServers'), 'error');
+      return;
+    }
+    if (rows.length > MAX_ROWS) {
+      showToast(t('srv.tooManyRows', { max: MAX_ROWS }), 'error');
       return;
     }
     importMut.mutate(rows);
@@ -686,7 +706,8 @@ export function ServersPage() {
                 </Button>
                 {moveFor === s.id && (
                   <MoveDropdown groups={groups} anchorRef={moveRef}
-                    onSelect={(gid) => { setMoveFor(null); if (gid !== undefined) moveMut.mutate({ serverId: s.id, groupId: gid }); }} />
+                    onClose={() => setMoveFor(null)}
+                    onSelect={(gid) => { setMoveFor(null); moveMut.mutate({ serverId: s.id, groupId: gid }); }} />
                 )}
               </div>
             )}

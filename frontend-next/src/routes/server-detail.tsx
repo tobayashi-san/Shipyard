@@ -15,6 +15,7 @@ import { ws } from '@/lib/ws';
 import { useProfile, useSettings, hasCap } from '@/lib/queries';
 import { useUi } from '@/lib/store';
 import { showToast } from '@/lib/toast';
+import { actionLabel, statusLabel } from '@/lib/history-labels';
 import { SshTerminal } from '@/components/SshTerminal';
 import { CreateServerDialog } from '@/components/CreateServerDialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -176,6 +177,7 @@ export function ServerDetailPage() {
   const [confirmDeleteTask, setConfirmDeleteTask] = useState<CustomTask | null>(null);
   const [confirmAgentInstall, setConfirmAgentInstall] = useState(false);
   const [confirmAgentRemove, setConfirmAgentRemove] = useState(false);
+  const [confirmRestartContainer, setConfirmRestartContainer] = useState<string | null>(null);
   const [actionRun, setActionRun] = useState<{ title: string; status: RunStatus; lines: OutputLine[]; historyId?: string } | null>(null);
   const { data: profile } = useProfile();
   const { data: settings } = useSettings();
@@ -736,6 +738,19 @@ export function ServerDetailPage() {
               onConfirm={() => agentRemoveMut.mutate()}
               isPending={agentRemoveMut.isPending}
             />
+            <ConfirmDialog
+              open={!!confirmRestartContainer}
+              onOpenChange={(open) => { if (!open) setConfirmRestartContainer(null); }}
+              title={t('common.restart')}
+              description={confirmRestartContainer ? t('det.confirmRestartContainer', { name: confirmRestartContainer }) : ''}
+              confirmLabel={t('common.restart')}
+              variant="warning"
+              onConfirm={() => {
+                if (confirmRestartContainer) restartContainerMut.mutate(confirmRestartContainer);
+                setConfirmRestartContainer(null);
+              }}
+              isPending={restartContainerMut.isPending}
+            />
           </>
         }
       />
@@ -1154,12 +1169,12 @@ export function ServerDetailPage() {
                         <tr key={h.id}>
                           <td className="px-3 py-2 font-mono text-xs">
                             {h._type === 'schedule' && <StatusBadge tone="muted" className="mr-1">{t('det.playbookBadge')}</StatusBadge>}
-                            {h.action || h.playbook_name || '—'}
+                            {h.action ? actionLabel(t, h.action) : (h.playbook_name || '—')}
                           </td>
                           <td className="px-3 py-2 text-xs text-muted-foreground">{h.triggered_by || 'system'}</td>
                           <td className="px-3 py-2">
                             <StatusBadge tone={h.status === 'success' ? 'success' : h.status === 'failed' ? 'danger' : 'muted'}>
-                              {h.status || '—'}
+                              {statusLabel(t, h.status)}
                             </StatusBadge>
                           </td>
                           <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{formatDate(h.started_at, hour12)}</td>
@@ -1252,7 +1267,7 @@ export function ServerDetailPage() {
                     onChange={e => { setNotes(e.target.value); autoSaveNotes(e.target.value); }} />
                 ) : (
                   <div className="prose prose-sm dark:prose-invert max-w-none min-h-[200px]">
-                    {notes.trim() ? <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(notes) as string) }} /> : <p className="text-muted-foreground">{t('det.notesEmpty')}</p>}
+                    {notes.trim() ? <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(notes, { async: false }) as string) }} /> : <p className="text-muted-foreground">{t('det.notesEmpty')}</p>}
                   </div>
                 )}
               </CardContent>
@@ -1378,7 +1393,7 @@ export function ServerDetailPage() {
             )}
             {hasCap(profile, 'canRestartDocker') && (
               <Button variant="ghost" size="icon" className="h-6 w-6" title={t('common.restart')}
-                onClick={() => { if (confirm(t('det.confirmRestartContainer', { name: c.container_name }))) restartContainerMut.mutate(c.container_name); }}>
+                onClick={() => setConfirmRestartContainer(c.container_name)}>
                 <RotateCw className="h-3 w-3" />
               </Button>
             )}

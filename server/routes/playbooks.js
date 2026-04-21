@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const ansibleRunner = require('../services/ansible-runner');
 const fs = require('fs');
@@ -10,6 +11,15 @@ const PLAYBOOKS_DIR = path.join(__dirname, '..', 'playbooks');
 const BUNDLED_PLAYBOOKS_DIR = path.join(__dirname, '..', '..', 'bundled-playbooks');
 const MAX_BACKUPS = 5;
 const RESOLVED_PLAYBOOKS_DIR = path.resolve(PLAYBOOKS_DIR);
+
+const writeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.id || req.ip,
+  message: { error: 'Too many playbook write/delete requests (max 30/min).' },
+});
 
 // Validate filename and resolve safe path; returns { filename, filepath } or null
 function resolvePlaybookPath(raw) {
@@ -82,7 +92,7 @@ router.get('/:filename', (req, res, next) => { if (!can(getPermissions(req.user)
 });
 
 // POST /api/playbooks - Create or update a playbook
-router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canEditPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
+router.post('/', writeLimiter, (req, res, next) => { if (!can(getPermissions(req.user), 'canEditPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, async (req, res) => {
   try {
     const { filename, content } = req.body;
     if (!filename || !content) return res.status(400).json({ error: 'filename and content are required' });
@@ -98,9 +108,14 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canEd
     if (content.length > 512 * 1024) return res.status(400).json({ error: 'Playbook too large (max 512 KB)' });
     rotateBak(filepath);
     fs.writeFileSync(filepath, content, 'utf8');
-    res.json({ success: true, filename: finalFilename });
-    // Auto-push to git in background (non-blocking)
-    gitSync.autoPush(`Update ${finalFilename}`).catch(err => log.warn({ err }, 'Auto-push failed'));
+    let pushFailed = false;
+    try {
+      await gitSync.autoPush(`Update ${finalFilename}`);
+    } catch (err) {
+      pushFailed = true;
+      log.warn({ err }, 'Auto-push failed');
+    }
+    res.json({ success: true, filename: finalFilename, pushFailed });
   } catch (error) {
     serverError(res, error, 'playbooks');
   }
@@ -170,7 +185,7 @@ router.post('/:filename/restore/:version', (req, res, next) => { if (!can(getPer
 });
 
 // DELETE /api/playbooks/:filename - Delete a user playbook
-router.delete('/:filename', (req, res, next) => { if (!can(getPermissions(req.user), 'canDeletePlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
+router.delete('/:filename', writeLimiter, (req, res, next) => { if (!can(getPermissions(req.user), 'canDeletePlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, async (req, res) => {
   try {
     const filename = path.basename(req.params.filename);
     const filepath = path.join(PLAYBOOKS_DIR, filename);
@@ -179,8 +194,14 @@ router.delete('/:filename', (req, res, next) => { if (!can(getPermissions(req.us
     }
     if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'Playbook not found' });
     fs.unlinkSync(filepath);
-    res.json({ success: true });
-    gitSync.autoPush(`Delete ${filename}`).catch(err => log.warn({ err }, 'Auto-push failed'));
+    let pushFailed = false;
+    try {
+      await gitSync.autoPush(`Delete ${filename}`);
+    } catch (err) {
+      pushFailed = true;
+      log.warn({ err }, 'Auto-push failed');
+    }
+    res.json({ success: true, pushFailed });
   } catch (error) {
     serverError(res, error, 'playbooks');
   }

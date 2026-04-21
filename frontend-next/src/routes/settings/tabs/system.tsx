@@ -88,7 +88,8 @@ function AnsibleStatus() {
           <Alert variant="warning" className="w-full">
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
-              <span dangerouslySetInnerHTML={{ __html: t('set.ansibleInstallHint') }} />
+              {t('set.ansibleInstallHint')}{' '}
+              <code className="font-mono rounded bg-muted px-1.5 py-0.5 text-xs">{t('set.ansibleInstallCmd')}</code>
             </AlertDescription>
           </Alert>
         </SettingsRow>
