@@ -220,6 +220,19 @@ export function ServerDetailPage() {
     return unsub;
   }, []);
 
+  // Listen for backend docker inventory refreshes (e.g. after compose up/down/pull)
+  // and invalidate the docker query for this server so the UI reflects the new state.
+  useEffect(() => {
+    ws.connect();
+    const unsub = ws.subscribe((raw) => {
+      const data = raw as { type?: string; serverId?: string | number };
+      if (data?.type !== 'docker_refreshed') return;
+      if (String(data.serverId) !== String(id)) return;
+      void qc.invalidateQueries({ queryKey: ['server', id, 'docker'] });
+    });
+    return unsub;
+  }, [id, qc]);
+
   // Refresh relevant queries when an action run finishes
   useEffect(() => {
     if (!actionRun || actionRun.status === 'running') return;

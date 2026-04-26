@@ -2,6 +2,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const db = require('../db');
 const ansibleRunner = require('../services/ansible-runner');
+const { refreshDockerCache } = require('../services/docker-inventory');
 const sshManager = require('../services/ssh-manager');
 const systemInfo = require('../services/system-info');
 const { notify } = require('../services/notifier');
@@ -321,6 +322,19 @@ function createServerActionsRouter({ broadcast } = {}) {
 
       db.updateHistory.updateStatus(historyId, result.success ? 'success' : 'failed', result.stdout + result.stderr);
       emit({ type: 'update_complete', serverId, historyId, success: result.success });
+
+      // After a successful compose action the container inventory has changed
+      // (new containers, stopped ones removed, image tags updated). Trigger a
+      // background docker poll so the UI reflects the new state without a
+      // manual refresh. Fire-and-forget; clients react to docker_refreshed by
+      // invalidating their docker query.
+      if (result.success) {
+        refreshDockerCache(server)
+          .then(ok => {
+            if (ok) emit({ type: 'docker_refreshed', serverId });
+          })
+          .catch(() => { /* logged inside the service */ });
+      }
     } catch (error) {
       db.updateHistory.updateStatus(historyId, 'failed', error.message);
       emit({ type: 'update_error', serverId, historyId, error: error.message });

@@ -6,6 +6,7 @@ const db = require('../db');
 const sshManager = require('../services/ssh-manager');
 const systemInfo = require('../services/system-info');
 const ansibleRunner = require('../services/ansible-runner');
+const { refreshDockerCache } = require('../services/docker-inventory');
 const { parseImageUpdateOutput } = require('../utils/parse-image-updates');
 const { serverError } = require('../utils/http-error');
 const { targetIncludesServer } = require('../utils/validate');
@@ -684,37 +685,7 @@ function buildDockerResponse(serverId) {
   return containers;
 }
 
-async function refreshDockerCache(server) {
-  const result = await ansibleRunner.runPlaybook('gather-docker.yml', server.name);
-  if (!result.success) return;
-  const marker = result.stdout.indexOf('"msg": [');
-  if (marker === -1) return;
-  const arrayStart = result.stdout.indexOf('[', marker);
-  let depth = 0, jsonEnd = -1;
-  for (let i = arrayStart; i < result.stdout.length; i++) {
-    if (result.stdout[i] === '[') depth++;
-    else if (result.stdout[i] === ']') { depth--; if (depth === 0) { jsonEnd = i; break; } }
-  }
-  if (jsonEnd === -1) return;
-  const jsonStr = result.stdout.substring(arrayStart, jsonEnd + 1);
-  try {
-    const containers = JSON.parse(jsonStr).filter(line => typeof line === 'string' && line.trim()).map(line => {
-      const parts = line.split('|');
-      return {
-        name: parts[0] || 'Unknown',
-        image: parts[1] || 'Unknown',
-        state: parts[2] || 'unknown',
-        status: parts[3] || '',
-        createdAt: parts[4] || '',
-        composeProject: parts[5] || null,
-        composeWorkingDir: parts[6] || null,
-      };
-    });
-    db.dockerContainers.syncForServer(server.id, containers);
-  } catch (e) {
-    log.error({ err: e }, 'Failed to parse docker output');
-  }
-}
+// refreshDockerCache moved to ../services/docker-inventory.js
 
 // GET /api/servers/:id/docker - Get docker containers (stale-while-revalidate)
 router.get('/:id/docker', guardServerAccess, guard('canViewDocker'), async (req, res) => {
