@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import {
   Server, CheckCircle2, XCircle, RotateCcw, ArrowUp, AlertTriangle, RefreshCw,
@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { showToast } from '@/lib/toast';
+import { ws } from '@/lib/ws';
 import { actionLabel, statusLabel } from '@/lib/history-labels';
 import { useUi } from '@/lib/store';
 import { Button } from '@/components/ui/button';
@@ -107,11 +108,27 @@ export function DashboardPage() {
   const timeFormat = useUi((s) => s.timeFormat);
   const hour12 = timeFormat === '12h';
   useEffect(() => { sessionStorage.setItem('shipyard.lastNonDetailRoute', '/'); }, []);
+  const qc = useQueryClient();
   const { data, isLoading, isFetching, isError, error, refetch } = useQuery<DashboardData>({
     queryKey: ['dashboard'],
     queryFn: () => api.getDashboard() as unknown as Promise<DashboardData>,
     refetchInterval: 30_000,
   });
+
+  // Backend broadcasts cache_updated whenever the updates cache changes
+  // (scheduler poll, after a system update, after ansible runs). Refetch the
+  // dashboard so updates_count and reboot_required reflect the new state
+  // without waiting for the 30s polling interval or a manual refresh.
+  useEffect(() => {
+    ws.connect();
+    const unsub = ws.subscribe((raw) => {
+      const msg = raw as { type?: string };
+      if (msg?.type === 'cache_updated' || msg?.type === 'docker_refreshed') {
+        void qc.invalidateQueries({ queryKey: ['dashboard'] });
+      }
+    });
+    return unsub;
+  }, [qc]);
 
   const [refreshing, setRefreshing] = useState(false);
 

@@ -15,6 +15,22 @@ function createServerActionsRouter({ broadcast } = {}) {
   const router = express.Router();
   const emit = typeof broadcast === 'function' ? broadcast : () => {};
 
+  /**
+   * Refresh the cached system info for a single server in the background.
+   * After a successful system update we want reboot_required, kernel
+   * version etc. to reflect the new state without waiting for the next
+   * scheduled poll. Fire-and-forget; clients react to cache_updated.
+   */
+  function refreshServerInfo(server) {
+    if (!server) return;
+    systemInfo.getSystemInfo(server)
+      .then(info => {
+        db.serverInfo.upsert(server.id, info);
+        emit({ type: 'cache_updated', scope: 'info' });
+      })
+      .catch(() => { /* server may be offline / rebooting */ });
+  }
+
   const rebootLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 5,
@@ -81,6 +97,8 @@ function createServerActionsRouter({ broadcast } = {}) {
       db.auditLog.write('server.update', `server=${server.name} status=${status}`, req.ip, result.success, req.user?.username);
       db.updatesCache.delete(serverId);
       emit({ type: 'cache_updated', scope: 'updates' });
+      // Refresh system info so reboot_required reflects post-update state.
+      refreshServerInfo(server);
       emit({ type: 'update_complete', serverId, historyId, success: result.success });
     } catch (error) {
       db.updateHistory.updateStatus(historyId, 'failed', error.message);
@@ -116,6 +134,9 @@ function createServerActionsRouter({ broadcast } = {}) {
           try { db.updatesCache.delete(s.id); } catch {}
         }
         emit({ type: 'cache_updated', scope: 'updates' });
+        // Refresh system info for every server so reboot_required reflects
+        // the post-update state. Background, fire-and-forget.
+        for (const s of db.servers.getAll()) refreshServerInfo(s);
       }
       emit({ type: 'bulk_update_complete', historyId, success: result.success });
     } catch (error) {
