@@ -79,6 +79,7 @@ function createServerActionsRouter({ broadcast } = {}) {
       db.updateHistory.updateStatus(historyId, status, result.stdout + result.stderr);
       db.auditLog.write('server.update', `server=${server.name} status=${status}`, req.ip, result.success, req.user?.username);
       db.updatesCache.delete(serverId);
+      emit({ type: 'cache_updated', scope: 'updates' });
       emit({ type: 'update_complete', serverId, historyId, success: result.success });
     } catch (error) {
       db.updateHistory.updateStatus(historyId, 'failed', error.message);
@@ -108,6 +109,13 @@ function createServerActionsRouter({ broadcast } = {}) {
       const status = result.success ? 'success' : 'failed';
       db.updateHistory.updateStatus(historyId, status, result.stdout + result.stderr);
       db.auditLog.write('server.update_all', `status=${status}`, req.ip, result.success, req.user?.username);
+      // Invalidate updates cache for all servers so the dashboard reflects the new state.
+      if (result.success) {
+        for (const s of db.servers.getAll()) {
+          try { db.updatesCache.delete(s.id); } catch {}
+        }
+        emit({ type: 'cache_updated', scope: 'updates' });
+      }
       emit({ type: 'bulk_update_complete', historyId, success: result.success });
     } catch (error) {
       db.updateHistory.updateStatus(historyId, 'failed', error.message);

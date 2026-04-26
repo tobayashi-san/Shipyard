@@ -121,14 +121,20 @@ export function DashboardPage() {
       const onlineIds = (data?.servers ?? [])
         .filter(s => s.status === 'online')
         .map(s => s.id);
-      // Force-refresh system info for all online servers in parallel
-      const results = await Promise.allSettled(onlineIds.map(id => api.getServerInfo(id, true)));
+      // Force-refresh both system info and updates cache for all online servers in parallel
+      const results = await Promise.allSettled(
+        onlineIds.flatMap(id => [
+          api.getServerInfo(id, true),
+          api.getServerUpdates(id, true),
+        ])
+      );
       const failed = results.filter(r => r.status === 'rejected').length;
+      const total = onlineIds.length * 2;
       if (failed > 0) {
-        if (failed === onlineIds.length) {
-          showToast(t('dash.refreshFailed', { n: failed }), 'error');
+        if (failed === total) {
+          showToast(t('dash.refreshFailed', { n: onlineIds.length }), 'error');
         } else {
-          showToast(t('dash.refreshPartial', { failed, total: onlineIds.length }), 'warning');
+          showToast(t('dash.refreshPartial', { failed, total }), 'warning');
         }
       }
     } finally {
