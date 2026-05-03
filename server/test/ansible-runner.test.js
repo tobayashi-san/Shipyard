@@ -68,3 +68,13 @@ test('runAdHoc appends --become when requested', async () => {
     ansibleRunner.generateInventory = originalGenerateInventory;
   }
 });
+
+test('ansible environment uses longer ssh tolerance defaults', () => {
+  const env = ansibleRunner._ansibleEnv;
+
+  assert.equal(env.ANSIBLE_TIMEOUT, '60');
+  assert.equal(env.ANSIBLE_PIPELINING, 'True');
+  assert.match(env.ANSIBLE_SSH_ARGS, /StrictHostKeyChecking=accept-new/);
+  assert.match(env.ANSIBLE_SSH_ARGS, /ServerAliveInterval=30/);
+  assert.match(env.ANSIBLE_SSH_ARGS, /ServerAliveCountMax=6/);
+});

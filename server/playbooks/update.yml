@@ -1,8 +1,11 @@
+# category: Maintenance
 ---
 - name: System Update
   hosts: all
   become: yes
   gather_facts: yes
+  serial: 1
+
   tasks:
     - name: Update apt cache (Debian/Ubuntu)
       apt:
@@ -14,6 +17,7 @@
       apt:
         upgrade: full
         autoremove: yes
+        dpkg_options: "force-confdef,force-confold"
       when: ansible_os_family == "Debian"
       register: apt_result
 

@@ -149,8 +149,10 @@ class AnsibleRunner {
       ANSIBLE_FORCE_COLOR: '0',
       ANSIBLE_NOCOLOR: '1',
       ANSIBLE_PYTHON_INTERPRETER: 'auto_silent',
+      ANSIBLE_TIMEOUT: '60',
+      ANSIBLE_PIPELINING: 'True',
       // Accept unknown hosts on first connect, verify on subsequent connects
-      ANSIBLE_SSH_ARGS: `-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=${path.join(DATA_DIR, 'known_hosts')}`,
+      ANSIBLE_SSH_ARGS: `-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=${path.join(DATA_DIR, 'known_hosts')} -o ServerAliveInterval=30 -o ServerAliveCountMax=6`,
     };
   }
 
