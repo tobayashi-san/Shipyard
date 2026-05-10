@@ -474,7 +474,7 @@ function TemplatesTab() {
 
       {panel === 'editor' && (
         <Card className="min-h-0 min-w-0 overflow-hidden">
-          <CardContent className="flex h-[calc(100vh-12rem)] max-h-[760px] min-h-[420px] flex-col gap-3 p-4">
+          <CardContent className="space-y-3 p-4">
             {/* Editor header */}
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="min-w-0 truncate font-medium">{isNew ? t('pb.new') : (selected ?? '')}</span>
@@ -508,11 +508,11 @@ function TemplatesTab() {
                   placeholder={t('pb.filenamePlaceholder')} className="font-mono text-sm" disabled={!isNew && !!selected} />
               </div>
             )}
-            <div className="flex min-h-0 flex-1 flex-col gap-1">
+            <div className="space-y-1">
               <Label>{t('pb.yaml')}</Label>
-              <div className="min-h-0 flex-1 overflow-hidden rounded-md border">
+              <div className="overflow-hidden rounded-md border">
                 <CodeMirror value={content} onChange={setContent} extensions={[yaml()]}
-                  theme={isDark ? 'dark' : 'light'} height="100%"
+                  theme={isDark ? 'dark' : 'light'} height="clamp(360px, calc(100vh - 22rem), 620px)"
                   basicSetup={{ lineNumbers: true, highlightActiveLine: true }} />
               </div>
             </div>

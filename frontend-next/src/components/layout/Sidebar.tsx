@@ -31,19 +31,6 @@ const mainEntries: NavEntry[] = [
 
 const DEFAULT_REPO_URL = 'https://github.com/tobayashi-san/Shipyard';
 
-function githubWebUrl(repoUrl?: string) {
-  const raw = String(repoUrl || '').trim();
-  if (!raw) return DEFAULT_REPO_URL;
-  const cleaned = raw.replace(/\.git$/, '');
-  const httpsMatch = cleaned.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)$/i);
-  if (httpsMatch) return cleaned;
-  const sshMatch = cleaned.match(/^git@github\.com:([^/]+)\/([^/]+)$/i);
-  if (sshMatch) return `https://github.com/${sshMatch[1]}/${sshMatch[2]}`;
-  const sshUrlMatch = cleaned.match(/^ssh:\/\/git@github\.com\/([^/]+)\/([^/]+)$/i);
-  if (sshUrlMatch) return `https://github.com/${sshUrlMatch[1]}/${sshUrlMatch[2]}`;
-  return DEFAULT_REPO_URL;
-}
-
 function openExternal(url: string) {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
@@ -250,11 +237,6 @@ export function Sidebar() {
   const { data: profile } = useProfile();
   const { data: plugins = [] } = usePlugins();
   const { data: settings } = useSettings();
-  const { data: gitConfig } = useQuery({
-    queryKey: ['git-config'],
-    queryFn: () => api.getGitConfig() as Promise<Record<string, unknown>>,
-    staleTime: 60_000,
-  });
 
   // Online server count for badge
   const { data: rawServers } = useQuery({
@@ -288,7 +270,6 @@ export function Sidebar() {
     (p) => p.enabled && p.sidebar && canSeePlugin(profile, p.id)
   );
   const isAdmin = profile?.role === 'admin';
-  const repoUrl = githubWebUrl(gitConfig?.repoUrl as string | undefined);
 
   const displayName = (profile?.displayName as string) || (profile?.username as string) || 'User';
 
@@ -419,38 +400,39 @@ export function Sidebar() {
           </div>
         )}
 
-        <div className="space-y-1">
-          {!collapsed && (
-            <div className="section-label px-3 pb-1">
-              {t('nav.project')}
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={() => openExternal(repoUrl)}
-            className={cn(
-              'flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground',
-              collapsed && 'justify-center px-2'
-            )}
-            title={collapsed ? t('nav.github') : undefined}
-          >
-            <Github className="h-4 w-4" />
-            {!collapsed && <span>{t('nav.github')}</span>}
-          </button>
-          <button
-            type="button"
-            onClick={() => openExternal(`${repoUrl}/issues`)}
-            className={cn(
-              'flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground',
-              collapsed && 'justify-center px-2'
-            )}
-            title={collapsed ? t('nav.issues') : undefined}
-          >
-            <Bug className="h-4 w-4" />
-            {!collapsed && <span>{t('nav.issues')}</span>}
-          </button>
-        </div>
       </nav>
+
+      <div className="border-t p-2">
+        {!collapsed && (
+          <div className="section-label px-3 pb-1">
+            {t('nav.project')}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => openExternal(DEFAULT_REPO_URL)}
+          className={cn(
+            'flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground',
+            collapsed && 'justify-center px-2'
+          )}
+          title={collapsed ? t('nav.github') : undefined}
+        >
+          <Github className="h-4 w-4" />
+          {!collapsed && <span>{t('nav.github')}</span>}
+        </button>
+        <button
+          type="button"
+          onClick={() => openExternal(`${DEFAULT_REPO_URL}/issues`)}
+          className={cn(
+            'flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground',
+            collapsed && 'justify-center px-2'
+          )}
+          title={collapsed ? t('nav.issues') : undefined}
+        >
+          <Bug className="h-4 w-4" />
+          {!collapsed && <span>{t('nav.issues')}</span>}
+        </button>
+      </div>
 
       {isAdmin && (
         <div className="border-t p-2">
