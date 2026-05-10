@@ -25,6 +25,8 @@ Changing `JWT_SECRET` logs out existing sessions. Changing `SHIPYARD_KEY_SECRET`
 | `SSL_CERT` | Path to TLS certificate inside the container. |
 | `SSL_KEY` | Path to TLS private key inside the container. |
 | `CERT_SANS` | Extra SAN entries for the generated self-signed certificate. |
+| `TZ` | Container timezone. Defaults to `Europe/Zurich` in the image/compose examples. |
+| `SHIPYARD_TIMEZONE` | Timezone for scheduled playbook cron jobs. Use an IANA name such as `Europe/Zurich`. |
 | `ALLOWED_ORIGINS` | Comma-separated browser origins allowed for CORS/WebSocket checks. |
 | `TRUST_PROXY` | Enable when running behind a reverse proxy that sets `X-Forwarded-*` headers. |
 
@@ -49,4 +51,3 @@ cd frontend-next && npm run dev
 ```
 
 The frontend dev server listens on port `5174` and proxies API/WebSocket calls to the backend on port `3001`.
-

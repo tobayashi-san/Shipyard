@@ -19,6 +19,16 @@ const deployLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+function isValidTimeZone(value) {
+  if (typeof value !== 'string' || !value.trim() || value.length > 100) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value.trim() });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // GET /api/system/key - Get current SSH key info
 router.get('/key', (req, res) => {
   try {
@@ -157,6 +167,7 @@ router.get('/settings', adminOnly, (req, res) => {
       logoImage:            raw.wl_logo_image   || '',
       theme:                raw.ui_theme        || 'auto',
       timeFormat:           raw.ui_time_format  || '24h',
+      schedulerTimezone:    raw.scheduler_timezone || scheduler.getSchedulerTimezone(),
       agentEnabled:         raw.agent_enabled   === '1',
       webhookUrl:           raw.webhook_url     || '',
       webhookSecret:        raw.webhook_secret  ? '••••••••' : '',
@@ -177,7 +188,7 @@ router.get('/settings', adminOnly, (req, res) => {
 router.put('/settings', adminOnly, (req, res) => {
   try {
     const { appName, appTagline, accentColor, showIcon, logoIcon, logoImage, theme, timeFormat,
-            agentEnabled, webhookUrl, webhookSecret,
+            schedulerTimezone, agentEnabled, webhookUrl, webhookSecret,
             smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom, smtpTo,
             notifPlaybookFailed, notifUpdateFailed } = req.body;
     const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
@@ -196,6 +207,11 @@ router.put('/settings', adminOnly, (req, res) => {
     }
     if (theme         !== undefined) db.settings.set('ui_theme',        str(theme, 20));
     if (timeFormat    !== undefined) db.settings.set('ui_time_format',  str(timeFormat, 10));
+    if (schedulerTimezone !== undefined) {
+      if (!isValidTimeZone(schedulerTimezone)) return res.status(400).json({ error: 'Invalid schedulerTimezone' });
+      db.settings.set('scheduler_timezone', schedulerTimezone.trim());
+      scheduler.reloadAllSchedules();
+    }
     if (agentEnabled !== undefined) {
       if (typeof agentEnabled !== 'boolean') return res.status(400).json({ error: 'agentEnabled must be a boolean' });
       db.settings.set('agent_enabled', agentEnabled ? '1' : '0');

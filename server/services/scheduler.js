@@ -26,6 +26,11 @@ let imageUpdatesPolling = false;
 let customUpdatesPolling = false;
 
 const STALE_THRESHOLD_MS = 4 * 60 * 1000;
+const DEFAULT_TIMEZONE = process.env.SHIPYARD_TIMEZONE || process.env.TZ || 'Europe/Zurich';
+
+function getSchedulerTimezone() {
+  return db.settings.get('scheduler_timezone') || DEFAULT_TIMEZONE;
+}
 
 // Defaults (used when DB has no value)
 const DEFAULTS = {
@@ -151,7 +156,7 @@ function register(schedule) {
     } finally {
       running.delete(schedule.id);
     }
-  });
+  }, { timezone: getSchedulerTimezone() });
 
   jobs.set(schedule.id, task);
 }
@@ -175,6 +180,24 @@ function reload(scheduleId) {
   if (schedule && schedule.enabled) {
     register(schedule);
   }
+}
+
+function reloadAllSchedules() {
+  stopJobs();
+  let schedules = [];
+  try {
+    schedules = db.schedules.getAll();
+  } catch (e) {
+    log.error({ err: e }, 'Failed to reload schedules from DB');
+    return;
+  }
+  for (const s of schedules) {
+    if (s.enabled) {
+      try { register(s); }
+      catch (e) { log.error({ err: e, schedule: s.name }, 'Failed to register schedule'); }
+    }
+  }
+  log.info({ count: schedules.filter(s => s.enabled).length, timezone: getSchedulerTimezone() }, 'Reloaded active schedules');
 }
 
 /**
@@ -477,4 +500,4 @@ function shutdown() {
   stopJobs();
 }
 
-module.exports = { init, register, unregister, reload, startPolling, stopPolling, stopJobs, shutdown, restartPolling, flushRestartPolling, onClientConnect, checkCustomTask, getPollingConfig, DEFAULTS };
+module.exports = { init, register, unregister, reload, reloadAllSchedules, startPolling, stopPolling, stopJobs, shutdown, restartPolling, flushRestartPolling, onClientConnect, checkCustomTask, getPollingConfig, getSchedulerTimezone, DEFAULTS };

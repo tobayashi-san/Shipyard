@@ -23,6 +23,14 @@ export function SystemTab() {
 
       <SettingsSection
         icon={<Clock className="h-4 w-4" />}
+        title={t('set.scheduler')}
+        description={t('set.schedulerHint')}
+      >
+        <SchedulerTimezone />
+      </SettingsSection>
+
+      <SettingsSection
+        icon={<Clock className="h-4 w-4" />}
         title={t('set.polling')}
         description={t('set.pollingHint')}
       >
@@ -37,6 +45,63 @@ export function SystemTab() {
         <AgentToggle />
       </SettingsSection>
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Scheduler timezone
+// ─────────────────────────────────────────────────────────────
+
+const COMMON_TIMEZONES = [
+  'Europe/Zurich',
+  'Europe/Berlin',
+  'Europe/Vienna',
+  'Europe/London',
+  'UTC',
+  'America/New_York',
+  'America/Los_Angeles',
+  'Asia/Tokyo',
+  'Australia/Sydney',
+];
+
+function SchedulerTimezone() {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const { data: settings } = useSettings();
+  const current = String((settings as Record<string, unknown> | undefined)?.schedulerTimezone || 'Europe/Zurich');
+  const [timezone, setTimezone] = useState(current);
+
+  useEffect(() => { setTimezone(current); }, [current]);
+
+  const save = useMutation({
+    mutationFn: (value: string) => api.saveSettings({ schedulerTimezone: value.trim() }),
+    onSuccess: () => {
+      showToast(t('set.schedulerSaved'), 'success');
+      qc.invalidateQueries({ queryKey: ['settings'] });
+    },
+    onError: (err) => showToast((err as Error).message, 'error'),
+  });
+
+  return (
+    <>
+      <SettingsRow label={t('set.schedulerTimezone')} hint={t('set.schedulerTimezoneHint')}>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Input
+            list="shipyard-timezones"
+            value={timezone}
+            onChange={(e) => setTimezone(e.target.value)}
+            placeholder="Europe/Zurich"
+            className="w-full sm:w-64"
+          />
+          <datalist id="shipyard-timezones">
+            {COMMON_TIMEZONES.map((tz) => <option key={tz} value={tz} />)}
+          </datalist>
+          <Button size="sm" onClick={() => save.mutate(timezone)} disabled={save.isPending || !timezone.trim()}>
+            <Save className="h-4 w-4" /> {t('common.save')}
+          </Button>
+        </div>
+      </SettingsRow>
+    </>
   );
 }
 

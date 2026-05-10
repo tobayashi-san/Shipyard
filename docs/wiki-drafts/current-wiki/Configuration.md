@@ -13,6 +13,8 @@ Set non-secret variables in `docker-compose.yml`. Store secrets in a `.env` file
 | `SSL_CERT` | No | Auto-generated self-signed certificate | Path to TLS certificate file inside the container. |
 | `SSL_KEY` | No | Auto-generated self-signed key | Path to TLS private key file inside the container. |
 | `CERT_SANS` | No | Hostname/container IP/localhost | Extra SANs for generated self-signed certificates, for example `IP:10.30.1.10,DNS:shipyard.example.com`. |
+| `TZ` | No | `Europe/Zurich` | Container timezone used by Node.js date handling. |
+| `SHIPYARD_TIMEZONE` | No | `Europe/Zurich` | Timezone used for scheduled playbook cron jobs. Use an IANA name such as `Europe/Zurich`. |
 | `ALLOWED_ORIGINS` | No | `http://localhost:3000,http://localhost:5174` | CORS allowed origins for browser requests and WebSocket origin checks. |
 | `TRUST_PROXY` | No | `0` | Set to `1` or a trusted proxy configuration when running behind a reverse proxy that sets `X-Forwarded-*` headers. |
 | `DB_PATH` | No | `/app/server/data/shipyard.db` | SQLite database file path. |
@@ -124,4 +126,3 @@ cd frontend-next && npm run dev
 ```
 
 The frontend dev server listens on port `5174` and proxies API/WebSocket calls to the backend on port `3001`.
-

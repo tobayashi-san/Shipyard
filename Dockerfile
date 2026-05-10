@@ -38,6 +38,7 @@ RUN chown -R shipyard:shipyard /app/bundled-plugins
 VOLUME ["/app/server/data"]
 EXPOSE 443
 ENV NODE_ENV=production
+ENV TZ=Europe/Zurich
 
 # Entrypoint runs as root to fix data-volume ownership, then drops to shipyard
 ENTRYPOINT ["./docker-entrypoint.sh"]

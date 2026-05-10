@@ -36,6 +36,8 @@ services:
       # - /etc/ssl/private/shipyard.key:/certs/shipyard.key:ro
     environment:
       - NODE_ENV=production
+      - TZ=${TZ:-Europe/Zurich}
+      - SHIPYARD_TIMEZONE=${SHIPYARD_TIMEZONE:-Europe/Zurich}
       - JWT_SECRET=${JWT_SECRET:?Create a .env file with JWT_SECRET — see README}
       - SHIPYARD_KEY_SECRET=${SHIPYARD_KEY_SECRET:?Create a .env file with SHIPYARD_KEY_SECRET — see README}
       # - PORT=443
