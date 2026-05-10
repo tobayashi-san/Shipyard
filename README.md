@@ -29,12 +29,23 @@ services:
       - shipyard-data:/app/server/data
       - ./playbooks:/app/server/playbooks
       - ./plugins:/app/plugins
+      # OpenTofu workspaces (optional bind mount):
+      # - /path/to/workspaces:/workspaces
+      # Custom TLS certificate (optional):
+      # - /etc/ssl/certs/shipyard.crt:/certs/shipyard.crt:ro
+      # - /etc/ssl/private/shipyard.key:/certs/shipyard.key:ro
     environment:
       - NODE_ENV=production
       - JWT_SECRET=${JWT_SECRET:?Create a .env file with JWT_SECRET — see README}
       - SHIPYARD_KEY_SECRET=${SHIPYARD_KEY_SECRET:?Create a .env file with SHIPYARD_KEY_SECRET — see README}
+      # - PORT=443
+      # - ALLOWED_ORIGINS=https://yourdomain.com
+      # - SSL_CERT=/certs/shipyard.crt
+      # - SSL_KEY=/certs/shipyard.key
       # Set to 1 when running behind a reverse proxy that sends X-Forwarded-* headers
       # - TRUST_PROXY=1
+      # Extra SANs for the self-signed TLS certificate (useful for agent push mode)
+      # - CERT_SANS=IP:10.30.1.10,DNS:shipyard.example.com
 
 volumes:
   shipyard-data:
@@ -47,6 +58,7 @@ Open **`https://<host-ip>`** in your browser. The setup wizard will guide you th
 The setup wizard appears only when no users exist; otherwise you will see the login page.
 
 HTTPS is enabled by default with a self-signed certificate — accept the browser warning once, or [bring your own certificate](https://github.com/tobayashi-san/Shipyard/wiki/Installation#custom-tls-certificate).
+For agent push/auto mode, set `CERT_SANS` to the LAN IP or DNS name that managed servers use to reach Shipyard.
 
 ## Update
 
@@ -56,7 +68,17 @@ docker compose up -d
 ```
 
 With `:latest`, this updates Shipyard to the newest **stable** release.
-Release candidates are published as explicit versioned tags (for example `:1.0.4-rc.7`) and do not move `latest`.
+Release candidates are published as explicit versioned tags (for example `:1.0.1-rc.1`) and do not move `latest`.
+
+## Container Images
+
+Images are published to GitHub Container Registry:
+
+- Stable releases: `ghcr.io/tobayashi-san/shipyard:latest`
+- Versioned releases: `ghcr.io/tobayashi-san/shipyard:<version>`
+- Release candidates: `ghcr.io/tobayashi-san/shipyard:<version>-rc.<n>`
+
+The Docker image serves the React frontend from `frontend-next/dist` and bundles the default plugins and starter playbooks. On first start, bundled plugins are seeded into `/app/plugins`; later starts update bundled plugins when their bundled version changes.
 
 ## Documentation
 
@@ -99,6 +121,9 @@ Current screenshots are captured from a seeded local demo instance. Primary asse
 ## Development
 
 ```bash
+# Install root dev tools
+npm install
+
 # Backend (port 3001)
 cd server && npm install && npm run dev
 
@@ -108,8 +133,16 @@ cd frontend-next && npm install && npm run dev
 
 ```bash
 # Run backend tests
-cd server && node --test
+cd server && npm test
+
+# Run one backend test file
+cd server && node --test test/auth.test.js
+
+# Build frontend
+cd frontend-next && npm run build
 ```
+
+Production mode serves the built frontend from `frontend-next/dist` at the application root. The old `frontend/` Vite app has been removed.
 
 ## Architecture
 

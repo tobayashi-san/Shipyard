@@ -2,6 +2,8 @@
 
 Starting point for building Shipyard plugins. Copy this directory, rename it to your plugin's ID, implement `index.js` and/or `ui.js`, and drop it into `/app/plugins/`.
 
+Plugins can add backend routes, mount a frontend UI inside the Shipyard app, or both. Backend plugin code runs inside the Shipyard server process, so treat every plugin as trusted code.
+
 ## Directory Structure
 
 ```
@@ -39,7 +41,7 @@ services:
   "description": "Short description shown in Settings → Plugins.",
   "author": "Your Name",
   "sidebar": {
-    "icon": "fas fa-star",
+    "icon": "fas fa-cube",
     "label": "My Plugin"
   }
 }
@@ -52,7 +54,9 @@ services:
 | `version` | yes | Semver string. |
 | `description` | yes | Shown in Settings → Plugins. |
 | `author` | no | |
-| `sidebar` | no | Adds a link to the sidebar. `icon` is any Font Awesome 6 class. |
+| `sidebar` | no | Adds a link to the sidebar. `icon` accepts common Font Awesome-style names; unknown values fall back to a puzzle icon. |
+
+Currently recognized sidebar icon hints include `fa-cube`, `fa-terminal`, `fa-server`, `fa-shield`, `fa-cubes`, `fa-network`, `fa-anchor`, and `fa-ship`.
 
 ## index.js — Backend
 
@@ -105,7 +109,7 @@ module.exports = { register };
 let _wsUnsub = null;
 
 export async function mount(container, { api, pluginApi, state, navigate, showToast, showConfirm, onWsMessage }) {
-  container.innerHTML = '<p>Loading…</p>';
+  container.textContent = 'Loading...';
 
   // Call your plugin's own backend routes
   const status = await pluginApi.request('/status');
@@ -113,7 +117,12 @@ export async function mount(container, { api, pluginApi, state, navigate, showTo
   // Call any Shipyard core API
   const servers = await api.getServers();
 
-  container.innerHTML = `<h2>Hello from my-plugin!</h2><p>${servers.length} server(s)</p>`;
+  container.innerHTML = `
+    <div>
+      <h2>Hello from my-plugin!</h2>
+      <p>${servers.length} server(s)</p>
+    </div>
+  `;
 
   // Subscribe to WebSocket messages (auto-unsubscribed on unmount)
   _wsUnsub = onWsMessage(msg => {
@@ -134,7 +143,7 @@ export function unmount() {
 | `api` | Full Shipyard API client (`api.getServers()`, `api.getServer(id)`, etc.) |
 | `pluginApi` | Namespaced client — `pluginApi.request('/path')` calls `/api/plugin/<id>/path` |
 | `state` | Global app state: `state.servers`, `state.plugins`, `state.whiteLabel` |
-| `navigate` | `(view, params)` — navigate to another view (`'dashboard'`, `'servers'`, etc.) |
+| `navigate` | Navigate within Shipyard. Prefer core routes such as `/`, `/servers`, `/playbooks`, and `/settings`. |
 | `showToast` | `(message, type)` — show a toast. `type`: `'info'` \| `'success'` \| `'warning'` \| `'error'` |
 | `showConfirm` | `(message, opts) => Promise<boolean>` — show a confirmation dialog |
 | `onWsMessage` | `(callback) => unsubscribeFn` — listen to WebSocket messages from the backend |
