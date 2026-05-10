@@ -510,6 +510,20 @@ module.exports = {
     complete: (id, status, output) => {
       db.prepare("UPDATE schedule_history SET status = ?, output = ?, completed_at = datetime('now') WHERE id = ?").run(status, output || '', id);
     },
+    failStaleRunning: (message) => {
+      const note = message || 'Shipyard restarted before this run completed. No output was saved.';
+      const result = db.prepare(`
+        UPDATE schedule_history
+        SET status = 'failed',
+            completed_at = COALESCE(completed_at, datetime('now')),
+            output = CASE
+              WHEN output IS NULL OR output = '' THEN ?
+              ELSE output || char(10) || ?
+            END
+        WHERE status = 'running'
+      `).run(note, note);
+      return result.changes;
+    },
     prune: () => {
       db.prepare("DELETE FROM schedule_history WHERE id NOT IN (SELECT id FROM schedule_history ORDER BY started_at DESC LIMIT 200)").run();
     },

@@ -127,6 +127,22 @@ describe('legacy auth migration guards', () => {
   });
 });
 
+// ── Schedule History ─────────────────────────────────────────────────────────
+
+describe('db.scheduleHistory', () => {
+  test('failStaleRunning marks orphaned running entries as failed with output', () => {
+    const id = db.scheduleHistory.create(null, 'Quick Run', 'update.yml', 'HMS');
+
+    const changed = db.scheduleHistory.failStaleRunning('Test restart marker');
+    const row = db.scheduleHistory.getById(id);
+
+    assert.ok(changed >= 1);
+    assert.equal(row.status, 'failed');
+    assert.ok(row.completed_at);
+    assert.equal(row.output, 'Test restart marker');
+  });
+});
+
 // ── Audit Log ─────────────────────────────────────────────────────────────────
 
 describe('db.auditLog', () => {

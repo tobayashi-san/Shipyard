@@ -72,6 +72,15 @@ let broadcast = () => {};
 function init(broadcastFn) {
   broadcast = broadcastFn || broadcast;
 
+  try {
+    const staleCount = db.scheduleHistory.failStaleRunning();
+    if (staleCount > 0) {
+      log.warn({ count: staleCount }, 'Marked stale running schedule history entries as failed');
+    }
+  } catch (e) {
+    log.error({ err: e }, 'Failed to mark stale schedule history entries');
+  }
+
   let schedules = [];
   try {
     schedules = db.schedules.getAll();
