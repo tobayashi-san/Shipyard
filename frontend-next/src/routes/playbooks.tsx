@@ -7,7 +7,7 @@ import {
   FileText, Plus, Save, Trash2, Play, History, Search, ChevronDown,
   FolderCog, Folder, ArrowLeft, X, Eye, Undo2, Clock, SlidersHorizontal,
   GitBranch, ArrowDown, ArrowUp, Settings2, Terminal,
-  KeyRound, Calendar, GitCommit, Github, Bug, ExternalLink,
+  KeyRound, Calendar, GitCommit,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
@@ -172,25 +172,6 @@ const TEMPLATE_YAML = `---
       ping:
 `;
 
-const DEFAULT_REPO_URL = 'https://github.com/tobayashi-san/Shipyard';
-
-function githubWebUrl(repoUrl?: string) {
-  const raw = String(repoUrl || '').trim();
-  if (!raw) return DEFAULT_REPO_URL;
-  const cleaned = raw.replace(/\.git$/, '');
-  const httpsMatch = cleaned.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)$/i);
-  if (httpsMatch) return cleaned;
-  const sshMatch = cleaned.match(/^git@github\.com:([^/]+)\/([^/]+)$/i);
-  if (sshMatch) return `https://github.com/${sshMatch[1]}/${sshMatch[2]}`;
-  const sshUrlMatch = cleaned.match(/^ssh:\/\/git@github\.com\/([^/]+)\/([^/]+)$/i);
-  if (sshUrlMatch) return `https://github.com/${sshUrlMatch[1]}/${sshUrlMatch[2]}`;
-  return DEFAULT_REPO_URL;
-}
-
-function openExternal(url: string) {
-  window.open(url, '_blank', 'noopener,noreferrer');
-}
-
 // ═════════════════════════════════════════════════════════════════════════════
 // Main page
 // ═════════════════════════════════════════════════════════════════════════════
@@ -206,8 +187,6 @@ export function PlaybooksPage() {
     { value: 'vars', label: t('pb.tabVars'), icon: <SlidersHorizontal className="h-4 w-4" />, cap: 'canViewVars' },
     { value: 'schedules', label: t('pb.tabSchedules'), icon: <Clock className="h-4 w-4" />, cap: 'canViewSchedules' },
     { value: 'history', label: t('pb.tabHistory'), icon: <History className="h-4 w-4" />, cap: 'canViewAudit' },
-    { value: 'github', label: t('pb.tabGithub'), icon: <Github className="h-4 w-4" /> },
-    { value: 'issues', label: t('pb.tabIssues'), icon: <Bug className="h-4 w-4" /> },
   ];
   const allowed = tabs.filter(tb => !tb.cap || hasCap(profile, tb.cap));
   const [tab, setTab] = useState(allowed[0]?.value ?? 'templates');
@@ -238,8 +217,6 @@ export function PlaybooksPage() {
         <TabsContent value="vars"><VarsTab /></TabsContent>
         <TabsContent value="schedules"><SchedulesTab /></TabsContent>
         <TabsContent value="history"><HistoryTab /></TabsContent>
-        <TabsContent value="github"><GithubTab /></TabsContent>
-        <TabsContent value="issues"><IssuesTab /></TabsContent>
       </Tabs>
     </div>
   );
@@ -420,7 +397,7 @@ function TemplatesTab() {
   const closePanel = () => { setPanel('none'); setSelected(null); };
 
   return (
-    <div className="grid min-h-[calc(100vh-10.5rem)] gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+    <div className="grid gap-4 lg:max-h-[calc(100vh-12rem)] lg:grid-cols-[300px_minmax(0,1fr)]">
       {/* ── List panel ─────────────────────────── */}
       <Card className={`${panel === 'none' ? '' : 'hidden lg:flex'} min-h-0 lg:flex-col lg:overflow-hidden`}>
         <CardContent className="p-0">
@@ -496,8 +473,8 @@ function TemplatesTab() {
       )}
 
       {panel === 'editor' && (
-        <Card className="min-h-0 min-w-0">
-          <CardContent className="flex h-full min-h-[calc(100vh-10.5rem)] flex-col gap-3 p-4">
+        <Card className="min-h-0 min-w-0 overflow-hidden">
+          <CardContent className="flex h-[calc(100vh-12rem)] max-h-[760px] min-h-[420px] flex-col gap-3 p-4">
             {/* Editor header */}
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="min-w-0 truncate font-medium">{isNew ? t('pb.new') : (selected ?? '')}</span>
@@ -775,7 +752,7 @@ function QuickRunTab() {
   };
 
   return (
-    <div className="grid min-h-[calc(100vh-10.5rem)] gap-4 lg:grid-cols-2">
+    <div className="grid gap-4 lg:grid-cols-2">
       {/* Left: form */}
       <Card className="min-h-0">
         <CardContent className="space-y-4 p-4">
@@ -792,7 +769,7 @@ function QuickRunTab() {
           <div className="space-y-1">
             <Label>{t('qr.targets')}</Label>
             <p className="text-xs text-muted-foreground">{allChecked ? t('run.excludeHint') : t('run.includeHint')}</p>
-            <div className="max-h-[calc(100vh-24rem)] min-h-44 space-y-1 overflow-y-auto rounded-md border p-2">
+            <div className="max-h-80 min-h-44 space-y-1 overflow-y-auto rounded-md border p-2">
               <label className="flex items-center gap-2 text-sm font-medium">
                 <input type="checkbox" checked={allChecked} onChange={e => { setAllChecked(e.target.checked); setChecked(new Set()); }} />
                 {t('pb.allServers')}
@@ -842,7 +819,7 @@ function QuickRunTab() {
 
       {/* Right: output */}
       <Card className="min-h-0">
-        <CardContent className="flex h-full min-h-[calc(100vh-10.5rem)] flex-col p-4">
+        <CardContent className="flex min-h-[28rem] flex-col p-4">
           <div className="flex items-center gap-2 text-sm font-semibold mb-3">
             <Terminal className="h-4 w-4" /> {t('pb.output')}
           </div>
@@ -862,104 +839,6 @@ function QuickRunTab() {
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// Tab: GitHub / Issues
-// ═════════════════════════════════════════════════════════════════════════════
-
-function useGithubProjectUrl() {
-  const { data: cfg } = useQuery({
-    queryKey: ['git-config'],
-    queryFn: () => api.getGitConfig() as Promise<Record<string, unknown>>,
-  });
-  return githubWebUrl(cfg?.repoUrl as string | undefined);
-}
-
-function GithubTab() {
-  const { t } = useTranslation();
-  const repoUrl = useGithubProjectUrl();
-
-  const links = [
-    { label: t('pb.githubRepo'), url: repoUrl },
-    { label: t('pb.githubIssues'), url: `${repoUrl}/issues` },
-    { label: t('pb.githubWiki'), url: `${repoUrl}/wiki` },
-    { label: t('pb.githubActions'), url: `${repoUrl}/actions` },
-  ];
-
-  return (
-    <Card>
-      <CardContent className="space-y-4 p-4">
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <Github className="h-4 w-4" /> {t('pb.githubTitle')}
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          {links.map(link => (
-            <Button key={link.url} variant="outline" className="justify-between" onClick={() => openExternal(link.url)}>
-              <span className="truncate">{link.label}</span>
-              <ExternalLink className="h-4 w-4" />
-            </Button>
-          ))}
-        </div>
-        <div className="rounded-md border bg-muted/30 px-3 py-2 font-mono text-xs text-muted-foreground">
-          {repoUrl}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function IssuesTab() {
-  const { t } = useTranslation();
-  const repoUrl = useGithubProjectUrl();
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-
-  const openIssue = () => {
-    const issueUrl = new URL(`${repoUrl}/issues/new`);
-    if (title.trim()) issueUrl.searchParams.set('title', title.trim());
-    if (body.trim()) issueUrl.searchParams.set('body', body.trim());
-    openExternal(issueUrl.toString());
-  };
-
-  return (
-    <Card>
-      <CardContent className="space-y-4 p-4">
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <Bug className="h-4 w-4" /> {t('pb.issueTitle')}
-        </div>
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label>{t('pb.issueSubject')}</Label>
-              <Input value={title} onChange={e => setTitle(e.target.value)} placeholder={t('pb.issueSubjectPlaceholder')} />
-            </div>
-            <div className="space-y-1">
-              <Label>{t('pb.issueBody')}</Label>
-              <textarea
-                value={body}
-                onChange={e => setBody(e.target.value)}
-                placeholder={t('pb.issueBodyPlaceholder')}
-                className="min-h-56 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
-            </div>
-          </div>
-          <div className="space-y-3 rounded-md border bg-muted/30 p-3">
-            <div className="text-sm font-medium">{t('pb.issueTarget')}</div>
-            <div className="break-all font-mono text-xs text-muted-foreground">{repoUrl}/issues/new</div>
-            <Button className="w-full justify-between" onClick={openIssue}>
-              <span>{t('pb.issueOpen')}</span>
-              <ExternalLink className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" className="w-full justify-between" onClick={() => openExternal(`${repoUrl}/issues`)}>
-              <span>{t('pb.issueList')}</span>
-              <ExternalLink className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 
