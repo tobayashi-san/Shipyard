@@ -7,7 +7,7 @@ import {
   FileText, Plus, Save, Trash2, Play, History, Search, ChevronDown,
   FolderCog, Folder, ArrowLeft, X, Eye, Undo2, Clock, SlidersHorizontal,
   GitBranch, ArrowDown, ArrowUp, Settings2, Terminal,
-  KeyRound, Calendar, GitCommit,
+  KeyRound, Calendar, GitCommit, Github, Bug, ExternalLink,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
@@ -172,6 +172,25 @@ const TEMPLATE_YAML = `---
       ping:
 `;
 
+const DEFAULT_REPO_URL = 'https://github.com/tobayashi-san/Shipyard';
+
+function githubWebUrl(repoUrl?: string) {
+  const raw = String(repoUrl || '').trim();
+  if (!raw) return DEFAULT_REPO_URL;
+  const cleaned = raw.replace(/\.git$/, '');
+  const httpsMatch = cleaned.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)$/i);
+  if (httpsMatch) return cleaned;
+  const sshMatch = cleaned.match(/^git@github\.com:([^/]+)\/([^/]+)$/i);
+  if (sshMatch) return `https://github.com/${sshMatch[1]}/${sshMatch[2]}`;
+  const sshUrlMatch = cleaned.match(/^ssh:\/\/git@github\.com\/([^/]+)\/([^/]+)$/i);
+  if (sshUrlMatch) return `https://github.com/${sshUrlMatch[1]}/${sshUrlMatch[2]}`;
+  return DEFAULT_REPO_URL;
+}
+
+function openExternal(url: string) {
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // Main page
 // ═════════════════════════════════════════════════════════════════════════════
@@ -187,6 +206,8 @@ export function PlaybooksPage() {
     { value: 'vars', label: t('pb.tabVars'), icon: <SlidersHorizontal className="h-4 w-4" />, cap: 'canViewVars' },
     { value: 'schedules', label: t('pb.tabSchedules'), icon: <Clock className="h-4 w-4" />, cap: 'canViewSchedules' },
     { value: 'history', label: t('pb.tabHistory'), icon: <History className="h-4 w-4" />, cap: 'canViewAudit' },
+    { value: 'github', label: t('pb.tabGithub'), icon: <Github className="h-4 w-4" /> },
+    { value: 'issues', label: t('pb.tabIssues'), icon: <Bug className="h-4 w-4" /> },
   ];
   const allowed = tabs.filter(tb => !tb.cap || hasCap(profile, tb.cap));
   const [tab, setTab] = useState(allowed[0]?.value ?? 'templates');
@@ -217,6 +238,8 @@ export function PlaybooksPage() {
         <TabsContent value="vars"><VarsTab /></TabsContent>
         <TabsContent value="schedules"><SchedulesTab /></TabsContent>
         <TabsContent value="history"><HistoryTab /></TabsContent>
+        <TabsContent value="github"><GithubTab /></TabsContent>
+        <TabsContent value="issues"><IssuesTab /></TabsContent>
       </Tabs>
     </div>
   );
@@ -397,9 +420,9 @@ function TemplatesTab() {
   const closePanel = () => { setPanel('none'); setSelected(null); };
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+    <div className="grid min-h-[calc(100vh-10.5rem)] gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
       {/* ── List panel ─────────────────────────── */}
-      <Card className={`${panel === 'none' ? '' : 'hidden lg:block'} lg:max-h-[calc(100vh-14rem)] lg:overflow-y-auto`}>
+      <Card className={`${panel === 'none' ? '' : 'hidden lg:flex'} min-h-0 lg:flex-col lg:overflow-hidden`}>
         <CardContent className="p-0">
           <div className="flex items-center justify-between border-b px-3 py-2">
             <span className="text-sm font-semibold">{t('pb.title')}</span>
@@ -413,7 +436,7 @@ function TemplatesTab() {
             <Search className="pointer-events-none absolute left-5 top-4 h-4 w-4 text-muted-foreground" />
             <Input value={filter} onChange={e => setFilter(e.target.value)} placeholder={t('common.search')} className="pl-8 h-8 text-sm" />
           </div>
-          <div className="px-1 pb-2">
+          <div className="px-1 pb-2 lg:max-h-[calc(100vh-18rem)] lg:overflow-y-auto">
             {Object.keys(grouped.catMap).sort().map(cat => {
               const key = `user:${cat}`;
               const open = !collapsed.has(key);
@@ -461,8 +484,8 @@ function TemplatesTab() {
 
       {/* ── Right panel ────────────────────────── */}
       {panel === 'none' && (
-        <Card>
-          <CardContent className="p-6">
+        <Card className="min-h-0">
+          <CardContent className="flex min-h-[22rem] items-center justify-center p-6">
             <EmptyState
               icon={<Terminal className="h-5 w-5" />}
               title={t('pb.noPlaybooks')}
@@ -473,8 +496,8 @@ function TemplatesTab() {
       )}
 
       {panel === 'editor' && (
-        <Card className="min-w-0">
-          <CardContent className="space-y-3 p-4">
+        <Card className="min-h-0 min-w-0">
+          <CardContent className="flex h-full min-h-[calc(100vh-10.5rem)] flex-col gap-3 p-4">
             {/* Editor header */}
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="min-w-0 truncate font-medium">{isNew ? t('pb.new') : (selected ?? '')}</span>
@@ -508,11 +531,11 @@ function TemplatesTab() {
                   placeholder={t('pb.filenamePlaceholder')} className="font-mono text-sm" disabled={!isNew && !!selected} />
               </div>
             )}
-            <div className="space-y-1">
+            <div className="flex min-h-0 flex-1 flex-col gap-1">
               <Label>{t('pb.yaml')}</Label>
-              <div className="overflow-hidden rounded-md border">
+              <div className="min-h-0 flex-1 overflow-hidden rounded-md border">
                 <CodeMirror value={content} onChange={setContent} extensions={[yaml()]}
-                  theme={isDark ? 'dark' : 'light'} height="min(60vh, 560px)"
+                  theme={isDark ? 'dark' : 'light'} height="100%"
                   basicSetup={{ lineNumbers: true, highlightActiveLine: true }} />
               </div>
             </div>
@@ -665,7 +688,7 @@ function TemplateRunPanel({ filename, description, onClose }: { filename: string
         {showOutput && (
           <div className="rounded-md border bg-muted/30">
             <div className="border-b px-3 py-1.5 text-xs font-medium text-muted-foreground">{t('pb.output')}</div>
-            <div ref={bodyRef} className="max-h-72 overflow-y-auto p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
+            <div ref={bodyRef} className="max-h-72 overflow-y-auto overflow-x-hidden break-words p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
               {lines.map((l, i) => <div key={i} className={l.cls}>{l.text}</div>)}
             </div>
           </div>
@@ -752,9 +775,9 @@ function QuickRunTab() {
   };
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid min-h-[calc(100vh-10.5rem)] gap-4 lg:grid-cols-2">
       {/* Left: form */}
-      <Card>
+      <Card className="min-h-0">
         <CardContent className="space-y-4 p-4">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <Play className="h-4 w-4" /> {t('qr.title')}
@@ -769,7 +792,7 @@ function QuickRunTab() {
           <div className="space-y-1">
             <Label>{t('qr.targets')}</Label>
             <p className="text-xs text-muted-foreground">{allChecked ? t('run.excludeHint') : t('run.includeHint')}</p>
-            <div className="max-h-56 space-y-1 overflow-y-auto rounded-md border p-2">
+            <div className="max-h-[calc(100vh-24rem)] min-h-44 space-y-1 overflow-y-auto rounded-md border p-2">
               <label className="flex items-center gap-2 text-sm font-medium">
                 <input type="checkbox" checked={allChecked} onChange={e => { setAllChecked(e.target.checked); setChecked(new Set()); }} />
                 {t('pb.allServers')}
@@ -818,25 +841,125 @@ function QuickRunTab() {
       </Card>
 
       {/* Right: output */}
-      <Card>
-        <CardContent className="p-4">
+      <Card className="min-h-0">
+        <CardContent className="flex h-full min-h-[calc(100vh-10.5rem)] flex-col p-4">
           <div className="flex items-center gap-2 text-sm font-semibold mb-3">
             <Terminal className="h-4 w-4" /> {t('pb.output')}
           </div>
           {!started ? (
-            <EmptyState
-              compact
-              icon={<Play className="h-5 w-5" />}
-              title={t('pb.quickRunPlaceholder')}
-            />
+            <div className="flex flex-1 items-center justify-center">
+              <EmptyState
+                compact
+                icon={<Play className="h-5 w-5" />}
+                title={t('pb.quickRunPlaceholder')}
+              />
+            </div>
           ) : (
-            <div ref={bodyRef} className="max-h-[calc(100vh-20rem)] overflow-y-auto rounded-md border bg-muted/30 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
+            <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden break-words rounded-md border bg-muted/30 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
               {lines.map((l, i) => <div key={i} className={l.cls}>{l.text}</div>)}
             </div>
           )}
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Tab: GitHub / Issues
+// ═════════════════════════════════════════════════════════════════════════════
+
+function useGithubProjectUrl() {
+  const { data: cfg } = useQuery({
+    queryKey: ['git-config'],
+    queryFn: () => api.getGitConfig() as Promise<Record<string, unknown>>,
+  });
+  return githubWebUrl(cfg?.repoUrl as string | undefined);
+}
+
+function GithubTab() {
+  const { t } = useTranslation();
+  const repoUrl = useGithubProjectUrl();
+
+  const links = [
+    { label: t('pb.githubRepo'), url: repoUrl },
+    { label: t('pb.githubIssues'), url: `${repoUrl}/issues` },
+    { label: t('pb.githubWiki'), url: `${repoUrl}/wiki` },
+    { label: t('pb.githubActions'), url: `${repoUrl}/actions` },
+  ];
+
+  return (
+    <Card>
+      <CardContent className="space-y-4 p-4">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <Github className="h-4 w-4" /> {t('pb.githubTitle')}
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {links.map(link => (
+            <Button key={link.url} variant="outline" className="justify-between" onClick={() => openExternal(link.url)}>
+              <span className="truncate">{link.label}</span>
+              <ExternalLink className="h-4 w-4" />
+            </Button>
+          ))}
+        </div>
+        <div className="rounded-md border bg-muted/30 px-3 py-2 font-mono text-xs text-muted-foreground">
+          {repoUrl}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function IssuesTab() {
+  const { t } = useTranslation();
+  const repoUrl = useGithubProjectUrl();
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+
+  const openIssue = () => {
+    const issueUrl = new URL(`${repoUrl}/issues/new`);
+    if (title.trim()) issueUrl.searchParams.set('title', title.trim());
+    if (body.trim()) issueUrl.searchParams.set('body', body.trim());
+    openExternal(issueUrl.toString());
+  };
+
+  return (
+    <Card>
+      <CardContent className="space-y-4 p-4">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <Bug className="h-4 w-4" /> {t('pb.issueTitle')}
+        </div>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label>{t('pb.issueSubject')}</Label>
+              <Input value={title} onChange={e => setTitle(e.target.value)} placeholder={t('pb.issueSubjectPlaceholder')} />
+            </div>
+            <div className="space-y-1">
+              <Label>{t('pb.issueBody')}</Label>
+              <textarea
+                value={body}
+                onChange={e => setBody(e.target.value)}
+                placeholder={t('pb.issueBodyPlaceholder')}
+                className="min-h-56 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+          </div>
+          <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+            <div className="text-sm font-medium">{t('pb.issueTarget')}</div>
+            <div className="break-all font-mono text-xs text-muted-foreground">{repoUrl}/issues/new</div>
+            <Button className="w-full justify-between" onClick={openIssue}>
+              <span>{t('pb.issueOpen')}</span>
+              <ExternalLink className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" className="w-full justify-between" onClick={() => openExternal(`${repoUrl}/issues`)}>
+              <span>{t('pb.issueList')}</span>
+              <ExternalLink className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1353,13 +1476,13 @@ function HistoryTab() {
 
       {/* Output modal */}
       <Dialog open={!!outputEntry} onOpenChange={open => { if (!open) setOutputEntry(null); }}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[85vh] max-w-[min(900px,calc(100vw-2rem))] grid-rows-none flex-col overflow-hidden">
+          <DialogHeader className="min-w-0">
             <DialogTitle>{outputEntry?.schedule_name} — {outputEntry?.playbook}</DialogTitle>
           </DialogHeader>
-          <div className="rounded-md border bg-muted/30">
+          <div className="min-h-0 min-w-0 overflow-hidden rounded-md border bg-muted/30">
             <div className="border-b px-3 py-1.5 text-xs font-medium text-muted-foreground">{fmtDate(outputEntry?.started_at)}</div>
-            <div className="max-h-96 overflow-y-auto p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
+            <div className="max-h-[55vh] overflow-y-auto overflow-x-hidden break-words p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
               {outputEntry?.output || t('qr.noOutput')}
             </div>
           </div>
