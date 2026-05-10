@@ -102,8 +102,8 @@ export function OnboardingPage() {
   );
 
   return (
-    <div className="grid min-h-screen place-items-center bg-gradient-to-br from-background via-background to-muted/40 p-4">
-      <Card className="w-full max-w-lg shadow-lg">
+    <div className="grid min-h-screen place-items-center surface-2 p-4">
+      <Card className="w-full max-w-lg shadow-subtle">
         <CardContent className="p-6">
           {Logo}
           <Stepper current={step} />

@@ -94,11 +94,11 @@ function SshKeyView({ ssh, onChanged }: { ssh: SSHKey; onChanged: () => void }) 
       </SettingsRow>
 
       <SettingsRow label={t('set.sshPublicKey')} align="start">
-        <div className="relative w-full min-w-0 rounded-md border bg-muted/40 p-3 pr-24 font-mono text-xs leading-relaxed break-all">
-          {ssh.publicKey}
+        <div className="w-full min-w-0 rounded-md border bg-muted/40 p-3">
+          <div className="font-mono text-xs leading-relaxed break-all">{ssh.publicKey}</div>
           <Button
             variant="secondary" size="sm"
-            className="absolute right-2 top-2"
+            className="mt-2"
             onClick={() => copy(ssh.publicKey, t('set.keyCopied'))}
           >
             <Copy className="h-3.5 w-3.5" /> {t('common.copy')}
@@ -107,11 +107,11 @@ function SshKeyView({ ssh, onChanged }: { ssh: SSHKey; onChanged: () => void }) 
       </SettingsRow>
 
       <SettingsRow label={t('set.sshManualAdd')} hint={t('set.sshManualHint')} align="start">
-        <div className="relative w-full min-w-0 rounded-md border bg-muted/40 p-3 pr-24 font-mono text-xs leading-relaxed break-all">
-          {installCmd}
+        <div className="w-full min-w-0 rounded-md border bg-muted/40 p-3">
+          <div className="font-mono text-xs leading-relaxed break-all">{installCmd}</div>
           <Button
             variant="secondary" size="sm"
-            className="absolute right-2 top-2"
+            className="mt-2"
             onClick={() => copy(installCmd, t('set.cmdCopied'))}
           >
             <Copy className="h-3.5 w-3.5" /> {t('common.copy')}
@@ -311,7 +311,7 @@ function DeployForm() {
   return (
     <>
       <SettingsRow label={t('set.sshTarget')} hint={t('set.sshTargetHint')}>
-        <div className="grid w-full max-w-md grid-cols-[1fr_90px_70px] gap-2">
+        <div className="grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-[1fr_90px_70px]">
           <Input value={ip}   onChange={(e) => setIp(e.target.value)}   placeholder="192.168.1.100" />
           <Input value={user} onChange={(e) => setUser(e.target.value)} placeholder="root" />
           <Input value={port} onChange={(e) => setPort(e.target.value)} type="number" placeholder="22" />

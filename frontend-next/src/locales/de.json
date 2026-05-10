@@ -588,7 +588,7 @@
     "disable2faTitle": "2FA deaktivieren",
     "disable2faBtn": "Deaktivieren",
     "2faDisabled": "2FA für Benutzer deaktiviert",
-    "deleteUserConfirm": "Benutzer „{{username}}\" löschen? Dies kann nicht rückgängig gemacht werden.",
+    "deleteUserConfirm": "Benutzer „{{username}}“ löschen? Dies kann nicht rückgängig gemacht werden.",
     "roleManagement": "Rollenverwaltung",
     "roleBuiltInHint": "Die eingebauten Admin- und User-Rollen können nicht geändert werden.",
     "builtIn": "Eingebaut",

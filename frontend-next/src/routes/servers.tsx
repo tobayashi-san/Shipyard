@@ -174,8 +174,8 @@ function MetricBar({ pct }: { pct: number | null }) {
   const vis = pct > 0 ? Math.max(pct, 4) : 0;
   const color = pct > 90 ? 'bg-red-500' : pct > 70 ? 'bg-amber-500' : 'bg-emerald-500';
   return (
-    <div className="flex items-center gap-1.5">
-      <div className="h-1.5 w-16 rounded-full bg-muted">
+    <div className="flex min-w-0 items-center gap-1.5">
+      <div className="h-1.5 min-w-10 flex-1 rounded-full bg-muted sm:w-16 sm:flex-none">
         <div className={`h-full rounded-full ${color}`} style={{ width: `${vis}%` }} />
       </div>
       <span className="text-xs tabular-nums text-muted-foreground w-8 text-right">{pct}%</span>
@@ -896,10 +896,10 @@ export function ServersPage() {
 
       {/* Bulk bar */}
       {selectedIds.size > 0 && (
-        <div className="flex items-center gap-3 rounded-lg border border-primary/25 bg-primary/[0.04] px-4 py-2.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-200">
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-primary/25 bg-primary/[0.04] px-4 py-2.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-200">
           <CheckCircle2 className="h-4 w-4 text-primary" />
           <span className="text-sm font-medium">{t('srv.selected', { count: selectedIds.size })}</span>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             {hasCap(profile, 'canRunUpdates') && (
               <Button size="sm" onClick={handleBulkUpdate}>
                 <Download className="h-3.5 w-3.5 mr-1" /> {t('srv.startUpdates')}

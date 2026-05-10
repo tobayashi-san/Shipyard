@@ -72,8 +72,7 @@ export async function apiDownload(path: string, filename: string): Promise<void>
 }
 
 // ─────────────────────────── Typed API surface ──────────────────────────────
-// Matches the legacy ApiClient in frontend/src/api.js. Field names preserve
-// snake_case at the API boundary (per AGENTS.md). Return types are deliberately
+// Field names preserve snake_case at the API boundary (per AGENTS.md). Return types are deliberately
 // loose (`unknown`/`any`) for now to avoid blocking parity work; tighten per view.
 
 type AnyObj = Record<string, unknown>;

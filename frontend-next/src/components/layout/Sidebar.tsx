@@ -281,7 +281,7 @@ export function Sidebar() {
         ) : null}
         {!collapsed && (
           <div className="flex flex-col leading-tight">
-            <span className="text-sm font-semibold tracking-tight">{appName}</span>
+            <span className="text-sm font-semibold">{appName}</span>
             {appTagline && <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground">{appTagline}</span>}
           </div>
         )}

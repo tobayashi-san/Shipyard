@@ -94,7 +94,7 @@ function parsePlaybookTargets(targets: string) {
   return { mode: 'list' as const, excluded: [] as string[], included: raw.split(',').map(t => t.trim()).filter(Boolean) };
 }
 
-// ── Cron helpers (matching old frontend 1:1) ─────────────────────────────────
+// ── Cron helpers ─────────────────────────────────────────────────────────────
 
 interface IntervalDef { value: string; labelKey: string; needsTime: boolean; needsWeekday: boolean; needsMonthday: boolean }
 const INTERVALS: IntervalDef[] = [
@@ -245,10 +245,10 @@ function GitWidget({ onGoSettings }: { onGoSettings: () => void }) {
   });
 
   return (
-    <div className="flex items-center gap-1.5">
-      <div className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium text-muted-foreground">
+    <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
+      <div className="flex min-w-0 max-w-[220px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium text-muted-foreground">
         <GitBranch className="h-3.5 w-3.5" />
-        <span>{configured ? branch : t('git.notConfigured')}</span>
+        <span className="truncate">{configured ? branch : t('git.notConfigured')}</span>
       </div>
       <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => pullMut.mutate()} disabled={pullMut.isPending} title={t('git.pullRemote')}>
         <ArrowDown className="h-3.5 w-3.5" />
@@ -399,7 +399,7 @@ function TemplatesTab() {
   return (
     <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
       {/* ── List panel ─────────────────────────── */}
-      <Card className="lg:max-h-[calc(100vh-14rem)] lg:overflow-y-auto">
+      <Card className={`${panel === 'none' ? '' : 'hidden lg:block'} lg:max-h-[calc(100vh-14rem)] lg:overflow-y-auto`}>
         <CardContent className="p-0">
           <div className="flex items-center justify-between border-b px-3 py-2">
             <span className="text-sm font-semibold">{t('pb.title')}</span>
@@ -477,8 +477,8 @@ function TemplatesTab() {
           <CardContent className="space-y-3 p-4">
             {/* Editor header */}
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-medium">{isNew ? t('pb.new') : (selected ?? '')}</span>
-              <div className="flex flex-wrap gap-1.5">
+              <span className="min-w-0 truncate font-medium">{isNew ? t('pb.new') : (selected ?? '')}</span>
+              <div className="flex flex-wrap justify-end gap-1.5">
                 <Button variant="outline" size="sm" className="lg:hidden" onClick={closePanel}>
                   <ArrowLeft className="h-4 w-4" /> {t('common.back')}
                 </Button>
@@ -512,7 +512,7 @@ function TemplatesTab() {
               <Label>{t('pb.yaml')}</Label>
               <div className="overflow-hidden rounded-md border">
                 <CodeMirror value={content} onChange={setContent} extensions={[yaml()]}
-                  theme={isDark ? 'dark' : 'light'} height="calc(100vh - 22rem)"
+                  theme={isDark ? 'dark' : 'light'} height="min(60vh, 560px)"
                   basicSetup={{ lineNumbers: true, highlightActiveLine: true }} />
               </div>
             </div>
@@ -548,13 +548,14 @@ function TemplatesTab() {
 function PlaybookListItem({ p, active, onSelect, onRun }: {
   p: Playbook; active: boolean; onSelect?: () => void; onRun?: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className={`group flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition ${onSelect ? 'cursor-pointer' : ''} ${active ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'}`}
       onClick={onSelect}>
       <FileText className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate" title={p.filename}>{p.description || p.filename}</span>
       {onRun && (
-        <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={e => { e.stopPropagation(); onRun(); }} title="Run">
+        <Button variant="ghost" size="icon" className="h-6 w-6 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100" onClick={e => { e.stopPropagation(); onRun(); }} title={t('common.run')}>
           <Play className="h-3 w-3" />
         </Button>
       )}
@@ -611,12 +612,12 @@ function TemplateRunPanel({ filename, description, onClose }: { filename: string
   return (
     <Card className="min-w-0">
       <CardContent className="space-y-3 p-4">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <Play className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium">{description || filename}</span>
+            <span className="truncate font-medium">{description || filename}</span>
           </div>
-          <div className="flex gap-1.5">
+          <div className="flex flex-wrap justify-end gap-1.5">
             <Button variant="outline" size="sm" className="lg:hidden" onClick={onClose}><ArrowLeft className="h-4 w-4" /> {t('common.back')}</Button>
             <Button variant="outline" size="sm" onClick={onClose}>{t('common.close')}</Button>
           </div>
@@ -645,9 +646,9 @@ function TemplateRunPanel({ filename, description, onClose }: { filename: string
                     <input type="checkbox" checked={isExcluded} onChange={e => {
                       setExcluded(prev => { const n = new Set(prev); if (e.target.checked) n.add(nm); else n.delete(nm); return n; });
                     }} className={isExcluded ? 'accent-destructive' : ''} />
-                    <span>{nm}</span>
+                    <span className="min-w-0 truncate">{nm}</span>
                     {isExcluded && <span className="ml-1 text-xs font-medium text-destructive">{t('run.excluded')}</span>}
-                    <StatusBadge tone={s.status === 'online' ? 'success' : 'muted'} className="ml-auto">
+                    <StatusBadge tone={s.status === 'online' ? 'success' : 'muted'} className="ml-auto flex-shrink-0">
                       {s.status === 'online' ? t('common.online') : t('common.offline')}
                     </StatusBadge>
                   </label>
@@ -781,9 +782,9 @@ function QuickRunTab() {
                 return (
                   <label key={nm} className={`flex items-center gap-2 text-sm rounded px-1 py-0.5 transition-colors ${dis ? 'opacity-40' : ''} ${isExcluded ? 'bg-destructive/10 text-destructive' : ''}`}>
                     <input type="checkbox" disabled={dis} checked={checked.has(nm)} onChange={() => toggleServer(nm)} className={isExcluded ? 'accent-destructive' : ''} />
-                    <span>{nm}</span>
+                    <span className="min-w-0 truncate">{nm}</span>
                     {isExcluded && <span className="text-xs font-medium text-destructive">{t('run.excluded')}</span>}
-                    <StatusBadge tone={s.status === 'online' ? 'success' : 'muted'} className="ml-auto">
+                    <StatusBadge tone={s.status === 'online' ? 'success' : 'muted'} className="ml-auto flex-shrink-0">
                       {s.status === 'online' ? t('common.online') : t('common.offline')}
                     </StatusBadge>
                   </label>
@@ -823,10 +824,11 @@ function QuickRunTab() {
             <Terminal className="h-4 w-4" /> {t('pb.output')}
           </div>
           {!started ? (
-            <div className="flex flex-col items-center justify-center gap-2 py-10 text-muted-foreground text-sm">
-              <Play className="h-6 w-6" />
-              {t('pb.quickRunPlaceholder')}
-            </div>
+            <EmptyState
+              compact
+              icon={<Play className="h-5 w-5" />}
+              title={t('pb.quickRunPlaceholder')}
+            />
           ) : (
             <div ref={bodyRef} className="max-h-[calc(100vh-20rem)] overflow-y-auto rounded-md border bg-muted/30 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
               {lines.map((l, i) => <div key={i} className={l.cls}>{l.text}</div>)}
@@ -1040,7 +1042,7 @@ function SchedulesTab() {
           ) : (
             <div className="space-y-2">
               {schedules.map(s => (
-                <div key={s.id} className="flex items-center gap-3 rounded-md border p-3">
+                <div key={s.id} className="flex flex-wrap items-center gap-3 rounded-md border p-3 sm:flex-nowrap">
                   {hasCap(profile, 'canToggleSchedules') && (
                     <Switch checked={s.enabled} onCheckedChange={() => toggleMut.mutate(s.id)} />
                   )}
@@ -1058,7 +1060,7 @@ function SchedulesTab() {
                       )}
                     </div>
                   </div>
-                  <div className="flex gap-1 flex-shrink-0">
+                  <div className="ml-auto flex flex-shrink-0 gap-1">
                     {hasCap(profile, 'canEditSchedules') && (
                       <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => openEdit(s.id)}><Settings2 className="h-3.5 w-3.5" /></Button>
                     )}

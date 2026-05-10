@@ -6,7 +6,7 @@ export function StubPage({ titleKey }: { titleKey: string }) {
   const { t } = useTranslation();
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">{t(titleKey)}</h1>
+      <h1 className="text-2xl font-semibold">{t(titleKey)}</h1>
       <Card>
         <CardContent className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
           <Construction className="h-8 w-8" />

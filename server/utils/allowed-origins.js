@@ -1,4 +1,4 @@
-const DEFAULT_ORIGINS = ['http://localhost:3000', 'http://localhost:5173'];
+const DEFAULT_ORIGINS = ['http://localhost:3000', 'http://localhost:5174'];
 
 function normalizeOrigin(raw) {
   try {

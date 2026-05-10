@@ -378,9 +378,9 @@ function StatCard({ icon, value, label, color, footer }: {
   return (
     <Card>
       <CardContent className="p-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between gap-2">
           <span className="text-muted-foreground">{icon}</span>
-          <span className="text-xs text-muted-foreground">{label}</span>
+          <span className="min-w-0 text-right text-xs leading-tight text-muted-foreground">{label}</span>
         </div>
         <div className={`mt-1 text-2xl font-semibold tabular-nums ${valueClass}`}>{value}</div>
         <div className="mt-0.5 text-[11px] text-muted-foreground">{footer}</div>
@@ -439,10 +439,10 @@ function ServerRow({ s, t }: { s: ServerInfo; t: (k: string) => string }) {
         )}
       </td>
       <td className="px-2 py-2.5">
-        <div className="flex items-center gap-1.5">
-          <span className="font-medium">{s.name}</span>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate font-medium">{s.name}</span>
           <AgentBadge s={s} />
-          <span className="font-mono text-[11px] text-muted-foreground">{s.ip_address}</span>
+          <span className="truncate font-mono text-[11px] text-muted-foreground">{s.ip_address}</span>
         </div>
         {tags.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1">
@@ -473,9 +473,9 @@ function ServerCard({ s, t }: { s: ServerInfo; t: (k: string) => string }) {
   return (
     <Link to="/servers/$id" params={{ id: String(s.id) }}
       className="rounded-lg border bg-card p-4 transition-colors hover:bg-muted/50">
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         <span className={`inline-block h-2 w-2 rounded-full ${dotCls}`} />
-        <span className="font-medium">{s.name}</span>
+        <span className="truncate font-medium">{s.name}</span>
         <StatusBadge tone={s.status === 'online' ? 'success' : s.status === 'offline' ? 'danger' : 'muted'} className="ml-auto">{statusLabel}</StatusBadge>
       </div>
       <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">

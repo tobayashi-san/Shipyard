@@ -1,7 +1,7 @@
 // ── Plugin Styles ─────────────────────────────────────────────────────────
 const PLUGIN_STYLES = `
 .tofu-plugin {
-  /* Semantic aliases: work in old frontend (literal fallbacks) AND new frontend (hsl vars) */
+  /* Semantic aliases for the application theme. */
   --tp-bg:          var(--card,          hsl(var(--background, 0 0% 100%)));
   --tp-bg2:         var(--muted,         hsl(var(--muted, 220 15% 95.5%)));
   --tp-fg:          var(--foreground,    hsl(var(--foreground, 224 15% 12%)));
@@ -1572,19 +1572,7 @@ async function loadResourcesTab(el, ws) {
 let _modalOverlay = null;
 
 function showModal(innerHTML, { maxWidth = '520px', onReady } = {}) {
-  // Try to use old frontend's modal-overlay if it exists
-  const legacyOverlay = document.getElementById('modal-overlay');
-  if (legacyOverlay) {
-    legacyOverlay.classList.remove('hidden');
-    legacyOverlay.innerHTML = `<div class="modal tp-modal-legacy" style="max-width:${maxWidth};width:95%;">${innerHTML}</div>`;
-    legacyOverlay.addEventListener('click', e => {
-      if (e.target === legacyOverlay) { legacyOverlay.classList.add('hidden'); legacyOverlay.innerHTML = ''; }
-    }, { once: true });
-    if (onReady) onReady();
-    return;
-  }
-
-  // New frontend: create our own overlay — always attach to document.body
+  // Always attach to document.body
   // so that position:fixed is relative to the true viewport and not clipped
   // by any overflow/transform ancestor in the plugin host.
   if (_modalOverlay) _modalOverlay.remove();
@@ -1597,12 +1585,6 @@ function showModal(innerHTML, { maxWidth = '520px', onReady } = {}) {
 }
 
 function closeModal() {
-  const legacyOverlay = document.getElementById('modal-overlay');
-  if (legacyOverlay && !legacyOverlay.classList.contains('hidden')) {
-    legacyOverlay.classList.add('hidden');
-    legacyOverlay.innerHTML = '';
-    return;
-  }
   if (_modalOverlay) { _modalOverlay.remove(); _modalOverlay = null; }
 }
 

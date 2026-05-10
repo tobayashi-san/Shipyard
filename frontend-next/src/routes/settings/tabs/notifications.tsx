@@ -155,7 +155,7 @@ function SmtpForm({ wl }: { wl: WhiteLabel }) {
   return (
     <>
       <SettingsRow label={t('set.smtpHost')}>
-        <div className="grid w-full max-w-md grid-cols-[1fr_90px] gap-2">
+        <div className="grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-[1fr_90px]">
           <Input value={host} onChange={(e) => setHost(e.target.value)} placeholder="smtp.example.com" />
           <Input value={port} onChange={(e) => setPort(e.target.value)} type="number" placeholder="587" />
         </div>

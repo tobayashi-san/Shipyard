@@ -1,5 +1,5 @@
 /**
- * Runtime white-label application — mirrors the old frontend's applyWhiteLabel().
+ * Runtime white-label application.
  * Call this whenever settings change to update document.title, favicon, accent CSS vars, and meta tags.
  */
 

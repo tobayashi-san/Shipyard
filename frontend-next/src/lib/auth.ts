@@ -1,7 +1,3 @@
-/**
- * Auth state — shared with the legacy frontend via the same localStorage key.
- * Both UIs read/write `shipyard_token`. Logging out anywhere logs out everywhere.
- */
 const TOKEN_KEY = 'shipyard_token';
 
 type UnauthorizedHandler = () => void;

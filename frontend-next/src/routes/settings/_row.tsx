@@ -11,7 +11,6 @@ interface SettingsRowProps {
 
 /**
  * Two-column settings row: left = label + hint, right = control(s).
- * Mirrors the legacy `.settings-row` layout from frontend/src/styles/*.
  */
 export function SettingsRow({ label, hint, children, align = 'center', noBorder, className }: SettingsRowProps) {
   return (
@@ -23,11 +22,11 @@ export function SettingsRow({ label, hint, children, align = 'center', noBorder,
         className
       )}
     >
-      <div className="flex flex-col gap-0.5 text-sm">
+      <div className="flex min-w-0 flex-col gap-0.5 text-sm">
         {label && <span className="font-medium text-foreground">{label}</span>}
         {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
       </div>
-      <div className="flex flex-wrap items-center gap-2">{children}</div>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">{children}</div>
     </div>
   );
 }
@@ -46,16 +45,16 @@ export function SettingsSection({ title, description, icon, headerRight, childre
   return (
     <section className={cn('rounded-lg border bg-card text-card-foreground shadow-sm', className)}>
       {(title || description || headerRight) && (
-        <header className="flex items-start gap-3 border-b border-border/60 px-5 py-4">
+        <header className="flex flex-wrap items-start gap-3 border-b border-border/60 px-4 py-4 sm:flex-nowrap sm:px-5">
           {icon && <div className="mt-0.5 text-muted-foreground">{icon}</div>}
           <div className="min-w-0 flex-1">
-            {title && <h3 className="text-sm font-semibold tracking-tight">{title}</h3>}
+            {title && <h3 className="text-sm font-semibold">{title}</h3>}
             {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
           </div>
-          {headerRight && <div className="flex items-center gap-2">{headerRight}</div>}
+          {headerRight && <div className="flex flex-wrap items-center gap-2">{headerRight}</div>}
         </header>
       )}
-      <div className="px-5">{children}</div>
+      <div className="px-4 sm:px-5">{children}</div>
     </section>
   );
 }

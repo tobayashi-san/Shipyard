@@ -148,7 +148,7 @@ export function ProfilePage() {
           <User className="h-5 w-5" />
         </div>
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="text-2xl font-semibold">
             {(profile?.displayName as string) || username}
           </h1>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">

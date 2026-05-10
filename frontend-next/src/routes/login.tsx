@@ -100,8 +100,8 @@ export function LoginPage() {
   };
 
   return (
-    <div className="grid min-h-screen place-items-center bg-gradient-to-br from-background via-background to-muted/40 p-4">
-      <Card className="w-full max-w-md shadow-lg">
+    <div className="grid min-h-screen place-items-center surface-2 p-4">
+      <Card className="w-full max-w-md shadow-subtle">
         <CardHeader className="space-y-2 text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
             <Anchor className="h-6 w-6 text-primary" />

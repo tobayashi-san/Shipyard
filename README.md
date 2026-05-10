@@ -102,8 +102,8 @@ Current screenshots are captured from a seeded local demo instance. Primary asse
 # Backend (port 3001)
 cd server && npm install && npm run dev
 
-# Frontend (port 5173) — in a second terminal
-cd frontend && npm install && npm run dev
+# Frontend (port 5174) — in a second terminal
+cd frontend-next && npm install && npm run dev
 ```
 
 ```bash

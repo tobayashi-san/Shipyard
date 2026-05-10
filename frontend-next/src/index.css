@@ -147,11 +147,6 @@
     @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
   }
 
-  /* Tighter heading tracking */
-  h1, h2, h3, h4 {
-    letter-spacing: -0.01em;
-  }
-
   /* Selection color uses brand */
   ::selection {
     background-color: hsl(var(--brand) / 0.25);

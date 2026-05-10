@@ -2,10 +2,9 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 
-// Parallel UI served under /next on the backend.
-// Mirrors the proxy rules from frontend/vite.config.js so dev hits :3001.
+// Default UI served from the backend root.
 export default defineConfig({
-  base: '/next/',
+  base: '/',
   plugins: [react()],
   resolve: {
     alias: {

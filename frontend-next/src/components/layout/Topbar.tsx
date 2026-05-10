@@ -35,6 +35,7 @@ export function Topbar() {
           setI18n(next);
         }}
         title={t('common.language')}
+        className="w-auto px-2"
       >
         <Languages className="h-4 w-4" />
         <span className="ml-1 text-xs">{language.toUpperCase()}</span>
@@ -50,7 +51,7 @@ export function Topbar() {
         title={t('common.logout')}
         onClick={() => {
           setToken(null);
-          window.location.assign('/next/login');
+          window.location.assign('/login');
         }}
       >
         <LogOut className="h-4 w-4" />
