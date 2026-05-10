@@ -3,8 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import {
-  Server, CheckCircle2, XCircle, RotateCcw, ArrowUp, AlertTriangle, RefreshCw,
-  HeartPulse, Bell, Clock, Filter, Plus, Bot, Package, Box, Cog,
+  Server, CheckCircle2, XCircle, RotateCcw, AlertTriangle, RefreshCw,
+  HeartPulse, Bell, Clock, Filter, Plus, Bot, PackagePlus, Container, Cog,
   HardDrive, Cpu, MemoryStick,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -184,9 +184,9 @@ export function DashboardPage() {
       if ((s.ram_pct ?? 0) >= 90)
         out.push({ level: 'warning', icon: <MemoryStick className="h-3.5 w-3.5" />, text: t('dash.alertRam', { name: s.name, pct: s.ram_pct }), serverId: s.id });
       if ((s.updates_count ?? 0) > 0)
-        out.push({ level: 'info', icon: <ArrowUp className="h-3.5 w-3.5" />, text: t('dash.alertUpdates', { name: s.name, count: s.updates_count }), serverId: s.id });
+        out.push({ level: 'info', icon: <PackagePlus className="h-3.5 w-3.5" />, text: t('dash.alertUpdates', { name: s.name, count: s.updates_count }), serverId: s.id });
       if ((s.image_updates_count ?? 0) > 0)
-        out.push({ level: 'info', icon: <Box className="h-3.5 w-3.5" />, text: t('dash.alertImageUpdates', { name: s.name, count: s.image_updates_count }), serverId: s.id });
+        out.push({ level: 'info', icon: <Container className="h-3.5 w-3.5" />, text: t('dash.alertImageUpdates', { name: s.name, count: s.image_updates_count }), serverId: s.id });
       if ((s.custom_updates_count ?? 0) > 0)
         out.push({ level: 'info', icon: <Cog className="h-3.5 w-3.5" />, text: t('dash.alertCustomUpdates', { name: s.name, count: s.custom_updates_count }), serverId: s.id });
     });
@@ -224,7 +224,7 @@ export function DashboardPage() {
         <StatCard icon={<RotateCcw className="h-4 w-4" />} value={summary.rebootRequired} label={t('dash.needsReboot')}
           color={summary.rebootRequired > 0 ? 'warning' : undefined}
           footer={summary.rebootRequired > 0 ? t('dash.statFooterServers', { n: summary.rebootRequired }) : t('dash.statFooterAllClear')} />
-        <StatCard icon={<ArrowUp className="h-4 w-4" />} value={summary.totalUpdates} label={t('dash.updatesAvailable')}
+        <StatCard icon={<PackagePlus className="h-4 w-4" />} value={summary.totalUpdates} label={t('dash.updatesAvailable')}
           color={summary.totalUpdates > 0 ? 'warning' : undefined}
           footer={summary.totalUpdates > 0 ? t('dash.statFooterOnServers', { n: updatesServerCount }) : t('dash.statFooterAllClear')} />
         <StatCard icon={<AlertTriangle className="h-4 w-4" />} value={summary.criticalDisk + summary.criticalRam} label={t('dash.resourcesCritical')}
@@ -418,8 +418,8 @@ function UpdatesCell({ s }: { s: ServerInfo }) {
   const { t } = useTranslation();
   const parts: React.ReactNode[] = [];
   if (s.reboot_required) parts.push(<span key="rb" title={t('dash.needsReboot')}><RotateCcw className="h-3 w-3" /></span>);
-  if ((s.updates_count ?? 0) > 0) parts.push(<span key="u" className="flex items-center gap-0.5" title={t('dash.colUpdates')}><Package className="h-3 w-3" />{s.updates_count}</span>);
-  if ((s.image_updates_count ?? 0) > 0) parts.push(<span key="i" className="flex items-center gap-0.5" title={t('dash.colImageUpdates')}><Box className="h-3 w-3" />{s.image_updates_count}</span>);
+  if ((s.updates_count ?? 0) > 0) parts.push(<span key="u" className="flex items-center gap-0.5" title={t('dash.colUpdates')}><PackagePlus className="h-3 w-3" />{s.updates_count}</span>);
+  if ((s.image_updates_count ?? 0) > 0) parts.push(<span key="i" className="flex items-center gap-0.5" title={t('dash.colImageUpdates')}><Container className="h-3 w-3" />{s.image_updates_count}</span>);
   if ((s.custom_updates_count ?? 0) > 0) parts.push(<span key="c" className="flex items-center gap-0.5" title={t('dash.colCustomUpdates')}><Cog className="h-3 w-3" />{s.custom_updates_count}</span>);
   if (parts.length === 0) return <span title={t('dash.allClear')}><CheckCircle2 className="h-4 w-4 text-emerald-500" /></span>;
   return <StatusBadge tone="warning" className="gap-1.5">{parts}</StatusBadge>;
@@ -517,8 +517,8 @@ function UpdatesChips({ s }: { s: ServerInfo }) {
   const { t } = useTranslation();
   const chips: React.ReactNode[] = [];
   if (s.reboot_required) chips.push(<StatusBadge key="rb" tone="warning"><RotateCcw className="mr-1 h-3 w-3" />{t('dash.needsReboot')}</StatusBadge>);
-  if ((s.updates_count ?? 0) > 0) chips.push(<StatusBadge key="u" tone="warning"><Package className="mr-1 h-3 w-3" />{s.updates_count} {t('dash.colUpdates')}</StatusBadge>);
-  if ((s.image_updates_count ?? 0) > 0) chips.push(<StatusBadge key="i" tone="warning"><Box className="mr-1 h-3 w-3" />{s.image_updates_count} {t('dash.colImageUpdates')}</StatusBadge>);
+  if ((s.updates_count ?? 0) > 0) chips.push(<StatusBadge key="u" tone="warning"><PackagePlus className="mr-1 h-3 w-3" />{s.updates_count} {t('dash.colUpdates')}</StatusBadge>);
+  if ((s.image_updates_count ?? 0) > 0) chips.push(<StatusBadge key="i" tone="warning"><Container className="mr-1 h-3 w-3" />{s.image_updates_count} {t('dash.colImageUpdates')}</StatusBadge>);
   if ((s.custom_updates_count ?? 0) > 0) chips.push(<StatusBadge key="c" tone="warning"><Cog className="mr-1 h-3 w-3" />{s.custom_updates_count} {t('dash.colCustomUpdates')}</StatusBadge>);
   if (chips.length === 0) return <StatusBadge tone="success"><CheckCircle2 className="mr-1 h-3 w-3" />{t('dash.allClear')}</StatusBadge>;
   return <>{chips}</>;
