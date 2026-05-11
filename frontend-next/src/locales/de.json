@@ -173,6 +173,8 @@
     "alertMessage": "Meldung",
     "alertValue": "Wert",
     "alertTime": "Zeit",
+    "acknowledge": "Quittieren",
+    "acknowledged": "Quittiert",
     "thresholds": "Schwellenwerte",
     "notify": "Benachrichtigen",
     "triggerDelay": "Auslöseverzögerung (Sek.)",

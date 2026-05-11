@@ -326,10 +326,11 @@ export function DashboardPage() {
                           <AlertTriangle className="h-3.5 w-3.5" />
                         </span>
                         <span className="truncate">{a.message}</span>
+                        {a.status === 'acknowledged' && <StatusBadge tone="muted">{t('det.acknowledged')}</StatusBadge>}
                       </Link>
                       {a.status !== 'acknowledged' && (
                         <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => ackAlert.mutate(a.id)}>
-                          OK
+                          {t('det.acknowledge')}
                         </Button>
                       )}
                     </div>

@@ -173,6 +173,8 @@
     "alertMessage": "Alert",
     "alertValue": "Value",
     "alertTime": "Time",
+    "acknowledge": "Acknowledge",
+    "acknowledged": "Acknowledged",
     "thresholds": "Thresholds",
     "notify": "Notify",
     "triggerDelay": "Trigger delay (sec.)",

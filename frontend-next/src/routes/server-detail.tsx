@@ -328,8 +328,8 @@ export function ServerDetailPage() {
     staleTime: 30_000,
   });
   const { data: allAlerts } = useQuery({
-    queryKey: ['alerts', 'active'],
-    queryFn: () => api.getAlerts('active') as unknown as Promise<ResourceAlert[]>,
+    queryKey: ['alerts', 'open'],
+    queryFn: () => api.getAlerts('open') as unknown as Promise<ResourceAlert[]>,
     enabled: !!id,
     staleTime: 30_000,
   });
@@ -1256,8 +1256,11 @@ export function ServerDetailPage() {
                           </td>
                           <td className="px-3 py-2">
                             <StatusBadge tone={alert.status === 'resolved' ? 'success' : alert.status === 'acknowledged' ? 'muted' : alert.severity === 'critical' ? 'danger' : 'warning'}>
-                              {alert.status}
+                              {alert.status === 'acknowledged' ? t('det.acknowledged') : alert.status}
                             </StatusBadge>
+                            {alert.status === 'acknowledged' && alert.acknowledged_by && (
+                              <div className="mt-1 text-[11px] text-muted-foreground">{alert.acknowledged_by}</div>
+                            )}
                           </td>
                           <td className="px-3 py-2 text-xs text-muted-foreground">
                             {formatDate(alert.triggered_at || alert.first_seen_at, hour12)}
@@ -1265,7 +1268,7 @@ export function ServerDetailPage() {
                           <td className="px-3 py-2">
                             {alert.status !== 'acknowledged' && alert.status !== 'resolved' && (
                               <Button size="sm" variant="secondary" onClick={() => ackAlertMut.mutate(alert.id)} disabled={ackAlertMut.isPending}>
-                                OK
+                                {t('det.acknowledge')}
                               </Button>
                             )}
                           </td>
