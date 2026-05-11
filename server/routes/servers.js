@@ -7,6 +7,7 @@ const sshManager = require('../services/ssh-manager');
 const systemInfo = require('../services/system-info');
 const ansibleRunner = require('../services/ansible-runner');
 const { refreshDockerCache } = require('../services/docker-inventory');
+const resourceAlerts = require('../services/resource-alerts');
 const { parseImageUpdateOutput } = require('../utils/parse-image-updates');
 const { serverError } = require('../utils/http-error');
 const { targetIncludesServer } = require('../utils/validate');
@@ -474,10 +475,12 @@ router.post('/:id/test', testConnectionLimiter, guardServerAccess, guard('canUse
     const server = req.server;
     const connected = await sshManager.testConnection(server);
     db.servers.updateStatus(server.id, connected ? 'online' : 'offline');
+    resourceAlerts.evaluateServer(server.id);
 
     res.json({ connected, status: connected ? 'online' : 'offline' });
   } catch (error) {
     db.servers.updateStatus(req.params.id, 'error');
+    resourceAlerts.evaluateServer(req.params.id);
     log.warn({ err: error, serverId: req.params.id }, 'SSH test failed');
     res.json({ connected: false, status: 'error', error: 'Connection test failed' });
   }
@@ -526,6 +529,58 @@ router.put('/:id/notes', guardServerAccess, guard('canEditNotes'), (req, res) =>
   }
 });
 
+// GET /api/servers/:id/alert-settings
+router.get('/:id/alert-settings', guardServerAccess, guard('canViewServers'), (req, res) => {
+  try {
+    res.json(db.alertSettings.getByServer(req.params.id));
+  } catch (error) {
+    serverError(res, error, 'get alert settings');
+  }
+});
+
+// PUT /api/servers/:id/alert-settings
+router.put('/:id/alert-settings', guardServerAccess, guard('canEditServers'), (req, res) => {
+  try {
+    const body = req.body || {};
+    const patch = {};
+    if (body.enabled !== undefined) {
+      if (typeof body.enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be a boolean' });
+      patch.enabled = body.enabled;
+    }
+    if (body.notify_enabled !== undefined) {
+      if (typeof body.notify_enabled !== 'boolean') return res.status(400).json({ error: 'notify_enabled must be a boolean' });
+      patch.notify_enabled = body.notify_enabled;
+    }
+    if (body.trigger_after_seconds !== undefined) {
+      const seconds = Number(body.trigger_after_seconds);
+      if (!Number.isFinite(seconds) || seconds < 0 || seconds > 86400) {
+        return res.status(400).json({ error: 'trigger_after_seconds must be between 0 and 86400' });
+      }
+      patch.trigger_after_seconds = Math.round(seconds);
+    }
+    if (body.thresholds !== undefined) {
+      if (!body.thresholds || typeof body.thresholds !== 'object' || Array.isArray(body.thresholds)) {
+        return res.status(400).json({ error: 'thresholds must be an object' });
+      }
+      const thresholds = {};
+      for (const key of ['cpu', 'ram', 'disk', 'storage']) {
+        if (body.thresholds[key] === undefined) continue;
+        const value = Number(body.thresholds[key]);
+        if (!Number.isFinite(value) || value < 0 || value > 100) {
+          return res.status(400).json({ error: `${key} threshold must be between 0 and 100` });
+        }
+        thresholds[key] = Math.round(value);
+      }
+      patch.thresholds = thresholds;
+    }
+    const settings = db.alertSettings.upsert(req.params.id, patch);
+    resourceAlerts.evaluateServer(req.params.id);
+    res.json(settings);
+  } catch (error) {
+    serverError(res, error, 'save alert settings');
+  }
+});
+
 // GET /api/servers/:id/info - Get system info (stale-while-revalidate)
 router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, res) => {
   const server = req.server;
@@ -538,6 +593,7 @@ router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, 
   // Agent-managed servers use cached metrics from the runner as the source of truth.
   // Do not overwrite them with classic SSH polling on read.
   if (hasActiveAgent && cached) {
+    resourceAlerts.evaluateServer(req.params.id);
     return res.json({ ...cached, _source: 'agent' });
   }
 
@@ -557,6 +613,7 @@ router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, 
       .then(info => {
         db.serverInfo.upsert(server.id, info);
         db.servers.updateStatus(server.id, 'online');
+        resourceAlerts.evaluateServer(server.id);
         if (info.docker_detected && !server.docker_enabled) {
           db.servers.setDockerEnabled(server.id, 1);
         }
@@ -566,6 +623,7 @@ router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, 
         try { db.servers.updateStatus(server.id, 'offline'); } catch (updateErr) {
           log.warn({ err: updateErr, server: server.name }, 'Failed to update server status to offline');
         }
+        resourceAlerts.evaluateServer(server.id);
       });
     return;
   }
@@ -575,12 +633,14 @@ router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, 
     const info = await systemInfo.getSystemInfo(server);
     db.serverInfo.upsert(server.id, info);
     db.servers.updateStatus(server.id, 'online');
+    resourceAlerts.evaluateServer(server.id);
     if (info.docker_detected && !server.docker_enabled) {
       db.servers.setDockerEnabled(server.id, 1);
     }
     res.json(info);
   } catch (error) {
     db.servers.updateStatus(req.params.id, 'offline');
+    resourceAlerts.evaluateServer(req.params.id);
     if (error.message && error.message.includes('SSH connection failed')) {
       return res.status(503).json({ error: error.message });
     }
@@ -609,7 +669,10 @@ router.get('/:id/updates', guardServerAccess, guard('canViewUpdates'), async (re
   if (cached && !force) {
     res.json(cached.map(u => ({ ...u, _cached: true })));
     systemInfo.getAvailableUpdates(server)
-      .then(updates => db.updatesCache.set(server.id, updates))
+      .then(updates => {
+        db.updatesCache.set(server.id, updates);
+        resourceAlerts.evaluateServer(server.id);
+      })
       .catch(err => { log.debug({ err, server: server.name }, 'Background updates cache refresh failed'); });
     return;
   }
@@ -617,6 +680,7 @@ router.get('/:id/updates', guardServerAccess, guard('canViewUpdates'), async (re
   try {
     const updates = await systemInfo.getAvailableUpdates(server);
     db.updatesCache.set(server.id, updates);
+    resourceAlerts.evaluateServer(server.id);
     res.json(updates);
   } catch (error) {
     if (cached) return res.json(cached);
@@ -756,6 +820,7 @@ router.get('/:id/docker/image-updates', guardServerAccess, guard('canPullDocker'
     const result = await ansibleRunner.runPlaybook('check-image-updates.yml', server.name);
     const updates = parseImageUpdateOutput(result.stdout);
     db.dockerImageUpdatesCache.set(server.id, updates);
+    resourceAlerts.evaluateServer(server.id);
     res.json(updates);
   } catch (error) {
     serverError(res, error, 'get docker image updates');

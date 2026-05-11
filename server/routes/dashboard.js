@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { getPermissions, filterServers, can } = require('../utils/permissions');
 const { serverError } = require('../utils/http-error');
+const resourceAlerts = require('../services/resource-alerts');
 
 const router = express.Router();
 
@@ -21,6 +22,7 @@ router.get('/', (req, res) => {
     const perms = getPermissions(req.user);
     if (!can(perms, 'canViewServers')) return res.status(403).json({ error: 'Permission denied' });
     const servers = filterServers(db.servers.getAll(), perms);
+    resourceAlerts.evaluateServers(servers.map(s => s.id));
     const online = servers.filter(s => s.status === 'online').length;
     const offline = servers.filter(s => s.status === 'offline').length;
 
@@ -28,6 +30,7 @@ router.get('/', (req, res) => {
     let totalUpdates = 0;
     let criticalDisk = 0;
     let criticalRam = 0;
+    const alertCounts = db.resourceAlerts.countsByServer(servers.map(s => s.id));
 
     const serverStats = servers.map(s => {
       const info = db.serverInfo.get(s.id);
@@ -43,8 +46,9 @@ router.get('/', (req, res) => {
       const isOnline = s.status === 'online';
       const ramPct = (isOnline && info?.ram_total_mb) ? Math.round((info.ram_used_mb / info.ram_total_mb) * 100) : null;
       const diskPct = (isOnline && info?.disk_total_gb) ? Math.round((info.disk_used_gb / info.disk_total_gb) * 100) : null;
-      if (ramPct > 85) criticalRam++;
-      if (diskPct > 85) criticalDisk++;
+      const alertSettings = db.alertSettings.getByServer(s.id);
+      if (ramPct !== null && ramPct >= alertSettings.thresholds.ram) criticalRam++;
+      if (diskPct !== null && diskPct >= alertSettings.thresholds.disk) criticalDisk++;
 
       let agentMode = 'legacy';
       let agentState = 'legacy';
@@ -89,6 +93,8 @@ router.get('/', (req, res) => {
         agent_mode: agentMode,
         agent_state: agentState,
         agent_last_seen: agentLastSeen,
+        alert_count: alertCounts.get(s.id) || 0,
+        alert_thresholds: alertSettings.thresholds,
       };
     });
 
@@ -116,6 +122,7 @@ router.get('/', (req, res) => {
     res.json({
       summary: { total: servers.length, online, offline, unknown: servers.length - online - offline, rebootRequired, totalUpdates, criticalDisk, criticalRam },
       servers: serverStats,
+      alerts: db.resourceAlerts.list({ statuses: ['active', 'acknowledged'], serverIds: servers.map(s => s.id), limit: 100 }),
       recentHistory,
     });
   } catch (e) {

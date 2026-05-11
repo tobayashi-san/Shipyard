@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import {
   Server, CheckCircle2, XCircle, RotateCcw, AlertTriangle, RefreshCw,
@@ -39,6 +39,8 @@ interface ServerInfo {
   tags?: string[];
   agent_mode?: string;
   agent_state?: string;
+  alert_count?: number;
+  alert_thresholds?: { cpu?: number; ram?: number; disk?: number; storage?: number };
 }
 
 interface Summary {
@@ -62,15 +64,30 @@ interface HistoryEntry {
 interface DashboardData {
   summary: Summary;
   servers: ServerInfo[];
+  alerts?: AlertInfo[];
   recentHistory: HistoryEntry[];
+}
+
+interface AlertInfo {
+  id: string;
+  server_id: string;
+  server_name?: string;
+  type: string;
+  target_key?: string;
+  severity?: string;
+  status: string;
+  value?: number | null;
+  threshold?: number | null;
+  message: string;
+  acknowledged_at?: string | null;
 }
 
 // ---- helpers ----
 
 function needsAttention(s: ServerInfo) {
-  return s.status === 'offline' || s.reboot_required ||
+  return (s.alert_count ?? 0) > 0 || s.status === 'offline' || s.reboot_required ||
     (s.updates_count ?? 0) > 0 || (s.image_updates_count ?? 0) > 0 ||
-    (s.custom_updates_count ?? 0) > 0 || (s.disk_pct ?? 0) > 85 || (s.ram_pct ?? 0) > 85;
+    (s.custom_updates_count ?? 0) > 0;
 }
 
 function formatUptime(seconds?: number | null) {
@@ -123,12 +140,13 @@ export function DashboardPage() {
     ws.connect();
     const unsub = ws.subscribe((raw) => {
       const msg = raw as { type?: string };
-      if (msg?.type === 'cache_updated' || msg?.type === 'docker_refreshed') {
+      if (msg?.type === 'cache_updated' || msg?.type === 'docker_refreshed' || msg?.type === 'resource_alert_triggered' || msg?.type === 'resource_alert_updated') {
         void qc.invalidateQueries({ queryKey: ['dashboard'] });
       }
+      if (msg?.type === 'resource_alert_triggered') showToast(t('dash.alerts'), 'warning');
     });
     return unsub;
-  }, [qc]);
+  }, [qc, t]);
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -165,6 +183,7 @@ export function DashboardPage() {
   const summary = data?.summary ?? { total: 0, online: 0, offline: 0, rebootRequired: 0, totalUpdates: 0, criticalDisk: 0, criticalRam: 0 };
   const servers = data?.servers ?? [];
   const recentHistory = data?.recentHistory ?? [];
+  const resourceAlerts = data?.alerts ?? [];
   const [attentionOnly, setAttentionOnly] = [
     useUi((s) => s.dashAttentionOnly),
     useUi((s) => s.setDashAttentionOnly),
@@ -172,26 +191,11 @@ export function DashboardPage() {
   const attentionCount = useMemo(() => servers.filter(needsAttention).length, [servers]);
 
   const visible = attentionOnly ? servers.filter(needsAttention) : servers;
-  const alerts = useMemo(() => {
-    const out: { level: string; icon: React.ReactNode; text: string; serverId: string | number }[] = [];
-    servers.forEach(s => {
-      if (s.status === 'offline')
-        out.push({ level: 'error', icon: <XCircle className="h-3.5 w-3.5" />, text: t('dash.alertOffline', { name: s.name }), serverId: s.id });
-      if (s.reboot_required)
-        out.push({ level: 'warning', icon: <RotateCcw className="h-3.5 w-3.5" />, text: t('dash.alertReboot', { name: s.name }), serverId: s.id });
-      if ((s.disk_pct ?? 0) >= 85)
-        out.push({ level: 'warning', icon: <HardDrive className="h-3.5 w-3.5" />, text: t('dash.alertDisk', { name: s.name, pct: s.disk_pct }), serverId: s.id });
-      if ((s.ram_pct ?? 0) >= 90)
-        out.push({ level: 'warning', icon: <MemoryStick className="h-3.5 w-3.5" />, text: t('dash.alertRam', { name: s.name, pct: s.ram_pct }), serverId: s.id });
-      if ((s.updates_count ?? 0) > 0)
-        out.push({ level: 'info', icon: <PackagePlus className="h-3.5 w-3.5" />, text: t('dash.alertUpdates', { name: s.name, count: s.updates_count }), serverId: s.id });
-      if ((s.image_updates_count ?? 0) > 0)
-        out.push({ level: 'info', icon: <Container className="h-3.5 w-3.5" />, text: t('dash.alertImageUpdates', { name: s.name, count: s.image_updates_count }), serverId: s.id });
-      if ((s.custom_updates_count ?? 0) > 0)
-        out.push({ level: 'info', icon: <Cog className="h-3.5 w-3.5" />, text: t('dash.alertCustomUpdates', { name: s.name, count: s.custom_updates_count }), serverId: s.id });
-    });
-    return out;
-  }, [servers, t]);
+  const ackAlert = useMutation({
+    mutationFn: (id: string) => api.acknowledgeAlert(id),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['dashboard'] }),
+    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
+  });
 
   const updatesServerCount = servers.filter(s => (s.updates_count ?? 0) > 0 || (s.image_updates_count ?? 0) > 0 || (s.custom_updates_count ?? 0) > 0).length;
 
@@ -227,9 +231,9 @@ export function DashboardPage() {
         <StatCard icon={<PackagePlus className="h-4 w-4" />} value={summary.totalUpdates} label={t('dash.updatesAvailable')}
           color={summary.totalUpdates > 0 ? 'warning' : undefined}
           footer={summary.totalUpdates > 0 ? t('dash.statFooterOnServers', { n: updatesServerCount }) : t('dash.statFooterAllClear')} />
-        <StatCard icon={<AlertTriangle className="h-4 w-4" />} value={summary.criticalDisk + summary.criticalRam} label={t('dash.resourcesCritical')}
-          color={(summary.criticalDisk + summary.criticalRam) > 0 ? 'error' : undefined}
-          footer={(summary.criticalDisk + summary.criticalRam) > 0
+        <StatCard icon={<AlertTriangle className="h-4 w-4" />} value={resourceAlerts.filter(a => a.status !== 'acknowledged').length} label={t('dash.resourcesCritical')}
+          color={resourceAlerts.some(a => a.status !== 'acknowledged') ? 'error' : undefined}
+          footer={resourceAlerts.length > 0
             ? t('dash.statFooterDiskRam', { disk: summary.criticalDisk, ram: summary.criticalRam })
             : t('dash.statFooterAllClear')} />
       </div>
@@ -305,26 +309,30 @@ export function DashboardPage() {
             <CardHeader className="flex flex-row items-center gap-2 space-y-0 px-4 py-3">
               <Bell className="h-4 w-4 text-amber-500" />
               <CardTitle className="text-base">{t('dash.alerts')}</CardTitle>
-              {alerts.length > 0 && <Badge variant="secondary">{alerts.length}</Badge>}
+              {resourceAlerts.length > 0 && <Badge variant="secondary">{resourceAlerts.length}</Badge>}
             </CardHeader>
             <CardContent className="space-y-0 p-0">
-              {alerts.length === 0 ? (
+              {resourceAlerts.length === 0 ? (
                   <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
                   <CheckCircle2 className="h-4 w-4 text-emerald-500" /> {t('dash.allClear')}
                 </div>
               ) : (
                 <div className="max-h-[320px] overflow-y-auto">
-                  {alerts.map((a, i) => (
-                    <Link key={i} to="/servers/$id" params={{ id: String(a.serverId) }}
-                      className="flex items-center gap-2.5 border-b px-4 py-2 text-sm transition-colors last:border-b-0 hover:bg-muted/50">
-                      <span className={
-                        a.level === 'error' ? 'text-destructive' :
-                        a.level === 'warning' ? 'text-amber-500' : 'text-blue-500'
-                      }>
-                        {a.icon}
-                      </span>
-                      <span className="truncate">{a.text}</span>
-                    </Link>
+                  {resourceAlerts.map((a) => (
+                    <div key={a.id} className="flex items-center gap-2.5 border-b px-4 py-2 text-sm last:border-b-0">
+                      <Link to="/servers/$id" params={{ id: String(a.server_id) }}
+                        className="flex min-w-0 flex-1 items-center gap-2.5 transition-colors hover:text-primary">
+                        <span className={a.severity === 'critical' ? 'text-destructive' : a.status === 'acknowledged' ? 'text-muted-foreground' : 'text-amber-500'}>
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                        </span>
+                        <span className="truncate">{a.message}</span>
+                      </Link>
+                      {a.status !== 'acknowledged' && (
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => ackAlert.mutate(a.id)}>
+                          OK
+                        </Button>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}
@@ -389,12 +397,12 @@ function StatCard({ icon, value, label, color, footer }: {
   );
 }
 
-function MiniBar({ pct }: { pct: number | null | undefined }) {
+function MiniBar({ pct, warningAt }: { pct: number | null | undefined; warningAt?: number }) {
   if (pct == null) return <span className="text-xs text-muted-foreground">—</span>;
   return (
     <div className="flex items-center gap-2">
-      <MetricBar pct={pct} size="sm" className="min-w-[60px]" />
-      <span className={`tabular-nums text-xs font-mono ${metricTextClass(pct)}`}>{pct}%</span>
+      <MetricBar pct={pct} size="sm" className="min-w-[60px]" warningAt={warningAt} />
+      <span className={`tabular-nums text-xs font-mono ${metricTextClass(pct, warningAt)}`}>{pct}%</span>
     </div>
   );
 }
@@ -453,9 +461,9 @@ function ServerRow({ s, t }: { s: ServerInfo; t: (k: string) => string }) {
           </div>
         )}
       </td>
-      <td className="px-2 py-2.5"><MiniBar pct={s.ram_pct} /></td>
-      <td className="px-2 py-2.5"><MiniBar pct={s.disk_pct} /></td>
-      <td className="px-2 py-2.5"><MiniBar pct={s.cpu_pct} /></td>
+      <td className="px-2 py-2.5"><MiniBar pct={s.ram_pct} warningAt={s.alert_thresholds?.ram} /></td>
+      <td className="px-2 py-2.5"><MiniBar pct={s.disk_pct} warningAt={s.alert_thresholds?.disk} /></td>
+      <td className="px-2 py-2.5"><MiniBar pct={s.cpu_pct} warningAt={s.alert_thresholds?.cpu} /></td>
       <td className="px-2 py-2.5">
         <span className={`font-mono text-xs ${!s.uptime_seconds ? 'text-muted-foreground' : ''}`}>
           {formatUptime(s.uptime_seconds)}
@@ -490,9 +498,9 @@ function ServerCard({ s, t }: { s: ServerInfo; t: (k: string) => string }) {
         </div>
       )}
       <div className="mt-3 grid grid-cols-3 gap-3">
-        <MobileMetric label={t('dash.colRam')} pct={s.ram_pct} />
-        <MobileMetric label={t('dash.colDisk')} pct={s.disk_pct} />
-        <MobileMetric label={t('dash.colCpu')} pct={s.cpu_pct} />
+        <MobileMetric label={t('dash.colRam')} pct={s.ram_pct} warningAt={s.alert_thresholds?.ram} />
+        <MobileMetric label={t('dash.colDisk')} pct={s.disk_pct} warningAt={s.alert_thresholds?.disk} />
+        <MobileMetric label={t('dash.colCpu')} pct={s.cpu_pct} warningAt={s.alert_thresholds?.cpu} />
       </div>
       <div className="mt-2 flex flex-wrap gap-1">
         <UpdatesChips s={s} />
@@ -501,14 +509,14 @@ function ServerCard({ s, t }: { s: ServerInfo; t: (k: string) => string }) {
   );
 }
 
-function MobileMetric({ label, pct }: { label: string; pct?: number | null }) {
+function MobileMetric({ label, pct, warningAt }: { label: string; pct?: number | null; warningAt?: number }) {
   return (
     <div>
       <div className="flex justify-between text-[10px] text-muted-foreground">
         <span>{label}</span>
-        <span className={`font-mono ${metricTextClass(pct)}`}>{pct == null ? '—' : `${pct}%`}</span>
+        <span className={`font-mono ${metricTextClass(pct, warningAt)}`}>{pct == null ? '—' : `${pct}%`}</span>
       </div>
-      <MetricBar pct={pct} size="xs" className="mt-0.5" />
+      <MetricBar pct={pct} size="xs" className="mt-0.5" warningAt={warningAt} />
     </div>
   );
 }

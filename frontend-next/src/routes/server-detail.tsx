@@ -9,6 +9,7 @@ import {
   Play, Square, CloudDownload, FileText, RotateCw, Plus, Trash2,
   ChevronDown, ChevronRight, Layers, Settings2, StickyNote, Eye, Bot,
   Download, Shield, Sliders, History,
+  AlertTriangle, Bell,
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { ws } from '@/lib/ws';
@@ -35,6 +36,7 @@ import { OverflowMenu, OverflowItem, OverflowSep } from '@/components/ui/overflo
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { MetricBar, metricTextClass } from '@/components/ui/metric-bar';
 import { ActionRunDialog, type OutputLine, type RunStatus } from '@/components/ui/action-run-dialog';
+import { Switch } from '@/components/ui/switch';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 
@@ -106,6 +108,17 @@ interface AgentStatus {
   shipyardUrl?: string;
 }
 
+interface ResourceAlert {
+  id: string; server_id: string; type: string; target_key?: string; severity?: string; status: string;
+  value?: number | null; threshold?: number | null; message: string; first_seen_at?: string;
+  triggered_at?: string | null; acknowledged_at?: string | null; acknowledged_by?: string | null; resolved_at?: string | null;
+}
+
+interface AlertSettings {
+  enabled: boolean; notify_enabled: boolean; trigger_after_seconds: number;
+  thresholds: { cpu: number; ram: number; disk: number; storage: number };
+}
+
 // ─── Helpers ──────────────────────────────────────────────────
 function formatUptime(s: number): string {
   const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
@@ -125,8 +138,8 @@ function formatDate(d?: string, hour12?: boolean): string {
   try { return new Date(utc).toLocaleString(undefined, hour12 !== undefined ? { hour12 } : undefined); } catch { return d; }
 }
 
-function ThresholdBar({ pct }: { pct: number | null }) {
-  return <MetricBar pct={pct} size="md" showTicks />;
+function ThresholdBar({ pct, warningAt }: { pct: number | null; warningAt?: number }) {
+  return <MetricBar pct={pct} size="md" showTicks warningAt={warningAt} />;
 }
 
 function StatCard({ icon, label, value, hint, variant }: {
@@ -233,6 +246,18 @@ export function ServerDetailPage() {
     return unsub;
   }, [id, qc]);
 
+  useEffect(() => {
+    ws.connect();
+    const unsub = ws.subscribe((raw) => {
+      const data = raw as { type?: string; serverId?: string | number };
+      if (data?.type !== 'resource_alert_triggered' && data?.type !== 'resource_alert_updated') return;
+      if (String(data.serverId) !== String(id)) return;
+      void qc.invalidateQueries({ queryKey: ['alerts'] });
+      void qc.invalidateQueries({ queryKey: ['server', id, 'info'] });
+    });
+    return unsub;
+  }, [id, qc]);
+
   // Refresh relevant queries when an action run finishes
   useEffect(() => {
     if (!actionRun || actionRun.status === 'running') return;
@@ -301,6 +326,40 @@ export function ServerDetailPage() {
     queryFn: () => api.getAgentStatus(id) as unknown as Promise<AgentStatus>,
     enabled: !!id && agentEnabled && profile?.role === 'admin',
     staleTime: 30_000,
+  });
+  const { data: allAlerts } = useQuery({
+    queryKey: ['alerts', 'active'],
+    queryFn: () => api.getAlerts('active') as unknown as Promise<ResourceAlert[]>,
+    enabled: !!id,
+    staleTime: 30_000,
+  });
+  const serverAlerts = useMemo(() => (allAlerts ?? []).filter(a => String(a.server_id) === String(id)), [allAlerts, id]);
+  const { data: alertSettings } = useQuery({
+    queryKey: ['server', id, 'alertSettings'],
+    queryFn: () => api.getServerAlertSettings(id) as unknown as Promise<AlertSettings>,
+    enabled: !!id,
+    staleTime: 30_000,
+  });
+
+  const [alertForm, setAlertForm] = useState<AlertSettings | null>(null);
+  useEffect(() => {
+    if (alertSettings) setAlertForm(alertSettings);
+  }, [alertSettings]);
+
+  const saveAlertSettingsMut = useMutation({
+    mutationFn: () => alertForm ? api.saveServerAlertSettings(id, alertForm as unknown as Record<string, unknown>) : Promise.resolve(),
+    onSuccess: () => {
+      showToast(t('common.saved'), 'success');
+      void qc.invalidateQueries({ queryKey: ['server', id, 'alertSettings'] });
+      void qc.invalidateQueries({ queryKey: ['alerts'] });
+    },
+    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
+  });
+
+  const ackAlertMut = useMutation({
+    mutationFn: (alertId: string) => api.acknowledgeAlert(alertId),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['alerts'] }),
+    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
   });
 
   // ── Image update cache ──────────────────────────────────────
@@ -576,6 +635,7 @@ export function ServerDetailPage() {
   const ramPct = info?.ram_total_mb ? Math.round(((info.ram_used_mb ?? 0) / info.ram_total_mb) * 100) : null;
   const diskPct = info?.disk_total_gb ? Math.round(((info.disk_used_gb ?? 0) / info.disk_total_gb) * 100) : null;
   const cpuPct = info?.cpu_usage_pct ?? null;
+  const thresholds = alertSettings?.thresholds;
 
   const updatesList = useMemo(() => {
     if (!rawUpdates) return [];
@@ -774,6 +834,10 @@ export function ServerDetailPage() {
           <TabsTrigger value="overview">{t('det.tabOverview')}</TabsTrigger>
           {hasCap(profile, 'canViewDocker') && !!server.docker_enabled && <TabsTrigger value="docker">{t('det.tabDocker')}</TabsTrigger>}
           {(hasCap(profile, 'canViewUpdates') || hasCap(profile, 'canRunUpdates') || hasCap(profile, 'canRebootServers') || hasCap(profile, 'canViewCustomUpdates') || hasCap(profile, 'canRunCustomUpdates') || hasCap(profile, 'canEditCustomUpdates') || hasCap(profile, 'canDeleteCustomUpdates')) && <TabsTrigger value="updates">{t('det.tabUpdates')}</TabsTrigger>}
+          <TabsTrigger value="monitoring" className="gap-1">
+            <Bell className="h-3 w-3" />{t('det.tabMonitoring')}
+            {serverAlerts.some(a => a.status === 'active' || a.status === 'pending') && <span className="h-1.5 w-1.5 rounded-full bg-destructive" />}
+          </TabsTrigger>
           <TabsTrigger value="history">{t('det.tabHistory')}</TabsTrigger>
           {agentEnabled && profile?.role === 'admin' && <TabsTrigger value="agent">{t('det.tabAgent')}</TabsTrigger>}
           {hasCap(profile, 'canViewNotes') && (
@@ -874,27 +938,27 @@ export function ServerDetailPage() {
                   <>
                     {cpuPct !== null && (
                       <div>
-                        <div className="flex justify-between text-sm mb-1"><span>{t('det.cpu')}</span><span className={`font-medium ${metricTextClass(cpuPct)}`}>{cpuPct}%</span></div>
-                        <ThresholdBar pct={cpuPct} />
+                        <div className="flex justify-between text-sm mb-1"><span>{t('det.cpu')}</span><span className={`font-medium ${metricTextClass(cpuPct, thresholds?.cpu)}`}>{cpuPct}%</span></div>
+                        <ThresholdBar pct={cpuPct} warningAt={thresholds?.cpu} />
                       </div>
                     )}
                     <div>
                       <div className="flex justify-between text-sm mb-1">
                         <span>{t('det.ram')}</span>
-                        <span className={`font-medium ${metricTextClass(ramPct)}`}>
+                        <span className={`font-medium ${metricTextClass(ramPct, thresholds?.ram)}`}>
                           {formatBytes(info?.ram_used_mb)} / {formatBytes(info?.ram_total_mb)} · {ramPct ?? 0}%
                         </span>
                       </div>
-                      <ThresholdBar pct={ramPct} />
+                      <ThresholdBar pct={ramPct} warningAt={thresholds?.ram} />
                     </div>
                     <div>
                       <div className="flex justify-between text-sm mb-1">
                         <span>{t('det.disk')}</span>
-                        <span className={`font-medium ${metricTextClass(diskPct)}`}>
+                        <span className={`font-medium ${metricTextClass(diskPct, thresholds?.disk)}`}>
                           {info?.disk_used_gb?.toFixed(1) ?? '—'} / {info?.disk_total_gb?.toFixed(1) ?? '—'} GB · {diskPct ?? 0}%
                         </span>
                       </div>
-                      <ThresholdBar pct={diskPct} />
+                      <ThresholdBar pct={diskPct} warningAt={thresholds?.disk} />
                     </div>
 
                     {/* Storage mounts */}
@@ -909,7 +973,7 @@ export function ServerDetailPage() {
                                 <span className="font-medium">{m.name || m.path}{m.filesystem ? ` · ${m.filesystem}` : ''}</span>
                                 <span>{m.used_gb?.toFixed(1) ?? '—'} / {m.total_gb?.toFixed(1) ?? '—'} GB{pct != null ? ` · ${pct}%` : ''}</span>
                               </div>
-                              <ThresholdBar pct={pct} />
+                              <ThresholdBar pct={pct} warningAt={thresholds?.storage} />
                             </div>
                           );
                         })}
@@ -1158,6 +1222,97 @@ export function ServerDetailPage() {
             )}
           </TabsContent>
         )}
+
+        {/* ════ MONITORING ════ */}
+        <TabsContent value="monitoring" className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
+            <Card>
+              <CardHeader className="px-4 py-3">
+                <CardTitle className="text-sm flex items-center gap-2"><AlertTriangle className="h-4 w-4" />{t('det.monitoring')}</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {serverAlerts.length === 0 ? (
+                  <EmptyState compact icon={<AlertTriangle className="h-5 w-5" />} title={t('det.noAlerts')} />
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="border-b bg-muted/30 text-left text-xs uppercase tracking-wider text-muted-foreground">
+                      <tr>
+                        <th className="px-3 py-2">{t('det.alertMessage')}</th>
+                        <th className="px-3 py-2">{t('det.alertValue')}</th>
+                        <th className="px-3 py-2">{t('common.status')}</th>
+                        <th className="px-3 py-2">{t('det.alertTime')}</th>
+                        <th className="px-3 py-2">{t('common.actions')}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {serverAlerts.map(alert => (
+                        <tr key={alert.id}>
+                          <td className="px-3 py-2">
+                            <div className="font-medium">{alert.message}</div>
+                            {alert.target_key && <div className="font-mono text-[11px] text-muted-foreground">{alert.target_key}</div>}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-xs">
+                            {alert.value == null ? '—' : `${alert.value}${alert.threshold != null ? ` / ${alert.threshold}` : ''}`}
+                          </td>
+                          <td className="px-3 py-2">
+                            <StatusBadge tone={alert.status === 'resolved' ? 'success' : alert.status === 'acknowledged' ? 'muted' : alert.severity === 'critical' ? 'danger' : 'warning'}>
+                              {alert.status}
+                            </StatusBadge>
+                          </td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground">
+                            {formatDate(alert.triggered_at || alert.first_seen_at, hour12)}
+                          </td>
+                          <td className="px-3 py-2">
+                            {alert.status !== 'acknowledged' && alert.status !== 'resolved' && (
+                              <Button size="sm" variant="secondary" onClick={() => ackAlertMut.mutate(alert.id)} disabled={ackAlertMut.isPending}>
+                                OK
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="px-4 py-3">
+                <CardTitle className="text-sm flex items-center gap-2"><Sliders className="h-4 w-4" />{t('det.thresholds')}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 px-4 pb-4 pt-0">
+                {alertForm && (
+                  <>
+                    <div className="flex items-center justify-between gap-3">
+                      <Label>{t('det.monitoring')}</Label>
+                      <Switch checked={alertForm.enabled} onCheckedChange={(v) => setAlertForm({ ...alertForm, enabled: v })} />
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <Label>{t('det.notify')}</Label>
+                      <Switch checked={alertForm.notify_enabled} onCheckedChange={(v) => setAlertForm({ ...alertForm, notify_enabled: v })} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>{t('det.triggerDelay')}</Label>
+                      <Input type="number" min={0} max={86400} value={alertForm.trigger_after_seconds}
+                        onChange={(e) => setAlertForm({ ...alertForm, trigger_after_seconds: Number(e.target.value) })} />
+                    </div>
+                    {(['cpu', 'ram', 'disk', 'storage'] as const).map(key => (
+                      <div key={key} className="space-y-1">
+                        <Label className="uppercase">{key} %</Label>
+                        <Input type="number" min={0} max={100} value={alertForm.thresholds[key]}
+                          onChange={(e) => setAlertForm({ ...alertForm, thresholds: { ...alertForm.thresholds, [key]: Number(e.target.value) } })} />
+                      </div>
+                    ))}
+                    <Button size="sm" onClick={() => saveAlertSettingsMut.mutate()} disabled={saveAlertSettingsMut.isPending}>
+                      {t('common.save')}
+                    </Button>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
 
         {/* ════ HISTORY ════ */}
         <TabsContent value="history">

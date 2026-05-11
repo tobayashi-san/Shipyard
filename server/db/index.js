@@ -42,6 +42,17 @@ function parseJsonArray(value) {
   }
 }
 
+function parseJsonObject(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 // Ensure data directory exists
 const fs = require('fs');
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
@@ -463,6 +474,171 @@ module.exports = {
         .run(currentVersion || null, lastVersion || null, hasUpdate ? 1 : 0, id),
     countHasUpdate: (serverId) =>
       db.prepare('SELECT COUNT(*) as c FROM custom_update_tasks WHERE server_id = ? AND has_update = 1').get(serverId).c,
+  },
+
+  alertSettings: {
+    defaults: () => ({
+      enabled: true,
+      notify_enabled: true,
+      trigger_after_seconds: 60,
+      thresholds: { cpu: 90, ram: 85, disk: 85, storage: 85 },
+    }),
+    getByServer: (serverId) => {
+      const defaults = module.exports.alertSettings.defaults();
+      const row = db.prepare('SELECT * FROM server_alert_settings WHERE server_id = ?').get(serverId);
+      if (!row) return { server_id: serverId, ...defaults };
+      return {
+        server_id: serverId,
+        enabled: row.enabled !== 0,
+        notify_enabled: row.notify_enabled !== 0,
+        trigger_after_seconds: Math.max(0, parseInt(row.trigger_after_seconds, 10) || 0),
+        thresholds: { ...defaults.thresholds, ...parseJsonObject(row.thresholds_json) },
+        updated_at: row.updated_at,
+      };
+    },
+    upsert: (serverId, settings) => {
+      const current = module.exports.alertSettings.getByServer(serverId);
+      const next = {
+        enabled: settings.enabled !== undefined ? !!settings.enabled : current.enabled,
+        notify_enabled: settings.notify_enabled !== undefined ? !!settings.notify_enabled : current.notify_enabled,
+        trigger_after_seconds: settings.trigger_after_seconds !== undefined
+          ? Math.max(0, parseInt(settings.trigger_after_seconds, 10) || 0)
+          : current.trigger_after_seconds,
+        thresholds: { ...current.thresholds, ...(settings.thresholds || {}) },
+      };
+      db.prepare(`
+        INSERT INTO server_alert_settings (server_id, enabled, notify_enabled, trigger_after_seconds, thresholds_json, updated_at)
+        VALUES (?, ?, ?, ?, ?, datetime('now'))
+        ON CONFLICT(server_id) DO UPDATE SET
+          enabled = excluded.enabled,
+          notify_enabled = excluded.notify_enabled,
+          trigger_after_seconds = excluded.trigger_after_seconds,
+          thresholds_json = excluded.thresholds_json,
+          updated_at = datetime('now')
+      `).run(serverId, next.enabled ? 1 : 0, next.notify_enabled ? 1 : 0, next.trigger_after_seconds, JSON.stringify(next.thresholds));
+      return module.exports.alertSettings.getByServer(serverId);
+    },
+  },
+
+  resourceAlerts: {
+    list: ({ statuses = ['pending', 'active', 'acknowledged'], serverIds = null, limit = 200 } = {}) => {
+      const safeLimit = Math.min(500, Math.max(1, parseInt(limit, 10) || 200));
+      const params = [];
+      const clauses = [];
+      if (Array.isArray(statuses) && statuses.length > 0 && !statuses.includes('all')) {
+        clauses.push(`a.status IN (${statuses.map(() => '?').join(',')})`);
+        params.push(...statuses);
+      }
+      if (Array.isArray(serverIds)) {
+        if (serverIds.length === 0) return [];
+        clauses.push(`a.server_id IN (${serverIds.map(() => '?').join(',')})`);
+        params.push(...serverIds);
+      }
+      params.push(safeLimit);
+      const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+      return db.prepare(`
+        SELECT a.*, s.name AS server_name, s.ip_address AS server_ip
+        FROM resource_alerts a
+        LEFT JOIN servers s ON s.id = a.server_id
+        ${where}
+        ORDER BY
+          CASE a.status WHEN 'active' THEN 0 WHEN 'pending' THEN 1 WHEN 'acknowledged' THEN 2 ELSE 3 END,
+          COALESCE(a.triggered_at, a.first_seen_at) DESC
+        LIMIT ?
+      `).all(...params).map(module.exports.resourceAlerts.parse);
+    },
+    parse: (row) => row ? ({
+      ...row,
+      meta: parseJsonObject(row.meta_json),
+      acknowledged: row.status === 'acknowledged',
+    }) : row,
+    getById: (id) => module.exports.resourceAlerts.parse(db.prepare(`
+      SELECT a.*, s.name AS server_name, s.ip_address AS server_ip
+      FROM resource_alerts a
+      LEFT JOIN servers s ON s.id = a.server_id
+      WHERE a.id = ?
+    `).get(id)),
+    getOpenByKey: (serverId, type, targetKey) => module.exports.resourceAlerts.parse(db.prepare(`
+      SELECT * FROM resource_alerts
+      WHERE server_id = ? AND type = ? AND target_key = ? AND status IN ('pending', 'active', 'acknowledged')
+      LIMIT 1
+    `).get(serverId, type, targetKey || '')),
+    createPending: ({ serverId, type, targetKey = '', severity = 'warning', value = null, threshold = null, message, meta = {} }) => {
+      const id = uuidv4();
+      db.prepare(`
+        INSERT INTO resource_alerts (id, server_id, type, target_key, severity, status, value, threshold, message, meta_json)
+        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
+      `).run(id, serverId, type, targetKey || '', severity, value, threshold, message, JSON.stringify(meta || {}));
+      return module.exports.resourceAlerts.getById(id);
+    },
+    updateSeen: (id, { value = null, threshold = null, message, meta = {} }) => {
+      db.prepare(`
+        UPDATE resource_alerts
+        SET value = ?, threshold = ?, message = ?, meta_json = ?, last_seen_at = datetime('now'), updated_at = datetime('now')
+        WHERE id = ?
+      `).run(value, threshold, message, JSON.stringify(meta || {}), id);
+      return module.exports.resourceAlerts.getById(id);
+    },
+    activate: (id) => {
+      db.prepare(`
+        UPDATE resource_alerts
+        SET status = CASE WHEN status = 'pending' THEN 'active' ELSE status END,
+            triggered_at = COALESCE(triggered_at, datetime('now')),
+            updated_at = datetime('now')
+        WHERE id = ?
+      `).run(id);
+      return module.exports.resourceAlerts.getById(id);
+    },
+    markNotificationSent: (id) => db.prepare("UPDATE resource_alerts SET notification_sent_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(id),
+    acknowledge: (id, user) => {
+      db.prepare(`
+        UPDATE resource_alerts
+        SET status = 'acknowledged',
+            acknowledged_at = datetime('now'),
+            acknowledged_by = ?,
+            updated_at = datetime('now')
+        WHERE id = ? AND status IN ('pending', 'active')
+      `).run(user || null, id);
+      return module.exports.resourceAlerts.getById(id);
+    },
+    unacknowledge: (id) => {
+      db.prepare(`
+        UPDATE resource_alerts
+        SET status = CASE WHEN triggered_at IS NULL THEN 'pending' ELSE 'active' END,
+            acknowledged_at = NULL,
+            acknowledged_by = NULL,
+            updated_at = datetime('now')
+        WHERE id = ? AND status = 'acknowledged'
+      `).run(id);
+      return module.exports.resourceAlerts.getById(id);
+    },
+    resolveMissingForServer: (serverId, activeKeys) => {
+      const rows = db.prepare(`
+        SELECT id, type, target_key FROM resource_alerts
+        WHERE server_id = ? AND status IN ('pending', 'active', 'acknowledged')
+      `).all(serverId);
+      const resolved = [];
+      for (const row of rows) {
+        if (activeKeys.has(`${row.type}:${row.target_key || ''}`)) continue;
+        db.prepare(`
+          UPDATE resource_alerts
+          SET status = 'resolved', resolved_at = datetime('now'), updated_at = datetime('now')
+          WHERE id = ?
+        `).run(row.id);
+        resolved.push(module.exports.resourceAlerts.getById(row.id));
+      }
+      return resolved;
+    },
+    countsByServer: (serverIds) => {
+      if (!Array.isArray(serverIds) || serverIds.length === 0) return new Map();
+      const rows = db.prepare(`
+        SELECT server_id, COUNT(*) AS count
+        FROM resource_alerts
+        WHERE status = 'active' AND server_id IN (${serverIds.map(() => '?').join(',')})
+        GROUP BY server_id
+      `).all(...serverIds);
+      return new Map(rows.map(row => [row.server_id, row.count]));
+    },
   },
 
   serverGroups: {

@@ -8,6 +8,7 @@ const { parseImageUpdateOutput } = require('../utils/parse-image-updates');
 const gitSync = require('./git-sync');
 const { resolveTargets } = require('../utils/validate');
 const pullModeManager = require('./pull-mode-manager');
+const resourceAlerts = require('./resource-alerts');
 
 // In-memory map: scheduleId -> cron task
 const jobs = new Map();
@@ -250,6 +251,7 @@ async function pollSystemInfo() {
         db.servers.updateStatus(server.id, 'offline');
       }
     }));
+    resourceAlerts.evaluateAll();
     broadcast({ type: 'cache_updated', scope: 'info' });
     log.info({ count: servers.length }, 'System info refreshed');
   } finally {
@@ -285,6 +287,7 @@ async function pollUpdates() {
         log.debug({ err, server: server.name }, 'Updates poll failed');
       }
     }));
+    resourceAlerts.evaluateAll();
     broadcast({ type: 'cache_updated', scope: 'updates' });
     log.info({ count: servers.length }, 'Updates cache refreshed');
   } finally {
@@ -309,6 +312,7 @@ async function pollImageUpdates() {
         log.debug({ err, server: server.name }, 'Image updates poll failed');
       }
     }));
+    resourceAlerts.evaluateAll();
     broadcast({ type: 'cache_updated', scope: 'image_updates' });
     log.info({ count: servers.length }, 'Docker image updates checked');
   } finally {
@@ -385,6 +389,7 @@ async function pollCustomUpdates() {
       const tasks = db.customUpdateTasks.getByServer(server.id);
       await Promise.allSettled(tasks.map(task => checkCustomTask(server, task).catch(err => log.debug({ err, server: server.name }, 'Custom task check failed'))));
     }));
+    resourceAlerts.evaluateAll();
     broadcast({ type: 'cache_updated', scope: 'custom_updates' });
     log.info('Custom update tasks checked');
   } finally {

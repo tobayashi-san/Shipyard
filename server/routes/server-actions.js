@@ -6,6 +6,7 @@ const { refreshDockerCache } = require('../services/docker-inventory');
 const sshManager = require('../services/ssh-manager');
 const systemInfo = require('../services/system-info');
 const { notify } = require('../services/notifier');
+const resourceAlerts = require('../services/resource-alerts');
 const { createComposeTempFile, buildComposeWriteOperations } = require('../utils/compose-write');
 const { getPermissions, can, guardServerAccess } = require('../utils/permissions');
 const { serverError } = require('../utils/http-error');
@@ -26,6 +27,7 @@ function createServerActionsRouter({ broadcast } = {}) {
     systemInfo.getSystemInfo(server)
       .then(info => {
         db.serverInfo.upsert(server.id, info);
+        resourceAlerts.evaluateServer(server.id);
         emit({ type: 'cache_updated', scope: 'info' });
       })
       .catch(() => { /* server may be offline / rebooting */ });
@@ -96,6 +98,7 @@ function createServerActionsRouter({ broadcast } = {}) {
       db.updateHistory.updateStatus(historyId, status, result.stdout + result.stderr);
       db.auditLog.write('server.update', `server=${server.name} status=${status}`, req.ip, result.success, req.user?.username);
       db.updatesCache.delete(serverId);
+      resourceAlerts.evaluateServer(serverId);
       emit({ type: 'cache_updated', scope: 'updates' });
       // Refresh system info so reboot_required reflects post-update state.
       refreshServerInfo(server);
@@ -103,6 +106,7 @@ function createServerActionsRouter({ broadcast } = {}) {
     } catch (error) {
       db.updateHistory.updateStatus(historyId, 'failed', error.message);
       db.auditLog.write('server.update', `server=${server.name} error=${error.message}`, req.ip, false, req.user?.username);
+      resourceAlerts.evaluateServer(serverId);
       emit({ type: 'update_error', serverId, historyId, error: error.message });
       if (db.settings.get('notify_update_failed') !== '0') notify(`Update failed: ${server.name}`, error.message, false).catch(() => {});
     }
@@ -133,6 +137,7 @@ function createServerActionsRouter({ broadcast } = {}) {
         for (const s of db.servers.getAll()) {
           try { db.updatesCache.delete(s.id); } catch {}
         }
+        resourceAlerts.evaluateAll();
         emit({ type: 'cache_updated', scope: 'updates' });
         // Refresh system info for every server so reboot_required reflects
         // the post-update state. Background, fire-and-forget.
@@ -142,6 +147,7 @@ function createServerActionsRouter({ broadcast } = {}) {
     } catch (error) {
       db.updateHistory.updateStatus(historyId, 'failed', error.message);
       db.auditLog.write('server.update_all', `error=${error.message}`, req.ip, false, req.user?.username);
+      resourceAlerts.evaluateAll();
       emit({ type: 'bulk_update_error', historyId, error: error.message });
       if (db.settings.get('notify_update_failed') !== '0') notify('Bulk update failed', error.message, false).catch(() => {});
     }
@@ -176,6 +182,7 @@ function createServerActionsRouter({ broadcast } = {}) {
         setTimeout(() => {
           systemInfo.getSystemInfo(server)
             .then(info => { try { db.serverInfo.upsert(server.id, info); } catch {} })
+            .then(() => { try { resourceAlerts.evaluateServer(server.id); } catch {} })
             .catch(() => {});
         }, 5000);
       }

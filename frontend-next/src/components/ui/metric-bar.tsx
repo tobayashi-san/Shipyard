@@ -1,15 +1,11 @@
 import { cn } from '@/lib/utils';
 
-// Threshold convention used across the app:
-//   < 80%  → success (emerald)
-//   < 95%  → warning (amber)
-//   ≥ 95%  → danger  (red)
 export type MetricThresholdTone = 'success' | 'warning' | 'danger' | 'muted';
 
-export function metricTone(pct: number | null | undefined): MetricThresholdTone {
+export function metricTone(pct: number | null | undefined, warningAt = 85, dangerAt = 95): MetricThresholdTone {
   if (pct == null) return 'muted';
-  if (pct >= 95) return 'danger';
-  if (pct >= 80) return 'warning';
+  if (pct >= dangerAt) return 'danger';
+  if (pct >= warningAt) return 'warning';
   return 'success';
 }
 
@@ -27,8 +23,8 @@ const textColor: Record<MetricThresholdTone, string> = {
   muted: 'text-muted-foreground',
 };
 
-export function metricTextClass(pct: number | null | undefined) {
-  return textColor[metricTone(pct)];
+export function metricTextClass(pct: number | null | undefined, warningAt = 85, dangerAt = 95) {
+  return textColor[metricTone(pct, warningAt, dangerAt)];
 }
 
 /**
@@ -41,13 +37,17 @@ export function MetricBar({
   size = 'sm',
   showTicks,
   className,
+  warningAt = 85,
+  dangerAt = 95,
 }: {
   pct: number | null | undefined;
   size?: 'xs' | 'sm' | 'md';
   showTicks?: boolean;
   className?: string;
+  warningAt?: number;
+  dangerAt?: number;
 }) {
-  const tone = metricTone(pct);
+  const tone = metricTone(pct, warningAt, dangerAt);
   const safe = pct == null ? 0 : Math.max(0, Math.min(100, pct));
   const heightCls = size === 'xs' ? 'h-1' : size === 'md' ? 'h-2.5' : 'h-1.5';
 
@@ -61,8 +61,8 @@ export function MetricBar({
       )}
       {showTicks && (
         <>
-          <span className="pointer-events-none absolute inset-y-0 left-[80%] w-px bg-border" />
-          <span className="pointer-events-none absolute inset-y-0 left-[95%] w-px bg-border" />
+          <span className="pointer-events-none absolute inset-y-0 w-px bg-border" style={{ left: `${Math.max(0, Math.min(100, warningAt))}%` }} />
+          <span className="pointer-events-none absolute inset-y-0 w-px bg-border" style={{ left: `${Math.max(0, Math.min(100, dangerAt))}%` }} />
         </>
       )}
     </div>

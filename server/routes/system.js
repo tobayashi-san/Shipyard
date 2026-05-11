@@ -178,6 +178,7 @@ router.get('/settings', adminOnly, (req, res) => {
       smtpTo:               raw.smtp_to         || '',
       notifPlaybookFailed:  raw.notify_playbook_failed  !== '0',
       notifUpdateFailed:    raw.notify_update_failed    !== '0',
+      notifResourceAlerts:  raw.notify_resource_alerts  !== '0',
     });
   } catch (error) {
     serverError(res, error, 'get settings');
@@ -190,7 +191,7 @@ router.put('/settings', adminOnly, (req, res) => {
     const { appName, appTagline, accentColor, showIcon, logoIcon, logoImage, theme, timeFormat,
             schedulerTimezone, agentEnabled, webhookUrl, webhookSecret,
             smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom, smtpTo,
-            notifPlaybookFailed, notifUpdateFailed } = req.body;
+            notifPlaybookFailed, notifUpdateFailed, notifResourceAlerts } = req.body;
     const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
     if (appName       !== undefined) db.settings.set('wl_app_name',     str(appName, 100));
     if (appTagline    !== undefined) db.settings.set('wl_app_tagline',  str(appTagline, 500));
@@ -231,6 +232,10 @@ router.put('/settings', adminOnly, (req, res) => {
     if (notifUpdateFailed !== undefined) {
       if (typeof notifUpdateFailed !== 'boolean') return res.status(400).json({ error: 'notifUpdateFailed must be a boolean' });
       db.settings.set('notify_update_failed', notifUpdateFailed ? '1' : '0');
+    }
+    if (notifResourceAlerts !== undefined) {
+      if (typeof notifResourceAlerts !== 'boolean') return res.status(400).json({ error: 'notifResourceAlerts must be a boolean' });
+      db.settings.set('notify_resource_alerts', notifResourceAlerts ? '1' : '0');
     }
     res.json({ success: true });
   } catch (error) {

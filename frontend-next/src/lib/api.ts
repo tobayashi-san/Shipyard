@@ -97,6 +97,9 @@ export const api = {
 
   // Dashboard
   getDashboard:      () => apiFetch<AnyObj>('/dashboard'),
+  getAlerts:         (status = 'active') => apiFetch<AnyObj[]>(`/alerts?status=${encodeURIComponent(status)}`),
+  acknowledgeAlert:  (id: string | number) => apiFetch(`/alerts/${id}/ack`, { method: 'POST' }),
+  unacknowledgeAlert:(id: string | number) => apiFetch(`/alerts/${id}/unack`, { method: 'POST' }),
   ping:              () => apiFetch<{ ok: boolean; ts: number }>('/ping'),
 
   // Servers
@@ -131,6 +134,8 @@ export const api = {
   getServerHistory:  (id: string | number) => apiFetch<AnyObj[]>(`/servers/${id}/history`),
   getServerNotes:    (id: string | number) => apiFetch<{ notes: string }>(`/servers/${id}/notes`),
   saveServerNotes:   (id: string | number, notes: string) => apiFetch(`/servers/${id}/notes`, { method: 'PUT', body: { notes } }),
+  getServerAlertSettings: (id: string | number) => apiFetch<AnyObj>(`/servers/${id}/alert-settings`),
+  saveServerAlertSettings: (id: string | number, data: AnyObj) => apiFetch(`/servers/${id}/alert-settings`, { method: 'PUT', body: data }),
   getServerDocker:   (id: string | number, force = false) => apiFetch<AnyObj>(`/servers/${id}/docker${force ? '?force=1' : ''}`),
   restartContainer:  (id: string | number, container: string) => apiFetch(`/servers/${id}/docker/${container}/restart`, { method: 'POST' }),
   getContainerLogs:  (id: string | number, container: string, tail = 200) =>

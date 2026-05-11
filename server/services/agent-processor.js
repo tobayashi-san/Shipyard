@@ -2,6 +2,7 @@ const db = require('../db');
 const log = require('../utils/logger').child('agent:processor');
 const { collectStorageMountMetrics, parseConfiguredStorageMounts } = require('../utils/storage-mounts');
 const { parseZfsData } = require('../utils/zfs');
+const resourceAlerts = require('./resource-alerts');
 
 function normalizeCollectorOutput(text) {
   // Some runner environments can emit NUL-separated lines.
@@ -183,6 +184,7 @@ function processIncomingReport({ serverId, report, source = 'push' }) {
   db.serverInfo.upsert(serverId, info);
   db.servers.updateStatus(serverId, 'online');
   db.agentConfig.setSeen(serverId, report.runner_version || null, manifestVersion);
+  resourceAlerts.evaluateServer(serverId);
 
   log.debug({ serverId, source, manifestVersion }, 'Agent report processed');
   return { ok: true };

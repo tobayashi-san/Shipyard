@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router({ mergeParams: true });
 const db = require('../db');
 const scheduler = require('../services/scheduler');
+const resourceAlerts = require('../services/resource-alerts');
 const { getPermissions, can, guardServerAccess } = require('../utils/permissions');
 const { serverError } = require('../utils/http-error');
 
@@ -47,6 +48,7 @@ router.post('/', guardServerAccess, guard('canEditCustomUpdates'), (req, res) =>
   const validationError = validateTaskInput({ name, type, update_command, check_command, github_repo, trigger_output, latest_command });
   if (validationError) return res.status(400).json({ error: validationError });
   const task = db.customUpdateTasks.create(req.params.id, { name, type, check_command, github_repo, update_command, trigger_output, latest_command });
+  resourceAlerts.evaluateServer(req.params.id);
   res.status(201).json(task);
 });
 
@@ -57,7 +59,9 @@ router.put('/:taskId', guardServerAccess, guard('canEditCustomUpdates'), (req, r
   const { name, type, check_command, github_repo, update_command, trigger_output, latest_command } = req.body;
   const validationError = validateTaskInput({ name, type, update_command, check_command, github_repo, trigger_output, latest_command });
   if (validationError) return res.status(400).json({ error: validationError });
-  res.json(db.customUpdateTasks.update(req.params.taskId, { name, type, check_command, github_repo, update_command, trigger_output, latest_command }));
+  const updated = db.customUpdateTasks.update(req.params.taskId, { name, type, check_command, github_repo, update_command, trigger_output, latest_command });
+  resourceAlerts.evaluateServer(req.params.id);
+  res.json(updated);
 });
 
 // DELETE /api/servers/:id/custom-updates/:taskId
@@ -65,6 +69,7 @@ router.delete('/:taskId', guardServerAccess, guard('canDeleteCustomUpdates'), (r
   const task = db.customUpdateTasks.getById(req.params.taskId);
   if (!task || task.server_id !== req.params.id) return res.status(404).json({ error: 'Task not found' });
   db.customUpdateTasks.delete(req.params.taskId);
+  resourceAlerts.evaluateServer(req.params.id);
   res.json({ success: true });
 });
 
@@ -75,6 +80,7 @@ router.post('/:taskId/check', guardServerAccess, guard('canRunCustomUpdates'), a
   if (!task || task.server_id !== req.params.id) return res.status(404).json({ error: 'Task not found' });
   try {
     await scheduler.checkCustomTask(server, task);
+    resourceAlerts.evaluateServer(req.params.id);
     res.json(db.customUpdateTasks.getById(task.id));
   } catch (err) {
     serverError(res, err, 'custom update check');
