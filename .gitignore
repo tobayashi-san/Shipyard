@@ -18,6 +18,11 @@ docker-compose.override.yml
 # Claude Code
 .claude/
 
+# Local agent/wiki workspaces
+.agents/
+.codex/
+Shipyard.wiki/
+
 # Agent instruction files (local)
 AGENTS.md
 .cursorrules
