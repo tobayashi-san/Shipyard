@@ -15,11 +15,12 @@ const express = require('express');
 const { router: authRouter } = require('../routes/auth');
 const systemRouter = require('../routes/system');
 const authMiddleware = require('../middleware/auth');
+const { testLimiter } = require('../utils/rate-limiters');
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use('/api/auth', authRouter);
-app.use('/api/system', authMiddleware, systemRouter);
+app.use('/api/system', testLimiter, authMiddleware, systemRouter);
 
 let adminToken = '';
 

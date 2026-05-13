@@ -9,6 +9,7 @@ const db = require('../db');
 const authMiddleware = require('../middleware/auth');
 const { getJwtSecret } = require('../utils/jwt-secret');
 const { serverError } = require('../utils/http-error');
+const { authSensitiveLimiter } = require('../utils/rate-limiters');
 
 const isTest = process.env.NODE_ENV === 'test';
 
@@ -83,7 +84,7 @@ router.get('/status', (req, res) => {
 });
 
 // GET /api/auth/profile
-router.get('/profile', authMiddleware, (req, res) => {
+router.get('/profile', authSensitiveLimiter, authMiddleware, (req, res) => {
   const { getPermissions } = require('../utils/permissions');
   const permissions = getPermissions(req.user);
   const fullUser = db.users.getById(req.user.id);
@@ -98,7 +99,7 @@ router.get('/profile', authMiddleware, (req, res) => {
 });
 
 // PUT /api/auth/profile – users can update their display name and email only
-router.put('/profile', authMiddleware, (req, res) => {
+router.put('/profile', authSensitiveLimiter, authMiddleware, (req, res) => {
   const { displayName, email } = req.body;
   const fields = {};
   if (displayName !== undefined) fields.display_name = String(displayName).trim().slice(0, 100);
@@ -237,12 +238,12 @@ router.post('/totp/login', loginLimiter, (req, res) => {
 });
 
 // GET /api/auth/totp/status – is 2FA enabled?
-router.get('/totp/status', authMiddleware, (req, res) => {
+router.get('/totp/status', authSensitiveLimiter, authMiddleware, (req, res) => {
   res.json({ enabled: !!req.user.totp_enabled });
 });
 
 // POST /api/auth/totp/setup – generate a new TOTP secret and return QR code
-router.post('/totp/setup', authMiddleware, async (req, res) => {
+router.post('/totp/setup', authSensitiveLimiter, authMiddleware, async (req, res) => {
   try {
     const secret = otplib.generateSecret();
     const appName = db.settings.get('wl_app_name') || 'Shipyard';
@@ -260,7 +261,7 @@ router.post('/totp/setup', authMiddleware, async (req, res) => {
 });
 
 // POST /api/auth/totp/confirm – verify code, then enable 2FA
-router.post('/totp/confirm', authMiddleware, (req, res) => {
+router.post('/totp/confirm', authSensitiveLimiter, authMiddleware, (req, res) => {
   const { code } = req.body;
   if (!code) return res.status(400).json({ error: 'code required' });
 
@@ -276,7 +277,7 @@ router.post('/totp/confirm', authMiddleware, (req, res) => {
 });
 
 // DELETE /api/auth/totp – disable 2FA (requires password re-authentication)
-router.delete('/totp', authMiddleware, async (req, res) => {
+router.delete('/totp', authSensitiveLimiter, authMiddleware, async (req, res) => {
   const { password } = req.body || {};
   if (!password || typeof password !== 'string') {
     return res.status(400).json({ error: 'Password required to disable 2FA' });

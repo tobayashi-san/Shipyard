@@ -15,11 +15,12 @@ const express = require('express');
 const { router: authRouter } = require('../routes/auth');
 const authMiddleware = require('../middleware/auth');
 const serversRouter = require('../routes/servers');
+const { testLimiter } = require('../utils/rate-limiters');
 
 const app = express();
 app.use(express.json());
 app.use('/api/auth', authRouter);
-app.use('/api', authMiddleware);
+app.use('/api', testLimiter, authMiddleware);
 app.use('/api/servers', serversRouter);
 
 let token;

@@ -16,11 +16,12 @@ const db = require('../db');
 const { router: authRouter } = require('../routes/auth');
 const authMiddleware = require('../middleware/auth');
 const customUpdatesRouter = require('../routes/custom-updates');
+const { testLimiter } = require('../utils/rate-limiters');
 
 const app = express();
 app.use(express.json());
 app.use('/api/auth', authRouter);
-app.use('/api', authMiddleware);
+app.use('/api', testLimiter, authMiddleware);
 app.use('/api/servers/:id/custom-updates', customUpdatesRouter);
 
 let token;

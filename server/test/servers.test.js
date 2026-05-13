@@ -20,11 +20,12 @@ const serversRouter = require('../routes/servers');
 const sshManager = require('../services/ssh-manager');
 const ansibleRunner = require('../services/ansible-runner');
 const systemInfo = require('../services/system-info');
+const { testLimiter } = require('../utils/rate-limiters');
 
 const app = express();
 app.use(express.json());
 app.use('/api/auth', authRouter);
-app.use('/api', authMiddleware);
+app.use('/api', testLimiter, authMiddleware);
 app.use('/api/servers', serversRouter);
 
 let token;

@@ -3,6 +3,7 @@ const db = require('../db');
 const { getPermissions, filterServers, can } = require('../utils/permissions');
 const { serverError } = require('../utils/http-error');
 const resourceAlerts = require('../services/resource-alerts');
+const { authenticatedApiLimiter } = require('../utils/rate-limiters');
 
 const router = express.Router();
 
@@ -17,7 +18,7 @@ function parseJsonArray(value) {
   }
 }
 
-router.get('/', (req, res) => {
+router.get('/', authenticatedApiLimiter, (req, res) => {
   try {
     const perms = getPermissions(req.user);
     if (!can(perms, 'canViewServers')) return res.status(403).json({ error: 'Permission denied' });

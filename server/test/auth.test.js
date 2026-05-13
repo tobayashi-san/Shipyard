@@ -15,11 +15,12 @@ const express = require('express');
 
 const { router: authRouter } = require('../routes/auth');
 const authMiddleware = require('../middleware/auth');
+const { testLimiter } = require('../utils/rate-limiters');
 
 const app = express();
 app.use(express.json());
 app.use('/api/auth', authRouter);
-app.get('/api/protected', authMiddleware, (_req, res) => res.json({ ok: true }));
+app.get('/api/protected', testLimiter, authMiddleware, (_req, res) => res.json({ ok: true }));
 
 after(() => {
   for (const ext of ['', '-wal', '-shm']) {

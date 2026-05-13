@@ -25,11 +25,12 @@ const usersRouter = require('../routes/users');
 const systemRouter = require('../routes/system');
 const sshManager = require('../services/ssh-manager');
 const { getPermissions, filterPlaybooks } = require('../utils/permissions');
+const { testLimiter } = require('../utils/rate-limiters');
 
 const app = express();
 app.use(express.json());
 app.use('/api/auth', authRouter);
-app.use('/api', authMiddleware);
+app.use('/api', testLimiter, authMiddleware);
 app.use('/api/servers', serversRouter);
 app.use('/api/schedule-history', scheduleHistoryRouter);
 app.use('/api/adhoc', adhocRouter);

@@ -41,7 +41,9 @@ function _loadOne(pluginDir) {
 
   const express        = require('express');
   const authMiddleware = require('../middleware/auth');
+  const { pluginApiLimiter } = require('../utils/rate-limiters');
   const pluginRouter   = express.Router();
+  pluginRouter.use(pluginApiLimiter);
   pluginRouter.use(authMiddleware);
 
   const indexPath = path.join(pluginDir, 'index.js');

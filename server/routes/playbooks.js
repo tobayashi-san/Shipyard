@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const gitSync = require('../services/git-sync');
 const log = require('../utils/logger').child('routes:playbooks');
+const { fileReadLimiter } = require('../utils/rate-limiters');
 
 const PLAYBOOKS_DIR = path.join(__dirname, '..', 'playbooks');
 const BUNDLED_PLAYBOOKS_DIR = path.join(__dirname, '..', '..', 'bundled-playbooks');
@@ -63,7 +64,7 @@ const { getPermissions, filterPlaybooks, can } = require('../utils/permissions')
 const { serverError } = require('../utils/http-error');
 
 // GET /api/playbooks - List all available playbooks
-router.get('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canViewPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
+router.get('/', fileReadLimiter, (req, res, next) => { if (!can(getPermissions(req.user), 'canViewPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
     const perms = getPermissions(req.user);
     res.json(filterPlaybooks(ansibleRunner.getAvailablePlaybooks(), perms));
@@ -73,7 +74,7 @@ router.get('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canVie
 });
 
 // GET /api/playbooks/:filename - Read a playbook's content
-router.get('/:filename', (req, res, next) => { if (!can(getPermissions(req.user), 'canViewPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
+router.get('/:filename', fileReadLimiter, (req, res, next) => { if (!can(getPermissions(req.user), 'canViewPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
     const resolved = resolveReadPlaybookPath(req.params.filename);
     if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
@@ -123,7 +124,7 @@ router.post('/', writeLimiter, (req, res, next) => { if (!can(getPermissions(req
 });
 
 // GET /api/playbooks/:filename/history - List backup versions
-router.get('/:filename/history', (req, res, next) => { if (!can(getPermissions(req.user), 'canViewPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
+router.get('/:filename/history', fileReadLimiter, (req, res, next) => { if (!can(getPermissions(req.user), 'canViewPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
     const resolved = resolvePlaybookPath(req.params.filename);
     if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
@@ -143,7 +144,7 @@ router.get('/:filename/history', (req, res, next) => { if (!can(getPermissions(r
 });
 
 // GET /api/playbooks/:filename/history/:version - Preview a backup version
-router.get('/:filename/history/:version', (req, res, next) => { if (!can(getPermissions(req.user), 'canViewPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
+router.get('/:filename/history/:version', fileReadLimiter, (req, res, next) => { if (!can(getPermissions(req.user), 'canViewPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
     const resolved = resolvePlaybookPath(req.params.filename);
     if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
@@ -161,7 +162,7 @@ router.get('/:filename/history/:version', (req, res, next) => { if (!can(getPerm
 });
 
 // POST /api/playbooks/:filename/restore/:version - Restore a backup version
-router.post('/:filename/restore/:version', (req, res, next) => { if (!can(getPermissions(req.user), 'canEditPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
+router.post('/:filename/restore/:version', writeLimiter, (req, res, next) => { if (!can(getPermissions(req.user), 'canEditPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
     const resolved = resolvePlaybookPath(req.params.filename);
     if (!resolved) return res.status(400).json({ error: 'Invalid filename' });

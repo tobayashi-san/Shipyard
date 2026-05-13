@@ -6,6 +6,7 @@ const db = require('./db');
 const pluginLoader = require('./services/plugin-loader');
 const authMiddleware = require('./middleware/auth');
 const { parseAllowedOrigins } = require('./utils/allowed-origins');
+const { apiLimiter, authenticatedApiLimiter, fileReadLimiter } = require('./utils/rate-limiters');
 
 const { router: authRouter } = require('./routes/auth');
 const agentRouter = require('./routes/agent');
@@ -98,6 +99,8 @@ function createApp({ isHttps = false } = {}) {
     app.use(express.static(nextDist));
   }
 
+  app.use('/api', apiLimiter);
+
   app.get('/api/health', (req, res) => {
     try {
       db.db.prepare('SELECT 1').get();
@@ -111,10 +114,11 @@ function createApp({ isHttps = false } = {}) {
   app.use('/api/auth', authRouter);
   app.use('/api/v1/agent', agentRouter);
 
-  app.use('/api/users', authMiddleware, usersRouter);
-  app.use('/api/roles', authMiddleware, rolesRouter);
+  app.use('/api/users', authMiddleware, authenticatedApiLimiter, usersRouter);
+  app.use('/api/roles', authMiddleware, authenticatedApiLimiter, rolesRouter);
 
   app.use('/api', authMiddleware);
+  app.use('/api', authenticatedApiLimiter);
 
   app.get('/api/ping', (req, res) => res.json({ ok: true, ts: Date.now() }));
 
@@ -142,7 +146,7 @@ function createApp({ isHttps = false } = {}) {
     pluginRouter(req, res, next);
   });
 
-  app.get('/plugins/:pluginId/ui.js', (req, res) => {
+  app.get('/plugins/:pluginId/ui.js', fileReadLimiter, (req, res) => {
     const { pluginId } = req.params;
     if (!pluginLoader.isEnabled(pluginId)) {
       return res.status(404).type('application/javascript').send('// Plugin not found or not enabled\n');
