@@ -149,12 +149,20 @@ function getRouter(id) {
 }
 
 /**
- * Returns the absolute path to a plugin's ui.js, or null if not found.
+ * Returns the safe root directory for a plugin's ui.js, or null if not found.
  */
-function getUiPath(id) {
+function getUiRoot(id) {
   if (!PLUGIN_ID_RE.test(id)) return null;
-  const uiPath = path.join(PLUGINS_DIR, id, 'ui.js');
-  return fs.existsSync(uiPath) ? uiPath : null;
+  const pluginsRoot = path.resolve(PLUGINS_DIR);
+  const pluginDir = path.resolve(pluginsRoot, id);
+  if (!pluginDir.startsWith(`${pluginsRoot}${path.sep}`)) return null;
+  const uiPath = path.join(pluginDir, 'ui.js');
+  try {
+    if (!fs.statSync(uiPath).isFile()) return null;
+  } catch {
+    return null;
+  }
+  return pluginDir;
 }
 
-module.exports = { loadAll, reload, reloadAll, list, isEnabled, setEnabled, getRouter, getUiPath, PLUGINS_DIR };
+module.exports = { loadAll, reload, reloadAll, list, isEnabled, setEnabled, getRouter, getUiRoot, PLUGINS_DIR };

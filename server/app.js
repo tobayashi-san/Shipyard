@@ -151,13 +151,13 @@ function createApp({ isHttps = false } = {}) {
     if (!pluginLoader.isEnabled(pluginId)) {
       return res.status(404).type('application/javascript').send('// Plugin not found or not enabled\n');
     }
-    const uiPath = pluginLoader.getUiPath(pluginId);
-    if (!uiPath) {
+    const uiRoot = pluginLoader.getUiRoot(pluginId);
+    if (!uiRoot) {
       return res.status(404).type('application/javascript').send('// ui.js not found\n');
     }
     res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
-    res.sendFile(uiPath);
+    res.sendFile('ui.js', { root: uiRoot });
   });
 
   if (process.env.NODE_ENV === 'production') {
