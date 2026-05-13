@@ -64,6 +64,61 @@ test('setup mode blocks non-auth API routes (prevents data exposure after reset/
   assert.equal(res.status, 503);
 });
 
+test('user email validation is bounded and rejects malformed values', async () => {
+  wipeDb();
+  await setupAdmin();
+  const adminToken = await login('admin', 'testpass12345');
+
+  const accepted = await request(app)
+    .post('/api/users')
+    .set('Authorization', `Bearer ${adminToken}`)
+    .send({
+      username: 'mailvalid',
+      email: ' Valid.User@Example.COM ',
+      password: 'newuserpass12345',
+      role: 'user',
+    });
+  assert.equal(accepted.status, 201);
+  assert.equal(accepted.body.email, 'valid.user@example.com');
+
+  const empty = await request(app)
+    .post('/api/users')
+    .set('Authorization', `Bearer ${adminToken}`)
+    .send({
+      username: 'mailempty',
+      email: '',
+      password: 'newuserpass12345',
+      role: 'user',
+    });
+  assert.equal(empty.status, 201);
+  assert.equal(empty.body.email, '');
+
+  const invalidEmails = [
+    42,
+    `${'a'.repeat(250)}@example.com`,
+    'a@',
+    '@example.com',
+    'a@example',
+    'a@.com',
+    '.a@example.com',
+    'a.@example.com',
+    'a @domain.com',
+  ];
+
+  for (const [i, email] of invalidEmails.entries()) {
+    const res = await request(app)
+      .post('/api/users')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        username: `badmail${i}`,
+        email,
+        password: 'newuserpass12345',
+        role: 'user',
+      });
+    assert.equal(res.status, 400);
+  }
+});
+
 test('schedule-history list allows restricted user to see multi-target entries they partially have access to', async () => {
   wipeDb();
   await setupAdmin();

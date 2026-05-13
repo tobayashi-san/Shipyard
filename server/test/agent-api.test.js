@@ -56,6 +56,31 @@ test('agent manifest endpoint accepts trusted proxy https and token', async () =
   assert.equal(Array.isArray(res.body.collectors), true);
 });
 
+test('agent bearer token parser is bounded and accepts whitespace variants', async () => {
+  wipeDb();
+  const app = makeApp({ trustProxy: true });
+  const server = db.servers.create({ name: 's2b', hostname: 's2b', ip_address: '10.0.0.14' });
+  db.agentConfig.upsert({ server_id: server.id, mode: 'push', token: encrypt('tok-space'), interval: 30 });
+
+  const accepted = await request(app)
+    .get('/api/v1/agent/manifest')
+    .set('X-Forwarded-Proto', 'https')
+    .set('Authorization', 'bEaReR   tok-space   ');
+  assert.equal(accepted.status, 200);
+
+  const tooLong = await request(app)
+    .get('/api/v1/agent/manifest')
+    .set('X-Forwarded-Proto', 'https')
+    .set('Authorization', `Bearer ${' '.repeat(9000)}tok-space`);
+  assert.equal(tooLong.status, 401);
+
+  const malformed = await request(app)
+    .get('/api/v1/agent/manifest')
+    .set('X-Forwarded-Proto', 'https')
+    .set('Authorization', 'Bearertok-space');
+  assert.equal(malformed.status, 401);
+});
+
 test('agent report endpoint writes metrics and updates server status', async () => {
   wipeDb();
   const app = makeApp({ trustProxy: true });

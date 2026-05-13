@@ -12,6 +12,7 @@ const reportWindowMs = 10 * 1000;
 const lastReportByServer = new Map();
 // Hard cap to bound memory if many distinct server_ids report.
 const MAX_TRACKED_SERVERS = 10000;
+const MAX_AUTH_HEADER_LENGTH = 8192;
 
 function pruneStaleReports(now) {
   const cutoff = now - reportWindowMs;
@@ -32,8 +33,19 @@ router.use(preAuthLimiter);
 
 function getBearerToken(req) {
   const h = String(req.headers.authorization || '');
-  const m = h.match(/^Bearer\s+(.+)$/i);
-  return m ? m[1].trim() : null;
+  if (h.length > MAX_AUTH_HEADER_LENGTH) return null;
+  if (!h.toLowerCase().startsWith('bearer')) return null;
+
+  let i = 6;
+  if (i >= h.length || !isWhitespace(h[i])) return null;
+  while (i < h.length && isWhitespace(h[i])) i++;
+
+  const token = h.slice(i).trim();
+  return token || null;
+}
+
+function isWhitespace(ch) {
+  return ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || ch === '\f' || ch === '\v';
 }
 
 function secureEqual(a, b) {

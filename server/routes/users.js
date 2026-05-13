@@ -6,16 +6,33 @@ const { adminOnly } = require('../middleware/auth');
 const { serverError } = require('../utils/http-error');
 
 const USERNAME_RE = /^[A-Za-z0-9._-]{3,32}$/;
+const MAX_EMAIL_LENGTH = 254;
+
 function validateUsername(u) {
   if (!u || typeof u !== 'string') return 'username required';
   if (!USERNAME_RE.test(u.trim())) return 'Username must be 3-32 characters (letters, digits, . _ -)';
   return null;
 }
+
+function isValidEmail(value) {
+  if (value.length > MAX_EMAIL_LENGTH) return false;
+  if (/\s/.test(value)) return false;
+  const at = value.indexOf('@');
+  if (at <= 0 || at !== value.lastIndexOf('@') || at === value.length - 1) return false;
+
+  const local = value.slice(0, at);
+  const domain = value.slice(at + 1);
+  if (!domain.includes('.')) return false;
+  if (local.startsWith('.') || local.endsWith('.')) return false;
+  if (domain.startsWith('.') || domain.endsWith('.')) return false;
+  return true;
+}
+
 function normalizeEmail(e) {
   if (e === undefined || e === null || e === '') return '';
   if (typeof e !== 'string') return { error: 'email must be a string' };
   const trimmed = e.trim().toLowerCase();
-  if (trimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return { error: 'Invalid email address' };
+  if (trimmed && !isValidEmail(trimmed)) return { error: 'Invalid email address' };
   return trimmed;
 }
 
