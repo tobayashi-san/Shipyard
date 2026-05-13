@@ -40,4 +40,14 @@ function isAllowedRequestOrigin(allowedOrigins, requestOrigin, requestHost = nul
   }
 }
 
-module.exports = { parseAllowedOrigins, isAllowedRequestOrigin, DEFAULT_ORIGINS };
+function createCorsOriginValidator(allowedOrigins) {
+  const allowlist = new Set(allowedOrigins);
+  return (origin, callback) => {
+    if (!origin) return callback(null, true);
+    const normalized = normalizeOrigin(origin);
+    if (!normalized || !allowlist.has(normalized)) return callback(null, false);
+    return callback(null, normalized);
+  };
+}
+
+module.exports = { parseAllowedOrigins, isAllowedRequestOrigin, createCorsOriginValidator, DEFAULT_ORIGINS };

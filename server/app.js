@@ -5,7 +5,7 @@ const log = require('./utils/logger');
 const db = require('./db');
 const pluginLoader = require('./services/plugin-loader');
 const authMiddleware = require('./middleware/auth');
-const { parseAllowedOrigins } = require('./utils/allowed-origins');
+const { createCorsOriginValidator, parseAllowedOrigins } = require('./utils/allowed-origins');
 const { apiLimiter, authenticatedApiLimiter, fileReadLimiter } = require('./utils/rate-limiters');
 
 const { router: authRouter } = require('./routes/auth');
@@ -53,7 +53,7 @@ function createApp({ isHttps = false } = {}) {
 
   const allowedOrigins = parseAllowedOrigins(process.env.ALLOWED_ORIGINS);
 
-  app.use(cors({ origin: allowedOrigins }));
+  app.use(cors({ origin: createCorsOriginValidator(allowedOrigins) }));
   app.use(express.json({ limit: '2mb' }));
 
   app.use((req, res, next) => {
