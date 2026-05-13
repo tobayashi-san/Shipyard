@@ -44,9 +44,10 @@ after(() => {
 });
 
 function wipeDb() {
-  for (const table of ['users', 'roles', 'servers', 'schedule_history', 'server_groups']) {
+  for (const table of ['users', 'servers', 'schedule_history', 'server_groups']) {
     try { db.db.prepare(`DELETE FROM ${table}`).run(); } catch {}
   }
+  try { db.db.prepare('DELETE FROM roles WHERE is_system = 0').run(); } catch {}
   try { db.db.prepare('DELETE FROM app_settings').run(); } catch {}
 }
 
