@@ -83,35 +83,19 @@ function normalizeCaPem(input) {
   return pem;
 }
 
-function isPrivateIpv4(host) {
-  const m = String(host || '').match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (!m) return false;
-  const [a, b, c, d] = m.slice(1).map(Number);
-  if ([a, b, c, d].some(n => n < 0 || n > 255)) return false;
-  if (a === 10 || a === 127 || a === 0) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 169 && b === 254) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  return false;
+function isTlsTrustError(err) {
+  return [
+    'CERT_HAS_EXPIRED',
+    'DEPTH_ZERO_SELF_SIGNED_CERT',
+    'ERR_TLS_CERT_ALTNAME_INVALID',
+    'SELF_SIGNED_CERT_IN_CHAIN',
+    'UNABLE_TO_GET_ISSUER_CERT',
+    'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+    'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  ].includes(err?.code);
 }
 
-function isLocalHostForAutoCa(hostname) {
-  const host = String(hostname || '').toLowerCase();
-  if (!host) return false;
-  if (host === 'localhost' || host === '::1') return true;
-  if (isPrivateIpv4(host)) return true;
-  const ipVer = net.isIP(host);
-  if (ipVer === 6 && (host.startsWith('fe80:') || host.startsWith('fc') || host.startsWith('fd'))) return true;
-  return false;
-}
-
-function formatPemFromRawCert(raw) {
-  const b64 = Buffer.from(raw).toString('base64');
-  const lines = b64.match(/.{1,64}/g) || [];
-  return `-----BEGIN CERTIFICATE-----\n${lines.join('\n')}\n-----END CERTIFICATE-----`;
-}
-
-async function fetchServerCertPem(shipyardUrl) {
+async function verifyServerTlsTrust(shipyardUrl) {
   const u = new URL(shipyardUrl);
   if (u.protocol !== 'https:') throw new Error('shipyard_url must use https://');
   const host = u.hostname;
@@ -122,20 +106,13 @@ async function fetchServerCertPem(shipyardUrl) {
       host,
       port,
       servername: net.isIP(host) ? undefined : host,
-      rejectUnauthorized: false,
+      rejectUnauthorized: true,
       timeout: 6000,
     });
 
     sock.on('secureConnect', () => {
-      try {
-        const cert = sock.getPeerCertificate(true);
-        if (!cert || !cert.raw) throw new Error('No peer certificate received');
-        resolve(formatPemFromRawCert(cert.raw));
-      } catch (e) {
-        reject(e);
-      } finally {
-        sock.end();
-      }
+      sock.end();
+      resolve();
     });
     sock.on('timeout', () => { sock.destroy(); reject(new Error('TLS handshake timed out')); });
     sock.on('error', reject);
@@ -147,16 +124,16 @@ async function resolveCaPemForDeployment(shipyardUrl, providedCaPem) {
   let parsed;
   try { parsed = new URL(shipyardUrl); } catch { throw new Error('Invalid shipyard_url'); }
   if (parsed.protocol !== 'https:') return '';
-  // Always auto-fetch the server cert for HTTPS — self-signed certs are common
-  // in homelab setups regardless of whether the host is a private IP or a hostname.
+  // Self-signed/private CA setups must provide shipyard_ca_cert_pem explicitly
+  // instead of trusting whatever certificate was seen on the network.
   try {
-    return await fetchServerCertPem(shipyardUrl);
-  } catch {
-    // If auto-fetch fails (e.g. DNS unreachable from Shipyard itself), only
-    // error out for private/local IPs where self-signed is almost certain.
-    if (isLocalHostForAutoCa(parsed.hostname)) throw new Error('Could not auto-fetch TLS certificate');
-    return '';
+    await verifyServerTlsTrust(shipyardUrl);
+  } catch (e) {
+    if (isTlsTrustError(e)) {
+      throw new Error('TLS certificate is not trusted. Provide the Shipyard CA certificate manually.');
+    }
   }
+  return '';
 }
 
 router.use(adminOnly);
@@ -201,7 +178,7 @@ router.post('/servers/:id/agent/install', async (req, res) => {
   if ((mode === 'auto' || mode === 'push') && !isHttpsUrl(shipyardUrl)) {
     return res.status(400).json({ error: 'HTTPS is required for push/auto mode agent communication' });
   }
-  try { caPem = await resolveCaPemForDeployment(shipyardUrl, caPem); } catch (e) { return res.status(400).json({ error: `Could not auto-load local TLS certificate: ${e.message}` }); }
+  try { caPem = await resolveCaPemForDeployment(shipyardUrl, caPem); } catch (e) { return res.status(400).json({ error: `Could not validate Shipyard TLS certificate: ${e.message}` }); }
 
   const token = crypto.randomBytes(32).toString('hex');
 
@@ -273,7 +250,7 @@ router.put('/servers/:id/agent/config', async (req, res) => {
   if (mode === 'push' && !isHttpsUrl(shipyardUrl)) {
     return res.status(400).json({ error: 'HTTPS is required for push mode agent communication' });
   }
-  try { caPem = await resolveCaPemForDeployment(shipyardUrl, caPem); } catch (e) { return res.status(400).json({ error: `Could not auto-load local TLS certificate: ${e.message}` }); }
+  try { caPem = await resolveCaPemForDeployment(shipyardUrl, caPem); } catch (e) { return res.status(400).json({ error: `Could not validate Shipyard TLS certificate: ${e.message}` }); }
 
   try {
     const { token, generated } = getAgentToken(cfg);
@@ -316,7 +293,7 @@ router.post('/servers/:id/agent/token-rotate', async (req, res) => {
   if (mode === 'push' && !isHttpsUrl(shipyardUrl)) {
     return res.status(400).json({ error: 'HTTPS is required for push mode agent communication' });
   }
-  try { caPem = await resolveCaPemForDeployment(shipyardUrl, caPem); } catch (e) { return res.status(400).json({ error: `Could not auto-load local TLS certificate: ${e.message}` }); }
+  try { caPem = await resolveCaPemForDeployment(shipyardUrl, caPem); } catch (e) { return res.status(400).json({ error: `Could not validate Shipyard TLS certificate: ${e.message}` }); }
 
   const token = crypto.randomBytes(32).toString('hex');
   try {

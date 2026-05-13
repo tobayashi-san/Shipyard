@@ -162,7 +162,7 @@
     "agentWorking": "Bitte warten...",
     "agentShipyardUrl": "Shipyard URL (vom Zielserver erreichbar)",
     "agentCaPem": "Shipyard CA-Zertifikat (optional)",
-    "agentCaPemPlaceholder": "Bei privaten IPs (192.168.x, 10.x …) leer lassen — Zertifikat wird automatisch abgerufen. Nur bei öffentlichen Domains mit self-signed TLS ausfüllen.",
+    "agentCaPemPlaceholder": "Bei öffentlich vertrauenswürdigen HTTPS-Zertifikaten leer lassen. Bei Self-Signed oder Private-CA TLS das Shipyard-CA-/Server-Zertifikat hier einfügen.",
     "updates": "OS Update",
     "sysinfo": "Systeminformationen",
     "loadAvg": "Load Avg",

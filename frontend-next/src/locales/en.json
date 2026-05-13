@@ -162,7 +162,7 @@
     "agentWorking": "Please wait...",
     "agentShipyardUrl": "Shipyard URL (reachable from target server)",
     "agentCaPem": "Shipyard CA certificate (optional)",
-    "agentCaPemPlaceholder": "Leave empty for private IPs (192.168.x, 10.x …) — certificate is fetched automatically. Only fill in for public domains with a self-signed TLS certificate.",
+    "agentCaPemPlaceholder": "Leave empty for publicly trusted HTTPS certificates. Paste the Shipyard CA/server certificate here for self-signed or private CA TLS.",
     "updates": "OS Update",
     "sysinfo": "System Information",
     "loadAvg": "Load Avg",
