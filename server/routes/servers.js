@@ -833,7 +833,9 @@ router.get('/:id/docker/compose', guardServerAccess, guard('canManageDockerCompo
   try {
     const { path } = req.query;
 
-    if (!path) return res.status(400).json({ error: 'path query parameter is required' });
+    if (typeof path !== 'string' || path.length === 0) {
+      return res.status(400).json({ error: 'path query parameter is required' });
+    }
     if (!/^[a-zA-Z0-9/_.-]+$/.test(path) || path.includes('..')) {
       return res.status(400).json({ error: 'Invalid path format' });
     }
