@@ -126,10 +126,6 @@ function remoteBranchRef(branch) {
   return `refs/remotes/origin/${branch}`;
 }
 
-function remoteFetchRefspec(branch) {
-  return `+refs/heads/${branch}:${remoteBranchRef(branch)}`;
-}
-
 // ── Helpers ───────────────────────────────────────────────────
 
 function buildAuthUrl(url, token) {
@@ -386,7 +382,7 @@ async function pull() {
   await setRemote(authUrl);
 
   // Fetch from remote
-  const fetchR = await runGit(['fetch', 'origin', remoteFetchRefspec(cfg.branch)]);
+  const fetchR = await runGit(['fetch', 'origin']);
   if (!fetchR.success) return fetchR;
 
   // Reset local branch to exactly match remote — avoids all merge/rebase conflicts
@@ -523,14 +519,14 @@ async function setup({ repoUrl, authToken, autoPull: ap, autoPush: ap2, userName
   // Copy existing playbooks into the workspace before pulling
   syncToWorkspace();
 
-  // Fetch remote branches so we can switch to the right one
-  await runGit(['fetch', 'origin']);
+  // Fetch remote branches so we can switch to the right one. Keep this command
+  // free of user-controlled refspecs; checkout/rebase use local refs below.
+  const fetchR = await runGit(['fetch', 'origin']);
 
   // Checkout the target branch (creates tracking branch if remote exists)
   await checkout(targetBranch);
 
   // Initial pull – OK to fail (empty repo, etc.)
-  const fetchR = await runGit(['fetch', 'origin', remoteFetchRefspec(targetBranch)]);
   const rebaseR = fetchR.success ? await runGit(['rebase', remoteBranchRef(targetBranch)]) : fetchR;
   if (rebaseR.success) syncFromWorkspace();
 
