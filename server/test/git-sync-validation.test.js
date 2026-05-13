@@ -90,6 +90,9 @@ test('validateBranchName rejects names with traversal-like patterns', () => {
   assert.equal(validateBranchName('.hidden'), false);
   assert.equal(validateBranchName('foo/'), false);
   assert.equal(validateBranchName('foo.lock'), false);
+  assert.equal(validateBranchName('refs/heads/main'), false);
+  assert.equal(validateBranchName('feature//name'), false);
+  assert.equal(validateBranchName('feature@{upstream}'), false);
 });
 
 test('validateBranchName rejects empty/non-strings', () => {

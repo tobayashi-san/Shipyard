@@ -117,8 +117,17 @@ function validateBranchName(name) {
   if (!/^[A-Za-z0-9._\-/]+$/.test(name)) return false;
   if (name.startsWith('-') || name.startsWith('.') || name.startsWith('/')) return false;
   if (name.endsWith('/') || name.endsWith('.lock')) return false;
+  if (name.startsWith('refs/') || name.includes('@{') || name.includes('//')) return false;
   if (name.includes('..')) return false;
   return true;
+}
+
+function remoteBranchRef(branch) {
+  return `refs/remotes/origin/${branch}`;
+}
+
+function remoteFetchRefspec(branch) {
+  return `+refs/heads/${branch}:${remoteBranchRef(branch)}`;
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -377,11 +386,11 @@ async function pull() {
   await setRemote(authUrl);
 
   // Fetch from remote
-  const fetchR = await runGit(['fetch', 'origin', cfg.branch]);
+  const fetchR = await runGit(['fetch', 'origin', remoteFetchRefspec(cfg.branch)]);
   if (!fetchR.success) return fetchR;
 
   // Reset local branch to exactly match remote — avoids all merge/rebase conflicts
-  const resetR = await runGit(['reset', '--hard', `origin/${cfg.branch}`]);
+  const resetR = await runGit(['reset', '--hard', remoteBranchRef(cfg.branch)]);
   if (!resetR.success) return resetR;
 
   await runGit(['clean', '-fd']);
@@ -521,12 +530,13 @@ async function setup({ repoUrl, authToken, autoPull: ap, autoPush: ap2, userName
   await checkout(targetBranch);
 
   // Initial pull – OK to fail (empty repo, etc.)
-  const pullR = await runGit(['pull', '--rebase', 'origin', targetBranch]);
-  if (pullR.success) syncFromWorkspace();
+  const fetchR = await runGit(['fetch', 'origin', remoteFetchRefspec(targetBranch)]);
+  const rebaseR = fetchR.success ? await runGit(['rebase', remoteBranchRef(targetBranch)]) : fetchR;
+  if (rebaseR.success) syncFromWorkspace();
 
   return {
     success: true,
-    pullOutput: pullR.stdout || (pullR.success ? 'up to date' : pullR.stderr),
+    pullOutput: rebaseR.stdout || (rebaseR.success ? 'up to date' : rebaseR.stderr),
   };
 }
 
