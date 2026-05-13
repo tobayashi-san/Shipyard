@@ -12,7 +12,7 @@ RUN cd frontend-next && npm run build
 FROM node:20-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ansible openssh-client openssl gosu curl unzip git \
+      ansible openssh-client openssl gosu curl unzip git build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a dedicated non-root user for runtime
@@ -20,7 +20,8 @@ RUN groupadd -r -g 1001 shipyard && useradd -r -u 1001 -g shipyard -d /app shipy
 
 WORKDIR /app
 COPY server/package*.json ./server/
-RUN cd server && npm ci --omit=dev
+RUN cd server && npm ci --omit=dev \
+    && apt-get purge -y --auto-remove build-essential
 COPY server/ ./server/
 COPY --from=builder /app/frontend-next/dist ./frontend-next/dist
 COPY docker-entrypoint.sh ./
