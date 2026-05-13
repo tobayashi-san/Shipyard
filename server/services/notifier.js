@@ -60,6 +60,11 @@ function isBlockedHost(host) {
   return false;
 }
 
+function isDiscordWebhookUrl(parsedUrl) {
+  const hostname = parsedUrl.hostname.toLowerCase();
+  return hostname === 'discord.com' && parsedUrl.pathname.startsWith('/api/webhooks/');
+}
+
 // ── Webhook ────────────────────────────────────────────────────────────────
 
 async function sendWebhook(title, message, success) {
@@ -93,7 +98,7 @@ async function sendWebhook(title, message, success) {
       return { ok: false };
     }
 
-    if (parsedUrl.hostname.includes('discord.com') || parsedUrl.pathname.startsWith('/api/webhooks')) {
+    if (isDiscordWebhookUrl(parsedUrl)) {
       payload = {
         embeds: [{
           title,
