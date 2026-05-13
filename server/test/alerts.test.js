@@ -103,3 +103,48 @@ test('server specific thresholds override defaults', () => {
   assert.equal(alerts.length, 1);
   assert.equal(alerts[0].type, 'cpu');
 });
+
+test('available updates do not create resource alerts', () => {
+  const server = createServer('updates-not-alerts');
+  db.alertSettings.upsert(server.id, { trigger_after_seconds: 0 });
+  db.servers.updateStatus(server.id, 'online');
+
+  db.updatesCache.set(server.id, [
+    { name: 'openssl', version: '3.0.1', phased: false },
+    { name: 'curl', version: '8.0.0', phased: true },
+  ]);
+  db.dockerImageUpdatesCache.set(server.id, [
+    { name: 'web', image: 'nginx:latest', status: 'update_available' },
+  ]);
+  const task = db.customUpdateTasks.create(server.id, {
+    name: 'App update',
+    type: 'command',
+    check_command: 'echo update',
+    update_command: '',
+  });
+  db.customUpdateTasks.setVersionInfo(task.id, '1.0.0', '1.1.0', true);
+
+  resourceAlerts.evaluateServer(server.id);
+  const alerts = db.resourceAlerts.list({ statuses: ['active'], serverIds: [server.id] });
+
+  assert.deepEqual(alerts.map(a => a.type), []);
+});
+
+test('stale update alerts resolve after evaluation', () => {
+  const server = createServer('resolve-update-alerts');
+  db.alertSettings.upsert(server.id, { trigger_after_seconds: 0 });
+  db.servers.updateStatus(server.id, 'online');
+  const alert = db.resourceAlerts.createPending({
+    serverId: server.id,
+    type: 'updates',
+    value: 2,
+    threshold: 1,
+    message: 'updates available',
+  });
+  db.resourceAlerts.activate(alert.id);
+
+  resourceAlerts.evaluateServer(server.id);
+  const resolved = db.resourceAlerts.getById(alert.id);
+
+  assert.equal(resolved.status, 'resolved');
+});

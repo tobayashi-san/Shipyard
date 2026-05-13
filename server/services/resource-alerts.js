@@ -110,48 +110,6 @@ function collectDesiredAlerts(server, info, settings) {
     });
   }
 
-  const updates = db.updatesCache.get(server.id) || [];
-  const updateCount = updates.filter(u => !u.phased).length;
-  if (updateCount > 0) {
-    alerts.push({
-      type: 'updates',
-      targetKey: '',
-      severity: 'info',
-      value: updateCount,
-      threshold: 1,
-      message: `${serverName} has ${updateCount} OS update${updateCount === 1 ? '' : 's'} available`,
-      meta: { count: updateCount },
-    });
-  }
-
-  const imageMeta = db.dockerImageUpdatesCache.getWithMeta(server.id);
-  const imageUpdates = imageMeta?.results || [];
-  const imageCount = imageUpdates.filter(r => r.status === 'update_available').length;
-  if (imageCount > 0) {
-    alerts.push({
-      type: 'image_updates',
-      targetKey: '',
-      severity: 'info',
-      value: imageCount,
-      threshold: 1,
-      message: `${serverName} has ${imageCount} Docker image update${imageCount === 1 ? '' : 's'} available`,
-      meta: { count: imageCount },
-    });
-  }
-
-  const customCount = db.customUpdateTasks.countHasUpdate(server.id);
-  if (customCount > 0) {
-    alerts.push({
-      type: 'custom_updates',
-      targetKey: '',
-      severity: 'info',
-      value: customCount,
-      threshold: 1,
-      message: `${serverName} has ${customCount} custom update${customCount === 1 ? '' : 's'} available`,
-      meta: { count: customCount },
-    });
-  }
-
   return alerts;
 }
 
