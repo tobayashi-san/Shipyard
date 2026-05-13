@@ -17,11 +17,15 @@ router.get('/', (req, res) => {
 });
 
 // POST /api/plugins/:id/enable  and  POST /api/plugins/:id/disable
-router.post('/:id/:action(enable|disable)', adminOnly, (req, res) => {
+router.post('/:id/:action', adminOnly, (req, res) => {
+  const { id, action } = req.params;
+  if (action !== 'enable' && action !== 'disable') {
+    return res.status(404).json({ error: 'Plugin action not found' });
+  }
+
   try {
-    pluginLoader.setEnabled(req.params.id, req.params.action === 'enable');
-    const action = req.params.action;
-    db.auditLog.write(`plugin.${action}`, `Plugin ${req.params.id} ${action}d`, req.ip, true, req.user?.username);
+    pluginLoader.setEnabled(id, action === 'enable');
+    db.auditLog.write(`plugin.${action}`, `Plugin ${id} ${action}d`, req.ip, true, req.user?.username);
     res.json({ success: true });
   } catch (e) {
     if (e.message?.includes('not loaded')) return res.status(404).json({ error: e.message });
