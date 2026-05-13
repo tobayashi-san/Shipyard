@@ -161,7 +161,7 @@ function createApp({ isHttps = false } = {}) {
   });
 
   if (process.env.NODE_ENV === 'production') {
-    app.get('*', (req, res) => {
+    app.get('*', fileReadLimiter, (req, res) => {
       res.sendFile(path.join(nextDist, 'index.html'));
     });
   }

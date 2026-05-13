@@ -47,6 +47,18 @@ after(() => {
 describe('importKey', () => {
   before(resetKeys);
 
+  it('rejects unsafe key names before touching the filesystem', () => {
+    const content = makeKey();
+    assert.throws(
+      () => sshManager.importKey(content, '../outside'),
+      /SSH key name/i
+    );
+    assert.throws(
+      () => sshManager.generateKey('bad/name'),
+      /SSH key name/i
+    );
+  });
+
   it('replaces existing key in DB', () => {
     sshManager.generateKey('initial');
     const before = sshManager.getKeyInfo();
@@ -134,5 +146,19 @@ describe('removeKnownHostEntries', () => {
     assert.ok(after.includes('ubuntu-server-01'));
 
     fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('does not delete unmanaged paths from stale DB records', () => {
+    resetKeys();
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssh-outside-'));
+    const outsideKey = path.join(outsideDir, 'outside_key');
+    fs.writeFileSync(outsideKey, 'do not delete', 'utf8');
+    db.sshKeys.create('stale', 'ssh-ed25519 stale', outsideKey);
+
+    const content = makeKey();
+    sshManager.importKey(content, 'safe_import');
+
+    assert.equal(fs.existsSync(outsideKey), true);
+    fs.rmSync(outsideDir, { recursive: true, force: true });
   });
 });

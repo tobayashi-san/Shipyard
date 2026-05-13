@@ -14,6 +14,37 @@ const CLEANUP_INTERVAL = 60 * 1000;     // check every minute
 const SSH_DIR = path.join(__dirname, '..', 'data', 'ssh');
 const KNOWN_HOSTS_PATH = path.join(__dirname, '..', 'data', 'known_hosts');
 const ALGORITHM = 'aes-256-gcm';
+const KEY_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const RESOLVED_SSH_DIR = path.resolve(SSH_DIR);
+
+function normalizeKeyName(name, fallback = 'shipyard') {
+  const raw = typeof name === 'string' && name.trim() ? name.trim() : fallback;
+  if (!KEY_NAME_RE.test(raw)) {
+    throw new Error('SSH key name may only contain 1-64 letters, digits, _ and -');
+  }
+  return raw;
+}
+
+function resolveSshKeyPath(name) {
+  const safeName = normalizeKeyName(name);
+  const keyPath = path.resolve(RESOLVED_SSH_DIR, safeName);
+  if (keyPath !== path.join(RESOLVED_SSH_DIR, safeName)) {
+    throw new Error('Invalid SSH key path');
+  }
+  return { name: safeName, keyPath, pubKeyPath: `${keyPath}.pub` };
+}
+
+function isManagedSshKeyPath(value) {
+  if (typeof value !== 'string' || !value) return false;
+  const resolved = path.resolve(value);
+  const relative = path.relative(RESOLVED_SSH_DIR, resolved);
+  return relative && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+function unlinkManagedSshFile(value) {
+  if (!isManagedSshKeyPath(value)) return;
+  try { fs.unlinkSync(value); } catch {}
+}
 
 function getMasterKey() {
   const secret = process.env.SHIPYARD_KEY_SECRET;
@@ -197,15 +228,16 @@ class SSHManager {
    * Generate a new SSH key pair for Shipyard
    */
   generateKey(name = 'shipyard') {
-    const keyPath = path.join(SSH_DIR, name);
-    const pubKeyPath = `${keyPath}.pub`;
+    const key = resolveSshKeyPath(name);
+    const keyPath = key.keyPath;
+    const pubKeyPath = key.pubKeyPath;
 
     if (fs.existsSync(keyPath) || fs.existsSync(keyPath + '.enc')) {
       const publicKey = fs.readFileSync(pubKeyPath, 'utf8').trim();
       const existing = db.sshKeys.getFirst();
       if (!existing) {
         // Key exists on disk but not in DB — re-create the DB record
-        db.sshKeys.create(name, publicKey, keyPath);
+        db.sshKeys.create(key.name, publicKey, keyPath);
       }
       return { publicKey, privateKeyPath: keyPath, alreadyExists: true };
     }
@@ -229,7 +261,7 @@ class SSHManager {
     }
 
     const publicKey = fs.readFileSync(pubKeyPath, 'utf8').trim();
-    db.sshKeys.create(name, publicKey, keyPath);
+    db.sshKeys.create(key.name, publicKey, keyPath);
 
     return { publicKey, privateKeyPath: keyPath, alreadyExists: false };
   }
@@ -338,8 +370,9 @@ class SSHManager {
    * Import an existing SSH private key
    */
   importKey(privateKeyContent, name = 'shipyard_imported', passphrase = '') {
-    const keyPath = path.join(SSH_DIR, name);
-    const pubKeyPath = `${keyPath}.pub`;
+    const key = resolveSshKeyPath(name);
+    const keyPath = key.keyPath;
+    const pubKeyPath = key.pubKeyPath;
 
     // Write private key
     fs.writeFileSync(keyPath, privateKeyContent, { mode: 0o600 });
@@ -381,12 +414,12 @@ class SSHManager {
     for (const old of db.sshKeys.getAll()) {
       const p = old.private_key_path;
       if (p && p !== keyPath) {
-        try { fs.unlinkSync(p); } catch {}
-        try { fs.unlinkSync(p + '.enc'); } catch {}
-        try { fs.unlinkSync(p + '.pub'); } catch {}
+        unlinkManagedSshFile(p);
+        unlinkManagedSshFile(p + '.enc');
+        unlinkManagedSshFile(p + '.pub');
       }
     }
-    db.sshKeys.replace(name, publicKey, keyPath);
+    db.sshKeys.replace(key.name, publicKey, keyPath);
 
     return { publicKey, privateKeyPath: keyPath, alreadyExists: false };
   }
