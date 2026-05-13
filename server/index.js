@@ -24,7 +24,7 @@ if (SSL_KEY && SSL_CERT) {
     key = fs.readFileSync(SSL_KEY);
     cert = fs.readFileSync(SSL_CERT);
   } catch (e) {
-    log.fatal({ err: e, SSL_KEY, SSL_CERT }, 'Failed to read certificate files');
+    log.fatal({ err: e }, 'Failed to read configured certificate files');
     process.exit(1);
   }
   isHttps = true;
