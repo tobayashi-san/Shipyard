@@ -4,6 +4,39 @@ const log  = require('../utils/logger').child('plugins');
 
 const PLUGINS_DIR  = process.env.PLUGINS_DIR || '/app/plugins';
 const PLUGIN_ID_RE = /^[a-z0-9][a-z0-9_-]*$/;
+const PUBLIC_UI_DIRS = new Set(['assets', 'dist', 'public', 'src']);
+const PUBLIC_UI_EXTENSIONS = new Set([
+  '.css',
+  '.gif',
+  '.ico',
+  '.jpeg',
+  '.jpg',
+  '.js',
+  '.mjs',
+  '.png',
+  '.svg',
+  '.ttf',
+  '.wasm',
+  '.webp',
+  '.woff',
+  '.woff2',
+]);
+const PRIVATE_UI_FILES = new Set([
+  'index.js',
+  'manifest.json',
+  'package.json',
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+]);
+const PRIVATE_UI_DIRS = new Set([
+  'data',
+  'node_modules',
+  'private',
+  'secrets',
+  'server',
+  'storage',
+]);
 
 const _loaded = new Map(); // id -> { manifest, router }
 const _failed = new Map(); // id -> error message (plugins that loaded their manifest but threw during register)
@@ -165,4 +198,50 @@ function getUiRoot(id) {
   return pluginDir;
 }
 
-module.exports = { loadAll, reload, reloadAll, list, isEnabled, setEnabled, getRouter, getUiRoot, PLUGINS_DIR };
+/**
+ * Resolves a frontend asset imported by ui.js.
+ *
+ * Public plugin UI files may live at the plugin root or below src/, assets/,
+ * public/, or dist/. Backend and metadata files stay private.
+ */
+function getUiAsset(id, requestPath) {
+  const uiRoot = getUiRoot(id);
+  if (!uiRoot || typeof requestPath !== 'string') return null;
+  if (requestPath.includes('\0') || requestPath.includes('\\')) return null;
+
+  const normalized = path.posix.normalize(requestPath.replace(/^\/+/, ''));
+  if (!normalized || normalized === '.' || normalized.startsWith('../') || normalized.includes('/../')) return null;
+
+  const parts = normalized.split('/');
+  if (parts.some(part => !part || part === '.' || part === '..' || part.startsWith('.'))) return null;
+  if (parts.some(part => PRIVATE_UI_DIRS.has(part))) return null;
+
+  const ext = path.extname(normalized).toLowerCase();
+  if (!PUBLIC_UI_EXTENSIONS.has(ext)) return null;
+
+  const rootFile = parts.length === 1;
+  if (rootFile && PRIVATE_UI_FILES.has(parts[0].toLowerCase())) return null;
+  if (!rootFile && !PUBLIC_UI_DIRS.has(parts[0])) return null;
+
+  const filePath = path.resolve(uiRoot, ...parts);
+  if (!filePath.startsWith(`${uiRoot}${path.sep}`)) return null;
+  try {
+    if (!fs.statSync(filePath).isFile()) return null;
+  } catch {
+    return null;
+  }
+  return { root: uiRoot, file: normalized, ext };
+}
+
+module.exports = {
+  loadAll,
+  reload,
+  reloadAll,
+  list,
+  isEnabled,
+  setEnabled,
+  getRouter,
+  getUiRoot,
+  getUiAsset,
+  PLUGINS_DIR,
+};

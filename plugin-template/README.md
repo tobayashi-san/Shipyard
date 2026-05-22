@@ -10,7 +10,11 @@ Plugins can add backend routes, mount a frontend UI inside the Shipyard app, or 
 my-plugin/
 ├── manifest.json   ← required: plugin metadata
 ├── index.js        ← optional: backend (Node.js / Express routes)
-└── ui.js           ← optional: frontend (ES Module)
+├── ui.js           ← optional: frontend entry point (ES Module)
+├── src/            ← optional: frontend modules imported by ui.js
+├── assets/         ← optional: frontend images/fonts/icons
+├── public/         ← optional: frontend static assets
+└── dist/           ← optional: bundled frontend output
 ```
 
 ## Getting Started
@@ -135,6 +139,19 @@ export function unmount() {
   if (_wsUnsub) { _wsUnsub(); _wsUnsub = null; }
 }
 ```
+
+### Frontend imports and assets
+
+`ui.js` may import frontend files relative to the plugin directory:
+
+```js
+import { ensureStyles } from './src/styles.js';
+import './assets/plugin.css';
+```
+
+Shipyard serves imported frontend assets only for enabled plugins. Supported public paths are root-level frontend modules and files below `src/`, `assets/`, `public/`, or `dist/`. Supported file types are `.js`, `.mjs`, `.css`, `.svg`, `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.ico`, `.woff`, `.woff2`, `.ttf`, and `.wasm`.
+
+Backend/private files are not served as plugin UI assets. Keep secrets and runtime data out of frontend folders. Root files such as `index.js`, `manifest.json`, package files, hidden files, `node_modules/`, `data/`, `private/`, `secrets/`, `server/`, and `storage/` stay private.
 
 ### Injected helpers
 

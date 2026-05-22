@@ -29,7 +29,11 @@ plugins/
 └── my-plugin/
     ├── manifest.json    # Required: metadata
     ├── index.js         # Optional: backend (CommonJS)
-    └── ui.js            # Optional: frontend (ES module)
+    ├── ui.js            # Optional: frontend entry point (ES module)
+    ├── src/             # Optional: frontend modules imported by ui.js
+    ├── assets/          # Optional: frontend images/fonts/icons
+    ├── public/          # Optional: frontend static assets
+    └── dist/            # Optional: bundled frontend output
 ```
 
 ### manifest.json
@@ -138,6 +142,24 @@ export function unmount() {
 
 Always clean up timers, event listeners, and WebSocket subscriptions in `unmount()`.
 
+#### Frontend Imports and Assets
+
+`ui.js` may import frontend files relative to the plugin directory:
+
+```js
+import { ensureStyles } from './src/styles.js';
+import './assets/plugin.css';
+```
+
+Shipyard serves imported frontend assets only for enabled plugins. Supported public paths are:
+
+- root-level frontend modules such as `ui.js` and `helpers.js`
+- files below `src/`, `assets/`, `public/`, or `dist/`
+
+Supported file types are `.js`, `.mjs`, `.css`, `.svg`, `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.ico`, `.woff`, `.woff2`, `.ttf`, and `.wasm`.
+
+Backend/private files are not served as plugin UI assets. Keep secrets and runtime data out of frontend folders. Root files such as `index.js`, `manifest.json`, package files, hidden files, `node_modules/`, `data/`, `private/`, `secrets/`, `server/`, and `storage/` stay private.
+
 ## Installing Plugins
 
 1. Create the plugin directory: `mkdir -p plugins/my-plugin`
@@ -179,4 +201,3 @@ This clears the Node.js require cache and re-executes `register()`. It is useful
 ## Security
 
 Plugins run as Node.js code with server-side privileges. They can access helper APIs for SSH, Ansible, database operations, filesystem paths, and WebSocket broadcasts. Only install and enable trusted plugins.
-

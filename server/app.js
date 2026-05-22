@@ -30,6 +30,27 @@ const agentAdminRouter = require('./routes/agent-admin');
 const alertsRouter = require('./routes/alerts');
 const resourceAlerts = require('./services/resource-alerts');
 
+const PLUGIN_UI_CONTENT_TYPES = {
+  '.css': 'text/css; charset=utf-8',
+  '.gif': 'image/gif',
+  '.ico': 'image/x-icon',
+  '.jpeg': 'image/jpeg',
+  '.jpg': 'image/jpeg',
+  '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml; charset=utf-8',
+  '.ttf': 'font/ttf',
+  '.wasm': 'application/wasm',
+  '.webp': 'image/webp',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+};
+
+function pluginUiContentType(ext) {
+  return PLUGIN_UI_CONTENT_TYPES[ext] || 'application/octet-stream';
+}
+
 function createApp({ isHttps = false } = {}) {
   const app = express();
   let broadcast = () => {};
@@ -158,6 +179,23 @@ function createApp({ isHttps = false } = {}) {
     res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
     res.sendFile('ui.js', { root: uiRoot });
+  });
+
+  app.get(/^\/plugins\/([a-z0-9][a-z0-9_-]*)\/(.+)$/, fileReadLimiter, (req, res) => {
+    const pluginId = req.params[0];
+    const assetPath = req.params[1];
+    if (!pluginLoader.isEnabled(pluginId)) {
+      return res.status(404).type('application/javascript').send('// Plugin not found or not enabled\n');
+    }
+
+    const asset = pluginLoader.getUiAsset(pluginId, assetPath);
+    if (!asset) {
+      return res.status(404).type('application/javascript').send('// Plugin asset not found\n');
+    }
+
+    res.setHeader('Content-Type', pluginUiContentType(asset.ext));
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(asset.file, { root: asset.root });
   });
 
   if (process.env.NODE_ENV === 'production') {
