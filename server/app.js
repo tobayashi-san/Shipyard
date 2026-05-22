@@ -7,6 +7,7 @@ const pluginLoader = require('./services/plugin-loader');
 const authMiddleware = require('./middleware/auth');
 const { createCorsOriginValidator, parseAllowedOrigins } = require('./utils/allowed-origins');
 const { apiLimiter, authenticatedApiLimiter, fileReadLimiter } = require('./utils/rate-limiters');
+const { serverError } = require('./utils/http-error');
 
 const { router: authRouter } = require('./routes/auth');
 const agentRouter = require('./routes/agent');
@@ -105,8 +106,8 @@ function createApp({ isHttps = false } = {}) {
       [
         "default-src 'self'",
         isProduction ? "script-src 'self'" : "script-src 'self' 'unsafe-inline'",
-        "style-src 'self' 'unsafe-inline'",
-        "font-src 'self' data:",
+        "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com",
+        "font-src 'self' data: https://cdnjs.cloudflare.com",
         "connect-src 'self' ws: wss:",
         "img-src 'self' data:",
         "frame-ancestors 'none'",
@@ -204,6 +205,11 @@ function createApp({ isHttps = false } = {}) {
       res.sendFile(path.join(nextDist, 'index.html'));
     });
   }
+
+  app.use((err, req, res, next) => {
+    if (!err) return next();
+    return serverError(res, err, `${req.method} ${req.path}`);
+  });
 
   return {
     app,

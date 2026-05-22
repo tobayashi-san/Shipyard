@@ -13,6 +13,7 @@ process.env.PLUGINS_DIR = path.join(tmpRoot, 'plugins');
 const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
+const bcrypt = require('bcryptjs');
 
 const db = require('../db');
 const { createApp } = require('../app');
@@ -129,4 +130,46 @@ test('rejects private plugin files and unsafe asset paths', async () => {
     assert.equal(res.status, 404);
     assert.match(res.headers['content-type'], /application\/javascript/);
   }
+});
+
+test('allows Font Awesome stylesheet and font CDN in CSP for plugin UIs', async () => {
+  const { app } = createApp();
+  const res = await request(app).get('/api/health');
+  const csp = res.headers['content-security-policy'];
+
+  assert.match(csp, /style-src[^;]*https:\/\/cdnjs\.cloudflare\.com/);
+  assert.match(csp, /font-src[^;]*https:\/\/cdnjs\.cloudflare\.com/);
+  assert.doesNotMatch(csp, /script-src[^;]*cdnjs\.cloudflare\.com/);
+});
+
+test('returns sanitized JSON when an enabled plugin API route throws', async () => {
+  writePlugin('throwing_plugin', {
+    'ui.js': 'export function mount() {}\n',
+    'index.js': `
+      function register({ router }) {
+        router.get('/boom', () => {
+          throw new Error('plugin secret path /tmp/private/devices.json');
+        });
+      }
+      module.exports = { register };
+    `,
+  });
+  db.settings.set('plugin_throwing_plugin_enabled', '1');
+  const pluginLoader = require('../services/plugin-loader');
+  pluginLoader.loadAll({});
+
+  const { app } = createApp();
+  const hash = await bcrypt.hash('pluginadminpass123', 12);
+  db.users.create('pluginadmin', '', hash, 'admin');
+  const loginRes = await request(app)
+    .post('/api/auth/login')
+    .send({ username: 'pluginadmin', password: 'pluginadminpass123' });
+  const res = await request(app)
+    .get('/api/plugin/throwing_plugin/boom')
+    .set('Authorization', `Bearer ${loginRes.body.token}`);
+
+  assert.equal(res.status, 500);
+  assert.match(res.headers['content-type'], /application\/json/);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.doesNotMatch(res.text, /private\/devices/);
 });
