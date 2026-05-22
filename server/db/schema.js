@@ -296,6 +296,7 @@ function applySchema(db) {
       created_at TEXT DEFAULT (datetime('now'))
     );
   `);
+  try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_nocase ON users(username COLLATE NOCASE);`); } catch {}
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS roles (

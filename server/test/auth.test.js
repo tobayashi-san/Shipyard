@@ -54,6 +54,12 @@ test('login – returns token with correct password', async () => {
   assert.equal(typeof res.body.token, 'string');
 });
 
+test('login – accepts username case-insensitively', async () => {
+  const res = await request(app).post('/api/auth/login').send({ username: 'ADMIN', password: 'testpass1234' });
+  assert.equal(res.status, 200);
+  assert.equal(typeof res.body.token, 'string');
+});
+
 test('login – rejects wrong password', async () => {
   const res = await request(app).post('/api/auth/login').send({ password: 'wrongpassword' });
   assert.equal(res.status, 401);

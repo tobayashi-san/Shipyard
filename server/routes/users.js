@@ -4,15 +4,9 @@ const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { adminOnly } = require('../middleware/auth');
 const { serverError } = require('../utils/http-error');
+const { normalizeUsername, validateUsername } = require('../utils/usernames');
 
-const USERNAME_RE = /^[A-Za-z0-9._-]{3,32}$/;
 const MAX_EMAIL_LENGTH = 254;
-
-function validateUsername(u) {
-  if (!u || typeof u !== 'string') return 'username required';
-  if (!USERNAME_RE.test(u.trim())) return 'Username must be 3-32 characters (letters, digits, . _ -)';
-  return null;
-}
 
 function isValidEmail(value) {
   if (value.length > MAX_EMAIL_LENGTH) return false;
@@ -50,6 +44,7 @@ router.post('/', adminOnly, async (req, res) => {
   const { username, displayName, email, password, role } = req.body;
   const usernameErr = validateUsername(username);
   if (usernameErr) return res.status(400).json({ error: usernameErr });
+  const usernameNorm = normalizeUsername(username);
   if (!password || typeof password !== 'string' || password.length < 12) {
     return res.status(400).json({ error: 'Password must be at least 12 characters' });
   }
@@ -61,10 +56,13 @@ router.post('/', adminOnly, async (req, res) => {
   }
   const userRole = role || 'user';
   try {
+    if (db.users.getByUsername(usernameNorm)) {
+      return res.status(409).json({ error: 'Username already exists' });
+    }
     const hash = await bcrypt.hash(password, 12);
     const displayNameNorm = (displayName && typeof displayName === 'string') ? displayName.trim().replace(/\s+/g, ' ').slice(0, 100) : '';
-    const user = db.users.create(username.trim(), emailNorm || '', hash, userRole, displayNameNorm);
-    db.auditLog.write('users.create', `Created user: ${username}`, req.ip, true, req.user?.username);
+    const user = db.users.create(usernameNorm, emailNorm || '', hash, userRole, displayNameNorm);
+    db.auditLog.write('users.create', `Created user: ${usernameNorm}`, req.ip, true, req.user?.username);
     res.status(201).json(user);
   } catch (e) {
     if (e.message && e.message.includes('UNIQUE')) {
@@ -82,7 +80,7 @@ router.put('/:id', adminOnly, (req, res) => {
   if (username !== undefined) {
     const usernameErr = validateUsername(username);
     if (usernameErr) return res.status(400).json({ error: usernameErr });
-    fields.username = username.trim();
+    fields.username = normalizeUsername(username);
   }
   if (displayName !== undefined) {
     if (typeof displayName !== 'string') return res.status(400).json({ error: 'displayName must be a string' });
@@ -99,6 +97,12 @@ router.put('/:id', adminOnly, (req, res) => {
     fields.role = role;
   }
   try {
+    if (fields.username) {
+      const existingByUsername = db.users.getByUsername(fields.username);
+      if (existingByUsername && existingByUsername.id !== id) {
+        return res.status(409).json({ error: 'Username already exists' });
+      }
+    }
     // Invalidate tokens when role changes so user gets new permissions on next login
     if (fields.role) {
       const existing = db.users.getById(id);

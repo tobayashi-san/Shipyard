@@ -66,6 +66,17 @@ test('setup mode blocks non-auth API routes (prevents data exposure after reset/
   assert.equal(res.status, 503);
 });
 
+test('setup preserves username case', async () => {
+  wipeDb();
+  const res = await request(app)
+    .post('/api/auth/setup')
+    .send({ username: 'Admin.User', password: 'testpass12345' });
+  assert.equal(res.status, 200);
+
+  const user = db.users.getByUsername('admin.user');
+  assert.equal(user.username, 'Admin.User');
+});
+
 test('user email validation is bounded and rejects malformed values', async () => {
   wipeDb();
   await setupAdmin();
@@ -119,6 +130,39 @@ test('user email validation is bounded and rejects malformed values', async () =
       });
     assert.equal(res.status, 400);
   }
+});
+
+test('usernames preserve case but remain unique and loginable case-insensitively', async () => {
+  wipeDb();
+  await setupAdmin();
+  const adminToken = await login('ADMIN', 'testpass12345');
+
+  const created = await request(app)
+    .post('/api/users')
+    .set('Authorization', `Bearer ${adminToken}`)
+    .send({
+      username: 'Max.User',
+      password: 'newuserpass12345',
+      role: 'user',
+    });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.username, 'Max.User');
+
+  const duplicate = await request(app)
+    .post('/api/users')
+    .set('Authorization', `Bearer ${adminToken}`)
+    .send({
+      username: 'max.user',
+      password: 'newuserpass12345',
+      role: 'user',
+    });
+  assert.equal(duplicate.status, 409);
+
+  const loginRes = await request(app)
+    .post('/api/auth/login')
+    .send({ username: 'MAX.USER', password: 'newuserpass12345' });
+  assert.equal(loginRes.status, 200);
+  assert.equal(typeof loginRes.body.token, 'string');
 });
 
 test('schedule-history list allows restricted user to see multi-target entries they partially have access to', async () => {

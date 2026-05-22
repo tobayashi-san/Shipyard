@@ -761,7 +761,7 @@ module.exports = {
   users: {
     getAll: () => db.prepare('SELECT id, username, display_name, email, role, totp_enabled, token_version, created_at FROM users ORDER BY created_at').all(),
     getById: (id) => db.prepare('SELECT id, username, display_name, email, role, totp_enabled, token_version, created_at FROM users WHERE id = ?').get(id),
-    getByUsername: (username) => db.prepare('SELECT * FROM users WHERE username = ?').get(username),
+    getByUsername: (username) => db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(username),
     create: (username, email, passwordHash, role, displayName) => {
       const id = uuidv4();
       db.prepare(`

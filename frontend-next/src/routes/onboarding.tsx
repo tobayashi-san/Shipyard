@@ -169,7 +169,7 @@ function PasswordStep({ onNext, onPrev, NavRow }: { onNext: () => void; onPrev: 
   const submit = async () => {
     setError(null);
     const u = username.trim() || 'admin';
-    if (!/^[a-zA-Z0-9_-]+$/.test(u)) { setError(t('ob.usernameInvalid')); return; }
+    if (!/^[a-zA-Z0-9._-]{3,32}$/.test(u)) { setError(t('ob.usernameInvalid')); return; }
     if (pw1.length < 12) { setError(t('login.errorShort')); return; }
     if (pw1 !== pw2) { setError(t('login.errorMismatch')); return; }
     setBusy(true);

@@ -1,4 +1,5 @@
 function applyMigrations(db) {
+  try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_nocase ON users(username COLLATE NOCASE)'); } catch {}
   try { db.exec('ALTER TABLE agent_config ADD COLUMN shipyard_url TEXT'); } catch {}
   try { db.exec('ALTER TABLE servers ADD COLUMN storage_mounts TEXT DEFAULT \'[]\''); } catch {}
   try { db.exec('ALTER TABLE servers ADD COLUMN links TEXT DEFAULT \'[]\''); } catch {}

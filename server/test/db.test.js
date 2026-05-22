@@ -244,6 +244,27 @@ describe('db.users', () => {
     assert.ok(u.password_hash); // full user returned
   });
 
+  test('getByUsername matches case-insensitively while preserving stored case', () => {
+    const u = db.users.create('Mixed.User', '', '$2a$12$casehash', 'user', '');
+    assert.equal(u.username, 'Mixed.User');
+
+    const lower = db.users.getByUsername('mixed.user');
+    const upper = db.users.getByUsername('MIXED.USER');
+    assert.equal(lower.id, u.id);
+    assert.equal(lower.username, 'Mixed.User');
+    assert.equal(upper.id, u.id);
+
+    db.users.delete(u.id);
+  });
+
+  test('create rejects usernames that differ only by case', () => {
+    const u = db.users.create('CaseUnique', '', '$2a$12$casehash', 'user', '');
+    assert.throws(() => {
+      db.users.create('caseunique', '', '$2a$12$casehash', 'user', '');
+    }, /UNIQUE/);
+    db.users.delete(u.id);
+  });
+
   test('getById returns user without password_hash', () => {
     const u = db.users.getById(userId);
     assert.equal(u.username, 'testuser');

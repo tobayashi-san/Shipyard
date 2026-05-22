@@ -10,6 +10,7 @@ const authMiddleware = require('../middleware/auth');
 const { getJwtSecret } = require('../utils/jwt-secret');
 const { serverError } = require('../utils/http-error');
 const { authSensitiveLimiter } = require('../utils/rate-limiters');
+const { normalizeUsername, validateUsername } = require('../utils/usernames');
 
 const isTest = process.env.NODE_ENV === 'test';
 
@@ -123,7 +124,9 @@ router.post('/setup', setupLimiter, async (req, res) => {
     return res.status(400).json({ error: 'Users already exist. Use /api/auth/change.' });
   }
   let { username, password } = req.body;
-  username = (username && String(username).trim()) || 'admin';
+  username = normalizeUsername(username) || 'admin';
+  const usernameErr = validateUsername(username);
+  if (usernameErr) return res.status(400).json({ error: usernameErr });
   if (!password || typeof password !== 'string' || password.length < 12) {
     return res.status(400).json({ error: 'Password must be at least 12 characters' });
   }
@@ -153,7 +156,7 @@ router.post('/login', loginLimiter, async (req, res) => {
   let user = null;
 
   if (username) {
-    user = db.users.getByUsername(String(username).trim());
+    user = db.users.getByUsername(normalizeUsername(username));
   } else {
     // No username provided — try single-user shortcut
     const all = db.users.getAll();
