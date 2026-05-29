@@ -1,0 +1,245 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version without leading v, for example 1.1.2-rc.1 or 1.1.2'
+        required: true
+        type: string
+      release_notes:
+        description: 'Optional release notes. Leave empty to use the default generated note.'
+        required: false
+        type: string
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  VERSION: ${{ inputs.version }}
+
+jobs:
+  validate:
+    name: Validate release input
+    runs-on: ubuntu-latest
+    outputs:
+      is_rc: ${{ steps.version.outputs.is_rc }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Validate version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ inputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+            echo "Version must look like 1.2.3 or 1.2.3-rc.1" >&2
+            exit 1
+          fi
+          if [[ "$VERSION" == v* ]]; then
+            echo "Version input must not start with v" >&2
+            exit 1
+          fi
+          if [[ "$VERSION" == *"-rc."* ]]; then
+            echo "is_rc=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_rc=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+  backend-tests:
+    name: Backend tests
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Run backend tests
+        working-directory: server
+        run: npm test
+
+  frontend-build:
+    name: Frontend build
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend-next/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend-next
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend-next
+        run: npm run build
+
+  docker-build:
+    name: Docker build
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          tags: shipyard:release-check
+
+  release-rc:
+    name: Publish RC release
+    if: needs.validate.outputs.is_rc == 'true'
+    needs:
+      - validate
+      - backend-tests
+      - frontend-build
+      - docker-build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Ensure tag does not exist
+        run: |
+          if git rev-parse "${{ needs.validate.outputs.tag }}" >/dev/null 2>&1; then
+            echo "Tag ${{ needs.validate.outputs.tag }} already exists" >&2
+            exit 1
+          fi
+
+      - name: Set package versions
+        run: node tools/set-version.mjs "$VERSION"
+
+      - name: Commit and tag release
+        run: |
+          git add package.json package-lock.json server/package.json server/package-lock.json frontend-next/package.json frontend-next/package-lock.json
+          git commit -m "chore(release): ${{ needs.validate.outputs.tag }}"
+          git tag -a "${{ needs.validate.outputs.tag }}" -m "Shipyard ${{ needs.validate.outputs.tag }}"
+          git push origin HEAD:main
+          git push origin "${{ needs.validate.outputs.tag }}"
+
+      - name: Create release notes
+        env:
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          if [[ -n "$RELEASE_NOTES" ]]; then
+            printf '%s\n' "$RELEASE_NOTES" > release-notes.md
+          else
+            echo "Release candidate ${{ needs.validate.outputs.tag }}." > release-notes.md
+          fi
+
+      - name: Create GitHub prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${{ needs.validate.outputs.tag }}" --title "Shipyard ${{ needs.validate.outputs.tag }}" --notes-file release-notes.md --prerelease
+
+      - name: Start Docker publish workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run docker-publish.yml --ref "${{ needs.validate.outputs.tag }}"
+
+  release-stable:
+    name: Publish stable release
+    if: needs.validate.outputs.is_rc == 'false'
+    needs:
+      - validate
+      - backend-tests
+      - frontend-build
+      - docker-build
+    runs-on: ubuntu-latest
+    environment: stable-release
+    permissions:
+      actions: write
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Ensure tag does not exist
+        run: |
+          if git rev-parse "${{ needs.validate.outputs.tag }}" >/dev/null 2>&1; then
+            echo "Tag ${{ needs.validate.outputs.tag }} already exists" >&2
+            exit 1
+          fi
+
+      - name: Set package versions
+        run: node tools/set-version.mjs "$VERSION"
+
+      - name: Commit and tag release
+        run: |
+          git add package.json package-lock.json server/package.json server/package-lock.json frontend-next/package.json frontend-next/package-lock.json
+          git commit -m "chore(release): ${{ needs.validate.outputs.tag }}"
+          git tag -a "${{ needs.validate.outputs.tag }}" -m "Shipyard ${{ needs.validate.outputs.tag }}"
+          git push origin HEAD:main
+          git push origin "${{ needs.validate.outputs.tag }}"
+
+      - name: Create release notes
+        env:
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          if [[ -n "$RELEASE_NOTES" ]]; then
+            printf '%s\n' "$RELEASE_NOTES" > release-notes.md
+          else
+            echo "Stable release ${{ needs.validate.outputs.tag }}." > release-notes.md
+          fi
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${{ needs.validate.outputs.tag }}" --title "Shipyard ${{ needs.validate.outputs.tag }}" --notes-file release-notes.md
+
+      - name: Start Docker publish workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run docker-publish.yml --ref "${{ needs.validate.outputs.tag }}"

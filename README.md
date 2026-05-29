@@ -146,6 +146,8 @@ cd frontend-next && npm run build
 
 Production mode serves the built frontend from `frontend-next/dist` at the application root. The old `frontend/` Vite app has been removed.
 
+For the full PR, CI, release-candidate, and stable-release workflow, see [Development Pipeline](docs/DEVELOPMENT_PIPELINE.md).
+
 ## Architecture
 
 ```
