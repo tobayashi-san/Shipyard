@@ -186,25 +186,9 @@ export function ActivityCenter() {
   const visibleItems = useMemo(() => items.slice(0, 20), [items]);
 
   return (
-    <div ref={panelRef} className="fixed right-4 top-4 z-40">
-      <Button
-        variant="secondary"
-        size="sm"
-        onClick={() => setOpen(v => !v)}
-        className="relative h-9 gap-2 border bg-background/90 shadow-sm backdrop-blur"
-        title={t('activity.title')}
-      >
-        <Activity className="h-4 w-4" />
-        <span className="hidden sm:inline">{t('activity.trigger')}</span>
-        {runningCount > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-semibold text-white">
-            {runningCount}
-          </span>
-        )}
-      </Button>
-
+    <div ref={panelRef} className="fixed bottom-4 right-4 z-40 flex flex-col items-end">
       {open && (
-        <div className="mt-2 w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-xl">
+        <div className="mb-2 w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-xl">
           <div className="flex items-center justify-between border-b px-3 py-2">
             <div>
               <div className="text-sm font-semibold">{t('activity.title')}</div>
@@ -261,6 +245,22 @@ export function ActivityCenter() {
           </div>
         </div>
       )}
+
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={() => setOpen(v => !v)}
+        className="relative h-9 gap-2 border bg-background/90 shadow-sm backdrop-blur"
+        title={t('activity.title')}
+      >
+        <Activity className="h-4 w-4" />
+        <span className="hidden sm:inline">{t('activity.trigger')}</span>
+        {runningCount > 0 && (
+          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-semibold text-white">
+            {runningCount}
+          </span>
+        )}
+      </Button>
     </div>
   );
 }
