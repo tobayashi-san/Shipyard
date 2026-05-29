@@ -3,24 +3,51 @@ const router = express.Router();
 const db = require('../db');
 const cron = require('node-cron');
 const scheduler = require('../services/scheduler');
-const { getPermissions, can } = require('../utils/permissions');
+const { getPermissions, can, canAccessPlaybook, canAccessTargets } = require('../utils/permissions');
 const { isValidPlaybook, validateTargets } = require('../utils/validate');
 
+function requireScheduleCapability(capability) {
+  return (req, res, next) => {
+    if (!can(getPermissions(req.user), capability)) return res.status(403).json({ error: 'Permission denied' });
+    next();
+  };
+}
+
+function normalizeScheduleTargets(targets) {
+  return typeof targets === 'string' && targets.trim() ? targets.trim() : 'all';
+}
+
+function validateScheduleScope(req, playbook, targets) {
+  const perms = getPermissions(req.user);
+  if (!canAccessPlaybook(perms, playbook)) {
+    return 'Playbook not permitted for your role';
+  }
+  if (!canAccessTargets(perms, normalizeScheduleTargets(targets), db.servers.getAll())) {
+    return 'Target servers not permitted for your role';
+  }
+  return null;
+}
+
+function canAccessSchedule(req, schedule) {
+  return !validateScheduleScope(req, schedule.playbook, schedule.targets);
+}
+
 // GET /api/schedules — list all
-router.get('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canViewSchedules')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
-  const schedules = db.schedules.getAll();
+router.get('/', requireScheduleCapability('canViewSchedules'), (req, res) => {
+  const schedules = db.schedules.getAll().filter(schedule => canAccessSchedule(req, schedule));
   res.json(schedules);
 });
 
 // GET /api/schedules/:id — single
-router.get('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'canViewSchedules')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
+router.get('/:id', requireScheduleCapability('canViewSchedules'), (req, res) => {
   const schedule = db.schedules.getById(req.params.id);
   if (!schedule) return res.status(404).json({ error: 'Schedule not found' });
+  if (!canAccessSchedule(req, schedule)) return res.status(403).json({ error: 'Schedule access denied' });
   res.json(schedule);
 });
 
 // POST /api/schedules — create
-router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAddSchedules')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
+router.post('/', requireScheduleCapability('canAddSchedules'), (req, res) => {
   const { name, playbook, targets, cronExpression } = req.body;
   if (!name || !playbook || !cronExpression) {
     return res.status(400).json({ error: 'name, playbook, and cronExpression are required' });
@@ -33,19 +60,23 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
   }
   const targetsErr = validateTargets(targets);
   if (targetsErr) return res.status(400).json({ error: targetsErr });
+  const normalizedTargets = normalizeScheduleTargets(targets);
+  const scopeErr = validateScheduleScope(req, playbook, normalizedTargets);
+  if (scopeErr) return res.status(403).json({ error: scopeErr });
   if (db.schedules.getAll().length >= 100) {
     return res.status(400).json({ error: 'Maximum number of schedules (100) reached' });
   }
-  const id = db.schedules.create(name.trim(), playbook, targets, cronExpression);
+  const id = db.schedules.create(name.trim(), playbook, normalizedTargets, cronExpression);
   scheduler.reload(id);
   db.auditLog.write('schedule.create', `Schedule "${name.trim()}" created (${playbook})`, req.ip, true, req.user?.username);
   res.json({ id, status: 'created' });
 });
 
 // PUT /api/schedules/:id — update
-router.put('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'canEditSchedules')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
+router.put('/:id', requireScheduleCapability('canEditSchedules'), (req, res) => {
   const existing = db.schedules.getById(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Schedule not found' });
+  if (!canAccessSchedule(req, existing)) return res.status(403).json({ error: 'Schedule access denied' });
 
   const { name, playbook, targets, cronExpression, enabled } = req.body;
   const fields = {};
@@ -60,7 +91,7 @@ router.put('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'can
   if (targets !== undefined) {
     const targetsErr = validateTargets(targets);
     if (targetsErr) return res.status(400).json({ error: targetsErr });
-    fields.targets = targets;
+    fields.targets = normalizeScheduleTargets(targets);
   }
   if (cronExpression !== undefined) {
     if (!cron.validate(cronExpression)) {
@@ -77,6 +108,11 @@ router.put('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'can
     return res.status(400).json({ error: 'No fields to update' });
   }
 
+  const nextPlaybook = fields.playbook || existing.playbook;
+  const nextTargets = fields.targets || existing.targets;
+  const scopeErr = validateScheduleScope(req, nextPlaybook, nextTargets);
+  if (scopeErr) return res.status(403).json({ error: scopeErr });
+
   db.schedules.update(req.params.id, fields);
   scheduler.reload(req.params.id);
   db.auditLog.write('schedule.update', `Schedule "${existing.name}" updated`, req.ip, true, req.user?.username);
@@ -84,9 +120,10 @@ router.put('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'can
 });
 
 // POST /api/schedules/:id/toggle — toggle enabled
-router.post('/:id/toggle', (req, res, next) => { if (!can(getPermissions(req.user), 'canToggleSchedules')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
+router.post('/:id/toggle', requireScheduleCapability('canToggleSchedules'), (req, res) => {
   const existing = db.schedules.getById(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Schedule not found' });
+  if (!canAccessSchedule(req, existing)) return res.status(403).json({ error: 'Schedule access denied' });
 
   const newEnabled = existing.enabled ? 0 : 1;
   db.schedules.update(req.params.id, { enabled: newEnabled });
@@ -96,9 +133,10 @@ router.post('/:id/toggle', (req, res, next) => { if (!can(getPermissions(req.use
 });
 
 // DELETE /api/schedules/:id
-router.delete('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'canDeleteSchedules')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
+router.delete('/:id', requireScheduleCapability('canDeleteSchedules'), (req, res) => {
   const existing = db.schedules.getById(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Schedule not found' });
+  if (!canAccessSchedule(req, existing)) return res.status(403).json({ error: 'Schedule access denied' });
 
   scheduler.unregister(req.params.id);
   db.schedules.delete(req.params.id);

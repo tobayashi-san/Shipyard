@@ -12,10 +12,12 @@ const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
 const express = require('express');
+const jwt = require('jsonwebtoken');
 
 const { router: authRouter } = require('../routes/auth');
 const authMiddleware = require('../middleware/auth');
 const { testLimiter } = require('../utils/rate-limiters');
+const { getJwtSecret } = require('../utils/jwt-secret');
 
 const app = express();
 app.use(express.json());
@@ -93,6 +95,19 @@ test('protected route – allows valid token', async () => {
     .set('Authorization', `Bearer ${token}`);
   assert.equal(res.status, 200);
   assert.deepEqual(res.body, { ok: true });
+});
+
+test('protected route – rejects 2FA pending temp token', async () => {
+  const { body: { token } } = await request(app)
+    .post('/api/auth/login')
+    .send({ password: 'testpass1234' });
+  const { userId } = jwt.decode(token);
+  const tempToken = jwt.sign({ totp_pending: true, userId }, getJwtSecret(), { expiresIn: '5m' });
+
+  const res = await request(app)
+    .get('/api/protected')
+    .set('Authorization', `Bearer ${tempToken}`);
+  assert.equal(res.status, 401);
 });
 
 // ── Change password ───────────────────────────────────────────────────────────

@@ -93,6 +93,32 @@ function filterPlugins(plugins, permissions) {
   return plugins.filter(p => permissions.plugins.includes(p.id));
 }
 
+function canAccessPlaybook(permissions, filename) {
+  if (!permissions) return false;
+  if (permissions.full) return true;
+  if (permissions.playbooks === 'all') return true;
+  return Array.isArray(permissions.playbooks) && permissions.playbooks.includes(filename);
+}
+
+function canAccessPlugin(permissions, pluginId) {
+  if (!permissions) return false;
+  if (permissions.full) return true;
+  if (permissions.plugins === 'all') return true;
+  return Array.isArray(permissions.plugins) && permissions.plugins.includes(pluginId);
+}
+
+function canAccessTargets(permissions, targets, servers) {
+  if (!permissions) return false;
+  if (permissions.full || permissions.servers === 'all') return true;
+
+  const { parseTargetExpression } = require('./validate');
+  const parsedTargets = parseTargetExpression(targets);
+  if (parsedTargets.kind !== 'list' || parsedTargets.included.length === 0) return false;
+
+  const accessibleNames = new Set(filterServers(servers, permissions).map(s => s.name));
+  return parsedTargets.included.every(target => accessibleNames.has(target));
+}
+
 function can(permissions, capability) {
   if (!permissions) return false;
   if (permissions.full) return true;
@@ -117,4 +143,15 @@ function guardServerAccess(req, res, next) {
   next();
 }
 
-module.exports = { getPermissions, filterServers, filterPlaybooks, filterPlugins, can, guardServerAccess, ALLOWED_PERMISSION_KEYS };
+module.exports = {
+  getPermissions,
+  filterServers,
+  filterPlaybooks,
+  filterPlugins,
+  canAccessPlaybook,
+  canAccessPlugin,
+  canAccessTargets,
+  can,
+  guardServerAccess,
+  ALLOWED_PERMISSION_KEYS,
+};

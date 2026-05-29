@@ -778,7 +778,7 @@ router.get('/:id/docker/:container/logs', guardServerAccess, guard('canViewDocke
   const server = req.server;
 
   const container = req.params.container;
-  if (container.length > 128 || !/^[a-zA-Z0-9_\-]+$/.test(container)) {
+  if (container.length > 128 || !/^[a-zA-Z0-9_.-]+$/.test(container) || container.startsWith('-')) {
     return res.status(400).json({ error: 'Invalid container name' });
   }
 
@@ -789,7 +789,7 @@ router.get('/:id/docker/:container/logs', guardServerAccess, guard('canViewDocke
     const result = await ansibleRunner.runAdHoc(
       server.name,
       'shell',
-      `$(command -v docker 2>/dev/null || command -v podman 2>/dev/null) logs --tail "${tail}" --timestamps "${container}" 2>&1`,
+      `$(command -v docker 2>/dev/null || command -v podman 2>/dev/null) logs --tail "${tail}" --timestamps -- "${container}" 2>&1`,
       () => {},
       { become: true }
     );

@@ -46,6 +46,9 @@ const authMiddleware = function authMiddleware(req, res, next) {
   if (!payload.userId) {
     return res.status(401).json({ error: 'Invalid token — please log in again' });
   }
+  if (payload.totp_pending) {
+    return res.status(401).json({ error: '2FA verification required' });
+  }
 
   const user = db.users.getById(payload.userId);
   if (!user) return res.status(401).json({ error: 'User not found' });

@@ -8,6 +8,7 @@ const authMiddleware = require('./middleware/auth');
 const { createCorsOriginValidator, parseAllowedOrigins } = require('./utils/allowed-origins');
 const { apiLimiter, authenticatedApiLimiter, fileReadLimiter } = require('./utils/rate-limiters');
 const { serverError } = require('./utils/http-error');
+const { getPermissions, canAccessPlugin } = require('./utils/permissions');
 
 const { router: authRouter } = require('./routes/auth');
 const agentRouter = require('./routes/agent');
@@ -165,6 +166,9 @@ function createApp({ isHttps = false } = {}) {
     const { pluginId } = req.params;
     const pluginRouter = pluginLoader.getRouter(pluginId);
     if (!pluginRouter) return res.status(404).json({ error: `Plugin '${pluginId}' not found or not enabled` });
+    if (!canAccessPlugin(getPermissions(req.user), pluginId)) {
+      return res.status(403).json({ error: 'Plugin access denied' });
+    }
     pluginRouter(req, res, next);
   });
 

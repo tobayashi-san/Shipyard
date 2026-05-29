@@ -8,7 +8,7 @@ const systemInfo = require('../services/system-info');
 const { notify } = require('../services/notifier');
 const resourceAlerts = require('../services/resource-alerts');
 const { createComposeTempFile, buildComposeWriteOperations } = require('../utils/compose-write');
-const { getPermissions, can, guardServerAccess } = require('../utils/permissions');
+const { getPermissions, filterServers, can, guardServerAccess } = require('../utils/permissions');
 const { serverError } = require('../utils/http-error');
 const log = require('../utils/logger');
 
@@ -113,16 +113,28 @@ function createServerActionsRouter({ broadcast } = {}) {
   });
 
   router.post('/update-all', (req, res, next) => {
-    if (!can(getPermissions(req.user), 'canRunUpdates')) return res.status(403).json({ error: 'Permission denied' });
+    const perms = getPermissions(req.user);
+    if (!can(perms, 'canRunUpdates')) return res.status(403).json({ error: 'Permission denied' });
+    req.permissions = perms;
     next();
   }, async (req, res) => {
+    const allServers = db.servers.getAll();
+    const scopedServers = req.permissions.full || req.permissions.servers === 'all'
+      ? allServers
+      : filterServers(allServers, req.permissions);
+    if (scopedServers.length === 0) return res.status(403).json({ error: 'No permitted servers to update' });
+
+    const targets = req.permissions.full || req.permissions.servers === 'all'
+      ? 'all'
+      : scopedServers.map(s => s.name).join(',');
+
     const historyId = db.updateHistory.create('bulk_update', 'system_update_all', req.user?.username || null);
     res.json({ historyId, status: 'started' });
 
     try {
       const result = await ansibleRunner.runPlaybook(
         'update.yml',
-        'all',
+        targets,
         {},
         (type, data) => {
           emit({ type: 'bulk_update_output', historyId, stream: type, data });
@@ -131,23 +143,25 @@ function createServerActionsRouter({ broadcast } = {}) {
 
       const status = result.success ? 'success' : 'failed';
       db.updateHistory.updateStatus(historyId, status, result.stdout + result.stderr);
-      db.auditLog.write('server.update_all', `status=${status}`, req.ip, result.success, req.user?.username);
+      db.auditLog.write('server.update_all', `targets=${targets} status=${status}`, req.ip, result.success, req.user?.username);
       // Invalidate updates cache for all servers so the dashboard reflects the new state.
       if (result.success) {
-        for (const s of db.servers.getAll()) {
+        for (const s of scopedServers) {
           try { db.updatesCache.delete(s.id); } catch {}
         }
-        resourceAlerts.evaluateAll();
+        if (targets === 'all') resourceAlerts.evaluateAll();
+        else scopedServers.forEach(s => resourceAlerts.evaluateServer(s.id));
         emit({ type: 'cache_updated', scope: 'updates' });
         // Refresh system info for every server so reboot_required reflects
         // the post-update state. Background, fire-and-forget.
-        for (const s of db.servers.getAll()) refreshServerInfo(s);
+        for (const s of scopedServers) refreshServerInfo(s);
       }
       emit({ type: 'bulk_update_complete', historyId, success: result.success });
     } catch (error) {
       db.updateHistory.updateStatus(historyId, 'failed', error.message);
-      db.auditLog.write('server.update_all', `error=${error.message}`, req.ip, false, req.user?.username);
-      resourceAlerts.evaluateAll();
+      db.auditLog.write('server.update_all', `targets=${targets} error=${error.message}`, req.ip, false, req.user?.username);
+      if (targets === 'all') resourceAlerts.evaluateAll();
+      else scopedServers.forEach(s => resourceAlerts.evaluateServer(s.id));
       emit({ type: 'bulk_update_error', historyId, error: error.message });
       if (db.settings.get('notify_update_failed') !== '0') notify('Bulk update failed', error.message, false).catch(() => {});
     }
@@ -209,7 +223,7 @@ function createServerActionsRouter({ broadcast } = {}) {
       const result = await ansibleRunner.runAdHoc(
         server.name,
         'shell',
-        `$(command -v docker 2>/dev/null || command -v podman 2>/dev/null) restart ${container}`,
+        `$(command -v docker 2>/dev/null || command -v podman 2>/dev/null) restart -- ${container}`,
         (type, data) => {
           emit({ type: 'update_output', serverId, historyId, stream: type, data });
         },
