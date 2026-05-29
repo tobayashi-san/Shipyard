@@ -587,6 +587,8 @@
     "minutesShort": "Min",
     "manageKey": "Schlüssel verwalten",
     "manageKeyHint": "Privaten Schlüssel exportieren oder importieren",
+    "adminOnlyTitle": "Admin-Bereich",
+    "adminOnlyDescription": "Diese Einstellungen sind nur für echte Admin-Benutzer verfügbar. Rollen wie „Power user“ können Server, Playbooks und Aktionen nutzen, aber keine globalen System-, Git- oder Benutzerverwaltungs-Einstellungen ändern.",
     "userManagement": "Benutzerverwaltung",
     "addUser": "Benutzer hinzufügen",
     "noUsersFound": "Keine Benutzer gefunden.",

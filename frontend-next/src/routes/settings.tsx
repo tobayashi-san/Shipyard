@@ -1,8 +1,10 @@
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from '@tanstack/react-router';
-import { useSettings } from '@/lib/queries';
+import { Lock } from 'lucide-react';
+import { useProfile, useSettings } from '@/lib/queries';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/ui/page-header';
+import { EmptyState } from '@/components/ui/empty-state';
 
 import { AppearanceTab } from './settings/tabs/appearance';
 import { SshTab } from './settings/tabs/ssh';
@@ -37,6 +39,34 @@ const TABS: TabDef[] = [
 ];
 
 export function SettingsPage() {
+  const { t } = useTranslation();
+  const { data: profile, isLoading } = useProfile();
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <PageHeader title={t('set.title')} description={t('set.subtitle')} />
+      </div>
+    );
+  }
+
+  if (profile?.role !== 'admin') {
+    return (
+      <div className="space-y-4">
+        <PageHeader title={t('set.title')} description={t('set.subtitle')} />
+        <EmptyState
+          icon={<Lock className="h-5 w-5" />}
+          title={t('set.adminOnlyTitle')}
+          description={t('set.adminOnlyDescription')}
+        />
+      </div>
+    );
+  }
+
+  return <AdminSettingsPage />;
+}
+
+function AdminSettingsPage() {
   const { t } = useTranslation();
   const params = useParams({ strict: false }) as { tab?: string };
   const { data: settings } = useSettings();

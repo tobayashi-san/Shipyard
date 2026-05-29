@@ -592,6 +592,8 @@
     "minutesShort": "min",
     "manageKey": "Manage Key",
     "manageKeyHint": "Export or Import Private Key",
+    "adminOnlyTitle": "Admin area",
+    "adminOnlyDescription": "These settings are only available to real admin users. Roles like \"Power user\" can use servers, playbooks and actions, but cannot change global system, Git or user-management settings.",
     "userManagement": "User Management",
     "addUser": "Add User",
     "noUsersFound": "No users found.",

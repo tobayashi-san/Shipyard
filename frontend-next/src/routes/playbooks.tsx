@@ -180,6 +180,7 @@ export function PlaybooksPage() {
   const { t } = useTranslation();
   const { data: profile } = useProfile();
   const navigate = useNavigate();
+  const isAdmin = profile?.role === 'admin';
 
   const tabs: { value: string; label: string; icon: React.ReactNode; cap?: string }[] = [
     { value: 'templates', label: t('pb.tabTemplates'), icon: <FileText className="h-4 w-4" /> },
@@ -200,7 +201,7 @@ export function PlaybooksPage() {
       <PageHeader
         title={t('pb.title')}
         description={t('pb.subtitle')}
-        actions={<GitWidget onGoSettings={() => navigate({ to: '/settings' })} />}
+        actions={isAdmin ? <GitWidget onGoSettings={() => navigate({ to: '/settings' })} /> : undefined}
       />
 
       <Tabs value={tab} onValueChange={setTab}>

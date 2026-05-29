@@ -608,8 +608,8 @@ const ROLE_PRESETS: RolePreset[] = [
   },
   {
     id: 'adminLike',
-    label: 'Admin-like',
-    description: 'All non-admin capabilities without system role management.',
+    label: 'Power user',
+    description: 'All regular capabilities, but no Admin settings, Git or role management.',
     serversMode: 'all',
     pbMode: 'all',
     plMode: 'all',
