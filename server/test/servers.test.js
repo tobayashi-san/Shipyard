@@ -67,6 +67,16 @@ test('POST /api/servers rejects missing name', async () => {
   assert.equal(res.status, 400);
 });
 
+test('POST /api/servers rejects unsafe ansible inventory names', async () => {
+  for (const name of ['all', 'localhost', '-bad', 'bad name']) {
+    const res = await request(app)
+      .post('/api/servers')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name, ip_address: '10.0.0.2' });
+    assert.equal(res.status, 400);
+  }
+});
+
 let serverId;
 let productionGroupId;
 

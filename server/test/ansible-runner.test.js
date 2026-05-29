@@ -69,6 +69,13 @@ test('runAdHoc appends --become when requested', async () => {
   }
 });
 
+test('runAdHoc rejects option-like target arguments before spawning ansible', async () => {
+  await assert.rejects(
+    () => ansibleRunner.runAdHoc('--list-hosts', 'ping'),
+    /Invalid Ansible target/
+  );
+});
+
 test('ansible environment uses longer ssh tolerance defaults', () => {
   const env = ansibleRunner._ansibleEnv;
 

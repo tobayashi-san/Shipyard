@@ -51,6 +51,14 @@ const USER_DEFAULTS = {
   canViewAudit: true,
 };
 
+const DENY_DEFAULTS = Object.fromEntries(
+  Object.entries(USER_DEFAULTS).map(([key, value]) => {
+    if (Array.isArray(value)) return [key, []];
+    if (key === 'servers' || key === 'playbooks' || key === 'plugins') return [key, []];
+    return [key, false];
+  })
+);
+
 // Set of valid boolean permission keys (used by roles.js to reject unknown keys like 'full')
 const ALLOWED_PERMISSION_KEYS = new Set(Object.keys(USER_DEFAULTS).filter(k => k !== 'servers' && k !== 'playbooks' && k !== 'plugins'));
 
@@ -58,13 +66,15 @@ function getPermissions(user) {
   if (!user) return null;
   if (user.role === 'admin') return FULL;
   const role = db.roles.getById(user.role);
-  if (!role) return { servers: [], playbooks: [], plugins: [] }; // Fail Closed!
+  if (!role) return { ...DENY_DEFAULTS }; // Fail Closed!
   try {
     const p = JSON.parse(role.permissions || '{}');
-    if (p.full) return FULL;
-    return { ...USER_DEFAULTS, ...p };
+    const { full, ...clean } = p;
+    if (role.is_system && full) return FULL;
+    const defaults = role.is_system ? USER_DEFAULTS : DENY_DEFAULTS;
+    return { ...defaults, ...clean };
   } catch {
-    return { servers: [], playbooks: [], plugins: [] }; // Fail Closed!
+    return { ...DENY_DEFAULTS }; // Fail Closed!
   }
 }
 
@@ -109,9 +119,11 @@ function canAccessPlugin(permissions, pluginId) {
 
 function canAccessTargets(permissions, targets, servers) {
   if (!permissions) return false;
-  if (permissions.full || permissions.servers === 'all') return true;
+  const { parseTargetExpression, validateKnownInventoryTargets } = require('./validate');
+  if (permissions.full || permissions.servers === 'all') {
+    return !validateKnownInventoryTargets(targets, servers);
+  }
 
-  const { parseTargetExpression } = require('./validate');
   const parsedTargets = parseTargetExpression(targets);
   if (parsedTargets.kind !== 'list' || parsedTargets.included.length === 0) return false;
 

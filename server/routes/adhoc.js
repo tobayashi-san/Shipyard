@@ -5,6 +5,7 @@ const ansibleRunner = require('../services/ansible-runner');
 const db = require('../db');
 const { getPermissions, filterServers, can } = require('../utils/permissions');
 const { serverError } = require('../utils/http-error');
+const { validateTargets, validateKnownInventoryTargets, parseTargetExpression } = require('../utils/validate');
 
 const adhocLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -37,16 +38,21 @@ router.post('/run', adhocLimiter, (req, res, next) => {
   if (args && args.length > 2000) return res.status(400).json({ error: 'args too long' });
 
   const targetStr = (typeof targets === 'string' && targets.trim()) ? targets.trim() : 'all';
+  const targetsErr = validateTargets(targetStr);
+  if (targetsErr) return res.status(400).json({ error: targetsErr });
+  const allServers = db.servers.getAll();
+  const knownTargetsErr = validateKnownInventoryTargets(targetStr, allServers);
+  if (knownTargetsErr) return res.status(400).json({ error: knownTargetsErr });
 
   // Target authorization: restricted users may only run against their accessible servers
   const perms = getPermissions(req.user);
   if (!perms.full && perms.servers !== 'all') {
-    const resolvedTargets = targetStr.split(',').map(t => t.trim()).filter(Boolean);
-    if (resolvedTargets.length === 0 || resolvedTargets.includes('all')) {
+    const parsedTargets = parseTargetExpression(targetStr);
+    if (parsedTargets.kind !== 'list' || parsedTargets.included.length === 0 || parsedTargets.included.includes('all')) {
       return res.status(403).json({ error: 'Restricted users must specify individual server targets' });
     }
-    const accessibleNames = new Set(filterServers(db.servers.getAll(), perms).map(s => s.name));
-    const forbidden = resolvedTargets.filter(t => !accessibleNames.has(t));
+    const accessibleNames = new Set(filterServers(allServers, perms).map(s => s.name));
+    const forbidden = parsedTargets.included.filter(t => !accessibleNames.has(t));
     if (forbidden.length > 0) {
       return res.status(403).json({ error: `Access denied to: ${forbidden.join(', ')}` });
     }

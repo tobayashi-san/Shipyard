@@ -167,12 +167,20 @@ class AnsibleRunner {
     });
   }
 
+  _assertSafeTargetArgument(targets) {
+    const value = String(targets || '').trim();
+    if (!value || value.startsWith('-')) {
+      throw new Error('Invalid Ansible target');
+    }
+  }
+
   /**
    * Run an Ansible playbook with live output streaming.
    * System playbooks (system/*) resolve from BUNDLED_PLAYBOOKS_DIR only.
    * User playbooks resolve from PLAYBOOKS_DIR first, then BUNDLED_PLAYBOOKS_DIR.
    */
   async runPlaybook(playbookName, targets = 'all', extraVars = {}, onOutput = null) {
+    this._assertSafeTargetArgument(targets);
     const { keyPath, cleanup } = this._resolveSshKey();
     let inventoryPath;
     try {
@@ -224,6 +232,7 @@ class AnsibleRunner {
    * Run ad-hoc Ansible command
    */
   async runAdHoc(targets, module, args = '', onOutput = null, options = {}) {
+    this._assertSafeTargetArgument(targets);
     const { keyPath, cleanup } = this._resolveSshKey();
     let inventoryPath;
     try {

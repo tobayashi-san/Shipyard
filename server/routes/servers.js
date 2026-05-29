@@ -10,7 +10,7 @@ const { refreshDockerCache } = require('../services/docker-inventory');
 const resourceAlerts = require('../services/resource-alerts');
 const { parseImageUpdateOutput } = require('../utils/parse-image-updates');
 const { serverError } = require('../utils/http-error');
-const { targetIncludesServer } = require('../utils/validate');
+const { targetIncludesServer, validateInventoryHostName } = require('../utils/validate');
 const { isValidStorageMountPath, parseConfiguredStorageMounts } = require('../utils/storage-mounts');
 
 // Deserialize JSON fields for API responses
@@ -380,7 +380,10 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
     if (!name || typeof name !== 'string' || !ip_address || typeof ip_address !== 'string') {
       return res.status(400).json({ error: 'Name and IP address are required' });
     }
-    if (name.length > 100) return res.status(400).json({ error: 'Name too long (max 100)' });
+    const normalizedName = name.trim();
+    if (normalizedName.length > 100) return res.status(400).json({ error: 'Name too long (max 100)' });
+    const nameErr = validateInventoryHostName(normalizedName);
+    if (nameErr) return res.status(400).json({ error: nameErr });
     if (ip_address.length > 45) return res.status(400).json({ error: 'IP address too long (max 45)' });
     if (hostname && (typeof hostname !== 'string' || hostname.length > 255)) return res.status(400).json({ error: 'Hostname too long (max 255)' });
     if (ssh_user && (typeof ssh_user !== 'string' || ssh_user.length > 100)) return res.status(400).json({ error: 'SSH user too long (max 100)' });
@@ -389,7 +392,7 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
     const normalizedStorageMounts = normalizeStorageMounts(storage_mounts || []);
     const normalizedTags = Array.isArray(tags) ? tags.filter(t => typeof t === 'string').map(t => t.slice(0, 100)) : [];
     const server = db.servers.create({
-      name: name.slice(0, 100),
+      name: normalizedName,
       hostname: (hostname || ip_address).slice(0, 255),
       ip_address: ip_address.slice(0, 45),
       ssh_port: Math.min(65535, Math.max(1, parseInt(ssh_port, 10) || 22)),
@@ -404,7 +407,7 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
       db.serverGroups.setServerGroup(server.id, autoGroupId);
       server.group_id = autoGroupId;
     }
-    db.auditLog.write('server.create', `Server "${name}" (${ip_address}) created`, req.ip, true, req.user?.username);
+    db.auditLog.write('server.create', `Server "${normalizedName}" (${ip_address}) created`, req.ip, true, req.user?.username);
     res.status(201).json(parseServer(server));
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
@@ -419,7 +422,11 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
     const allGroups = db.serverGroups.getAll();
 
     const { name, hostname, ip_address, ssh_port, ssh_user, tags, services, links, storage_mounts, dockerEnabled } = req.body;
-    const sName   = name !== undefined ? String(name).slice(0, 100) : existing.name;
+    const sName   = name !== undefined ? String(name).trim().slice(0, 100) : existing.name;
+    if (name !== undefined) {
+      const nameErr = validateInventoryHostName(sName);
+      if (nameErr) return res.status(400).json({ error: nameErr });
+    }
     const sHost   = hostname !== undefined ? String(hostname).slice(0, 255) : existing.hostname;
     const sIp     = ip_address !== undefined ? String(ip_address).slice(0, 45) : existing.ip_address;
     const sPort   = ssh_port !== undefined ? Math.min(65535, Math.max(1, parseInt(ssh_port, 10) || 22)) : existing.ssh_port;

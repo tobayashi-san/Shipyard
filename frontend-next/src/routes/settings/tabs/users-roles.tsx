@@ -554,9 +554,9 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
   const playbooksQ = useQuery<PlaybookRow[]>({ queryKey: ['playbooks'], queryFn: () => api.getPlaybooks() as unknown as Promise<PlaybookRow[]> });
 
   const p = role?.permissions || {};
-  const initServersMode = p.servers != null && p.servers !== 'all' ? 'restricted' : 'all';
-  const initPbMode = p.playbooks != null && p.playbooks !== 'all' ? 'restricted' : 'all';
-  const initPlMode = p.plugins != null && p.plugins !== 'all' ? 'restricted' : 'all';
+  const initServersMode = p.servers === 'all' ? 'all' : 'restricted';
+  const initPbMode = p.playbooks === 'all' ? 'all' : 'restricted';
+  const initPlMode = p.plugins === 'all' ? 'all' : 'restricted';
 
   const [name, setName] = useState(role?.name ?? '');
   const [serversMode, setServersMode] = useState<'all' | 'restricted'>(initServersMode);
@@ -578,7 +578,7 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
     const out: Record<string, boolean> = {};
     [...SERVER_CAPS, ...DOCKER_CAPS, ...UPDATE_CAPS, ...PLAYBOOK_CAPS,
       ...SCHEDULE_CAPS, ...VAR_CAPS, ...OTHER_CAPS].forEach(c => {
-      out[c.key] = (p as Record<string, unknown>)[c.key] !== false;
+      out[c.key] = (p as Record<string, unknown>)[c.key] === true;
     });
     return out;
   });

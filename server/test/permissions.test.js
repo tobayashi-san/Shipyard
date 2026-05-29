@@ -56,7 +56,11 @@ test('getPermissions() returns full for admin role', () => {
 
 test('getPermissions() returns fail-closed for unknown role', () => {
   const perms = getPermissions({ role: 'nonexistent-role-id' });
-  assert.deepEqual(perms, { servers: [], playbooks: [], plugins: [] });
+  assert.deepEqual(perms.servers, []);
+  assert.deepEqual(perms.playbooks, []);
+  assert.deepEqual(perms.plugins, []);
+  assert.equal(perms.canViewServers, false);
+  assert.equal(perms.canRunPlaybooks, false);
 });
 
 test('getPermissions() merges role permissions with defaults for user role', () => {
@@ -66,13 +70,26 @@ test('getPermissions() merges role permissions with defaults for user role', () 
   assert.equal(perms.servers, 'all');
 });
 
-test('getPermissions() returns correct permissions for custom role', () => {
+test('getPermissions() returns fail-closed permissions for custom role', () => {
   db.roles.create('viewer', { canViewServers: true, canEditServers: false, servers: 'all' });
   const role = db.roles.getAll().find(r => r.name === 'viewer');
   const perms = getPermissions({ role: role.id });
   assert.equal(perms.canViewServers, true);
   assert.equal(perms.canEditServers, false);
+  assert.equal(perms.canDeleteServers, false);
+  assert.equal(perms.canRunPlaybooks, false);
   assert.equal(perms.servers, 'all');
+  assert.deepEqual(perms.playbooks, []);
+  assert.deepEqual(perms.plugins, []);
+});
+
+test('getPermissions() ignores full flag on custom roles', () => {
+  db.roles.create('custom-full', { full: true, canViewServers: true, servers: 'all' });
+  const role = db.roles.getAll().find(r => r.name === 'custom-full');
+  const perms = getPermissions({ role: role.id });
+  assert.equal(perms.full, undefined);
+  assert.equal(perms.canViewServers, true);
+  assert.equal(perms.canDeleteServers, false);
 });
 
 // ── filterServers() ───────────────────────────────────────────────────────────

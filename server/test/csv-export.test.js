@@ -12,6 +12,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const express = require('express');
 
+const db = require('../db');
 const { router: authRouter } = require('../routes/auth');
 const authMiddleware = require('../middleware/auth');
 const serversRouter = require('../routes/servers');
@@ -43,8 +44,20 @@ async function createServer(payload) {
   return r.body;
 }
 
+function createServerRecord(payload) {
+  return db.servers.create({
+    name: payload.name,
+    hostname: payload.hostname || payload.name,
+    ip_address: payload.ip_address,
+    ssh_port: payload.ssh_port || 22,
+    ssh_user: payload.ssh_user || 'root',
+    tags: [],
+    services: [],
+  });
+}
+
 test('CSV export defuses formula injection in name field', async () => {
-  await createServer({
+  createServerRecord({
     name: '=cmd|"/c calc"!A1',
     hostname: 'evil-host',
     ip_address: '10.0.0.1',
@@ -66,7 +79,7 @@ test('CSV export defuses formula injection in name field', async () => {
 test('CSV export defuses leading +, -, @, tab, and CR', async () => {
   const dangerous = ['+SUM(1+1)', '-2+3', '@SUM(A1)', '\tfoo', '\rbar'];
   for (let i = 0; i < dangerous.length; i++) {
-    await createServer({
+    createServerRecord({
       name: dangerous[i],
       hostname: `host-${i}`,
       ip_address: `10.0.1.${i + 1}`,
