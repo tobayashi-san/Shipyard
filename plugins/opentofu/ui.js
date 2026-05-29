@@ -169,6 +169,7 @@ const PLUGIN_STYLES = `
 .tofu-plugin .tp-form-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 8px; margin-top: 8px; border-top: 1px solid var(--tp-border); }
 
 /* ── Modal ─── */
+.tofu-plugin.tp-overlay,
 .tofu-plugin .tp-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,.45);
   display: flex; align-items: center; justify-content: center;
