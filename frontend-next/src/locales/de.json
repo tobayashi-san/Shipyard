@@ -802,6 +802,14 @@
     "version": "Version",
     "author": "Autor"
   },
+  "activity": {
+    "title": "Aktivitäten",
+    "trigger": "Aktivität",
+    "counts": "{{running}} läuft · {{recent}} zuletzt",
+    "clearCompleted": "Abgeschlossene leeren",
+    "empty": "Noch keine laufenden Jobs.",
+    "itemFallback": "Aktivität"
+  },
   "dash": {
     "title": "Dashboard",
     "loading": "Lade Dashboard…",

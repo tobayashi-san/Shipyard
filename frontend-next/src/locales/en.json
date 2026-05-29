@@ -807,6 +807,14 @@
     "version": "Version",
     "author": "Author"
   },
+  "activity": {
+    "title": "Activity Center",
+    "trigger": "Activity",
+    "counts": "{{running}} running · {{recent}} recent",
+    "clearCompleted": "Clear completed",
+    "empty": "No running jobs yet.",
+    "itemFallback": "Activity"
+  },
   "dash": {
     "title": "Dashboard",
     "loading": "Loading dashboard…",

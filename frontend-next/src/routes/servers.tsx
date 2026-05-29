@@ -1223,6 +1223,8 @@ export function ServersPage() {
         description={<><div>{t('srv.confirmDelete', { name: confirmDeleteServer?.name || '' })}</div><div className="mt-2 text-xs">{t('srv.cantUndone')}</div></>}
         confirmLabel={t('common.delete')}
         variant="destructive"
+        confirmTextValue={confirmDeleteServer?.name || ''}
+        confirmInputLabel="Confirm server name"
         onConfirm={() => {
           if (!confirmDeleteServer) return;
           deleteMut.mutate(confirmDeleteServer.id);
@@ -1238,6 +1240,8 @@ export function ServersPage() {
         description={<><div>{t('srv.confirmDeleteFolder', { name: confirmDeleteGroup?.name || '' })}</div><div className="mt-2 text-xs">{t('srv.folderNote')}</div></>}
         confirmLabel={t('common.delete')}
         variant="destructive"
+        confirmTextValue={confirmDeleteGroup?.name || ''}
+        confirmInputLabel="Confirm folder name"
         onConfirm={() => {
           if (!confirmDeleteGroup) return;
           groupDeleteMut.mutate(confirmDeleteGroup.id);
