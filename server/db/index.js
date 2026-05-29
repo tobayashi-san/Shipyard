@@ -122,6 +122,7 @@ const sshKeyQueries = {
 const dockerContainerQueries = {
   getByServer: db.prepare('SELECT * FROM docker_containers WHERE server_id = ? ORDER BY container_name'),
   clearForServer: db.prepare('DELETE FROM docker_containers WHERE server_id = ?'),
+  deleteForComposePath: db.prepare('DELETE FROM docker_containers WHERE server_id = ? AND compose_working_dir = ?'),
   insert: db.prepare(`
     INSERT INTO docker_containers (id, server_id, container_name, image, state, status, created_at_container, compose_project, compose_working_dir)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -138,7 +139,8 @@ const composeProjectQueries = {
       working_dir = excluded.working_dir,
       updated_at = datetime('now')
   `),
-  delete: db.prepare('DELETE FROM compose_projects WHERE server_id = ? AND project_name = ?')
+  delete: db.prepare('DELETE FROM compose_projects WHERE server_id = ? AND project_name = ?'),
+  deleteByPath: db.prepare('DELETE FROM compose_projects WHERE server_id = ? AND working_dir = ?')
 };
 
 const agentConfigQueries = {
@@ -304,6 +306,9 @@ module.exports = {
   },
   dockerContainers: {
     getByServer: (serverId) => dockerContainerQueries.getByServer.all(serverId),
+    deleteForComposePath: (serverId, workingDir) => {
+      dockerContainerQueries.deleteForComposePath.run(serverId, workingDir);
+    },
     syncForServer: (serverId, containers) => {
       const transaction = db.transaction(() => {
         dockerContainerQueries.clearForServer.run(serverId);
@@ -325,6 +330,9 @@ module.exports = {
     },
     delete: (serverId, projectName) => {
       composeProjectQueries.delete.run(serverId, projectName);
+    },
+    deleteByPath: (serverId, workingDir) => {
+      composeProjectQueries.deleteByPath.run(serverId, workingDir);
     }
   },
 

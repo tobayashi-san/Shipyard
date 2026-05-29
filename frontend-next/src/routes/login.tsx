@@ -160,9 +160,12 @@ export function LoginPage() {
                 <Label htmlFor="totp">{t('login.totpTitle')}</Label>
                 <Input
                   id="totp"
+                  name="otp"
                   inputMode="numeric"
+                  pattern="[0-9 ]*"
                   maxLength={7}
                   autoComplete="one-time-code"
+                  aria-label={t('login.totpPlaceholder')}
                   value={totpCode}
                   onChange={(e) => {
                     const digits = e.target.value.replace(/[^0-9]/g, '').slice(0, 6);

@@ -374,19 +374,26 @@ function createServerActionsRouter({ broadcast } = {}) {
     const { id: serverId } = req.params;
     const { path: remotePath } = req.query;
     if (!remotePath || typeof remotePath !== 'string') return res.status(400).json({ error: 'path query param required' });
+    if (!/^[a-zA-Z0-9/_.-]+$/.test(remotePath) || remotePath.includes('..')) return res.status(400).json({ error: 'Invalid path format' });
+    if (isBlockedRemotePath(remotePath)) return res.status(400).json({ error: 'Path not allowed: system directories are protected' });
+
     try {
-      const projectName = remotePath.split('/').filter(Boolean).pop() || remotePath;
+      const project = db.composeProjects.getByServerAndPath(serverId, remotePath);
+      const projectName = project?.project_name || remotePath.split('/').filter(Boolean).pop() || remotePath;
 
       // Best-effort: stop containers before removing from DB.
       // Errors are logged but do not block deletion so the UI stays consistent.
       try {
-        const downCmd = `cd ${remotePath} && docker compose down 2>&1 || true`;
+        const safePath = remotePath.replace(/'/g, "'\\''");
+        const downCmd = `cd '${safePath}' && docker compose down 2>&1 || true`;
         await sshManager.execCommand(req.server, downCmd);
       } catch (sshErr) {
         log.warn({ err: sshErr }, 'compose down failed during stack delete – continuing');
       }
 
+      db.composeProjects.deleteByPath(serverId, remotePath);
       db.composeProjects.delete(serverId, projectName);
+      db.dockerContainers.deleteForComposePath(serverId, remotePath);
       db.auditLog.write('compose.delete', `server=${req.server.name} path=${remotePath}`, req.ip, true, req.user?.username);
       res.json({ status: 'deleted' });
     } catch (err) {

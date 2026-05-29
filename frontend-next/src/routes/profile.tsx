@@ -370,14 +370,21 @@ export function ProfilePage() {
                 </p>
                 <div className="flex items-center gap-2 flex-wrap">
                   <input
+                    id="totp-confirm-code"
+                    name="otp"
                     className="w-36 rounded-md border bg-background px-3 py-2 text-center text-xl tracking-[8px] font-mono focus:outline-none focus:ring-2 focus:ring-ring"
                     type="text"
                     inputMode="numeric"
                     pattern="[0-9 ]*"
                     maxLength={7}
+                    autoComplete="one-time-code"
+                    aria-label={t('set.totpEnterCode')}
                     placeholder="______"
                     value={totpCode}
-                    onChange={(e) => setTotpCode(e.target.value)}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/[^0-9]/g, '').slice(0, 6);
+                      setTotpCode(digits.length > 3 ? `${digits.slice(0, 3)} ${digits.slice(3)}` : digits);
+                    }}
                   />
                   <button
                     className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"

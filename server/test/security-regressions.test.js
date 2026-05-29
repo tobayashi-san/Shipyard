@@ -19,6 +19,7 @@ const db = require('../db');
 const { router: authRouter } = require('../routes/auth');
 const authMiddleware = require('../middleware/auth');
 const serversRouter = require('../routes/servers');
+const createServerActionsRouter = require('../routes/server-actions');
 const scheduleHistoryRouter = require('../routes/schedule-history');
 const adhocRouter = require('../routes/adhoc');
 const usersRouter = require('../routes/users');
@@ -31,6 +32,7 @@ const app = express();
 app.use(express.json());
 app.use('/api/auth', authRouter);
 app.use('/api', testLimiter, authMiddleware);
+app.use('/api/servers', createServerActionsRouter());
 app.use('/api/servers', serversRouter);
 app.use('/api/schedule-history', scheduleHistoryRouter);
 app.use('/api/adhoc', adhocRouter);
@@ -372,5 +374,77 @@ test('deploy-all key endpoint is admin-only and returns per-server results', asy
     assert.equal(Array.isArray(res.body.results), true);
   } finally {
     sshManager.deployKey = originalDeploy;
+  }
+});
+
+test('DELETE /api/servers/:id/docker/compose/stack validates path parameter and prevents command injection', async () => {
+  wipeDb();
+  await setupAdmin();
+
+  // Create server and user with canManageDockerCompose capability
+  const srv = db.servers.create({ name: 'srv-1', hostname: 'srv-1', ip_address: '10.0.0.12', tags: [], services: [] });
+  const composeRole = db.roles.create('compose-manager', {
+    servers: 'all',
+    canManageDockerCompose: true,
+  });
+  const hash = await bcrypt.hash('composepass12345', 12);
+  db.users.create('composeuser', '', hash, composeRole.id);
+  const token = await login('composeuser', 'composepass12345');
+
+  // Stub sshManager.execCommand to record what was executed
+  const executedCommands = [];
+  const originalExec = sshManager.execCommand;
+  sshManager.execCommand = async (server, command) => {
+    executedCommands.push({ server, command });
+    return { code: 0, stdout: '', stderr: '' };
+  };
+
+  try {
+    // 1. Rejected payload: injection attempt with semicolon
+    const resInjection = await request(app)
+      .delete(`/api/servers/${srv.id}/docker/compose/stack?path=/home/user/project; rm -rf /`)
+      .set('Authorization', `Bearer ${token}`);
+    assert.equal(resInjection.status, 400);
+    assert.equal(resInjection.body.error, 'Invalid path format');
+
+    // 2. Rejected payload: blocked system directory
+    const resBlocked = await request(app)
+      .delete(`/api/servers/${srv.id}/docker/compose/stack?path=/etc/nginx`)
+      .set('Authorization', `Bearer ${token}`);
+    assert.equal(resBlocked.status, 400);
+    assert.equal(resBlocked.body.error, 'Path not allowed: system directories are protected');
+
+    // 3. Rejected payload: path containing directory traversal
+    const resTraversal = await request(app)
+      .delete(`/api/servers/${srv.id}/docker/compose/stack?path=/home/user/../etc`)
+      .set('Authorization', `Bearer ${token}`);
+    assert.equal(resTraversal.status, 400);
+    assert.equal(resTraversal.body.error, 'Invalid path format');
+
+    db.composeProjects.upsert(srv.id, 'custom_project', '/home/user/stack');
+    db.dockerContainers.syncForServer(srv.id, [{
+      name: 'custom_project-app-1',
+      image: 'demo:latest',
+      state: 'running',
+      status: 'Up 5 minutes',
+      createdAt: '2026-05-29 10:00:00',
+      composeProject: 'custom_project',
+      composeWorkingDir: '/home/user/stack',
+    }]);
+
+    // 4. Accepted payload: valid path, should be executed with single quotes escaping
+    const resValid = await request(app)
+      .delete(`/api/servers/${srv.id}/docker/compose/stack?path=/home/user/stack`)
+      .set('Authorization', `Bearer ${token}`);
+    assert.equal(resValid.status, 200);
+    assert.equal(resValid.body.status, 'deleted');
+
+    // Verify executed command
+    assert.equal(executedCommands.length, 1);
+    assert.equal(executedCommands[0].command, "cd '/home/user/stack' && docker compose down 2>&1 || true");
+    assert.deepEqual(db.composeProjects.getByServer(srv.id), []);
+    assert.deepEqual(db.dockerContainers.getByServer(srv.id), []);
+  } finally {
+    sshManager.execCommand = originalExec;
   }
 });

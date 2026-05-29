@@ -127,7 +127,7 @@ function ProfilePopover({
   return (
     <div
       ref={popRef}
-      className="absolute bottom-full left-0 mb-2 w-[280px] max-w-[calc(100vw-24px)] rounded-lg border bg-popover text-popover-foreground shadow-lg z-50"
+      className="absolute bottom-full left-2 mb-2 w-[280px] max-w-[calc(100vw-24px)] rounded-lg border bg-popover text-popover-foreground shadow-lg z-50"
     >
       {/* User info header */}
       <div className="flex items-center gap-3 border-b p-3">
