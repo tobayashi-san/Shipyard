@@ -1,8 +1,22 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { getPermissions, filterServers, can } = require('../utils/permissions');
+const { getPermissions, filterServers, can, canAccessPlaybook } = require('../utils/permissions');
 const { parseTargetExpression } = require('../utils/validate');
+
+function canAccessHistoryRow(perms, row, allServers) {
+  if (!perms) return false;
+  if (perms.full) return true;
+  if (!canAccessPlaybook(perms, row.playbook)) return false;
+  if (perms.servers === 'all') return true;
+
+  const accessibleNames = new Set(
+    filterServers(allServers, perms).map(s => s.name)
+  );
+  const parsed = parseTargetExpression(row.targets);
+  if (parsed.kind !== 'list' || parsed.included.length === 0) return false;
+  return parsed.included.some(t => accessibleNames.has(t));
+}
 
 // GET /api/schedule-history?limit=100&scheduleId=xxx
 router.get('/', (req, res) => {
@@ -13,25 +27,18 @@ router.get('/', (req, res) => {
   const scheduleId = req.query.scheduleId || null;
 
   const perms = getPermissions(req.user);
+  if (!perms) return res.status(403).json({ error: 'Permission denied' });
+
   // Admins / full-access users see everything
-  if (!perms || perms.full || perms.servers === 'all') {
+  if (perms.full) {
     return res.json(db.scheduleHistory.getAll(limit, scheduleId));
   }
 
-  // Restricted users: only show history entries whose targets match an
-  // accessible server name (or were run against a single accessible server).
-  // Entries targeting 'all' are not shown to restricted users.
-  const accessibleNames = new Set(
-    filterServers(db.servers.getAll(), perms).map(s => s.name)
-  );
+  // Non-full users only see history for allowed playbooks and visible targets.
+  const allServers = db.servers.getAll();
   const all = db.scheduleHistory.getAll(limit * 5, scheduleId);
   const filtered = all
-    .filter(h => {
-      if (!h.targets) return false;
-      const parsed = parseTargetExpression(h.targets);
-      if (parsed.kind !== 'list' || parsed.included.length === 0) return false;
-      return parsed.included.some(t => accessibleNames.has(t));
-    })
+    .filter(h => canAccessHistoryRow(perms, h, allServers))
     .slice(0, limit);
 
   res.json(filtered);
@@ -47,13 +54,8 @@ router.get('/:id', (req, res) => {
 
   // Restricted users can only view history for servers they have access to
   const perms = getPermissions(req.user);
-  if (perms && !perms.full && perms.servers !== 'all' && perms.servers != null) {
-    const accessibleNames = new Set(
-      filterServers(db.servers.getAll(), perms).map(s => s.name)
-    );
-    const parsed = parseTargetExpression(row.targets);
-    if (parsed.kind !== 'list') return res.status(403).json({ error: 'Permission denied' });
-    if (!parsed.included.some(t => accessibleNames.has(t))) return res.status(403).json({ error: 'Permission denied' });
+  if (!canAccessHistoryRow(perms, row, db.servers.getAll())) {
+    return res.status(403).json({ error: 'Permission denied' });
   }
 
   res.json(row);

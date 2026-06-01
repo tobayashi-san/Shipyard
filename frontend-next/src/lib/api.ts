@@ -11,6 +11,73 @@ export class ApiError extends Error {
   }
 }
 
+function currentLang(): 'de' | 'en' {
+  try {
+    const stored = localStorage.getItem('shipyard_lang');
+    if (stored === 'de' || stored === 'en') return stored;
+  } catch { /* ignore */ }
+  return navigator.language.toLowerCase().startsWith('en') ? 'en' : 'de';
+}
+
+function permissionDeniedMessage(path: string, method = 'GET'): string {
+  const de = currentLang() === 'de';
+  const p = path.toLowerCase();
+  const m = method.toUpperCase();
+  const msg = (german: string, english: string) => de ? german : english;
+
+  if (p.startsWith('/roles') || p.startsWith('/users')) {
+    return msg('Deine Rolle darf Benutzer und Rollen nicht verwalten.', 'Your role is not allowed to manage users and roles.');
+  }
+  if (p.startsWith('/system/key') || p.startsWith('/system/deploy')) {
+    return msg('Deine Rolle darf SSH-Schlüssel nicht verwalten.', 'Your role is not allowed to manage SSH keys.');
+  }
+  if (p.startsWith('/system/audit')) {
+    return msg('Deine Rolle darf das Audit-Log nicht ansehen.', 'Your role is not allowed to view the audit log.');
+  }
+  if (p.startsWith('/plugin/')) {
+    return msg('Deine Rolle darf dieses Plugin nicht öffnen.', 'Your role is not allowed to access this plugin.');
+  }
+  if (p.startsWith('/plugins')) {
+    return msg('Deine Rolle darf Plugins nicht verwalten.', 'Your role is not allowed to manage plugins.');
+  }
+  if (p.startsWith('/adhoc')) {
+    return msg('Deine Rolle darf keine Ad-hoc-Kommandos ausführen.', 'Your role is not allowed to run ad-hoc commands.');
+  }
+  if (p.startsWith('/ansible/run')) {
+    return msg('Deine Rolle darf dieses Playbook oder Ziel nicht ausführen.', 'Your role is not allowed to run this playbook or target.');
+  }
+  if (p.startsWith('/playbooks')) {
+    if (m === 'GET') return msg('Deine Rolle darf dieses Playbook nicht lesen.', 'Your role is not allowed to read this playbook.');
+    return msg('Deine Rolle darf Playbooks nicht ändern.', 'Your role is not allowed to modify playbooks.');
+  }
+  if (p.startsWith('/schedules') || p.startsWith('/schedule-history')) {
+    return msg('Deine Rolle darf diesen Zeitplan oder Verlauf nicht verwenden.', 'Your role is not allowed to access this schedule or history.');
+  }
+  if (p.startsWith('/ansible-vars')) {
+    return msg('Deine Rolle darf Variablen nicht verwalten.', 'Your role is not allowed to manage variables.');
+  }
+  if (p.includes('/docker/compose')) {
+    return msg('Deine Rolle darf Docker-Compose auf diesem Server nicht verwalten.', 'Your role is not allowed to manage Docker Compose on this server.');
+  }
+  if (p.includes('/docker')) {
+    return msg('Deine Rolle darf Docker-Aktionen auf diesem Server nicht ausführen.', 'Your role is not allowed to perform Docker actions on this server.');
+  }
+  if (p.includes('/custom-updates')) {
+    return msg('Deine Rolle darf Custom-Update-Tasks nicht verwenden.', 'Your role is not allowed to use custom update tasks.');
+  }
+  if (p.endsWith('/update') || p.endsWith('/update-all')) {
+    return msg('Deine Rolle darf Updates nicht starten.', 'Your role is not allowed to start updates.');
+  }
+  if (p.endsWith('/reboot')) {
+    return msg('Deine Rolle darf Server nicht neu starten.', 'Your role is not allowed to reboot servers.');
+  }
+  if (p.startsWith('/servers')) {
+    if (m === 'GET') return msg('Deine Rolle darf diesen Server nicht ansehen.', 'Your role is not allowed to view this server.');
+    return msg('Deine Rolle darf diesen Server nicht ändern.', 'Your role is not allowed to modify this server.');
+  }
+  return msg('Deine Rolle erlaubt diese Aktion nicht.', 'Your role does not allow this action.');
+}
+
 interface RequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown;
   /** Skip Authorization header (used for /auth/login, /auth/setup, /auth/status). */
@@ -46,6 +113,7 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
   if (!res.ok) {
     let msg = `Request failed: ${res.status}`;
     try { const j = await res.json(); if (j?.error) msg = j.error; } catch { /* ignore */ }
+    if (res.status === 403 && msg === 'Permission denied') msg = permissionDeniedMessage(path, options.method || 'GET');
     throw new ApiError(msg, res.status);
   }
 

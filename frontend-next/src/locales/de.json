@@ -587,6 +587,8 @@
     "minutesShort": "Min",
     "manageKey": "Schlüssel verwalten",
     "manageKeyHint": "Privaten Schlüssel exportieren oder importieren",
+    "adminOnlyTitle": "Admin-Bereich",
+    "adminOnlyDescription": "Diese Einstellungen sind nur für echte Admin-Benutzer verfügbar. Rollen wie „Power user“ können Server, Playbooks und Aktionen nutzen, aber keine globalen System-, Git- oder Benutzerverwaltungs-Einstellungen ändern.",
     "userManagement": "Benutzerverwaltung",
     "addUser": "Benutzer hinzufügen",
     "noUsersFound": "Keine Benutzer gefunden.",
@@ -801,6 +803,14 @@
     "back": "Zurück zu Plugins",
     "version": "Version",
     "author": "Autor"
+  },
+  "activity": {
+    "title": "Aktivitäten",
+    "trigger": "Aktivität",
+    "counts": "{{running}} läuft · {{recent}} zuletzt",
+    "clearCompleted": "Abgeschlossene leeren",
+    "empty": "Noch keine laufenden Jobs.",
+    "itemFallback": "Aktivität"
   },
   "dash": {
     "title": "Dashboard",

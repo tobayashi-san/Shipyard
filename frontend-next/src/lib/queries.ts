@@ -6,7 +6,7 @@ export interface Permissions {
   servers?: 'all' | { groups?: (string | number)[]; servers?: (string | number)[] };
   playbooks?: 'all' | string[];
   plugins?: 'all' | string[];
-  // Capability flags (canViewServers, canRunPlaybooks, …); unspecified => true for admin/built-in roles.
+  // Capability flags (canViewServers, canRunPlaybooks, ...); backend sends explicit values.
   [cap: string]: unknown;
 }
 
@@ -59,20 +59,18 @@ export function useSettings() {
 }
 
 /**
- * Capability check matching legacy `hasCap` semantics:
+ * Capability check matching backend permission semantics:
  *   - admin or `full=true` → always true
- *   - permissions object with explicit cap === false → false
- *   - otherwise → true (fail-open for unknown caps; matches legacy behaviour)
+ *   - explicit cap === true → true
+ *   - missing/false caps → false
  */
 export function hasCap(profile: Profile | undefined | null, cap: string): boolean {
   if (!profile) return false;
   if (profile.role === 'admin') return true;
   const perms = profile.permissions;
-  if (!perms) return true;
+  if (!perms) return false;
   if (perms.full) return true;
-  const v = perms[cap];
-  if (v === false) return false;
-  return true;
+  return perms[cap] === true;
 }
 
 /** Whether the user can see a given plugin in the sidebar. */
@@ -80,6 +78,7 @@ export function canSeePlugin(profile: Profile | undefined | null, pluginId: stri
   if (!profile) return false;
   if (profile.role === 'admin') return true;
   const perms = profile.permissions;
-  if (!perms || perms.full || perms.plugins === 'all') return true;
+  if (!perms) return false;
+  if (perms.full || perms.plugins === 'all') return true;
   return Array.isArray(perms.plugins) && perms.plugins.includes(pluginId);
 }

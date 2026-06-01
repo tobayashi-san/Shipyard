@@ -856,7 +856,7 @@ function register({ router, db, broadcast }) {
   function syncPathsFile() {
     try {
       const rows = db.db.prepare('SELECT path FROM tofu_workspaces').all();
-      fs.writeFileSync(PATHS_FILE, rows.map(r => r.path).join('\n'), 'utf8');
+      fs.writeFileSync(PATHS_FILE, rows.filter(r => isAllowedPath(r.path)).map(r => r.path).join('\n'), 'utf8');
     } catch {}
   }
 
@@ -871,11 +871,17 @@ function register({ router, db, broadcast }) {
     'CLOUDFLARE_', 'GITHUB_TOKEN',
   ];
 
-  const ALLOWED_PATH_PREFIXES = ['/opt/','/srv/','/home/','/var/lib/','/app/','/workspaces/'];
+  const ALLOWED_PATH_ROOTS = String(process.env.OPENTOFU_WORKSPACE_ROOTS || '/workspaces')
+    .split(',')
+    .map(root => root.trim())
+    .filter(Boolean)
+    .map(root => path.resolve(root));
+  const ALLOWED_PATH_PREFIXES = ALLOWED_PATH_ROOTS.map(root => `${root}${path.sep}`);
+  const WORKSPACE_PATH_ERROR = `Path must be under configured OpenTofu workspace roots: ${ALLOWED_PATH_ROOTS.join(', ') || '/workspaces'}`;
 
   function isAllowedPath(p) {
+    if (typeof p !== 'string' || !p.trim()) return false;
     const resolved = path.resolve(p);
-    if (resolved.includes('..')) return false;
     return ALLOWED_PATH_PREFIXES.some(prefix => resolved.startsWith(prefix));
   }
 
@@ -1103,14 +1109,20 @@ override.tf.json
     return clean;
   }
 
-  function getWorkspace(id) {
+  function getWorkspaceRow(id) {
     const row = db.db.prepare('SELECT * FROM tofu_workspaces WHERE id = ?').get(id);
+    return row || null;
+  }
+
+  function getWorkspace(id) {
+    const row = getWorkspaceRow(id);
     if (!row) return null;
+    if (!isAllowedPath(row.path)) return null;
     return { ...row, env_vars: sanitizeEnvVars(JSON.parse(row.env_vars || '{}')) };
   }
 
   function getAllWorkspaces() {
-    return db.db.prepare('SELECT id, name, path FROM tofu_workspaces').all();
+    return db.db.prepare('SELECT id, name, path FROM tofu_workspaces').all().filter(w => isAllowedPath(w.path));
   }
 
   function ensureWorkspacePath(workspace) {
@@ -1207,7 +1219,7 @@ override.tf.json
   });
 
   router.get('/workspaces', (req, res) => {
-    const rows = db.db.prepare('SELECT * FROM tofu_workspaces ORDER BY name ASC').all();
+    const rows = db.db.prepare('SELECT * FROM tofu_workspaces ORDER BY name ASC').all().filter(w => isAllowedPath(w.path));
     const withStatus = rows.map(r => {
       const lastRun = getLastRun(r.id);
       return {
@@ -1222,7 +1234,7 @@ override.tf.json
   router.post('/workspaces', (req, res) => {
     const { name, path: wPath, description, env_vars, scaffold } = req.body;
     if (!name || !wPath) return res.status(400).json({ error: 'name and path are required' });
-    if (!isAllowedPath(wPath)) return res.status(400).json({ error: 'Path must be under /workspaces/, /opt/, /srv/, /home/, /var/lib/, or /app/' });
+    if (!isAllowedPath(wPath)) return res.status(400).json({ error: WORKSPACE_PATH_ERROR });
     const id = randomUUID();
     db.db.prepare('INSERT INTO tofu_workspaces (id, name, path, description, env_vars) VALUES (?, ?, ?, ?, ?)')
       .run(id, name.trim(), wPath.trim(), (description || '').trim(), JSON.stringify(env_vars || {}));
@@ -1236,14 +1248,14 @@ override.tf.json
   router.put('/workspaces/:id', (req, res) => {
     const { name, path: wPath, description, env_vars } = req.body;
     if (!name || !wPath) return res.status(400).json({ error: 'name and path are required' });
-    if (!isAllowedPath(wPath)) return res.status(400).json({ error: 'Path must be under /opt/, /srv/, /home/, /var/lib/, or /app/' });
-    const existing = getWorkspace(req.params.id);
+    if (!isAllowedPath(wPath)) return res.status(400).json({ error: WORKSPACE_PATH_ERROR });
+    const existing = getWorkspaceRow(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Workspace not found' });
     const nextPath = wPath.trim();
     const shouldMoveFiles = req.body.move_files !== false;
     const pathChanged = path.resolve(existing.path) !== path.resolve(nextPath);
 
-    if (pathChanged && shouldMoveFiles) {
+    if (pathChanged && shouldMoveFiles && isAllowedPath(existing.path)) {
       try {
         moveWorkspaceDirectory(existing.path, nextPath);
       } catch (e) {

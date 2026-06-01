@@ -188,6 +188,7 @@ export function ServerDetailPage() {
   const [confirmReboot, setConfirmReboot] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmDeleteTask, setConfirmDeleteTask] = useState<CustomTask | null>(null);
+  const [confirmComposeDown, setConfirmComposeDown] = useState<{ proj: string; dir: string } | null>(null);
   const [confirmAgentInstall, setConfirmAgentInstall] = useState(false);
   const [confirmAgentRemove, setConfirmAgentRemove] = useState(false);
   const [confirmRestartContainer, setConfirmRestartContainer] = useState<string | null>(null);
@@ -789,6 +790,8 @@ export function ServerDetailPage() {
               description={t('det.confirmDeleteServer', { name: server.name })}
               confirmLabel={t('common.delete')}
               variant="destructive"
+              confirmTextValue={server.name}
+              confirmInputLabel="Confirm server name"
               onConfirm={() => deleteServerMut.mutate()}
               isPending={deleteServerMut.isPending}
             />
@@ -808,6 +811,8 @@ export function ServerDetailPage() {
               description={t('det.agentRemoveConfirm')}
               confirmLabel={t('det.agentRemove')}
               variant="destructive"
+              confirmTextValue={server.name}
+              confirmInputLabel="Confirm server name"
               onConfirm={() => agentRemoveMut.mutate()}
               isPending={agentRemoveMut.isPending}
             />
@@ -1064,7 +1069,7 @@ export function ServerDetailPage() {
                                  {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6" title={t('det.editCompose')} onClick={() => openEditCompose(data.dir)}><FileText className="h-3 w-3" /></Button>}
                                    {hasCap(profile, 'canPullDocker') && <Button variant="ghost" size="icon" className="h-6 w-6" title="pull" onClick={() => composeActionMut.mutate({ dir: data.dir, action: 'pull' })} disabled={composeActionMut.isPending}><CloudDownload className="h-3 w-3" /></Button>}
                                    {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6" title="up -d" onClick={() => composeActionMut.mutate({ dir: data.dir, action: 'up' })} disabled={composeActionMut.isPending}><Play className="h-3 w-3" /></Button>}
-                                   {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" title="down" onClick={() => composeActionMut.mutate({ dir: data.dir, action: 'down' })} disabled={composeActionMut.isPending}><Square className="h-3 w-3" /></Button>}
+                                   {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" title="down" onClick={() => setConfirmComposeDown({ proj, dir: data.dir })} disabled={composeActionMut.isPending}><Square className="h-3 w-3" /></Button>}
                                    {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" title={t('det.removeStack')} onClick={() => setConfirmDeleteStack({ proj, dir: data.dir })} disabled={deleteStackMut.isPending}><Trash2 className="h-3 w-3" /></Button>}
                                 </div>
                               </td>
@@ -1523,8 +1528,22 @@ export function ServerDetailPage() {
         description={t('det.confirmDeleteTask', { name: confirmDeleteTask?.name || '' })}
         confirmLabel={t('common.delete')}
         variant="destructive"
+        confirmTextValue={confirmDeleteTask?.name || ''}
+        confirmInputLabel="Confirm task name"
         onConfirm={() => { if (confirmDeleteTask) deleteTaskMut.mutate(confirmDeleteTask.id); }}
         isPending={deleteTaskMut.isPending}
+      />
+      <ConfirmDialog
+        open={!!confirmComposeDown}
+        onOpenChange={(open) => { if (!open) setConfirmComposeDown(null); }}
+        title="Compose down"
+        description={`Stop and remove containers for "${confirmComposeDown?.proj || ''}".`}
+        confirmLabel="Down"
+        variant="destructive"
+        confirmTextValue={confirmComposeDown?.proj || ''}
+        confirmInputLabel="Confirm stack name"
+        onConfirm={() => { if (confirmComposeDown) composeActionMut.mutate({ dir: confirmComposeDown.dir, action: 'down' }); }}
+        isPending={composeActionMut.isPending}
       />
       <ConfirmDialog
         open={!!confirmDeleteStack}
@@ -1533,6 +1552,8 @@ export function ServerDetailPage() {
         description={t('det.confirmRemoveStack', { name: confirmDeleteStack?.proj || '' })}
         confirmLabel={t('common.delete')}
         variant="destructive"
+        confirmTextValue={confirmDeleteStack?.proj || ''}
+        confirmInputLabel="Confirm stack name"
         onConfirm={() => { if (confirmDeleteStack) deleteStackMut.mutate(confirmDeleteStack.dir); }}
         isPending={deleteStackMut.isPending}
       />

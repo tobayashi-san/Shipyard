@@ -169,6 +169,7 @@ const PLUGIN_STYLES = `
 .tofu-plugin .tp-form-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 8px; margin-top: 8px; border-top: 1px solid var(--tp-border); }
 
 /* ── Modal ─── */
+.tofu-plugin.tp-overlay,
 .tofu-plugin .tp-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,.45);
   display: flex; align-items: center; justify-content: center;
@@ -885,7 +886,7 @@ async function renderWorkspaceDetail(ws) {
 
   document.getElementById('tofu-btn-edit').addEventListener('click', () => openWorkspaceModal(ws));
   document.getElementById('tofu-btn-delete').addEventListener('click', async () => {
-    if (!await _internalConfirm(`Delete workspace "${ws.name}"?`, { title:'Delete', confirmText:'Delete', danger:true })) return;
+    if (!await _internalConfirm(`Delete workspace "${ws.name}"?`, { title:'Delete', confirmText:'Delete', danger:true, confirmValue:ws.name, confirmLabel:'Workspace name' })) return;
     await _pluginApi.request(`/workspaces/${ws.id}`, { method:'DELETE' });
     _workspaces = _workspaces.filter(w => w.id !== ws.id);
     _selected   = _workspaces[0]?.id || null;
@@ -1067,11 +1068,11 @@ async function executeAction(ws, action) {
   if (_runId) return;
   if (action === 'destroy') {
     if (!await _internalConfirm(`Destroy all resources in "${ws.name}"? This cannot be undone.`,
-      { title:'Destroy', confirmText:'Destroy', danger:true })) return;
+      { title:'Destroy', confirmText:'Destroy', danger:true, confirmValue:ws.name, confirmLabel:'Workspace name' })) return;
   }
   if (action === 'apply') {
     if (!await _internalConfirm(`Apply changes in "${ws.name}"?`,
-      { title:'Apply', confirmText:'Apply', danger:false })) return;
+      { title:'Apply', confirmText:'Apply', danger:false, confirmValue:ws.name, confirmLabel:'Workspace name' })) return;
   }
   const body = document.getElementById('tofu-terminal-body');
   if (body) body.innerHTML = '';
@@ -1441,7 +1442,7 @@ function bindTreeEvents(ws) {
   document.querySelectorAll('[data-delete]').forEach(delBtn => {
     delBtn.addEventListener('click', async e => {
       e.stopPropagation();
-      if (!await _internalConfirm(`Delete "${delBtn.dataset.delete}"?`, { title:'Delete', confirmText:'Delete', danger:true })) return;
+      if (!await _internalConfirm(`Delete "${delBtn.dataset.delete}"?`, { title:'Delete', confirmText:'Delete', danger:true, confirmValue:delBtn.dataset.delete, confirmLabel:'File path' })) return;
       try {
         await _pluginApi.request(`/workspaces/${ws.id}/file?path=${encodeURIComponent(delBtn.dataset.delete)}`, { method:'DELETE' });
         if (_openFile?.path === delBtn.dataset.delete) { _openFile = null; }
@@ -1589,18 +1590,37 @@ function closeModal() {
 }
 
 // ── Internal confirm dialog (replaces window.confirm for in-plugin use) ───
-function _internalConfirm(message, { title = 'Confirm', confirmText = 'Confirm', danger = false } = {}) {
+function _internalConfirm(message, { title = 'Confirm', confirmText = 'Confirm', danger = false, confirmValue = '', confirmLabel = 'Type to confirm' } = {}) {
   return new Promise(resolve => {
+    const requiredValue = String(confirmValue || '');
+    const requiresText = requiredValue.length > 0;
     showModal(`
       <h2 style="margin:0 0 12px;">${esc(title)}</h2>
       <p style="margin:0 0 20px;color:var(--tp-fg-muted);font-size:14px;">${esc(message)}</p>
+      ${requiresText ? `
+        <div class="tp-form-group">
+          <label class="tp-label" for="confirm-value">${esc(confirmLabel)}</label>
+          <input class="tp-input tp-input-mono" id="confirm-value" autocomplete="off" placeholder="${esc(requiredValue)}">
+          <div class="tp-form-hint">Type <code>${esc(requiredValue)}</code> to enable this action.</div>
+        </div>
+      ` : ''}
       <div class="tp-form-actions">
         ${btn('secondary', 'confirm-cancel', 'Cancel')}
-        ${btn(danger ? 'danger' : 'primary', 'confirm-ok', esc(confirmText))}
+        ${btn(danger ? 'danger' : 'primary', 'confirm-ok', esc(confirmText), requiresText ? 'disabled' : '')}
       </div>
     `, { maxWidth: '420px', onReady: () => {
+      const input = document.getElementById('confirm-value');
+      const ok = document.getElementById('confirm-ok');
+      const sync = () => { if (ok) ok.disabled = requiresText && input?.value !== requiredValue; };
+      input?.addEventListener('input', sync);
+      input?.focus();
+      sync();
       document.getElementById('confirm-cancel').addEventListener('click', () => { closeModal(); resolve(false); });
-      document.getElementById('confirm-ok').addEventListener('click', () => { closeModal(); resolve(true); });
+      ok?.addEventListener('click', () => {
+        if (requiresText && input?.value !== requiredValue) return;
+        closeModal();
+        resolve(true);
+      });
     }});
   });
 }

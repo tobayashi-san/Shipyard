@@ -30,7 +30,7 @@ function isValidTimeZone(value) {
 }
 
 // GET /api/system/key - Get current SSH key info
-router.get('/key', (req, res) => {
+router.get('/key', adminOnly, (req, res) => {
   try {
     let keyInfo = sshManager.getKeyInfo();
     if (!keyInfo) {

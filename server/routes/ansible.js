@@ -6,7 +6,7 @@ const ansibleRunner = require('../services/ansible-runner');
 const gitSync = require('../services/git-sync');
 const { notify } = require('../services/notifier');
 const { getPermissions, filterServers, can } = require('../utils/permissions');
-const { isValidPlaybook, validateTargets, parseTargetExpression, resolveTargets } = require('../utils/validate');
+const { isValidPlaybook, validateTargets, parseTargetExpression, resolveTargets, validateKnownInventoryTargets } = require('../utils/validate');
 
 function createAnsibleRouter({ broadcast } = {}) {
   const router = express.Router();
@@ -39,13 +39,16 @@ function createAnsibleRouter({ broadcast } = {}) {
     if (targetsErr) return res.status(400).json({ error: targetsErr });
     const normalizedTargets = typeof targets === 'string' ? targets.trim() : targets;
     if (!normalizedTargets) return res.status(400).json({ error: 'targets is required' });
+    const allServers = db.servers.getAll();
+    const knownTargetsErr = validateKnownInventoryTargets(normalizedTargets, allServers);
+    if (knownTargetsErr) return res.status(400).json({ error: knownTargetsErr });
 
     if (!perms.full && perms.servers !== 'all') {
       const parsedTargets = parseTargetExpression(normalizedTargets);
       if (parsedTargets.kind !== 'list' || parsedTargets.included.length === 0) {
         return res.status(403).json({ error: 'Restricted users must specify individual server targets' });
       }
-      const accessibleNames = new Set(filterServers(db.servers.getAll(), perms).map(s => s.name));
+      const accessibleNames = new Set(filterServers(allServers, perms).map(s => s.name));
       const forbidden = parsedTargets.included.filter(t => !accessibleNames.has(t));
       if (forbidden.length > 0) {
         return res.status(403).json({ error: `Access denied to: ${forbidden.join(', ')}` });
@@ -60,7 +63,7 @@ function createAnsibleRouter({ broadcast } = {}) {
     }
 
     const historyId = db.updateHistory.create(normalizedTargets, `ansible:${playbook}`, req.user?.username || null);
-    const resolvedTargets = resolveTargets(normalizedTargets, db.servers.getAll());
+    const resolvedTargets = resolveTargets(normalizedTargets, allServers);
     const schedHistId = db.scheduleHistory.create(null, 'Quick Run', playbook, resolvedTargets);
 
     res.json({ historyId, status: 'started' });

@@ -60,8 +60,16 @@ function rotateBak(filepath) {
   fs.copyFileSync(filepath, `${filepath}.bak.1`);
 }
 
-const { getPermissions, filterPlaybooks, can } = require('../utils/permissions');
+const { getPermissions, filterPlaybooks, canAccessPlaybook, can } = require('../utils/permissions');
 const { serverError } = require('../utils/http-error');
+
+function ensurePlaybookAccess(req, res, filename) {
+  if (!canAccessPlaybook(getPermissions(req.user), filename)) {
+    res.status(403).json({ error: 'Playbook not permitted for your role' });
+    return false;
+  }
+  return true;
+}
 
 // GET /api/playbooks - List all available playbooks
 router.get('/', fileReadLimiter, (req, res, next) => { if (!can(getPermissions(req.user), 'canViewPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
@@ -78,6 +86,7 @@ router.get('/:filename', fileReadLimiter, (req, res, next) => { if (!can(getPerm
   try {
     const resolved = resolveReadPlaybookPath(req.params.filename);
     if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
+    if (!ensurePlaybookAccess(req, res, resolved.filename)) return;
     let { filepath } = resolved;
     if (!fs.existsSync(filepath)) {
       const bundled = resolveBundledReadPath(req.params.filename);
@@ -103,6 +112,7 @@ router.post('/', writeLimiter, (req, res, next) => { if (!can(getPermissions(req
       return res.status(400).json({ error: 'Invalid filename. Only letters, digits, _ and - are allowed.' });
     }
     const finalFilename = safeFilename;
+    if (!ensurePlaybookAccess(req, res, finalFilename)) return;
     const filepath = path.join(PLAYBOOKS_DIR, finalFilename);
     if (!filepath.startsWith(path.resolve(PLAYBOOKS_DIR) + path.sep)) {
       return res.status(400).json({ error: 'Invalid path' });
@@ -128,6 +138,7 @@ router.get('/:filename/history', fileReadLimiter, (req, res, next) => { if (!can
   try {
     const resolved = resolvePlaybookPath(req.params.filename);
     if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
+    if (!ensurePlaybookAccess(req, res, resolved.filename)) return;
     const { filepath } = resolved;
     const versions = [];
     for (let i = 1; i <= MAX_BACKUPS; i++) {
@@ -148,6 +159,7 @@ router.get('/:filename/history/:version', fileReadLimiter, (req, res, next) => {
   try {
     const resolved = resolvePlaybookPath(req.params.filename);
     if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
+    if (!ensurePlaybookAccess(req, res, resolved.filename)) return;
     const version  = parseInt(req.params.version, 10);
     if (!version || version < 1 || version > MAX_BACKUPS) {
       return res.status(400).json({ error: 'Invalid version' });
@@ -166,6 +178,7 @@ router.post('/:filename/restore/:version', writeLimiter, (req, res, next) => { i
   try {
     const resolved = resolvePlaybookPath(req.params.filename);
     if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
+    if (!ensurePlaybookAccess(req, res, resolved.filename)) return;
     const version  = parseInt(req.params.version, 10);
     if (!version || version < 1 || version > MAX_BACKUPS) {
       return res.status(400).json({ error: 'Invalid version' });
@@ -189,11 +202,10 @@ router.post('/:filename/restore/:version', writeLimiter, (req, res, next) => { i
 // DELETE /api/playbooks/:filename - Delete a user playbook
 router.delete('/:filename', writeLimiter, (req, res, next) => { if (!can(getPermissions(req.user), 'canDeletePlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, async (req, res) => {
   try {
-    const filename = path.basename(req.params.filename);
-    const filepath = path.join(PLAYBOOKS_DIR, filename);
-    if (!filepath.startsWith(RESOLVED_PLAYBOOKS_DIR + path.sep)) {
-      return res.status(400).json({ error: 'Invalid path' });
-    }
+    const resolved = resolvePlaybookPath(req.params.filename);
+    if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
+    if (!ensurePlaybookAccess(req, res, resolved.filename)) return;
+    const { filename, filepath } = resolved;
     if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'Playbook not found' });
     fs.unlinkSync(filepath);
     let pushFailed = false;

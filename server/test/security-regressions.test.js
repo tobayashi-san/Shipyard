@@ -20,11 +20,15 @@ const { router: authRouter } = require('../routes/auth');
 const authMiddleware = require('../middleware/auth');
 const serversRouter = require('../routes/servers');
 const createServerActionsRouter = require('../routes/server-actions');
+const createAnsibleRouter = require('../routes/ansible');
 const scheduleHistoryRouter = require('../routes/schedule-history');
+const schedulesRouter = require('../routes/schedules');
+const playbooksRouter = require('../routes/playbooks');
 const adhocRouter = require('../routes/adhoc');
 const usersRouter = require('../routes/users');
 const systemRouter = require('../routes/system');
 const sshManager = require('../services/ssh-manager');
+const ansibleRunner = require('../services/ansible-runner');
 const { getPermissions, filterPlaybooks } = require('../utils/permissions');
 const { testLimiter } = require('../utils/rate-limiters');
 
@@ -34,7 +38,10 @@ app.use('/api/auth', authRouter);
 app.use('/api', testLimiter, authMiddleware);
 app.use('/api/servers', createServerActionsRouter());
 app.use('/api/servers', serversRouter);
+app.use('/api/ansible', createAnsibleRouter());
 app.use('/api/schedule-history', scheduleHistoryRouter);
+app.use('/api/schedules', schedulesRouter);
+app.use('/api/playbooks', playbooksRouter);
 app.use('/api/adhoc', adhocRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/system', systemRouter);
@@ -46,7 +53,7 @@ after(() => {
 });
 
 function wipeDb() {
-  for (const table of ['users', 'servers', 'schedule_history', 'server_groups']) {
+  for (const table of ['users', 'servers', 'schedules', 'schedule_history', 'server_groups']) {
     try { db.db.prepare(`DELETE FROM ${table}`).run(); } catch {}
   }
   try { db.db.prepare('DELETE FROM roles WHERE is_system = 0').run(); } catch {}
@@ -167,6 +174,35 @@ test('usernames preserve case but remain unique and loginable case-insensitively
   assert.equal(typeof loginRes.body.token, 'string');
 });
 
+test('custom roles do not inherit omitted dangerous permissions', async () => {
+  wipeDb();
+  await setupAdmin();
+
+  const role = db.roles.create('sparse-viewer', {
+    canViewServers: true,
+    servers: 'all',
+  });
+  const hash = await bcrypt.hash('sparsepass12345', 12);
+  db.users.create('sparseuser', '', hash, role.id);
+  const token = await login('sparseuser', 'sparsepass12345');
+
+  const profile = await request(app)
+    .get('/api/auth/profile')
+    .set('Authorization', `Bearer ${token}`);
+  assert.equal(profile.status, 200);
+  assert.equal(profile.body.permissions.canViewServers, true);
+  assert.equal(profile.body.permissions.canDeleteServers, false);
+  assert.equal(profile.body.permissions.canRunPlaybooks, false);
+  assert.deepEqual(profile.body.permissions.playbooks, []);
+  assert.deepEqual(profile.body.permissions.plugins, []);
+
+  const forbidden = await request(app)
+    .post('/api/adhoc/run')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ targets: 'all', module: 'ping' });
+  assert.equal(forbidden.status, 403);
+});
+
 test('schedule-history list allows restricted user to see multi-target entries they partially have access to', async () => {
   wipeDb();
   await setupAdmin();
@@ -176,10 +212,12 @@ test('schedule-history list allows restricted user to see multi-target entries t
   db.servers.create({ name: 'db-1', hostname: 'db-1', ip_address: '10.0.0.11', tags: [], services: [] });
   db.scheduleHistory.create(null, 'nightly', 'deploy.yml', 'web-1,db-1');
   db.scheduleHistory.create(null, 'nightly', 'deploy.yml', 'db-1');
+  const otherPlaybookHistId = db.scheduleHistory.create(null, 'nightly', 'other.yml', 'web-1');
 
   // Restricted role: only web-1
   const viewerRole = db.roles.create('viewer', {
     servers: { servers: [webId], groups: [] },
+    playbooks: ['deploy.yml'],
     canViewServers: true,
     canViewSchedules: true,
   });
@@ -197,6 +235,13 @@ test('schedule-history list allows restricted user to see multi-target entries t
   assert.ok(res.body.some(r => r.targets === 'web-1,db-1'));
   // Should NOT include db-only entry
   assert.ok(!res.body.some(r => r.targets === 'db-1'));
+  // Should NOT include entries for playbooks outside the allowlist
+  assert.ok(!res.body.some(r => r.playbook === 'other.yml'));
+
+  const detailForbidden = await request(app)
+    .get(`/api/schedule-history/${otherPlaybookHistId}`)
+    .set('Authorization', `Bearer ${token}`);
+  assert.equal(detailForbidden.status, 403);
 });
 
 test('adhoc run is blocked for restricted user targeting inaccessible server', async () => {
@@ -229,12 +274,51 @@ test('adhoc run is blocked for restricted user targeting inaccessible server', a
     .send({ targets: 'all', module: 'ping' });
   assert.equal(allForbidden.status, 403);
 
-  // Targeting own server is allowed (actual SSH will fail in test, but auth passes)
-  const allowed = await request(app)
+  const originalRunAdHoc = ansibleRunner.runAdHoc;
+  ansibleRunner.runAdHoc = async () => ({ success: true, stdout: '', stderr: '', code: 0 });
+  try {
+    // Targeting own server is allowed
+    const allowed = await request(app)
+      .post('/api/adhoc/run')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ targets: 'web-1', module: 'ping' });
+    assert.equal(allowed.status, 200);
+  } finally {
+    ansibleRunner.runAdHoc = originalRunAdHoc;
+  }
+});
+
+test('ansible entrypoints reject unknown or option-like targets for all-scope roles', async () => {
+  wipeDb();
+  await setupAdmin();
+
+  db.servers.create({ name: 'web-1', hostname: 'web-1', ip_address: '10.0.0.10', tags: ['production'], services: [] });
+  const role = db.roles.create('runner-all', {
+    servers: 'all',
+    playbooks: 'all',
+    canRunPlaybooks: true,
+  });
+  const hash = await bcrypt.hash('runnerpass12345', 12);
+  db.users.create('runner', '', hash, role.id);
+  const token = await login('runner', 'runnerpass12345');
+
+  const adhocLocalhost = await request(app)
     .post('/api/adhoc/run')
     .set('Authorization', `Bearer ${token}`)
-    .send({ targets: 'web-1', module: 'ping' });
-  assert.notEqual(allowed.status, 403);
+    .send({ targets: 'localhost', module: 'ping' });
+  assert.equal(adhocLocalhost.status, 400);
+
+  const adhocOption = await request(app)
+    .post('/api/adhoc/run')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ targets: '--list-hosts', module: 'ping' });
+  assert.equal(adhocOption.status, 400);
+
+  const playbookLocalhost = await request(app)
+    .post('/api/ansible/run')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ playbook: 'deploy.yml', targets: 'localhost' });
+  assert.equal(playbookLocalhost.status, 400);
 });
 
 test('playbook whitelist is enforced for restricted roles', async () => {
@@ -262,6 +346,140 @@ test('playbook whitelist is enforced for restricted roles', async () => {
 
   // Accessing a non-whitelisted playbook returns an empty list from filterPlaybooks
   assert.equal(allowed.some(p => p.filename === 'other.yml'), false);
+});
+
+test('playbook content and write endpoints enforce playbook whitelist', async () => {
+  wipeDb();
+  await setupAdmin();
+
+  const role = db.roles.create('restricted-playbook-api', {
+    servers: 'all',
+    playbooks: ['deploy.yml'],
+    canViewPlaybooks: true,
+    canEditPlaybooks: true,
+    canDeletePlaybooks: true,
+  });
+  const hash = await bcrypt.hash('playbookapipass12345', 12);
+  db.users.create('playbookapi', '', hash, role.id);
+  const token = await login('playbookapi', 'playbookapipass12345');
+
+  const readForbidden = await request(app)
+    .get('/api/playbooks/other.yml')
+    .set('Authorization', `Bearer ${token}`);
+  assert.equal(readForbidden.status, 403);
+
+  const writeForbidden = await request(app)
+    .post('/api/playbooks')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ filename: 'other.yml', content: '---\n- hosts: all\n' });
+  assert.equal(writeForbidden.status, 403);
+});
+
+test('schedule routes enforce playbook and server scope', async () => {
+  wipeDb();
+  await setupAdmin();
+
+  const webId = db.servers.create({ name: 'web-1', hostname: 'web-1', ip_address: '10.0.0.10', tags: [], services: [] }).id;
+  db.servers.create({ name: 'db-1', hostname: 'db-1', ip_address: '10.0.0.11', tags: [], services: [] });
+  db.schedules.create('db-only', 'deploy.yml', 'db-1', '0 3 * * *');
+
+  const role = db.roles.create('schedule-scoped', {
+    servers: { servers: [webId], groups: [] },
+    playbooks: ['deploy.yml'],
+    canViewSchedules: true,
+    canAddSchedules: true,
+    canEditSchedules: true,
+    canDeleteSchedules: true,
+    canToggleSchedules: true,
+  });
+  const hash = await bcrypt.hash('schedulepass12345', 12);
+  db.users.create('scheduleuser', '', hash, role.id);
+  const token = await login('scheduleuser', 'schedulepass12345');
+
+  const allForbidden = await request(app)
+    .post('/api/schedules')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ name: 'all servers', playbook: 'deploy.yml', targets: 'all', cronExpression: '0 2 * * *' });
+  assert.equal(allForbidden.status, 403);
+
+  const playbookForbidden = await request(app)
+    .post('/api/schedules')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ name: 'other playbook', playbook: 'other.yml', targets: 'web-1', cronExpression: '0 2 * * *' });
+  assert.equal(playbookForbidden.status, 403);
+
+  const allowed = await request(app)
+    .post('/api/schedules')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ name: 'web deploy', playbook: 'deploy.yml', targets: 'web-1', cronExpression: '0 2 * * *' });
+  assert.equal(allowed.status, 200);
+
+  const list = await request(app)
+    .get('/api/schedules')
+    .set('Authorization', `Bearer ${token}`);
+  assert.equal(list.status, 200);
+  assert.equal(list.body.some(s => s.name === 'web deploy'), true);
+  assert.equal(list.body.some(s => s.name === 'db-only'), false);
+
+  const cleanup = await request(app)
+    .delete(`/api/schedules/${allowed.body.id}`)
+    .set('Authorization', `Bearer ${token}`);
+  assert.equal(cleanup.status, 200);
+});
+
+test('schedule routes reject unknown all-scope targets', async () => {
+  wipeDb();
+  await setupAdmin();
+
+  db.servers.create({ name: 'web-1', hostname: 'web-1', ip_address: '10.0.0.10', tags: [], services: [] });
+  const role = db.roles.create('schedule-all-scope', {
+    servers: 'all',
+    playbooks: 'all',
+    canAddSchedules: true,
+  });
+  const hash = await bcrypt.hash('scheduleallpass12345', 12);
+  db.users.create('scheduleall', '', hash, role.id);
+  const token = await login('scheduleall', 'scheduleallpass12345');
+
+  const res = await request(app)
+    .post('/api/schedules')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ name: 'localhost job', playbook: 'deploy.yml', targets: 'localhost', cronExpression: '0 2 * * *' });
+  assert.equal(res.status, 403);
+  assert.equal(res.body.error, 'Target servers not permitted for your role');
+});
+
+test('bulk update-all is scoped to servers visible to restricted role', async () => {
+  wipeDb();
+  await setupAdmin();
+
+  const webId = db.servers.create({ name: 'web-1', hostname: 'web-1', ip_address: '10.0.0.10', tags: [], services: [] }).id;
+  db.servers.create({ name: 'db-1', hostname: 'db-1', ip_address: '10.0.0.11', tags: [], services: [] });
+
+  const role = db.roles.create('update-scoped', {
+    servers: { servers: [webId], groups: [] },
+    canRunUpdates: true,
+  });
+  const hash = await bcrypt.hash('updatepass12345', 12);
+  db.users.create('updateuser', '', hash, role.id);
+  const token = await login('updateuser', 'updatepass12345');
+
+  const calls = [];
+  const originalRunPlaybook = ansibleRunner.runPlaybook;
+  ansibleRunner.runPlaybook = async (playbook, targets) => {
+    calls.push({ playbook, targets });
+    return { success: false, stdout: '', stderr: '' };
+  };
+
+  try {
+    const res = await request(app)
+      .post('/api/servers/update-all')
+      .set('Authorization', `Bearer ${token}`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(calls, [{ playbook: 'update.yml', targets: 'web-1' }]);
+  } finally {
+    ansibleRunner.runPlaybook = originalRunPlaybook;
+  }
 });
 
 test('server endpoints that trigger SSH/polling are capability-gated', async () => {
@@ -294,6 +512,42 @@ test('server endpoints that trigger SSH/polling are capability-gated', async () 
     .get(`/api/servers/${serverId}/updates`)
     .set('Authorization', `Bearer ${limitedToken}`);
   assert.equal(updatesRes.status, 403);
+});
+
+test('docker logs accepts dotted container names and rejects option-like names', async () => {
+  wipeDb();
+  await setupAdmin();
+
+  const srv = db.servers.create({ name: 'srv-logs', hostname: 'srv-logs', ip_address: '10.0.0.12', tags: [], services: [] });
+  const role = db.roles.create('docker-logs', {
+    servers: 'all',
+    canViewDocker: true,
+  });
+  const hash = await bcrypt.hash('dockerlogspass12345', 12);
+  db.users.create('dockerlogs', '', hash, role.id);
+  const token = await login('dockerlogs', 'dockerlogspass12345');
+
+  const commands = [];
+  const originalRunAdHoc = ansibleRunner.runAdHoc;
+  ansibleRunner.runAdHoc = async (_target, _module, command) => {
+    commands.push(command);
+    return { success: true, stdout: 'hello\n', stderr: '' };
+  };
+
+  try {
+    const dotted = await request(app)
+      .get(`/api/servers/${srv.id}/docker/project.app-1/logs`)
+      .set('Authorization', `Bearer ${token}`);
+    assert.equal(dotted.status, 200);
+    assert.equal(commands[0], '$(command -v docker 2>/dev/null || command -v podman 2>/dev/null) logs --tail "200" --timestamps -- "project.app-1" 2>&1');
+
+    const optionLike = await request(app)
+      .get(`/api/servers/${srv.id}/docker/-bad/logs`)
+      .set('Authorization', `Bearer ${token}`);
+    assert.equal(optionLike.status, 400);
+  } finally {
+    ansibleRunner.runAdHoc = originalRunAdHoc;
+  }
 });
 
 test('admin can disable another user\'s 2FA from user management', async () => {
@@ -355,6 +609,11 @@ test('deploy-all key endpoint is admin-only and returns per-server results', asy
 
   try {
     const userToken = await login('viewer-noadmin', 'viewerpass12345');
+    const keyInfoForbidden = await request(app)
+      .get('/api/system/key')
+      .set('Authorization', `Bearer ${userToken}`);
+    assert.equal(keyInfoForbidden.status, 403);
+
     const forbidden = await request(app)
       .post('/api/system/deploy-all')
       .set('Authorization', `Bearer ${userToken}`)

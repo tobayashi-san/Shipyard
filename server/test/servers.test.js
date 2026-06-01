@@ -67,6 +67,16 @@ test('POST /api/servers rejects missing name', async () => {
   assert.equal(res.status, 400);
 });
 
+test('POST /api/servers rejects unsafe ansible inventory names', async () => {
+  for (const name of ['all', 'localhost', '-bad', 'bad name']) {
+    const res = await request(app)
+      .post('/api/servers')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name, ip_address: '10.0.0.2' });
+    assert.equal(res.status, 400);
+  }
+});
+
 let serverId;
 let productionGroupId;
 
@@ -335,7 +345,7 @@ test('GET /api/servers/:id/docker/:container/logs uses become-enabled ansible ac
     assert.deepEqual(captured, {
       targets: 'renamed-server',
       module: 'shell',
-      args: '$(command -v docker 2>/dev/null || command -v podman 2>/dev/null) logs --tail "50" --timestamps "app-1" 2>&1',
+      args: '$(command -v docker 2>/dev/null || command -v podman 2>/dev/null) logs --tail "50" --timestamps -- "app-1" 2>&1',
       options: { become: true },
     });
   } finally {

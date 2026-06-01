@@ -56,6 +56,68 @@ function parseTargetExpression(targets) {
   return { kind: 'pattern', included: [], excluded: [], raw };
 }
 
+function sanitizeInventoryName(v) {
+  return String(v ?? '').replace(/[\r\n\s=\[\]#;]/g, '_');
+}
+
+function sanitizeInventoryGroupName(v) {
+  const normalized = String(v ?? '')
+    .replace(/[^a-zA-Z0-9_]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return normalized || 'group';
+}
+
+function getKnownInventoryTargets(allServers = []) {
+  const known = new Set(['all']);
+  for (const server of allServers) {
+    if (server?.name) {
+      known.add(String(server.name));
+      known.add(sanitizeInventoryName(server.name));
+    }
+    let tags = [];
+    try { tags = JSON.parse(server.tags || '[]'); } catch {}
+    if (!Array.isArray(tags)) tags = [];
+    tags
+      .filter(tag => typeof tag === 'string' && tag.trim())
+      .forEach(tag => known.add(sanitizeInventoryGroupName(tag)));
+  }
+  return known;
+}
+
+function hasOptionLikeTarget(parsedTargets) {
+  const values = [
+    ...(parsedTargets.included || []),
+    ...(parsedTargets.excluded || []),
+  ];
+  return values.some(target => typeof target === 'string' && target.startsWith('-'));
+}
+
+function validateKnownInventoryTargets(targets, allServers = []) {
+  const parsed = parseTargetExpression(targets);
+  if (parsed.kind === 'empty') return 'targets is required';
+  if (parsed.kind === 'pattern') return 'targets must reference known inventory hosts or tag groups';
+  if (hasOptionLikeTarget(parsed)) return 'targets must not start with -';
+  if (parsed.kind === 'all') return null;
+
+  const known = getKnownInventoryTargets(allServers);
+  const candidates = parsed.kind === 'all_except' ? parsed.excluded : parsed.included;
+  const unknown = candidates.filter(target => !known.has(target));
+  if (unknown.length > 0) {
+    return `Unknown target(s): ${unknown.join(', ')}`;
+  }
+  return null;
+}
+
+function validateInventoryHostName(name) {
+  if (typeof name !== 'string' || !name.trim()) return 'Name is required';
+  const trimmed = name.trim();
+  if (!SIMPLE_TARGET_RE.test(trimmed)) return 'Name may only contain letters, numbers, dots, underscores, and hyphens';
+  if (trimmed.startsWith('-')) return 'Name must not start with -';
+  if (trimmed === 'all' || trimmed === 'localhost') return 'Name is reserved';
+  return null;
+}
+
 function targetIncludesServer(targets, serverName) {
   const parsed = parseTargetExpression(targets);
   if (parsed.kind === 'all') return true;
@@ -84,6 +146,9 @@ module.exports = {
   isValidPlaybook,
   validateTargets,
   parseTargetExpression,
+  validateKnownInventoryTargets,
+  validateInventoryHostName,
+  sanitizeInventoryGroupName,
   targetIncludesServer,
   resolveTargets,
   PLAYBOOK_RE,

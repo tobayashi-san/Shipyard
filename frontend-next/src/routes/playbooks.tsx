@@ -180,6 +180,7 @@ export function PlaybooksPage() {
   const { t } = useTranslation();
   const { data: profile } = useProfile();
   const navigate = useNavigate();
+  const isAdmin = profile?.role === 'admin';
 
   const tabs: { value: string; label: string; icon: React.ReactNode; cap?: string }[] = [
     { value: 'templates', label: t('pb.tabTemplates'), icon: <FileText className="h-4 w-4" /> },
@@ -200,7 +201,7 @@ export function PlaybooksPage() {
       <PageHeader
         title={t('pb.title')}
         description={t('pb.subtitle')}
-        actions={<GitWidget onGoSettings={() => navigate({ to: '/settings' })} />}
+        actions={isAdmin ? <GitWidget onGoSettings={() => navigate({ to: '/settings' })} /> : undefined}
       />
 
       <Tabs value={tab} onValueChange={setTab}>
@@ -538,6 +539,8 @@ function TemplatesTab() {
         </>}
         confirmLabel={t('common.delete')}
         variant="destructive"
+        confirmTextValue={selected ?? ''}
+        confirmInputLabel="Confirm playbook filename"
         onConfirm={() => deleteMut.mutate()}
         isPending={deleteMut.isPending}
       />
@@ -677,6 +680,8 @@ function TemplateRunPanel({ filename, description, onClose }: { filename: string
           description={t('run.confirmAllServersMessage')}
           confirmLabel={t('common.run')}
           variant="destructive"
+          confirmTextValue="all"
+          confirmInputLabel="Confirm target"
           onConfirm={() => { void startRun('all'); }}
           isPending={busy}
         />
@@ -811,6 +816,8 @@ function QuickRunTab() {
             description={t('run.confirmAllServersMessage')}
             confirmLabel={t('common.run')}
             variant="destructive"
+            confirmTextValue="all"
+            confirmInputLabel="Confirm target"
             onConfirm={() => { void startRun(true); }}
             isPending={busy}
           />
@@ -978,6 +985,8 @@ function VarsTab() {
         description={t('vars.confirmDelete', { key: deleteItem?.key ?? '' })}
         confirmLabel={t('common.delete')}
         variant="destructive"
+        confirmTextValue={deleteItem?.key ?? ''}
+        confirmInputLabel="Confirm variable key"
         onConfirm={() => { if (deleteItem) delMut.mutate(deleteItem.id); }}
         isPending={delMut.isPending}
       />
@@ -1000,7 +1009,7 @@ function SchedulesTab() {
   });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteSchedule, setDeleteSchedule] = useState<Schedule | null>(null);
 
   const toggleMut = useMutation({
     mutationFn: (id: string) => api.toggleSchedule(id),
@@ -1010,7 +1019,7 @@ function SchedulesTab() {
 
   const delMut = useMutation({
     mutationFn: (id: string) => api.deleteSchedule(id),
-    onSuccess: () => { showToast(t('sc.deleted'), 'success'); setDeleteId(null); qc.invalidateQueries({ queryKey: ['schedules'] }); },
+    onSuccess: () => { showToast(t('sc.deleted'), 'success'); setDeleteSchedule(null); qc.invalidateQueries({ queryKey: ['schedules'] }); },
     onError: (e: Error) => showToast(e.message, 'error'),
   });
 
@@ -1067,7 +1076,7 @@ function SchedulesTab() {
                       <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => openEdit(s.id)}><Settings2 className="h-3.5 w-3.5" /></Button>
                     )}
                     {hasCap(profile, 'canDeleteSchedules') && (
-                      <Button variant="destructive" size="icon" className="h-7 w-7" onClick={() => setDeleteId(s.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                      <Button variant="destructive" size="icon" className="h-7 w-7" onClick={() => setDeleteSchedule(s)}><Trash2 className="h-3.5 w-3.5" /></Button>
                     )}
                   </div>
                 </div>
@@ -1081,13 +1090,15 @@ function SchedulesTab() {
         <ScheduleDialog editId={editId} schedules={schedules ?? []} onSaved={() => { setDialogOpen(false); qc.invalidateQueries({ queryKey: ['schedules'] }); }} />
       </Dialog>
       <ConfirmDialog
-        open={!!deleteId}
-        onOpenChange={(open) => { if (!open) setDeleteId(null); }}
+        open={!!deleteSchedule}
+        onOpenChange={(open) => { if (!open) setDeleteSchedule(null); }}
         title={t('common.delete')}
         description={t('sc.confirmDelete')}
         confirmLabel={t('common.delete')}
         variant="destructive"
-        onConfirm={() => { if (deleteId) delMut.mutate(deleteId); }}
+        confirmTextValue={deleteSchedule?.name ?? ''}
+        confirmInputLabel="Confirm schedule name"
+        onConfirm={() => { if (deleteSchedule) delMut.mutate(deleteSchedule.id); }}
         isPending={delMut.isPending}
       />
     </>
@@ -1468,6 +1479,9 @@ function PlaybookHistoryDialog({ filename, onRestore }: { filename: string; onRe
         title={t('pb.history')}
         description={t('pb.restoreConfirm')}
         confirmLabel={t('common.save')}
+        variant="warning"
+        confirmTextValue={filename}
+        confirmInputLabel="Confirm playbook filename"
         onConfirm={() => { if (restoreVersion !== null) restoreMut.mutate(restoreVersion); }}
         isPending={restoreMut.isPending}
       />

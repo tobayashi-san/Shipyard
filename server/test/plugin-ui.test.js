@@ -173,3 +173,46 @@ test('returns sanitized JSON when an enabled plugin API route throws', async () 
   assert.deepEqual(res.body, { error: 'Internal server error' });
   assert.doesNotMatch(res.text, /private\/devices/);
 });
+
+test('plugin API requires role access to the enabled plugin', async () => {
+  writePlugin('permission_plugin', {
+    'ui.js': 'export function mount() {}\n',
+    'index.js': `
+      function register({ router }) {
+        router.get('/ok', (_req, res) => res.json({ ok: true }));
+      }
+      module.exports = { register };
+    `,
+  });
+  db.settings.set('plugin_permission_plugin_enabled', '1');
+  const pluginLoader = require('../services/plugin-loader');
+  pluginLoader.loadAll({});
+
+  const { app } = createApp();
+  const limitedRole = db.roles.create('plugin-api-limited', {
+    plugins: [],
+    canViewServers: true,
+  });
+  const limitedHash = await bcrypt.hash('pluginlimitedpass123', 12);
+  db.users.create('pluginlimited', '', limitedHash, limitedRole.id);
+  const limitedLogin = await request(app)
+    .post('/api/auth/login')
+    .send({ username: 'pluginlimited', password: 'pluginlimitedpass123' });
+
+  const forbidden = await request(app)
+    .get('/api/plugin/permission_plugin/ok')
+    .set('Authorization', `Bearer ${limitedLogin.body.token}`);
+  assert.equal(forbidden.status, 403);
+
+  const adminHash = await bcrypt.hash('pluginadminpass456', 12);
+  db.users.create('pluginapiadmin', '', adminHash, 'admin');
+  const adminLogin = await request(app)
+    .post('/api/auth/login')
+    .send({ username: 'pluginapiadmin', password: 'pluginadminpass456' });
+
+  const allowed = await request(app)
+    .get('/api/plugin/permission_plugin/ok')
+    .set('Authorization', `Bearer ${adminLogin.body.token}`);
+  assert.equal(allowed.status, 200);
+  assert.deepEqual(allowed.body, { ok: true });
+});

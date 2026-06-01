@@ -9,6 +9,7 @@ import {
 import { api } from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { useProfile } from '@/lib/queries';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,6 +21,7 @@ import {
 } from '@/components/ui/dialog';
 import { SkeletonRow } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { SettingsRow, SettingsSection } from '../_row';
 
 // -------------------- types --------------------
@@ -351,18 +353,18 @@ function DeleteUserDialog({ user, onClose }: { user: UserRow; onClose: () => voi
     onError: (e) => showToast(t('common.errorPrefix', { msg: (e as Error).message }) as string, 'error'),
   });
   return (
-    <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>{t('common.delete')}</DialogTitle></DialogHeader>
-        <p className="text-sm text-muted-foreground">{t('set.deleteUserConfirm', { username: user.username })}</p>
-        <DialogFooter>
-          <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
-          <Button variant="destructive" onClick={() => m.mutate()} disabled={m.isPending}>
-            <Trash2 className="h-4 w-4" /> {t('common.delete')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmDialog
+      open
+      onOpenChange={(open) => { if (!open) onClose(); }}
+      title={t('common.delete')}
+      description={t('set.deleteUserConfirm', { username: user.username })}
+      confirmLabel={t('common.delete')}
+      variant="destructive"
+      confirmTextValue={user.username}
+      confirmInputLabel="Confirm username"
+      onConfirm={() => m.mutate()}
+      isPending={m.isPending}
+    />
   );
 }
 
@@ -476,24 +478,33 @@ function DeleteRoleDialog({ role, onClose }: { role: RoleRow; onClose: () => voi
     onError: (e) => showToast(t('common.errorPrefix', { msg: (e as Error).message }) as string, 'error'),
   });
   return (
-    <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>{t('common.delete')}</DialogTitle></DialogHeader>
-        <p className="text-sm text-muted-foreground">{t('set.deleteRoleConfirm', { name: role.name })}</p>
-        <DialogFooter>
-          <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
-          <Button variant="destructive" onClick={() => m.mutate()} disabled={m.isPending}>
-            <Trash2 className="h-4 w-4" /> {t('common.delete')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmDialog
+      open
+      onOpenChange={(open) => { if (!open) onClose(); }}
+      title={t('common.delete')}
+      description={t('set.deleteRoleConfirm', { name: role.name })}
+      confirmLabel={t('common.delete')}
+      variant="destructive"
+      confirmTextValue={role.name}
+      confirmInputLabel="Confirm role name"
+      onConfirm={() => m.mutate()}
+      isPending={m.isPending}
+    />
   );
 }
 
 // -------------------- Role form --------------------
 
 interface CapDef { key: string; label: string }
+interface RolePreset {
+  id: string;
+  label: string;
+  description: string;
+  caps: string[];
+  serversMode: 'all' | 'restricted';
+  pbMode: 'all' | 'restricted';
+  plMode: 'all' | 'restricted';
+}
 
 const SERVER_CAPS: CapDef[] = [
   { key: 'canViewServers', label: 'View' },
@@ -543,6 +554,69 @@ const OTHER_CAPS: CapDef[] = [
   { key: 'canViewAudit', label: 'View audit log' },
 ];
 
+const ALL_CAPS = [
+  ...SERVER_CAPS, ...DOCKER_CAPS, ...UPDATE_CAPS, ...PLAYBOOK_CAPS,
+  ...SCHEDULE_CAPS, ...VAR_CAPS, ...OTHER_CAPS,
+];
+
+const DANGEROUS_CAPS = new Set([
+  'canUseTerminal',
+  'canDeleteServers',
+  'canManageDockerCompose',
+  'canRunUpdates',
+  'canRebootServers',
+  'canRunCustomUpdates',
+  'canEditCustomUpdates',
+  'canDeleteCustomUpdates',
+  'canEditPlaybooks',
+  'canDeletePlaybooks',
+  'canRunPlaybooks',
+  'canDeleteSchedules',
+  'canAddVars',
+  'canEditVars',
+  'canDeleteVars',
+  'canViewAudit',
+]);
+
+const ROLE_PRESETS: RolePreset[] = [
+  {
+    id: 'viewer',
+    label: 'Viewer',
+    description: 'Read-only access for inventory, updates, playbooks and schedules.',
+    serversMode: 'all',
+    pbMode: 'all',
+    plMode: 'restricted',
+    caps: ['canViewServers', 'canViewDocker', 'canViewUpdates', 'canViewCustomUpdates', 'canViewPlaybooks', 'canViewSchedules', 'canViewVars', 'canViewNotes'],
+  },
+  {
+    id: 'operator',
+    label: 'Operator',
+    description: 'Can run approved playbooks and routine update actions.',
+    serversMode: 'all',
+    pbMode: 'all',
+    plMode: 'restricted',
+    caps: ['canViewServers', 'canViewDocker', 'canViewUpdates', 'canRunUpdates', 'canViewPlaybooks', 'canRunPlaybooks', 'canViewSchedules', 'canViewVars', 'canViewNotes', 'canEditNotes'],
+  },
+  {
+    id: 'maintainer',
+    label: 'Maintainer',
+    description: 'Can maintain servers, compose stacks, schedules and custom update tasks.',
+    serversMode: 'all',
+    pbMode: 'all',
+    plMode: 'all',
+    caps: ALL_CAPS.map(c => c.key).filter(k => k !== 'canDeleteServers' && k !== 'canViewAudit'),
+  },
+  {
+    id: 'adminLike',
+    label: 'Power user',
+    description: 'All regular capabilities, but no Admin settings, Git or role management.',
+    serversMode: 'all',
+    pbMode: 'all',
+    plMode: 'all',
+    caps: ALL_CAPS.map(c => c.key),
+  },
+];
+
 function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -554,9 +628,9 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
   const playbooksQ = useQuery<PlaybookRow[]>({ queryKey: ['playbooks'], queryFn: () => api.getPlaybooks() as unknown as Promise<PlaybookRow[]> });
 
   const p = role?.permissions || {};
-  const initServersMode = p.servers != null && p.servers !== 'all' ? 'restricted' : 'all';
-  const initPbMode = p.playbooks != null && p.playbooks !== 'all' ? 'restricted' : 'all';
-  const initPlMode = p.plugins != null && p.plugins !== 'all' ? 'restricted' : 'all';
+  const initServersMode = p.servers === 'all' ? 'all' : 'restricted';
+  const initPbMode = p.playbooks === 'all' ? 'all' : 'restricted';
+  const initPlMode = p.plugins === 'all' ? 'all' : 'restricted';
 
   const [name, setName] = useState(role?.name ?? '');
   const [serversMode, setServersMode] = useState<'all' | 'restricted'>(initServersMode);
@@ -578,7 +652,7 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
     const out: Record<string, boolean> = {};
     [...SERVER_CAPS, ...DOCKER_CAPS, ...UPDATE_CAPS, ...PLAYBOOK_CAPS,
       ...SCHEDULE_CAPS, ...VAR_CAPS, ...OTHER_CAPS].forEach(c => {
-      out[c.key] = (p as Record<string, unknown>)[c.key] !== false;
+      out[c.key] = (p as Record<string, unknown>)[c.key] === true;
     });
     return out;
   });
@@ -611,10 +685,22 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
   });
 
   const sidebarPlugins = (pluginsQ.data || []).filter(pl => pl.sidebar);
+  const enabledCaps = ALL_CAPS.filter(c => !!caps[c.key]);
+  const dangerousEnabled = enabledCaps.filter(c => DANGEROUS_CAPS.has(c.key));
+
+  const applyPreset = (preset: RolePreset) => {
+    const allowed = new Set(preset.caps);
+    const nextCaps: Record<string, boolean> = {};
+    ALL_CAPS.forEach(c => { nextCaps[c.key] = allowed.has(c.key); });
+    setCaps(nextCaps);
+    setServersMode(preset.serversMode);
+    setPbMode(preset.pbMode);
+    setPlMode(preset.plMode);
+  };
 
   return (
     <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {isEdit ? t('set.editRole', { name: role!.name }) : t('set.newRole')}
@@ -627,6 +713,40 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
             <Label>{t('set.roleName')}</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Ops Team" />
           </div>
+
+          <div className="rounded-md border bg-muted/20 p-3">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium">Presets</div>
+                <div className="text-xs text-muted-foreground">Start with a scoped baseline, then adjust resources and capabilities.</div>
+              </div>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {ROLE_PRESETS.map(preset => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => applyPreset(preset)}
+                  className="rounded-md border bg-background px-3 py-2 text-left transition hover:border-strong hover:bg-accent/50"
+                >
+                  <div className="text-sm font-medium">{preset.label}</div>
+                  <div className="mt-1 min-h-[32px] text-xs text-muted-foreground">{preset.description}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <RolePreview
+            serversMode={serversMode}
+            pbMode={pbMode}
+            plMode={plMode}
+            groupsSelected={groupsSel.size}
+            serversSelected={serversSel.size}
+            playbooksSelected={pbSel.size}
+            pluginsSelected={plSel.size}
+            enabledCaps={enabledCaps}
+            dangerousCaps={dangerousEnabled}
+          />
 
           {/* Servers */}
           <Section icon={<ServerIcon className="h-3.5 w-3.5" />} title={t('set.capServers')}
@@ -767,6 +887,78 @@ function bulkToggle(current: Record<string, boolean>, defs: CapDef[]): Record<st
   return next;
 }
 
+function resourceSummary(mode: 'all' | 'restricted', selected: number, label: string) {
+  if (mode === 'all') return `All ${label}`;
+  if (selected === 0) return `No ${label}`;
+  return `${selected} ${label}`;
+}
+
+function RolePreview({
+  serversMode,
+  pbMode,
+  plMode,
+  groupsSelected,
+  serversSelected,
+  playbooksSelected,
+  pluginsSelected,
+  enabledCaps,
+  dangerousCaps,
+}: {
+  serversMode: 'all' | 'restricted';
+  pbMode: 'all' | 'restricted';
+  plMode: 'all' | 'restricted';
+  groupsSelected: number;
+  serversSelected: number;
+  playbooksSelected: number;
+  pluginsSelected: number;
+  enabledCaps: CapDef[];
+  dangerousCaps: CapDef[];
+}) {
+  const serverScope = serversMode === 'all'
+    ? 'All servers'
+    : `${groupsSelected} groups, ${serversSelected} servers`;
+
+  return (
+    <div className="rounded-md border bg-background p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium">Live preview</div>
+          <div className="text-xs text-muted-foreground">What users with this role can reach right now.</div>
+        </div>
+        <Badge variant={dangerousCaps.length > 0 ? 'destructive' : 'secondary'}>
+          {dangerousCaps.length} sensitive
+        </Badge>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <PreviewMetric label="Servers" value={serverScope} />
+        <PreviewMetric label="Playbooks" value={resourceSummary(pbMode, playbooksSelected, 'playbooks')} />
+        <PreviewMetric label="Plugins" value={resourceSummary(plMode, pluginsSelected, 'plugins')} />
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {enabledCaps.length === 0 ? (
+          <span className="text-xs text-muted-foreground">No capabilities enabled.</span>
+        ) : enabledCaps.slice(0, 12).map(cap => (
+          <Badge key={cap.key} variant={DANGEROUS_CAPS.has(cap.key) ? 'destructive' : 'secondary'} className="text-[10px]">
+            {cap.label}
+          </Badge>
+        ))}
+        {enabledCaps.length > 12 && (
+          <Badge variant="outline" className="text-[10px]">+{enabledCaps.length - 12}</Badge>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PreviewMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border bg-muted/20 px-3 py-2">
+      <div className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">{label}</div>
+      <div className="mt-1 truncate text-sm font-medium">{value}</div>
+    </div>
+  );
+}
+
 function Section({
   icon, title, onSelectAll, children,
 }: { icon: React.ReactNode; title: string; onSelectAll?: () => void; children: React.ReactNode }) {
@@ -814,7 +1006,12 @@ function CapGrid({
         <CheckRow key={c.key}
           checked={!!caps2[c.key]}
           onChange={() => setCaps(prev => ({ ...prev, [c.key]: !prev[c.key] }))}
-          label={c.label}
+          label={
+            <span className="flex min-w-0 items-center gap-1.5">
+              {DANGEROUS_CAPS.has(c.key) && <ShieldAlert className="h-3 w-3 flex-shrink-0 text-amber-500" />}
+              <span className={cn('truncate', DANGEROUS_CAPS.has(c.key) && 'text-amber-700 dark:text-amber-400')}>{c.label}</span>
+            </span>
+          }
         />
       ))}
     </div>
