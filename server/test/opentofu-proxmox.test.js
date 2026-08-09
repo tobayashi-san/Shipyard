@@ -36,6 +36,19 @@ test('Proxmox VM blueprint does not require an SSH public key unless explicitly 
   assert.doesNotMatch(_test.buildProxmoxProviderFiles([vm]).variables, /ssh_public_key/);
 });
 
+test('Proxmox VM blueprint adds a subnet prefix to a bare static IPv4 address', () => {
+  const vm = _test.normalizeProxmoxVm({
+    name: 'static-ip-vm', node_name: 'pve001', disk_datastore: 'fast', bridge: 'vmbr0',
+    ipv4_address: '10.10.1.111', ipv4_prefix: '24', ipv4_gateway: '10.10.1.1',
+  });
+  assert.equal(vm.ipv4_address, '10.10.1.111/24');
+  assert.equal(vm.ipv4_prefix, 24);
+  assert.match(_test.renderProxmoxVmHcl(vm), /address = "10\.10\.1\.111\/24"/);
+  assert.throws(() => _test.normalizeProxmoxVm({
+    name: 'bad-static-vm', node_name: 'pve001', disk_datastore: 'fast', bridge: 'vmbr0', ipv4_address: '10.10.1.111', ipv4_prefix: '33',
+  }), /IPv4 prefix/);
+});
+
 test('Proxmox catalog connection keeps API credentials server-side and preserves query parameters', () => {
   const connection = _test.readProxmoxConnection({
     TF_VAR_proxmox_endpoint: 'https://pve.example.test:8006/',

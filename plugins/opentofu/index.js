@@ -4,6 +4,8 @@ const net  = require('net');
 const path = require('path');
 const { randomUUID } = require('crypto');
 const log = require('../../server/utils/logger').child('plugins:opentofu');
+const ansibleRunner = require('../../server/services/ansible-runner');
+const { getPermissions, can, canAccessPlaybook } = require('../../server/utils/permissions');
 
 let _gitSync = null;
 function getGitSync() {
@@ -59,6 +61,7 @@ const TOFU_RUN_PAGE_SIZE_DEFAULT = Math.max(1, parseInt(process.env.TOFU_RUN_PAG
 const TOFU_RUN_PAGE_SIZE_MAX = Math.max(TOFU_RUN_PAGE_SIZE_DEFAULT, parseInt(process.env.TOFU_RUN_PAGE_SIZE_MAX || '100', 10) || 100);
 const SHIPYARD_OUTPUT_BLOCK_START = '# BEGIN SHIPYARD MANAGED OUTPUT';
 const SHIPYARD_OUTPUT_BLOCK_END = '# END SHIPYARD MANAGED OUTPUT';
+const PROVISION_PLAYBOOK_RE = /^(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.ya?ml$/;
 const SHIPYARD_OUTPUT_GENERATORS = {
   proxmox_virtual_environment_vm: {
     providerTag: 'proxmox',
@@ -129,6 +132,33 @@ function syncAllFromGit(workspaces) {
 
 function isPlainObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+// `tofu destroy -auto-approve` is deliberately used for non-interactive runs.
+// Never rely on the browser confirmation alone: the API may be called directly
+// or from an outdated client.  A workspace-bound phrase makes the destructive
+// operation explicit and prevents a generic accidental POST from deleting an
+// entire workspace.
+function destroyConfirmationPhrase(workspaceName) {
+  return `DESTROY ${String(workspaceName || '').trim()}`;
+}
+
+function hasValidDestroyConfirmation(value, workspaceName) {
+  return typeof value === 'string' && value === destroyConfirmationPhrase(workspaceName);
+}
+
+function normalizePostDeployPlaybooks(value) {
+  if (value === undefined || value === null || value === '') return [];
+  if (!Array.isArray(value)) throw new Error('Post-Deploy-Playbooks müssen als Liste übergeben werden');
+  if (value.length > 12) throw new Error('Es können höchstens 12 Post-Deploy-Playbooks ausgewählt werden');
+  const unique = [];
+  for (const raw of value) {
+    if (typeof raw !== 'string') throw new Error('Ungültiges Post-Deploy-Playbook');
+    const playbook = raw.trim();
+    if (!PROVISION_PLAYBOOK_RE.test(playbook)) throw new Error(`Ungültiger Playbook-Name: ${playbook || 'leer'}`);
+    if (!unique.includes(playbook)) unique.push(playbook);
+  }
+  return unique;
 }
 
 function uniqueStrings(...lists) {
@@ -762,7 +792,6 @@ const PROXMOX_VM_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/;
 const PROXMOX_IDENTIFIER_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 const PROXMOX_TF_IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/;
 const PROXMOX_INTERFACE_RE = /^(?:scsi|virtio|sata|ide)\d+$/;
-const IPV4_CIDR_RE = /^(?:\d{1,3}\.){3}\d{1,3}(?:\/(?:[0-9]|[12]\d|3[0-2]))?$/;
 
 function proxmoxInt(value, fallback, { min, max, field }) {
   const raw = String(value ?? '').trim();
@@ -782,10 +811,11 @@ function proxmoxString(value, fallback, { field, pattern = PROXMOX_IDENTIFIER_RE
 function normalizeProxmoxVm(input = {}) {
   const diskDiscard = String(input.disk_discard ?? 'on');
   if (!['on', 'ignore'].includes(diskDiscard)) throw new Error('Invalid disk discard setting');
-  const ipv4Address = String(input.ipv4_address ?? 'dhcp').trim().toLowerCase();
-  if (ipv4Address !== 'dhcp' && !isValidIpv4Cidr(ipv4Address)) throw new Error('IPv4 address must be DHCP or an IPv4 address with optional CIDR');
+  const ipv4Input = String(input.ipv4_address ?? 'dhcp').trim().toLowerCase();
+  const ipv4Prefix = proxmoxInt(input.ipv4_prefix, 24, { min: 0, max: 32, field: 'IPv4 prefix' });
+  const ipv4Address = normalizeStaticIpv4Address(ipv4Input, ipv4Prefix);
   const gateway = String(input.ipv4_gateway ?? '').trim();
-  if (gateway && !isValidIpv4Cidr(gateway)) throw new Error('Invalid IPv4 gateway');
+  if (gateway && !isValidIpv4(gateway)) throw new Error('Invalid IPv4 gateway');
   const vlanRaw = String(input.vlan_id ?? '').trim();
   const vlanId = vlanRaw === '' ? null : proxmoxInt(vlanRaw, null, { min: 1, max: 4094, field: 'VLAN ID' });
   const vmIdRaw = String(input.vm_id ?? '').trim();
@@ -813,16 +843,36 @@ function normalizeProxmoxVm(input = {}) {
     bridge: proxmoxString(input.bridge, 'vmbr0', { field: 'Network bridge' }),
     vlan_id: vlanId,
     ipv4_address: ipv4Address,
+    ipv4_prefix: ipv4Address === 'dhcp' ? null : Number(ipv4Address.split('/')[1]),
     ipv4_gateway: ipv4Address === 'dhcp' ? '' : gateway,
     username: proxmoxString(input.username, 'ubuntu', { field: 'Guest username', pattern: /^[a-z_][a-z0-9_-]{0,31}$/, max: 32 }),
     ssh_public_key_variable: sshPublicKeyVariable,
+    post_deploy_playbooks: normalizePostDeployPlaybooks(input.post_deploy_playbooks),
   };
 }
 
-function isValidIpv4Cidr(value) {
-  if (!IPV4_CIDR_RE.test(value)) return false;
-  const [ip] = value.split('/');
-  return ip.split('.').every(part => Number(part) >= 0 && Number(part) <= 255);
+function normalizeProxmoxVmTemplate(input = {}) {
+  if (!isPlainObject(input.config)) throw new Error('Die VM-Vorlage enthält keine gültige Konfiguration');
+  return {
+    name: proxmoxString(input.name, '', {
+      field: 'VM template name', pattern: /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,62}$/, max: 63,
+    }),
+    config: normalizeProxmoxVm(input.config),
+  };
+}
+
+function normalizeStaticIpv4Address(value, fallbackPrefix) {
+  if (value === 'dhcp') return 'dhcp';
+  const [address, inlinePrefix] = String(value || '').split('/', 2);
+  const prefix = inlinePrefix === undefined || inlinePrefix === ''
+    ? fallbackPrefix
+    : proxmoxInt(inlinePrefix, fallbackPrefix, { min: 0, max: 32, field: 'IPv4 prefix' });
+  if (!isValidIpv4(address)) throw new Error('IPv4 address must be DHCP or a valid IPv4 address');
+  return `${address}/${prefix}`;
+}
+
+function isValidIpv4(value) {
+  return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(value) && value.split('.').every(part => Number(part) >= 0 && Number(part) <= 255);
 }
 
 function renderProxmoxVmHcl(vm) {
@@ -1128,6 +1178,37 @@ function register({ router, db, broadcast }) {
       created_at   TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(workspace_id, name)
+    )
+  `).run();
+
+  // Templates are workspace-local presets. They intentionally live beside the
+  // form definitions, rather than in generated HCL, so credentials and a
+  // reusable default can be managed without creating a real VM first.
+  db.db.prepare(`
+    CREATE TABLE IF NOT EXISTS tofu_proxmox_vm_templates (
+      id           TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      name         TEXT NOT NULL,
+      config       TEXT NOT NULL,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(workspace_id, name)
+    )
+  `).run();
+
+  // Successful post-deploy steps are recorded per VM and playbook. This makes
+  // a bootstrap idempotent across later `tofu apply` runs, while a failed step
+  // remains eligible for a retry on the next apply.
+  db.db.prepare(`
+    CREATE TABLE IF NOT EXISTS tofu_proxmox_playbook_runs (
+      workspace_id TEXT NOT NULL,
+      vm_id        TEXT NOT NULL,
+      playbook     TEXT NOT NULL,
+      status       TEXT NOT NULL DEFAULT 'pending',
+      output       TEXT NOT NULL DEFAULT '',
+      completed_at TEXT,
+      updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (workspace_id, vm_id, playbook)
     )
   `).run();
 
@@ -1447,10 +1528,131 @@ override.tf.json
   function getProxmoxVms(workspaceId) {
     return db.db.prepare('SELECT * FROM tofu_proxmox_vms WHERE workspace_id = ? ORDER BY name COLLATE NOCASE').all(workspaceId)
       .map(row => {
-        try { return { ...JSON.parse(row.config), id: row.id, created_at: row.created_at, updated_at: row.updated_at }; }
+        try {
+          // Older form entries accepted a bare static address. Normalizing on
+          // read repairs those definitions when the generated files are next
+          // written, without requiring users to recreate their VM.
+          return { ...normalizeProxmoxVm(JSON.parse(row.config)), id: row.id, created_at: row.created_at, updated_at: row.updated_at };
+        }
         catch { return null; }
       })
       .filter(Boolean);
+  }
+
+  function getProxmoxVmTemplates(workspaceId) {
+    return db.db.prepare('SELECT * FROM tofu_proxmox_vm_templates WHERE workspace_id = ? ORDER BY name COLLATE NOCASE').all(workspaceId)
+      .map(row => {
+        try {
+          return {
+            id: row.id,
+            name: row.name,
+            config: normalizeProxmoxVm(JSON.parse(row.config)),
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+          };
+        } catch { return null; }
+      })
+      .filter(Boolean);
+  }
+
+  function validatePostDeployPlaybookAccess(playbooks, req) {
+    if (!playbooks.length) return;
+    const permissions = getPermissions(req.user);
+    if (!can(permissions, 'canRunPlaybooks')) {
+      throw new Error('Deine Rolle darf keine Playbooks ausführen.');
+    }
+    const available = new Set(ansibleRunner.getAvailablePlaybooks().map(playbook => playbook.filename));
+    for (const playbook of playbooks) {
+      if (!available.has(playbook)) throw new Error(`Playbook nicht gefunden: ${playbook}`);
+      if (!canAccessPlaybook(permissions, playbook)) throw new Error(`Playbook nicht erlaubt: ${playbook}`);
+    }
+  }
+
+  function pendingPostDeployJobs(workspace, syncedServers) {
+    const syncedByResource = new Map((Array.isArray(syncedServers) ? syncedServers : [])
+      .map(server => [server.resource_key, server])
+      .filter(([resourceKey]) => Boolean(resourceKey)));
+    const completed = new Set(db.db.prepare(`
+      SELECT vm_id, playbook FROM tofu_proxmox_playbook_runs
+      WHERE workspace_id = ? AND status = 'success'
+    `).all(workspace.id).map(row => `${row.vm_id}\u0000${row.playbook}`));
+
+    return getProxmoxVms(workspace.id).flatMap(vm => {
+      const server = syncedByResource.get(`resource:proxmox_virtual_environment_vm.${vm.name}`);
+      if (!server || !Array.isArray(vm.post_deploy_playbooks)) return [];
+      return vm.post_deploy_playbooks
+        .filter(playbook => !completed.has(`${vm.id}\u0000${playbook}`))
+        .map(playbook => ({ vm, server, playbook }));
+    });
+  }
+
+  async function runPostDeployPlaybooks({ workspace, syncedServers, logMeta, emitMeta }) {
+    const jobs = pendingPostDeployJobs(workspace, syncedServers);
+    if (!jobs.length) return { started: 0, succeeded: 0, failed: 0 };
+
+    // Ensure that the selected Fleet playbooks reflect the configured Git
+    // source immediately before provisioning starts.
+    await getGitSync()?.autoPull?.();
+    const available = new Set(ansibleRunner.getAvailablePlaybooks().map(playbook => playbook.filename));
+    const mappingByResource = new Map(db.db.prepare(
+      'SELECT resource_key, server_id FROM tofu_managed_servers WHERE workspace_id = ?'
+    ).all(workspace.id).map(row => [row.resource_key, row.server_id]));
+    const serverById = new Map(db.servers.getAll().map(server => [server.id, server]));
+    const saveResult = db.db.prepare(`
+      INSERT INTO tofu_proxmox_playbook_runs (workspace_id, vm_id, playbook, status, output, completed_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, CASE WHEN ? = 'success' THEN datetime('now') ELSE NULL END, datetime('now'))
+      ON CONFLICT(workspace_id, vm_id, playbook) DO UPDATE SET
+        status = excluded.status, output = excluded.output,
+        completed_at = excluded.completed_at, updated_at = datetime('now')
+    `);
+    const result = { started: 0, succeeded: 0, failed: 0 };
+
+    for (const job of jobs) {
+      const target = serverById.get(mappingByResource.get(job.server.resource_key));
+      if (!target) continue;
+      result.started++;
+      const historyId = db.updateHistory.create(target.id, `ansible:${job.playbook}`, logMeta.user || null);
+      const scheduleHistoryId = db.scheduleHistory.create(null, `OpenTofu ${workspace.name}`, job.playbook, target.name);
+      if (!available.has(job.playbook)) {
+        const output = `[Fleet] Playbook nicht gefunden: ${job.playbook}`;
+        db.updateHistory.updateStatus(historyId, 'failed', output);
+        db.scheduleHistory.complete(scheduleHistoryId, 'failed', output);
+        saveResult.run(workspace.id, job.vm.id, job.playbook, 'failed', output, 'failed');
+        emitMeta(`${output}\n`);
+        result.failed++;
+        continue;
+      }
+
+      emitMeta(`[Fleet] Starte Post-Deploy-Playbook "${job.playbook}" auf ${target.name}.\n`);
+      try {
+        const run = await ansibleRunner.runPlaybook(job.playbook, target.name, {
+          fleet_workspace: workspace.name,
+          fleet_vm: job.vm.name,
+        }, (stream, data) => emitMeta(`[${job.playbook}/${stream}] ${data}`));
+        const output = `${run.stdout || ''}${run.stderr || ''}`;
+        const status = run.success ? 'success' : 'failed';
+        db.updateHistory.updateStatus(historyId, status, output);
+        db.scheduleHistory.complete(scheduleHistoryId, status, output);
+        saveResult.run(workspace.id, job.vm.id, job.playbook, status, output, status);
+        db.auditLog.write('tofu.post_deploy_playbook', `workspace=${workspace.name} vm=${job.vm.name} playbook=${job.playbook} status=${status}`, logMeta.ip || null, run.success, logMeta.user || null);
+        if (run.success) {
+          result.succeeded++;
+          emitMeta(`[Fleet] Post-Deploy-Playbook "${job.playbook}" erfolgreich abgeschlossen.\n`);
+        } else {
+          result.failed++;
+          emitMeta(`[Fleet] Post-Deploy-Playbook "${job.playbook}" ist fehlgeschlagen und wird bei einem späteren Apply erneut versucht.\n`);
+        }
+      } catch (error) {
+        const output = error.message || String(error);
+        db.updateHistory.updateStatus(historyId, 'failed', output);
+        db.scheduleHistory.complete(scheduleHistoryId, 'failed', output);
+        saveResult.run(workspace.id, job.vm.id, job.playbook, 'failed', output, 'failed');
+        db.auditLog.write('tofu.post_deploy_playbook', `workspace=${workspace.name} vm=${job.vm.name} playbook=${job.playbook} error=${output}`, logMeta.ip || null, false, logMeta.user || null);
+        result.failed++;
+        emitMeta(`[Fleet] Post-Deploy-Playbook "${job.playbook}" konnte nicht gestartet werden: ${output}\n`);
+      }
+    }
+    return result;
   }
 
   function writeFleetProxmoxFiles(workspace) {
@@ -1789,17 +1991,32 @@ override.tf.json
 
   router.post('/workspaces/:id/run', (req, res) => {
     const VALID_ACTIONS = ['init', 'validate', 'plan', 'apply', 'destroy'];
-    const { action } = req.body;
+    const { action, confirm_destroy: destroyConfirmation } = req.body || {};
     if (!VALID_ACTIONS.includes(action)) return res.status(400).json({ error: 'Invalid action' });
 
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+
+    if (action === 'destroy' && !hasValidDestroyConfirmation(destroyConfirmation, workspace.name)) {
+      return res.status(400).json({
+        error: `Destroy muss mit "${destroyConfirmationPhrase(workspace.name)}" bestätigt werden.`,
+      });
+    }
 
     const binary = findBinary();
     if (!binary) return res.status(500).json({ error: 'OpenTofu/Terraform binary not found in PATH' });
 
     const mkdirErr = ensureWorkspacePath(workspace);
     if (mkdirErr) return res.status(400).json({ error: `Path "${workspace.path}" could not be created: ${mkdirErr.message}` });
+
+    // Always rebuild Fleet-managed VM files immediately before a run. Besides
+    // keeping the HCL in sync with the form, this migrates older static IP
+    // entries such as 10.10.1.111 to Proxmox-valid 10.10.1.111/24.
+    try {
+      if (getProxmoxVms(workspace.id).length > 0) writeFleetProxmoxFiles(workspace);
+    } catch (error) {
+      return res.status(400).json({ error: `Fleet-Proxmox-Dateien konnten nicht erzeugt werden: ${permissionError(error, workspace.path)}` });
+    }
 
     const runId  = randomUUID();
     const dbRunId = randomUUID();
@@ -1876,6 +2093,15 @@ override.tf.json
                 });
                 const waitedSuffix = sync.attempts > 1 ? ` after waiting ${Math.round(sync.waitedMs / 1000)}s for DHCP/state updates` : '';
                 emitMeta(`[Shipyard] Server sync complete: ${result.created} created, ${result.updated} updated, ${result.deleted} deleted.${waitedSuffix}`);
+                const postDeploy = await runPostDeployPlaybooks({
+                  workspace,
+                  syncedServers: sync.servers,
+                  logMeta,
+                  emitMeta,
+                });
+                if (postDeploy.started) {
+                  emitMeta(`[Fleet] Post-Deploy abgeschlossen: ${postDeploy.succeeded} erfolgreich, ${postDeploy.failed} fehlgeschlagen.`);
+                }
               }
             } catch (err) {
               log.error({ err, workspace: workspace.name }, 'OpenTofu apply server sync failed');
@@ -2058,6 +2284,53 @@ override.tf.json
     });
   });
 
+  router.get('/workspaces/:id/proxmox-vm-templates', (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    res.json({ templates: getProxmoxVmTemplates(workspace.id) });
+  });
+
+  router.post('/workspaces/:id/proxmox-vm-templates', (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    try {
+      const template = normalizeProxmoxVmTemplate(req.body || {});
+      validatePostDeployPlaybookAccess(template.config.post_deploy_playbooks, req);
+      const id = randomUUID();
+      db.db.prepare('INSERT INTO tofu_proxmox_vm_templates (id, workspace_id, name, config) VALUES (?, ?, ?, ?)')
+        .run(id, workspace.id, template.name, JSON.stringify(template.config));
+      res.status(201).json({ template: { ...template, id } });
+    } catch (error) {
+      res.status(/UNIQUE constraint failed/.test(error.message) ? 409 : 400).json({ error: error.message });
+    }
+  });
+
+  router.put('/workspaces/:id/proxmox-vm-templates/:templateId', (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    const existing = db.db.prepare('SELECT id FROM tofu_proxmox_vm_templates WHERE id = ? AND workspace_id = ?')
+      .get(req.params.templateId, workspace.id);
+    if (!existing) return res.status(404).json({ error: 'VM template not found' });
+    try {
+      const template = normalizeProxmoxVmTemplate(req.body || {});
+      validatePostDeployPlaybookAccess(template.config.post_deploy_playbooks, req);
+      db.db.prepare("UPDATE tofu_proxmox_vm_templates SET name = ?, config = ?, updated_at = datetime('now') WHERE id = ? AND workspace_id = ?")
+        .run(template.name, JSON.stringify(template.config), existing.id, workspace.id);
+      res.json({ template: { ...template, id: existing.id } });
+    } catch (error) {
+      res.status(/UNIQUE constraint failed/.test(error.message) ? 409 : 400).json({ error: error.message });
+    }
+  });
+
+  router.delete('/workspaces/:id/proxmox-vm-templates/:templateId', (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    const result = db.db.prepare('DELETE FROM tofu_proxmox_vm_templates WHERE id = ? AND workspace_id = ?')
+      .run(req.params.templateId, workspace.id);
+    if (!result.changes) return res.status(404).json({ error: 'VM template not found' });
+    res.json({ success: true });
+  });
+
   router.post('/workspaces/:id/proxmox-vms', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
@@ -2065,6 +2338,7 @@ override.tf.json
     if (mkdirErr) return res.status(400).json({ error: permissionError(mkdirErr, workspace.path) });
     try {
       const vm = normalizeProxmoxVm(req.body || {});
+      validatePostDeployPlaybookAccess(vm.post_deploy_playbooks, req);
       if (vm.vm_id !== null && getProxmoxVms(workspace.id).some(existing => existing.vm_id === vm.vm_id)) {
         return res.status(409).json({ error: `VM-ID ${vm.vm_id} ist in diesem Workspace bereits definiert.` });
       }
@@ -2086,6 +2360,7 @@ override.tf.json
     if (!existing) return res.status(404).json({ error: 'VM definition not found' });
     try {
       const vm = normalizeProxmoxVm(req.body || {});
+      validatePostDeployPlaybookAccess(vm.post_deploy_playbooks, req);
       if (vm.vm_id !== null && getProxmoxVms(workspace.id).some(item => item.id !== existing.id && item.vm_id === vm.vm_id)) {
         return res.status(409).json({ error: `VM-ID ${vm.vm_id} ist in diesem Workspace bereits definiert.` });
       }
@@ -2229,6 +2504,8 @@ module.exports = {
     generateShipyardOutputsBlock,
     upsertManagedShipyardOutputs,
     normalizeProxmoxVm,
+    normalizeProxmoxVmTemplate,
+    normalizePostDeployPlaybooks,
     renderProxmoxVmHcl,
     readProxmoxConnection,
     proxmoxApiUrl,
@@ -2238,5 +2515,7 @@ module.exports = {
     extractProxmoxGuestIpv4,
     pruneWorkspaceRuns,
     moveWorkspaceDirectory,
+    destroyConfirmationPhrase,
+    hasValidDestroyConfirmation,
   },
 };

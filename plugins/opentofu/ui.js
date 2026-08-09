@@ -268,6 +268,34 @@ const PLUGIN_STYLES = `
 .tofu-plugin .tp-dashboard-meta { display:grid; grid-template-columns:1fr auto; gap:10px; align-items:end; }
 .tofu-plugin .tp-dashboard-path { font-family:var(--tp-mono); font-size:11px; color:var(--tp-fg-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
+/* ── Run workflow ─── */
+.tofu-plugin .tp-run-layout { display:grid; grid-template-columns:minmax(0, 1.15fr) minmax(300px, .85fr); gap:16px; align-items:start; }
+.tofu-plugin .tp-run-workflow { padding:12px 16px; border-bottom:1px solid var(--tp-border); background:color-mix(in srgb, var(--tp-bg2) 48%, var(--tp-card)); }
+.tofu-plugin .tp-run-workflow-title { display:flex; align-items:center; gap:7px; font-size:13px; font-weight:600; }
+.tofu-plugin .tp-run-workflow-hint { margin:3px 0 0 21px; color:var(--tp-fg-muted); font-size:12px; }
+.tofu-plugin .tp-run-actions { display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap; padding:12px 16px; border-bottom:1px solid var(--tp-border); }
+.tofu-plugin .tp-run-action-group { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.tofu-plugin .tp-run-group-label { width:100%; color:var(--tp-fg-muted); font-size:10px; font-weight:650; letter-spacing:.08em; text-transform:uppercase; }
+.tofu-plugin .tp-run-action-group-danger { margin-left:auto; padding-left:12px; border-left:1px solid var(--tp-border); }
+.tofu-plugin .tp-run-action-group-danger .tp-run-group-label { color:var(--tp-danger); }
+.tofu-plugin .tp-run-terminal-body { min-height:360px; }
+.tofu-plugin .tp-danger-note { margin:0; padding:10px 12px; border:1px solid color-mix(in srgb, var(--tp-danger) 34%, var(--tp-border)); border-radius:var(--tp-radius); background:color-mix(in srgb, var(--tp-danger) 7%, transparent); color:var(--tp-fg); font-size:13px; }
+.tofu-plugin .tp-danger-note strong { color:var(--tp-danger); }
+.tofu-plugin .tp-confirm-check { display:flex; align-items:flex-start; gap:8px; margin:16px 0; color:var(--tp-fg); font-size:13px; cursor:pointer; }
+.tofu-plugin .tp-confirm-check input { width:16px; height:16px; margin:2px 0 0; accent-color:var(--tp-danger); flex:0 0 auto; }
+.tofu-plugin .tp-playbook-picker { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px; padding:9px; border:1px solid var(--tp-border); border-radius:var(--tp-radius); background:var(--tp-bg2); max-height:210px; overflow:auto; }
+.tofu-plugin .tp-playbook-choice { display:flex; align-items:flex-start; gap:8px; min-width:0; padding:7px 8px; border:1px solid transparent; border-radius:calc(var(--tp-radius) - 2px); background:var(--tp-card); cursor:pointer; }
+.tofu-plugin .tp-playbook-choice:hover { border-color:var(--tp-border); }
+.tofu-plugin .tp-playbook-choice input { width:15px; height:15px; margin:2px 0 0; accent-color:var(--tp-primary); flex:0 0 auto; }
+.tofu-plugin .tp-playbook-choice-name { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:600; }
+.tofu-plugin .tp-playbook-choice-description { display:block; margin-top:1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--tp-fg-muted); font-size:11px; }
+.tofu-plugin .tp-playbook-order { display:grid; gap:5px; margin-top:9px; }
+.tofu-plugin .tp-playbook-order-row { display:grid; grid-template-columns:24px minmax(0, 1fr) 28px 28px; align-items:center; gap:5px; min-height:34px; padding:4px 5px; border:1px solid var(--tp-border); border-radius:calc(var(--tp-radius) - 2px); background:var(--tp-card); }
+.tofu-plugin .tp-playbook-order-number { color:var(--tp-fg-muted); font:600 11px var(--tp-mono); text-align:center; }
+.tofu-plugin .tp-playbook-order-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:500 12px var(--tp-mono); }
+.tofu-plugin .tp-playbook-order-button { display:grid; place-items:center; width:28px; height:26px; padding:0; }
+.tofu-plugin .tp-playbook-empty { padding:9px; color:var(--tp-fg-muted); font-size:12px; }
+
 /* pre block */
 .tofu-plugin .tp-pre {
   background: var(--tp-bg2); border: 1px solid var(--tp-border);
@@ -282,6 +310,17 @@ const PLUGIN_STYLES = `
   .tofu-plugin .tp-summary-metric:nth-child(-n+2) { border-bottom:1px solid var(--tp-border); }
   .tofu-plugin .tp-tab-bar { overflow-x:auto; }
   .tofu-plugin .tp-dashboard-overview { grid-template-columns:1fr; }
+  .tofu-plugin .tp-run-layout { grid-template-columns:1fr; }
+  .tofu-plugin .tp-run-action-group-danger { margin-left:0; padding-left:0; border-left:0; }
+  .tofu-plugin .tp-run-terminal-body { min-height:280px; }
+  .tofu-plugin .tp-playbook-picker { grid-template-columns:1fr; }
+}
+@media (max-width: 520px) {
+  .tofu-plugin .tp-run-actions { display:grid; grid-template-columns:1fr; gap:12px; }
+  .tofu-plugin .tp-run-action-group { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px; }
+  .tofu-plugin .tp-run-group-label { grid-column:1 / -1; }
+  .tofu-plugin .tp-run-action-group .tp-btn { width:100%; min-height:38px; }
+  .tofu-plugin .tp-run-terminal-body { min-height:220px; }
 }
 `;
 
@@ -969,28 +1008,41 @@ async function loadWsTab(ws) {
 // ── Sub-tab: Runs ─────────────────────────────────────────────────────────
 async function loadRunsTab(el, ws) {
   el.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;">
+    <div class="tp-run-layout">
       <!-- Actions + Terminal -->
       <div class="tp-card">
         <div class="tp-card-header">
-          <div class="tp-card-title">${icon('play',14)} Run</div>
+          <div class="tp-card-title">${icon('play',14)} Ausführung</div>
           <div class="tp-card-actions">
-            ${btn('secondary sm tp-hidden', 'tofu-btn-cancel', icon('stop',12)+' Cancel')}
-            ${btn('secondary sm icon', 'tofu-btn-clear', icon('eraser',13), 'title="Clear terminal"')}
+            ${btn('secondary sm tp-hidden', 'tofu-btn-cancel', icon('stop',12)+' Abbrechen')}
+            ${btn('secondary sm icon', 'tofu-btn-clear', icon('eraser',13), 'title="Terminal leeren"')}
           </div>
         </div>
-        <div style="padding:10px 14px;display:flex;flex-wrap:wrap;gap:6px;border-bottom:1px solid var(--tp-border);">
-          ${btn('secondary sm tofu-action', '', icon('download',12)+' init', 'data-action="init"')}
-          ${btn('secondary sm tofu-action', '', icon('spell',12)+' validate', 'data-action="validate"')}
-          ${btn('secondary sm tofu-action', '', icon('eye',12)+' plan', 'data-action="plan"')}
-          ${btn('primary sm tofu-action', '', icon('checkDbl',12)+' apply', 'data-action="apply"')}
-          ${btn('danger sm tofu-action', '', icon('bomb',12)+' destroy', 'data-action="destroy"')}
+        <div class="tp-run-workflow">
+          <div class="tp-run-workflow-title">${icon('sitemap',14)} Sicherer Workflow</div>
+          <p class="tp-run-workflow-hint">Initialisieren → prüfen → Änderungen ansehen → gezielt anwenden.</p>
+        </div>
+        <div class="tp-run-actions" aria-label="OpenTofu-Aktionen">
+          <div class="tp-run-action-group">
+            <span class="tp-run-group-label">Vorbereiten</span>
+            ${btn('secondary sm tofu-action', '', icon('download',12)+' Initialisieren', 'data-action="init" title="Lädt Provider und richtet den Workspace ein"')}
+            ${btn('secondary sm tofu-action', '', icon('spell',12)+' Prüfen', 'data-action="validate" title="Prüft Konfiguration und Syntax ohne Änderungen"')}
+          </div>
+          <div class="tp-run-action-group">
+            <span class="tp-run-group-label">Bereitstellen</span>
+            ${btn('secondary sm tofu-action', '', icon('eye',12)+' Vorschau', 'data-action="plan" title="Zeigt geplante Änderungen, ohne sie auszuführen"')}
+            ${btn('primary sm tofu-action', '', icon('checkDbl',12)+' Anwenden', 'data-action="apply" title="Wendet die zuvor geprüfte Konfiguration an"')}
+          </div>
+          <div class="tp-run-action-group tp-run-action-group-danger">
+            <span class="tp-run-group-label">Gefahr</span>
+            ${btn('danger sm tofu-action', '', icon('bomb',12)+' Entfernen', 'data-action="destroy" title="Löscht alle von diesem Workspace verwalteten Ressourcen"')}
+          </div>
         </div>
         <div class="tp-terminal">
           <div class="tp-terminal-header">
             ${icon('play',11)} <span>${esc(ws.name)}</span>
           </div>
-          <div class="tp-terminal-body" id="tofu-terminal-body" style="min-height:360px;"></div>
+          <div class="tp-terminal-body tp-run-terminal-body" id="tofu-terminal-body"><span style="color:var(--tp-fg-muted)">Wähle eine Aktion, um die Ausgabe zu sehen.</span></div>
         </div>
       </div>
 
@@ -1116,18 +1168,22 @@ function showRunOutputModal(run) {
 
 async function executeAction(ws, action) {
   if (_runId) return;
+  let destroyConfirmation = null;
   if (action === 'destroy') {
-    if (!await _internalConfirm(`Destroy all resources in "${ws.name}"? This cannot be undone.`,
-      { title:'Destroy', confirmText:'Destroy', danger:true, confirmValue:ws.name, confirmLabel:'Workspace name' })) return;
+    destroyConfirmation = await confirmDestroyWorkspace(ws);
+    if (!destroyConfirmation) return;
   }
   if (action === 'apply') {
-    if (!await _internalConfirm(`Apply changes in "${ws.name}"?`,
-      { title:'Apply', confirmText:'Apply', danger:false, confirmValue:ws.name, confirmLabel:'Workspace name' })) return;
+    if (!await _internalConfirm(`Die geplanten Änderungen für „${ws.name}“ werden ausgeführt. Prüfe vorher die Vorschau.`,
+      { title:'Änderungen anwenden', confirmText:'Anwenden', danger:false, confirmValue:ws.name, confirmLabel:'Workspace-Name zur Bestätigung' })) return;
   }
   const body = document.getElementById('tofu-terminal-body');
   if (body) body.innerHTML = '';
   try {
-    await _pluginApi.request(`/workspaces/${ws.id}/run`, { method:'POST', body: JSON.stringify({ action }) });
+    await _pluginApi.request(`/workspaces/${ws.id}/run`, {
+      method:'POST',
+      body: JSON.stringify({ action, ...(destroyConfirmation ? { confirm_destroy: destroyConfirmation } : {}) }),
+    });
   } catch (e) {
     appendTerminal(`Error: ${e.message}`, 'error');
   }
@@ -1615,24 +1671,27 @@ async function loadProxmoxTab(el, ws) {
         </div>
         <div class="tp-card-actions">
           ${btn('secondary sm', 'tofu-proxmox-settings', icon('sliders',12)+' Proxmox-Verbindung')}
+          ${btn('secondary sm', 'tofu-proxmox-templates', icon('layers',12)+' VM-Vorlagen')}
           ${btn('secondary sm', 'tofu-proxmox-regenerate', icon('rotate',12)+' Dateien erzeugen')}
           ${btn('primary sm', 'tofu-proxmox-add', icon('plus',12)+' VM hinzufügen')}
         </div>
       </div>
       ${proxmoxSummary(overview)}
       <div class="tp-card">
-        ${vms.length ? `<table class="tp-table"><thead><tr><th>Name</th><th>Node / Template</th><th>Compute</th><th>Disk</th><th>Netzwerk</th><th></th></tr></thead>
+        ${vms.length ? `<table class="tp-table"><thead><tr><th>Name</th><th>Node / Template</th><th>Compute</th><th>Disk</th><th>Netzwerk</th><th>Nach Deploy</th><th></th></tr></thead>
         <tbody>${vms.map(vm => `<tr>
           <td><strong>${esc(vm.name)}</strong><div class="tp-muted tp-mono" style="font-size:11px;margin-top:2px;">${esc(vm.username)} · ${esc(vm.ipv4_address)}</div></td>
           <td>${esc(vm.node_name)}<div class="tp-muted tp-mono" style="font-size:11px;margin-top:2px;">${vm.vm_id ? `Ziel-VM ${esc(vm.vm_id)}` : `Template ${esc(vm.clone_vm_id)}`}</div></td>
           <td>${esc(vm.cpu_cores)} vCPU<div class="tp-muted" style="font-size:11px;margin-top:2px;">${esc(vm.memory_mb)} MB</div></td>
           <td>${esc(vm.disk_size_gb)} GB<div class="tp-muted tp-mono" style="font-size:11px;margin-top:2px;">${esc(vm.disk_datastore)} · ${esc(vm.disk_interface)}</div></td>
           <td>${esc(vm.bridge)}${vm.vlan_id ? ` · VLAN ${esc(vm.vlan_id)}` : ''}</td>
+          <td>${Array.isArray(vm.post_deploy_playbooks) && vm.post_deploy_playbooks.length ? `<div class="tp-muted" style="font-size:11px;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(vm.post_deploy_playbooks.join(', '))}">${esc(vm.post_deploy_playbooks.join(', '))}</div>` : '<span class="tp-muted">—</span>'}</td>
           <td style="white-space:nowrap;text-align:right;">${btn('secondary sm icon tofu-proxmox-edit', '', icon('pen',12), `data-id="${esc(vm.id)}" title="Bearbeiten"`)} ${btn('danger sm icon tofu-proxmox-delete', '', icon('trash',12), `data-id="${esc(vm.id)}" title="Löschen"`)}</td>
         </tr>`).join('')}</tbody></table>` : `<div class="tp-empty" style="padding:34px 20px;">${icon('cube',30)}<h3>Noch keine Proxmox-VM definiert</h3><p>Erstelle eine VM aus einem Proxmox-Template ohne HCL-Dateien zu bearbeiten.</p></div>`}
       </div>
       <div class="tp-muted" style="font-size:12px;margin-top:10px;">Generierte Dateien: <span class="tp-mono">fleet-proxmox-provider.tf</span>, <span class="tp-mono">fleet-proxmox-variables.tf</span>, <span class="tp-mono">fleet-proxmox-vms.tf</span></div>`;
     document.getElementById('tofu-proxmox-settings')?.addEventListener('click', () => openProxmoxSettingsModal(ws, () => loadProxmoxTab(el, ws)));
+    document.getElementById('tofu-proxmox-templates')?.addEventListener('click', () => openProxmoxVmTemplatesModal(ws));
     document.getElementById('tofu-proxmox-add')?.addEventListener('click', () => openProxmoxVmModal(ws));
     document.getElementById('tofu-proxmox-regenerate')?.addEventListener('click', async () => {
       try { await _pluginApi.request(`/workspaces/${ws.id}/proxmox-vms/regenerate`, { method:'POST' }); _showToast('OpenTofu-Dateien wurden erzeugt.', 'success'); await loadProxmoxTab(el, ws); }
@@ -1694,15 +1753,21 @@ function openProxmoxSettingsModal(ws, onSaved) {
     }});
 }
 
-function openProxmoxVmModal(ws, vm = null) {
+function openProxmoxVmModal(ws, vm = null, options = {}) {
+  const isTemplate = Boolean(options.templateOnly);
+  const templateName = String(options.templateName || '');
   const value = (key, fallback = '') => esc(vm?.[key] ?? fallback);
   const checked = (key, fallback = true) => (vm?.[key] ?? fallback) ? 'checked' : '';
-  const staticIp = Boolean(vm?.ipv4_address && vm.ipv4_address !== 'dhcp');
+  const storedIpv4 = String(vm?.ipv4_address || '');
+  const staticIp = Boolean(storedIpv4 && storedIpv4 !== 'dhcp');
+  const [staticIpv4Address, savedIpv4Prefix] = storedIpv4.split('/', 2);
+  const staticIpv4Prefix = savedIpv4Prefix || vm?.ipv4_prefix || '24';
   showModal(`
-    <h2>${icon('cube',16)} ${vm ? 'Proxmox-VM bearbeiten' : 'Proxmox-VM hinzufügen'}</h2>
-    <p class="tp-muted" style="font-size:12px;margin:-8px 0 10px;">Diese Angaben erzeugen eine <span class="tp-mono">proxmox_virtual_environment_vm</span>-Ressource.</p>
+    <h2>${icon(isTemplate ? 'layers' : 'cube',16)} ${isTemplate ? (options.templateId ? 'VM-Vorlage bearbeiten' : 'VM-Vorlage erstellen') : (vm ? 'Proxmox-VM bearbeiten' : 'Proxmox-VM hinzufügen')}</h2>
+    <p class="tp-muted" style="font-size:12px;margin:-8px 0 10px;">${isTemplate ? 'Vorlagen speichern alle Standardwerte. Beim Verwenden werden VM-Name und Ziel-VM-ID bewusst nicht überschrieben.' : 'Diese Angaben erzeugen eine <span class="tp-mono">proxmox_virtual_environment_vm</span>-Ressource.'}</p>
     <div id="tofu-proxmox-catalog-status" class="tp-form-hint" style="margin:0 0 18px;">Proxmox-Inventar wird geladen …</div>
     <form id="tofu-proxmox-vm-form">
+      ${isTemplate ? `<div class="tp-form-group" style="margin-bottom:14px;"><label class="tp-label">Name der VM-Vorlage</label><input class="tp-input" name="template_name" required maxlength="63" value="${esc(templateName)}" placeholder="Ubuntu App Server"></div>` : `<div class="tp-form-group" style="margin-bottom:14px;"><label class="tp-label">VM-Vorlage <span class="tp-muted">(optional)</span></label><select class="tp-input tp-select" id="tofu-proxmox-vm-template-selector"><option value="">Keine Vorlage verwenden</option></select><div class="tp-form-hint">Übernimmt alle Infrastruktur- und Playbook-Einstellungen. Name und Ziel-VM-ID bleiben individuell.</div></div>`}
       <div class="tp-form-grid">
         <div class="tp-form-group"><label class="tp-label">VM-Name</label><input class="tp-input" name="name" required pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,62}" value="${value('name')}" placeholder="hr01-app-erpnext"></div>
         <div class="tp-form-group"><label class="tp-label">Proxmox-Node</label><select class="tp-input tp-select" id="tofu-proxmox-node" name="node_name" required><option value="${value('node_name')}">${value('node_name') || 'Nodes werden geladen …'}</option></select></div>
@@ -1720,30 +1785,46 @@ function openProxmoxVmModal(ws, vm = null) {
         <div class="tp-form-group"><label class="tp-label">Bridge</label><select class="tp-input tp-select tp-input-mono" id="tofu-proxmox-bridge" name="bridge"><option value="${value('bridge', 'vmbr0')}">${value('bridge', 'vmbr0')} (Vorauswahl)</option></select></div>
         <div class="tp-form-group"><label class="tp-label">VLAN-ID <span class="tp-muted">(optional)</span></label><input class="tp-input" name="vlan_id" type="number" min="1" max="4094" value="${value('vlan_id')}"></div>
         <div class="tp-form-group"><label class="tp-label">IPv4-Konfiguration</label><select class="tp-input tp-select" id="tofu-proxmox-ipv4-mode" name="ipv4_mode"><option value="dhcp" ${!staticIp ? 'selected' : ''}>DHCP – automatisch beziehen</option><option value="static" ${staticIp ? 'selected' : ''}>Statisch – Adresse festlegen</option></select></div>
-        <div class="tp-form-group" id="tofu-proxmox-static-ip-group" ${staticIp ? '' : 'hidden'}><label class="tp-label">IPv4-Adresse</label><input class="tp-input tp-input-mono" id="tofu-proxmox-ipv4-address" name="ipv4_address" ${staticIp ? 'required' : 'disabled'} value="${staticIp ? value('ipv4_address') : ''}" inputmode="decimal" placeholder="10.20.1.20/24"><div class="tp-form-hint">Mit Präfix, z. B. <span class="tp-mono">10.20.1.20/24</span>.</div></div>
+        <div class="tp-form-group" id="tofu-proxmox-static-ip-group" ${staticIp ? '' : 'hidden'}><label class="tp-label">IPv4-Adresse</label><input class="tp-input tp-input-mono" id="tofu-proxmox-ipv4-address" name="ipv4_address" ${staticIp ? 'required' : 'disabled'} value="${staticIp ? esc(staticIpv4Address) : ''}" inputmode="decimal" placeholder="10.20.1.20"><div class="tp-form-hint">Ohne Präfix eingeben.</div></div>
+        <div class="tp-form-group" id="tofu-proxmox-static-prefix-group" ${staticIp ? '' : 'hidden'}><label class="tp-label">Netzpräfix</label><input class="tp-input tp-input-mono" id="tofu-proxmox-ipv4-prefix" name="ipv4_prefix" ${staticIp ? 'required' : 'disabled'} value="${esc(staticIpv4Prefix)}" type="number" min="0" max="32" inputmode="numeric"><div class="tp-form-hint">Meist <span class="tp-mono">24</span> für <span class="tp-mono">/24</span>.</div></div>
         <div class="tp-form-group" id="tofu-proxmox-static-gateway-group" ${staticIp ? '' : 'hidden'}><label class="tp-label">IPv4-Gateway <span class="tp-muted">(optional)</span></label><input class="tp-input tp-input-mono" id="tofu-proxmox-ipv4-gateway" name="ipv4_gateway" ${staticIp ? '' : 'disabled'} value="${staticIp ? value('ipv4_gateway') : ''}" inputmode="decimal" placeholder="10.20.1.1"></div>
         <div class="tp-form-group"><label class="tp-label">Gastbenutzer</label><input class="tp-input tp-input-mono" name="username" value="${value('username', 'ubuntu')}"></div>
         <div class="tp-form-group"><label class="tp-label">SSH-Key-Variable <span class="tp-muted">(optional)</span></label><input class="tp-input tp-input-mono" name="ssh_public_key_variable" value="${value('ssh_public_key_variable')}" placeholder="ssh_public_key"><div class="tp-form-hint">Nur setzen, wenn der Key beim Klonen per Cloud-Init in der VM hinterlegt werden soll.</div></div>
+        <div class="tp-form-group" style="grid-column:1 / -1;">
+          <label class="tp-label">Nach dem Bereitstellen ausführen <span class="tp-muted">(optional)</span></label>
+          <div class="tp-form-hint" style="margin:-1px 0 8px;">Fleet synchronisiert die VM zuerst als Server. Danach laufen die ausgewählten Playbooks einmalig in der festgelegten Reihenfolge. Fehlgeschlagene Schritte werden beim nächsten Apply erneut versucht.</div>
+          <div class="tp-playbook-picker" id="tofu-proxmox-post-deploy-playbooks"><div class="tp-playbook-empty">Fleet-Playbooks werden geladen …</div></div>
+          <div class="tp-playbook-order" id="tofu-proxmox-post-deploy-order"></div>
+        </div>
       </div>
       <label class="tp-checkbox" style="margin-bottom:16px;"><input type="checkbox" name="started" ${checked('started')}> VM nach dem Deploy starten</label>
-      <div class="tp-form-actions">${btn('secondary', 'tofu-proxmox-cancel', 'Abbrechen', 'type="button"')}${btn('primary', 'tofu-proxmox-save', vm ? 'Änderungen speichern' : 'VM hinzufügen')}</div>
+      <div class="tp-form-actions">${btn('secondary', 'tofu-proxmox-cancel', 'Abbrechen', 'type="button"')}${btn('primary', 'tofu-proxmox-save', isTemplate ? 'Vorlage speichern' : (vm ? 'Änderungen speichern' : 'VM hinzufügen'))}</div>
     </form>`, { maxWidth:'860px', onReady: () => {
       const modal = document.getElementById('tofu-proxmox-vm-form');
       const status = document.getElementById('tofu-proxmox-catalog-status');
       const nodeSelect = document.getElementById('tofu-proxmox-node');
       const ipv4Mode = document.getElementById('tofu-proxmox-ipv4-mode');
       const staticIpGroup = document.getElementById('tofu-proxmox-static-ip-group');
+      const staticPrefixGroup = document.getElementById('tofu-proxmox-static-prefix-group');
       const staticGatewayGroup = document.getElementById('tofu-proxmox-static-gateway-group');
       const staticIpInput = document.getElementById('tofu-proxmox-ipv4-address');
+      const staticPrefixInput = document.getElementById('tofu-proxmox-ipv4-prefix');
       const staticGatewayInput = document.getElementById('tofu-proxmox-ipv4-gateway');
+      const postDeployPicker = document.getElementById('tofu-proxmox-post-deploy-playbooks');
+      const postDeployOrder = Array.isArray(vm?.post_deploy_playbooks) ? [...vm.post_deploy_playbooks] : [];
+      const postDeployOrderElement = document.getElementById('tofu-proxmox-post-deploy-order');
+      let availablePostDeployPlaybooks = [];
       const readValue = name => String(new FormData(modal).get(name) || '').trim();
       const syncIpv4Mode = () => {
         const isStatic = ipv4Mode.value === 'static';
         staticIpGroup.hidden = !isStatic;
+        staticPrefixGroup.hidden = !isStatic;
         staticGatewayGroup.hidden = !isStatic;
         staticIpInput.disabled = !isStatic;
+        staticPrefixInput.disabled = !isStatic;
         staticGatewayInput.disabled = !isStatic;
         staticIpInput.required = isStatic;
+        staticPrefixInput.required = isStatic;
       };
       const replaceOptions = (element, entries, toValue, toLabel, preferred, emptyLabel) => {
         const current = preferred ?? element.value;
@@ -1755,6 +1836,33 @@ function openProxmoxVmModal(ws, vm = null) {
         element.innerHTML = options.map(option => `<option value="${esc(option.value)}">${esc(option.label)}</option>`).join('');
         if (current && options.some(option => option.value === current)) element.value = current;
         else if (options[0]) element.value = options[0].value;
+      };
+      const renderPostDeployPlaybooks = () => {
+        if (!availablePostDeployPlaybooks.length) {
+          postDeployPicker.innerHTML = '<div class="tp-playbook-empty">Keine Playbooks verfügbar. Du kannst sie unter Playbooks erstellen oder aus Git synchronisieren.</div>';
+          postDeployOrderElement.innerHTML = '';
+          return;
+        }
+        const availableNames = new Set(availablePostDeployPlaybooks.map(item => item.filename));
+        for (let index = postDeployOrder.length - 1; index >= 0; index--) if (!availableNames.has(postDeployOrder[index])) postDeployOrder.splice(index, 1);
+        postDeployPicker.innerHTML = availablePostDeployPlaybooks.map(playbook => `<label class="tp-playbook-choice"><input type="checkbox" value="${esc(playbook.filename)}" ${postDeployOrder.includes(playbook.filename) ? 'checked' : ''}><span><span class="tp-playbook-choice-name">${esc(playbook.filename)}</span><span class="tp-playbook-choice-description">${esc(playbook.description)}</span></span></label>`).join('');
+        postDeployOrderElement.innerHTML = postDeployOrder.length
+          ? postDeployOrder.map((filename, index) => `<div class="tp-playbook-order-row"><span class="tp-playbook-order-number">${index + 1}</span><span class="tp-playbook-order-name" title="${esc(filename)}">${esc(filename)}</span>${btn('secondary sm icon tp-playbook-order-button', '', icon('arrowUp', 12), `type="button" data-post-deploy-move="up" data-index="${index}" title="Nach oben" ${index === 0 ? 'disabled' : ''}`)}${btn('secondary sm icon tp-playbook-order-button', '', icon('arrowDown', 12), `type="button" data-post-deploy-move="down" data-index="${index}" title="Nach unten" ${index === postDeployOrder.length - 1 ? 'disabled' : ''}`)}</div>`).join('')
+          : '<div class="tp-playbook-empty">Keine Post-Deploy-Playbooks ausgewählt.</div>';
+        postDeployPicker.querySelectorAll('input[type="checkbox"]').forEach(input => input.addEventListener('change', () => {
+          const filename = input.value;
+          const index = postDeployOrder.indexOf(filename);
+          if (input.checked && index === -1) postDeployOrder.push(filename);
+          if (!input.checked && index !== -1) postDeployOrder.splice(index, 1);
+          renderPostDeployPlaybooks();
+        }));
+        postDeployOrderElement.querySelectorAll('[data-post-deploy-move]').forEach(button => button.addEventListener('click', () => {
+          const index = Number(button.dataset.index);
+          const nextIndex = button.dataset.postDeployMove === 'up' ? index - 1 : index + 1;
+          if (nextIndex < 0 || nextIndex >= postDeployOrder.length) return;
+          [postDeployOrder[index], postDeployOrder[nextIndex]] = [postDeployOrder[nextIndex], postDeployOrder[index]];
+          renderPostDeployPlaybooks();
+        }));
       };
       const loadCatalog = async ({ refreshVmId = false } = {}) => {
         const oldNode = readValue('node_name');
@@ -1784,19 +1892,114 @@ function openProxmoxVmModal(ws, vm = null) {
       ipv4Mode.addEventListener('change', syncIpv4Mode);
       syncIpv4Mode();
       loadCatalog();
+      _api.request('/playbooks').then(response => {
+        const playbooks = Array.isArray(response) ? response : [];
+        availablePostDeployPlaybooks = playbooks.map(playbook => {
+          const filename = String(playbook?.filename || '');
+          return filename ? { filename, description:String(playbook?.description || filename) } : null;
+        }).filter(Boolean);
+        renderPostDeployPlaybooks();
+      }).catch(error => {
+        postDeployPicker.innerHTML = `<div class="tp-playbook-empty" style="color:var(--tp-danger);">Playbooks konnten nicht geladen werden: ${esc(error.message)}</div>`;
+      });
+      const templateSelector = document.getElementById('tofu-proxmox-vm-template-selector');
+      if (templateSelector) {
+        let vmTemplates = [];
+        const setControlValue = (name, rawValue) => {
+          const control = modal.elements[name];
+          if (!control || rawValue === undefined || rawValue === null) return;
+          if (control.type === 'checkbox') { control.checked = Boolean(rawValue); return; }
+          const value = String(rawValue);
+          if (control.tagName === 'SELECT' && value && ![...control.options].some(option => option.value === value)) {
+            control.insertAdjacentHTML('beforeend', `<option value="${esc(value)}">${esc(value)} (aus Vorlage)</option>`);
+          }
+          control.value = value;
+        };
+        const applyVmTemplate = async template => {
+          const config = template?.config || {};
+          ['node_name', 'clone_vm_id', 'clone_retries', 'disk_datastore', 'disk_interface', 'disk_size_gb', 'disk_discard', 'cpu_cores', 'cpu_type', 'memory_mb', 'agent_enabled', 'bridge', 'vlan_id', 'username', 'ssh_public_key_variable', 'started'].forEach(key => setControlValue(key, config[key]));
+          const address = String(config.ipv4_address || 'dhcp');
+          ipv4Mode.value = address === 'dhcp' ? 'dhcp' : 'static';
+          if (address !== 'dhcp') {
+            const [ip, prefix] = address.split('/', 2);
+            staticIpInput.value = ip || '';
+            staticPrefixInput.value = prefix || String(config.ipv4_prefix || '24');
+            staticGatewayInput.value = String(config.ipv4_gateway || '');
+          }
+          syncIpv4Mode();
+          postDeployOrder.splice(0, postDeployOrder.length, ...(Array.isArray(config.post_deploy_playbooks) ? config.post_deploy_playbooks : []));
+          renderPostDeployPlaybooks();
+          await loadCatalog();
+          _showToast(`Vorlage „${template.name}“ übernommen.`, 'success');
+        };
+        _pluginApi.request(`/workspaces/${ws.id}/proxmox-vm-templates`).then(response => {
+          vmTemplates = Array.isArray(response?.templates) ? response.templates : [];
+          templateSelector.innerHTML = `<option value="">Keine Vorlage verwenden</option>${vmTemplates.map(template => `<option value="${esc(template.id)}">${esc(template.name)}</option>`).join('')}`;
+          templateSelector.addEventListener('change', () => {
+            const template = vmTemplates.find(item => item.id === templateSelector.value);
+            if (template) applyVmTemplate(template).catch(error => _showToast(error.message, 'error'));
+          });
+        }).catch(error => {
+          templateSelector.insertAdjacentHTML('beforeend', `<option value="">Vorlagen konnten nicht geladen werden: ${esc(error.message)}</option>`);
+        });
+      }
       modal.addEventListener('submit', async event => {
         event.preventDefault();
         const form = new FormData(event.currentTarget);
         const body = Object.fromEntries(form.entries());
         body.started = form.get('started') === 'on'; body.agent_enabled = form.get('agent_enabled') === 'on';
+        body.post_deploy_playbooks = [...postDeployOrder];
         const save = document.getElementById('tofu-proxmox-save'); save.disabled = true;
         try {
-          await _pluginApi.request(`/workspaces/${ws.id}/proxmox-vms${vm ? `/${vm.id}` : ''}`, { method:vm ? 'PUT' : 'POST', body:JSON.stringify(body) });
-          closeModal(); _showToast(vm ? 'VM-Definition aktualisiert.' : 'VM-Definition erstellt.', 'success');
-          const target = document.getElementById('tofu-ws-tab-content'); if (target) loadProxmoxTab(target, ws);
+          if (isTemplate) {
+            const templatePayload = { name:String(form.get('template_name') || '').trim(), config:body };
+            await _pluginApi.request(`/workspaces/${ws.id}/proxmox-vm-templates${options.templateId ? `/${options.templateId}` : ''}`, { method:options.templateId ? 'PUT' : 'POST', body:JSON.stringify(templatePayload) });
+            closeModal(); _showToast(options.templateId ? 'VM-Vorlage aktualisiert.' : 'VM-Vorlage erstellt.', 'success');
+            options.onComplete?.();
+          } else {
+            await _pluginApi.request(`/workspaces/${ws.id}/proxmox-vms${vm ? `/${vm.id}` : ''}`, { method:vm ? 'PUT' : 'POST', body:JSON.stringify(body) });
+            closeModal(); _showToast(vm ? 'VM-Definition aktualisiert.' : 'VM-Definition erstellt.', 'success');
+            const target = document.getElementById('tofu-ws-tab-content'); if (target) loadProxmoxTab(target, ws);
+          }
         } catch (error) { _showToast(error.message, 'error'); save.disabled = false; }
       });
     }});
+}
+
+async function openProxmoxVmTemplatesModal(ws) {
+  showModal(`<h2>${icon('layers',16)} VM-Vorlagen</h2><div class="tp-loading" style="min-height:120px;"><div class="tp-spinner"></div></div>`, { maxWidth:'700px' });
+  try {
+    const response = await _pluginApi.request(`/workspaces/${ws.id}/proxmox-vm-templates`);
+    const templates = Array.isArray(response?.templates) ? response.templates : [];
+    showModal(`
+      <div class="tp-page-header" style="margin-bottom:12px;"><div><h2 style="margin:0;">${icon('layers',16)} VM-Vorlagen</h2><p class="tp-muted" style="font-size:12px;margin:4px 0 0;">Wiederverwendbare Standardwerte für neue Proxmox-VMs.</p></div>${btn('primary sm', 'tofu-vm-template-add', icon('plus',12)+' Neue Vorlage')}</div>
+      <div class="tp-card" style="padding:0;overflow:hidden;">
+        ${templates.length ? `<table class="tp-table"><thead><tr><th>Vorlage</th><th>Compute</th><th>Netzwerk</th><th></th></tr></thead><tbody>${templates.map(template => {
+          const config = template.config || {};
+          return `<tr><td><strong>${esc(template.name)}</strong><div class="tp-muted tp-mono" style="font-size:11px;margin-top:2px;">${esc(config.node_name || '—')} · Template ${esc(config.clone_vm_id || '—')}</div></td><td>${esc(config.cpu_cores || '—')} vCPU<div class="tp-muted" style="font-size:11px;margin-top:2px;">${esc(config.memory_mb || '—')} MB · ${esc(config.disk_size_gb || '—')} GB</div></td><td>${esc(config.bridge || '—')}${config.vlan_id ? ` · VLAN ${esc(config.vlan_id)}` : ''}<div class="tp-muted tp-mono" style="font-size:11px;margin-top:2px;">${esc(config.ipv4_address || 'dhcp')}</div></td><td style="text-align:right;white-space:nowrap;">${btn('secondary sm icon tofu-vm-template-edit', '', icon('pen',12), `data-id="${esc(template.id)}" title="Bearbeiten"`)} ${btn('danger sm icon tofu-vm-template-delete', '', icon('trash',12), `data-id="${esc(template.id)}" title="Löschen"`)}</td></tr>`;
+        }).join('')}</tbody></table>` : `<div class="tp-empty" style="padding:30px 20px;">${icon('layers',28)}<h3>Noch keine VM-Vorlagen</h3><p>Lege eine Vorlage an und verwende sie bei jeder neuen VM wieder.</p></div>`}
+      </div>
+      <div class="tp-form-actions" style="margin-top:14px;">${btn('secondary', 'tofu-vm-template-close', 'Schliessen')}</div>`, { maxWidth:'700px', onReady: () => {
+      const reopen = () => openProxmoxVmTemplatesModal(ws);
+      document.getElementById('tofu-vm-template-close').addEventListener('click', closeModal);
+      document.getElementById('tofu-vm-template-add').addEventListener('click', () => openProxmoxVmModal(ws, null, { templateOnly:true, onComplete:reopen }));
+      document.querySelectorAll('.tofu-vm-template-edit').forEach(button => button.addEventListener('click', () => {
+        const template = templates.find(item => item.id === button.dataset.id);
+        if (template) openProxmoxVmModal(ws, template.config, { templateOnly:true, templateId:template.id, templateName:template.name, onComplete:reopen });
+      }));
+      document.querySelectorAll('.tofu-vm-template-delete').forEach(button => button.addEventListener('click', async () => {
+        const template = templates.find(item => item.id === button.dataset.id);
+        if (!template || !await _internalConfirm(`VM-Vorlage „${template.name}“ löschen? Bereits erzeugte VMs bleiben unverändert.`, { title:'VM-Vorlage löschen', confirmText:'Löschen', danger:true })) return;
+        try {
+          await _pluginApi.request(`/workspaces/${ws.id}/proxmox-vm-templates/${template.id}`, { method:'DELETE' });
+          _showToast('VM-Vorlage gelöscht.', 'success');
+          reopen();
+        } catch (error) { _showToast(error.message, 'error'); }
+      }));
+    }});
+  } catch (error) {
+    showModal(`<h2>${icon('layers',16)} VM-Vorlagen</h2><p class="tp-danger-note">${esc(error.message)}</p><div class="tp-form-actions" style="margin-top:14px;">${btn('secondary', 'tofu-vm-template-close', 'Schliessen')}</div>`, { onReady: () => document.getElementById('tofu-vm-template-close').addEventListener('click', closeModal) });
+  }
 }
 
 // ── Sub-tab: Resources ────────────────────────────────────────────────────
@@ -1880,6 +2083,40 @@ function _internalConfirm(message, { title = 'Confirm', confirmText = 'Confirm',
         if (requiresText && input?.value !== requiredValue) return;
         closeModal();
         resolve(true);
+      });
+    }});
+  });
+}
+
+function confirmDestroyWorkspace(ws) {
+  const requiredValue = `DESTROY ${ws.name}`;
+  return new Promise(resolve => {
+    showModal(`
+      <h2>${icon('bomb', 17)} Infrastruktur endgültig entfernen</h2>
+      <p class="tp-danger-note"><strong>Achtung:</strong> Dies führt <code>tofu destroy -auto-approve</code> für <strong>${esc(ws.name)}</strong> aus. Alle von diesem Workspace verwalteten Ressourcen – beispielsweise VMs, Disks oder Netzwerkkonfigurationen – werden gelöscht. Fleet kann das nicht wiederherstellen.</p>
+      <label class="tp-confirm-check"><input id="destroy-acknowledge" type="checkbox"><span>Ich verstehe, dass diese Aktion nicht rückgängig gemacht werden kann.</span></label>
+      <div class="tp-form-group">
+        <label class="tp-label" for="destroy-confirm-value">Zur endgültigen Bestätigung eingeben</label>
+        <input class="tp-input tp-input-mono" id="destroy-confirm-value" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${esc(requiredValue)}">
+        <div class="tp-form-hint">Exakt: <code>${esc(requiredValue)}</code></div>
+      </div>
+      <div class="tp-form-actions">
+        ${btn('secondary', 'destroy-cancel', 'Abbrechen')}
+        ${btn('danger', 'destroy-confirm', icon('bomb', 13)+' Endgültig entfernen', 'disabled')}
+      </div>
+    `, { maxWidth: '540px', onReady: () => {
+      const acknowledgement = document.getElementById('destroy-acknowledge');
+      const input = document.getElementById('destroy-confirm-value');
+      const confirm = document.getElementById('destroy-confirm');
+      const sync = () => { confirm.disabled = !(acknowledgement.checked && input.value === requiredValue); };
+      acknowledgement.addEventListener('change', sync);
+      input.addEventListener('input', sync);
+      input.focus();
+      document.getElementById('destroy-cancel').addEventListener('click', () => { closeModal(); resolve(null); });
+      confirm.addEventListener('click', () => {
+        if (confirm.disabled) return;
+        closeModal();
+        resolve(requiredValue);
       });
     }});
   });

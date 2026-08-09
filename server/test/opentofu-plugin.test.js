@@ -26,12 +26,47 @@ const {
   extractProxmoxGuestIpv4,
   pruneWorkspaceRuns,
   moveWorkspaceDirectory,
+  destroyConfirmationPhrase,
+  hasValidDestroyConfirmation,
+  normalizePostDeployPlaybooks,
+  normalizeProxmoxVmTemplate,
 } = opentofuPlugin._test;
 
 after(() => {
   for (const ext of ['', '-wal', '-shm']) {
     try { fs.unlinkSync(process.env.DB_PATH + ext); } catch {}
   }
+});
+
+test('destroy requires a workspace-specific confirmation phrase', () => {
+  const phrase = destroyConfirmationPhrase('production');
+  assert.equal(phrase, 'DESTROY production');
+  assert.equal(hasValidDestroyConfirmation(phrase, 'production'), true);
+  assert.equal(hasValidDestroyConfirmation('production', 'production'), false);
+  assert.equal(hasValidDestroyConfirmation('DESTROY staging', 'production'), false);
+  assert.equal(hasValidDestroyConfirmation(null, 'production'), false);
+});
+
+test('post-deploy playbook selections are normalized and path-safe', () => {
+  assert.deepEqual(
+    normalizePostDeployPlaybooks(['docker-install.yml', 'system/agent/agent-update.yml', 'docker-install.yml']),
+    ['docker-install.yml', 'system/agent/agent-update.yml']
+  );
+  assert.throws(() => normalizePostDeployPlaybooks(['../../escape.yml']), /Ungültiger Playbook-Name/);
+  assert.throws(() => normalizePostDeployPlaybooks('docker-install.yml'), /Liste/);
+});
+
+test('VM templates preserve a validated post-deploy order', () => {
+  const template = normalizeProxmoxVmTemplate({
+    name: 'Ubuntu App Server',
+    config: {
+      name: 'app-01', node_name: 'pve001', disk_datastore: 'local-lvm',
+      post_deploy_playbooks: ['system/update.yml', 'docker/install.yml'],
+    },
+  });
+  assert.equal(template.name, 'Ubuntu App Server');
+  assert.deepEqual(template.config.post_deploy_playbooks, ['system/update.yml', 'docker/install.yml']);
+  assert.throws(() => normalizeProxmoxVmTemplate({ name: 'Bad', config: null }), /gültige Konfiguration/);
 });
 
 test('extractManagedServersFromState prefers explicit shipyard outputs', () => {

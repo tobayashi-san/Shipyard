@@ -161,6 +161,26 @@ export function PluginHostPage() {
     queryKey: ['servers'],
     queryFn: async () => asArray(await api.getServers()),
   });
+  // Plugin UIs own transient state such as their active workspace or editor.
+  // Keep their mount stable when React Query refreshes data in the background.
+  // Re-mounting on every server update used to reset OpenTofu back to its
+  // dashboard after an init/apply run completed.
+  const pluginStateRef = useRef<PluginCtxState>({
+    currentView: 'plugin',
+    selectedServerId: null,
+    servers: [],
+    plugins: [],
+    user: null,
+    whiteLabel: {},
+  });
+  pluginStateRef.current = {
+    currentView: 'plugin',
+    selectedServerId: null,
+    servers: asArray(servers),
+    plugins: asArray(plugins),
+    user: profile ?? null,
+    whiteLabel: settings ?? {},
+  };
 
   const pluginInfo = asArray<PluginInfo>(plugins).find(p => p.id === id);
 
@@ -194,14 +214,7 @@ export function PluginHostPage() {
           pluginApi: {
             request: (path, options) => apiFetch(`/plugin/${id}${path}`, options),
           },
-          state: {
-            currentView: 'plugin',
-            selectedServerId: null,
-            servers: asArray(servers),
-            plugins: asArray(plugins),
-            user: profile ?? null,
-            whiteLabel: settings ?? {},
-          },
+          state: pluginStateRef.current,
           navigate: (to: string) => {
             // Map legacy shorthand routes to full paths used by the new frontend
             const routeMap: Record<string, string> = {
@@ -256,7 +269,7 @@ export function PluginHostPage() {
       const container = containerRef.current;
       if (container) container.innerHTML = '';
     };
-  }, [id, navigate, t, plugins, servers, profile, settings, qc]);
+  }, [id, navigate, t, qc]);
 
   return (
     <div className="space-y-6">
