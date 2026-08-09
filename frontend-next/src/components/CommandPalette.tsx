@@ -12,7 +12,7 @@ import { api } from '@/lib/api';
 import { useProfile, usePlugins, hasCap, canSeePlugin } from '@/lib/queries';
 import { useUi } from '@/lib/store';
 import { setToken } from '@/lib/auth';
-import { cn } from '@/lib/utils';
+import { asArray, cn } from '@/lib/utils';
 
 interface ServerListItem { id: string; name: string; ip_address?: string; status?: string }
 interface PlaybookListItem { id: string; name?: string; filename?: string }
@@ -86,9 +86,11 @@ export function CommandPalette() {
   });
 
   const sidebarPlugins = useMemo(
-    () => plugins.filter(p => p.enabled && p.sidebar && canSeePlugin(profile, p.id)),
+    () => asArray<typeof plugins[number]>(plugins).filter(p => p.enabled && p.sidebar && canSeePlugin(profile, p.id)),
     [plugins, profile]
   );
+  const safeServers = asArray<ServerListItem>(servers);
+  const safePlaybooks = asArray<PlaybookListItem>(playbooks);
 
   const close = () => setOpen(false);
   const go = (path: string) => { close(); navigate({ to: path }); };
@@ -128,9 +130,9 @@ export function CommandPalette() {
                   {profile?.role === 'admin' && <PaletteItem icon={<Settings className="h-4 w-4" />} label={t('nav.settings')} shortcut="g ," onSelect={() => go('/settings')} />}
                 </Command.Group>
 
-                {servers.length > 0 && (
+                {safeServers.length > 0 && (
                   <Command.Group heading={t('cmd.servers')} className="mt-2 text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
-                    {servers.slice(0, 30).map(s => (
+                    {safeServers.slice(0, 30).map(s => (
                       <PaletteItem
                         key={s.id}
                         icon={<span className={cn('h-1.5 w-1.5 rounded-full', s.status === 'online' ? 'bg-emerald-500' : 'bg-muted-foreground/40')} />}
@@ -143,9 +145,9 @@ export function CommandPalette() {
                   </Command.Group>
                 )}
 
-                {playbooks.length > 0 && (
+                {safePlaybooks.length > 0 && (
                   <Command.Group heading={t('cmd.playbooks')} className="mt-2 text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
-                    {playbooks.slice(0, 20).map(p => (
+                    {safePlaybooks.slice(0, 20).map(p => (
                       <PaletteItem
                         key={p.id}
                         icon={<FileCode2 className="h-4 w-4" />}

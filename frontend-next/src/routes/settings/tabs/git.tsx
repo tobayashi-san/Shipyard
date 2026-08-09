@@ -5,6 +5,7 @@ import {
   GitBranch, GitCommit, ArrowDown, ArrowUp, Plug, Unplug, Save, RotateCw, User,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { asArray } from '@/lib/utils';
 import { showToast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -149,8 +150,8 @@ function GitDashboard({ cfg }: { cfg: GitConfig }) {
     const b = branchesQ.data;
     if (!b) return [cfg.branch || 'main'];
     const list = new Set<string>([
-      ...(b.local || []),
-      ...((b.remote || []).map((x) => x.replace(/^origin\//, ''))),
+      ...asArray<string>(b.local),
+      ...asArray<string>(b.remote).map((x) => x.replace(/^origin\//, '')),
     ]);
     return Array.from(list);
   })();
@@ -293,7 +294,7 @@ function GitLogPanel() {
     queryFn: () => api.getGitLog(page, limit) as unknown as Promise<GitLogResp>,
   });
 
-  const commits = logQ.data?.items || [];
+  const commits = asArray<NonNullable<GitLogResp['items']>[number]>(logQ.data?.items);
   const pag = logQ.data?.pagination || { has_prev: false, has_next: false, total: 0 };
 
   let metaText = '';

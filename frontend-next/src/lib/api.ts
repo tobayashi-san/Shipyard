@@ -124,6 +124,12 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
   return (await res.text()) as unknown as T;
 }
 
+/** Collection endpoint wrapper that makes stale/malformed responses safe for UI consumers. */
+export async function apiFetchArray<T = unknown>(path: string, options: RequestOptions = {}): Promise<T[]> {
+  const response = await apiFetch<unknown>(path, options);
+  return Array.isArray(response) ? response as T[] : [];
+}
+
 /** Download helper for binary endpoints (e.g. server export). */
 export async function apiDownload(path: string, filename: string): Promise<void> {
   const tok = getToken();
@@ -166,9 +172,11 @@ export const api = {
 
   // Dashboard
   getDashboard:      () => apiFetch<AnyObj>('/dashboard'),
-  getEnvironments:   () => apiFetch<AnyObj[]>('/environments'),
+  getEnvironments:   () => apiFetchArray<AnyObj>('/environments'),
   createEnvironment: (name: string) => apiFetch<AnyObj>('/environments', { method: 'POST', body: { name } }),
-  getAlerts:         (status = 'active') => apiFetch<AnyObj[]>(`/alerts?status=${encodeURIComponent(status)}`),
+  updateEnvironment: (id: string | number, name: string) => apiFetch(`/environments/${id}`, { method: 'PUT', body: { name } }),
+  deleteEnvironment: (id: string | number) => apiFetch(`/environments/${id}`, { method: 'DELETE' }),
+  getAlerts:         (status = 'active') => apiFetchArray<AnyObj>(`/alerts?status=${encodeURIComponent(status)}`),
   acknowledgeAlert:  (id: string | number) => apiFetch(`/alerts/${id}/ack`, { method: 'POST' }),
   unacknowledgeAlert:(id: string | number) => apiFetch(`/alerts/${id}/unack`, { method: 'POST' }),
   ping:              () => apiFetch<{ ok: boolean; ts: number }>('/ping'),
@@ -265,11 +273,11 @@ export const api = {
   markOnboardingDone:() => apiFetch('/system/onboarding-complete', { method: 'POST' }),
 
   // Playbooks
-  getPlaybooks:      () => apiFetch<AnyObj[]>('/playbooks'),
+  getPlaybooks:      () => apiFetchArray<AnyObj>('/playbooks'),
   getPlaybook:       (filename: string) => apiFetch<{ content: string }>(`/playbooks/${encodeURIComponent(filename)}`),
   savePlaybook:      (filename: string, content: string) => apiFetch('/playbooks', { method: 'POST', body: { filename, content } }),
   deletePlaybook:    (filename: string) => apiFetch(`/playbooks/${encodeURIComponent(filename)}`, { method: 'DELETE' }),
-  getPlaybookHistory:(filename: string) => apiFetch<AnyObj[]>(`/playbooks/${encodeURIComponent(filename)}/history`),
+  getPlaybookHistory:(filename: string) => apiFetchArray<AnyObj>(`/playbooks/${encodeURIComponent(filename)}/history`),
   getPlaybookVersion:(filename: string, version: string | number) => apiFetch(`/playbooks/${encodeURIComponent(filename)}/history/${version}`),
   restorePlaybook:   (filename: string, version: string | number) => apiFetch(`/playbooks/${encodeURIComponent(filename)}/restore/${version}`, { method: 'POST' }),
 
@@ -283,7 +291,7 @@ export const api = {
     apiFetch('/adhoc/run', { method: 'POST', body: { targets, module, args } }),
 
   // Schedules
-  getSchedules:      () => apiFetch<AnyObj[]>('/schedules'),
+  getSchedules:      () => apiFetchArray<AnyObj>('/schedules'),
   createSchedule:    (data: AnyObj) => apiFetch('/schedules', { method: 'POST', body: data }),
   updateSchedule:    (id: string | number, data: AnyObj) => apiFetch(`/schedules/${id}`, { method: 'PUT', body: data }),
   deleteSchedule:    (id: string | number) => apiFetch(`/schedules/${id}`, { method: 'DELETE' }),
@@ -291,12 +299,12 @@ export const api = {
   getScheduleHistory:(limit = 100, scheduleId: string | number | null = null) => {
     const q = new URLSearchParams({ limit: String(limit) });
     if (scheduleId) q.set('scheduleId', String(scheduleId));
-    return apiFetch<AnyObj[]>(`/schedule-history?${q}`);
+    return apiFetchArray<AnyObj>(`/schedule-history?${q}`);
   },
   getScheduleHistoryEntry: (id: string | number) => apiFetch<AnyObj>(`/schedule-history/${id}`),
 
   // Ansible vars
-  getAnsibleVars:    () => apiFetch<AnyObj[]>('/ansible-vars'),
+  getAnsibleVars:    () => apiFetchArray<AnyObj>('/ansible-vars'),
   createAnsibleVar:  (data: AnyObj) => apiFetch('/ansible-vars', { method: 'POST', body: data }),
   updateAnsibleVar:  (id: string | number, data: AnyObj) => apiFetch(`/ansible-vars/${id}`, { method: 'PUT', body: data }),
   deleteAnsibleVar:  (id: string | number) => apiFetch(`/ansible-vars/${id}`, { method: 'DELETE' }),
@@ -317,7 +325,7 @@ export const api = {
   gitPush:           () => apiFetch('/playbooks-git/push', { method: 'POST' }),
 
   // Plugins
-  getPlugins:        () => apiFetch<AnyObj[]>('/plugins'),
+  getPlugins:        () => apiFetchArray<AnyObj>('/plugins'),
   enablePlugin:      (id: string) => apiFetch(`/plugins/${id}/enable`, { method: 'POST' }),
   disablePlugin:     (id: string) => apiFetch(`/plugins/${id}/disable`, { method: 'POST' }),
   reloadPlugins:     () => apiFetch('/plugins/reload', { method: 'POST' }),
@@ -331,7 +339,7 @@ export const api = {
     apiFetch(`/v1/servers/${serverId}/agent/token-rotate`, { method: 'POST', body: data }),
   removeAgent:       (serverId: string | number) => apiFetch(`/v1/servers/${serverId}/agent`, { method: 'DELETE' }),
   getAgentManifest:  () => apiFetch<{ content: string }>('/v1/agent-manifest'),
-  getAgentManifestHistory: (limit = 50) => apiFetch<AnyObj[]>(`/v1/agent-manifest/history?limit=${limit}`),
+  getAgentManifestHistory: (limit = 50) => apiFetchArray<AnyObj>(`/v1/agent-manifest/history?limit=${limit}`),
   saveAgentManifest: (content: string, changelog = '') =>
     apiFetch('/v1/agent-manifest', { method: 'PUT', body: { content, changelog } }),
 

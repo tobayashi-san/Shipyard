@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from '@tanstack/react-router';
-import { Bug, ChevronDown, Github, HelpCircle, Languages, LogOut, Menu, Moon, Palette, PanelLeft, Search, Sun, User, UserRoundCog } from 'lucide-react';
+import { Bug, ChevronDown, Github, HelpCircle, Languages, LogOut, Menu, Moon, Palette, PanelLeft, Pencil, Search, Sun, Trash2, User, UserRoundCog } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sidebar } from './Sidebar';
 import { CommandPalette } from '@/components/CommandPalette';
@@ -43,6 +43,17 @@ export function AppShell({ children }: { children: ReactNode }) {
       void queryClient.invalidateQueries({ queryKey: ['environments'] });
       setEnvironmentId(String(environment.id));
       setNewEnvironmentName('');
+    },
+  });
+  const renameEnvironment = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => api.updateEnvironment(id, name),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['environments'] }),
+  });
+  const removeEnvironment = useMutation({
+    mutationFn: (id: string) => api.deleteEnvironment(id),
+    onSuccess: (_, id) => {
+      if (environmentId === id) setEnvironmentId('default');
+      void queryClient.invalidateQueries({ queryKey: ['environments'] });
     },
   });
 
@@ -126,7 +137,17 @@ export function AppShell({ children }: { children: ReactNode }) {
             </button>
             {environmentOpen && <div className="absolute right-0 top-9 z-50 w-56 rounded-md border border-border/90 bg-popover p-1.5 shadow-xl dark:bg-[#242424]">
               <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Umgebungen</div>
-              {environments.map((item) => <button key={String(item.id)} type="button" onClick={() => { setEnvironmentId(String(item.id)); setEnvironmentOpen(false); }} className={cn('flex w-full items-center justify-between rounded-sm px-2 py-2 text-sm hover:bg-accent', String(item.id) === environmentId && 'bg-accent font-medium')}><span>{String(item.name)}</span><span className="text-xs text-muted-foreground">{String(item.server_count ?? 0)}</span></button>)}
+              {environments.map((item) => {
+                const id = String(item.id);
+                const name = String(item.name);
+                return <div key={id} className={cn('group flex items-center rounded-sm hover:bg-accent', id === environmentId && 'bg-accent')}>
+                  <button type="button" onClick={() => { setEnvironmentId(id); setEnvironmentOpen(false); }} className={cn('flex min-w-0 flex-1 items-center justify-between px-2 py-2 text-sm', id === environmentId && 'font-medium')}><span className="truncate">{name}</span><span className="ml-2 text-xs text-muted-foreground">{String(item.server_count ?? 0)}</span></button>
+                  {isAdmin && <div className="mr-1 hidden items-center gap-0.5 group-hover:flex">
+                    <button type="button" title="Umgebung umbenennen" className="rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground" onClick={() => { const next = window.prompt('Name der Umgebung', name)?.trim(); if (next && next !== name) renameEnvironment.mutate({ id, name: next }); }}><Pencil className="h-3 w-3" /></button>
+                    {id !== 'default' && <button type="button" title="Umgebung löschen" className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={() => { if (window.confirm(`Umgebung „${name}“ löschen? Zugeordnete Server werden in die Standardumgebung verschoben.`)) removeEnvironment.mutate(id); }}><Trash2 className="h-3 w-3" /></button>}
+                  </div>}
+                </div>;
+              })}
               {isAdmin && <form className="mt-1.5 flex gap-1 border-t pt-1.5" onSubmit={(event) => { event.preventDefault(); const name = newEnvironmentName.trim(); if (name) createEnvironment.mutate(name); }}>
                 <input value={newEnvironmentName} onChange={(event) => setNewEnvironmentName(event.target.value)} placeholder="Neue Umgebung" className="h-8 min-w-0 flex-1 rounded-sm border bg-background px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring" />
                 <Button type="submit" size="sm" className="h-8 px-2 text-xs" disabled={!newEnvironmentName.trim() || createEnvironment.isPending}>+</Button>

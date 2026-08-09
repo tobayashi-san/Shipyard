@@ -7,8 +7,8 @@ import {
 } from 'lucide-react';
 import { useUi } from '@/lib/store';
 import { LOGO_ICONS } from '@/routes/settings/tabs/appearance';
-import { cn } from '@/lib/utils';
-import { useProfile, usePlugins, useSettings, hasCap, canSeePlugin } from '@/lib/queries';
+import { asArray, cn } from '@/lib/utils';
+import { useProfile, usePlugins, useSettings, hasCap, canSeePlugin, type PluginInfo } from '@/lib/queries';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
@@ -54,8 +54,8 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
     queryFn: () => api.getServers() as Promise<{ status?: string }[]>,
     staleTime: 30_000,
   });
-  const onlineCount = (Array.isArray(rawServers) ? rawServers : []).filter(s => s.status === 'online').length;
-  const plugins = Array.isArray(pluginsData) ? pluginsData : [];
+  const onlineCount = asArray<{ status?: string }>(rawServers).filter(s => s.status === 'online').length;
+  const plugins = asArray<PluginInfo>(pluginsData);
 
   // Branding from settings
   const wl = settings as Record<string, unknown> | undefined;

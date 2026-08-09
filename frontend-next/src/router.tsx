@@ -1,15 +1,18 @@
 import { createRootRoute, createRoute, createRouter, Outlet, redirect } from '@tanstack/react-router';
+import { lazy, Suspense, type ReactNode } from 'react';
 import { AppShell } from '@/components/layout/AppShell';
 import { LoginPage } from '@/routes/login';
 import { OnboardingPage } from '@/routes/onboarding';
 import { DashboardPage } from '@/routes/dashboard';
-import { ServersPage } from '@/routes/servers';
-import { ServerDetailPage } from '@/routes/server-detail';
-import { PlaybooksPage } from '@/routes/playbooks';
-import { SettingsPage } from '@/routes/settings';
-import { ProfilePage } from '@/routes/profile';
-import { PluginHostPage } from '@/routes/_legacy/plugins';
 import { getToken } from '@/lib/auth';
+
+const PlaybooksPage = lazy(() => import('@/routes/playbooks').then(module => ({ default: module.PlaybooksPage })));
+const ServersPage = lazy(() => import('@/routes/servers').then(module => ({ default: module.ServersPage })));
+const ServerDetailPage = lazy(() => import('@/routes/server-detail').then(module => ({ default: module.ServerDetailPage })));
+const SettingsPage = lazy(() => import('@/routes/settings').then(module => ({ default: module.SettingsPage })));
+const ProfilePage = lazy(() => import('@/routes/profile').then(module => ({ default: module.ProfilePage })));
+const PluginHostPage = lazy(() => import('@/routes/_legacy/plugins').then(module => ({ default: module.PluginHostPage })));
+const LazyPage = ({ children }: { children: ReactNode }) => <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Lade Konsole…</div>}>{children}</Suspense>;
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
 
@@ -42,17 +45,17 @@ const protectedLayout = createRoute({
 });
 
 const dashboardRoute  = createRoute({ getParentRoute: () => protectedLayout, path: '/',             component: DashboardPage });
-const serversRoute    = createRoute({ getParentRoute: () => protectedLayout, path: '/servers',      component: ServersPage });
-const serverDetail    = createRoute({ getParentRoute: () => protectedLayout, path: '/servers/$id',  component: ServerDetailPage });
-const playbooksRoute  = createRoute({ getParentRoute: () => protectedLayout, path: '/playbooks',    component: PlaybooksPage });
-const profileRoute    = createRoute({ getParentRoute: () => protectedLayout, path: '/profile',      component: ProfilePage });
+const serversRoute    = createRoute({ getParentRoute: () => protectedLayout, path: '/servers',      component: () => <LazyPage><ServersPage /></LazyPage> });
+const serverDetail    = createRoute({ getParentRoute: () => protectedLayout, path: '/servers/$id',  component: () => <LazyPage><ServerDetailPage /></LazyPage> });
+const playbooksRoute  = createRoute({ getParentRoute: () => protectedLayout, path: '/playbooks',    component: () => <LazyPage><PlaybooksPage /></LazyPage> });
+const profileRoute    = createRoute({ getParentRoute: () => protectedLayout, path: '/profile',      component: () => <LazyPage><ProfilePage /></LazyPage> });
 // Settings is the single page that hosts: appearance, ssh, system, agent-manifest,
 // notifications, git, plugins, users-roles, audit, danger.
 // Tab is selected via the optional :tab path segment (default = appearance).
-const settingsRoute   = createRoute({ getParentRoute: () => protectedLayout, path: '/settings',     component: SettingsPage });
-const settingsTabRoute= createRoute({ getParentRoute: () => protectedLayout, path: '/settings/$tab', component: SettingsPage });
+const settingsRoute   = createRoute({ getParentRoute: () => protectedLayout, path: '/settings',     component: () => <LazyPage><SettingsPage /></LazyPage> });
+const settingsTabRoute= createRoute({ getParentRoute: () => protectedLayout, path: '/settings/$tab', component: () => <LazyPage><SettingsPage /></LazyPage> });
 // Plugin host route: dynamically loaded plugin UIs (sidebar entries link here).
-const pluginHostRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/plugins/$id',  component: PluginHostPage });
+const pluginHostRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/plugins/$id',  component: () => <LazyPage><PluginHostPage /></LazyPage> });
 
 const routeTree = rootRoute.addChildren([
   loginRoute,

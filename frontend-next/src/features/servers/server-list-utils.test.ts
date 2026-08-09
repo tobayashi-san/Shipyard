@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildGroupTree, normalizeServer, parseCsvServers } from './server-list-utils';
+import { buildGroupTree, getDescendantIds, normalizeServer, parseCsvServers } from './server-list-utils';
 
 describe('server list helpers', () => {
   it('normalizes malformed serialized arrays safely', () => {
@@ -21,5 +21,14 @@ describe('server list helpers', () => {
     ]);
     expect(tree).toHaveLength(1);
     expect(tree[0].children[0].id).toBe('child');
+  });
+
+  it('includes descendants when a parent group is used as a filter', () => {
+    const ids = getDescendantIds([
+      { id: 'prod', name: 'Production' },
+      { id: 'web', name: 'Web', parent_id: 'prod' },
+      { id: 'db', name: 'Database', parent_id: 'web' },
+    ], 'prod');
+    expect([...ids]).toEqual(['prod', 'web', 'db']);
   });
 });

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Bot, Clock, History, RotateCw, Save } from 'lucide-react';
 import { api } from '@/lib/api';
+import { asArray } from '@/lib/utils';
 import { showToast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -70,7 +71,7 @@ export function AgentManifestTab() {
     );
   }
 
-  const history = historyQ.data || [];
+  const history = asArray<ManifestHistoryEntry>(historyQ.data);
 
   return (
     <div className="space-y-4">

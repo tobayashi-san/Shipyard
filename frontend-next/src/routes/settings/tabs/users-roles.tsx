@@ -9,7 +9,7 @@ import {
 import { api } from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { useProfile } from '@/lib/queries';
-import { cn } from '@/lib/utils';
+import { asArray, cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -637,10 +637,10 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
   const [pbMode, setPbMode] = useState<'all' | 'restricted'>(initPbMode);
   const [plMode, setPlMode] = useState<'all' | 'restricted'>(initPlMode);
   const [groupsSel, setGroupsSel] = useState<Set<string>>(
-    new Set(((typeof p.servers === 'object' && p.servers?.groups) || []).map(String))
+    new Set(asArray<string | number>(typeof p.servers === 'object' && p.servers?.groups).map(String))
   );
   const [serversSel, setServersSel] = useState<Set<string>>(
-    new Set(((typeof p.servers === 'object' && p.servers?.servers) || []).map(String))
+    new Set(asArray<string | number>(typeof p.servers === 'object' && p.servers?.servers).map(String))
   );
   const [pbSel, setPbSel] = useState<Set<string>>(
     new Set(Array.isArray(p.playbooks) ? p.playbooks : [])
@@ -684,7 +684,7 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
     onError: (e) => setError((e as Error).message),
   });
 
-  const sidebarPlugins = (pluginsQ.data || []).filter(pl => pl.sidebar);
+  const sidebarPlugins = asArray<PluginRow>(pluginsQ.data).filter(pl => pl.sidebar);
   const enabledCaps = ALL_CAPS.filter(c => !!caps[c.key]);
   const dangerousEnabled = enabledCaps.filter(c => DANGEROUS_CAPS.has(c.key));
 
@@ -758,7 +758,7 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
                   <div>
                     <div className="mb-1 text-xs font-medium text-muted-foreground">{t('set.serverGroups')}</div>
                     <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-                      {(groupsQ.data || []).map(g => (
+                      {asArray<GroupRow>(groupsQ.data).map(g => (
                         <CheckRow key={g.id}
                           checked={groupsSel.has(String(g.id))}
                           onChange={() => toggleSet(groupsSel, setGroupsSel, String(g.id))}
@@ -776,7 +776,7 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
                   <div>
                     <div className="mb-1 text-xs font-medium text-muted-foreground">{t('set.individualServers')}</div>
                     <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-                      {(serversQ.data || []).map(s => (
+                      {asArray<ServerRow>(serversQ.data).map(s => (
                         <CheckRow key={s.id}
                           checked={serversSel.has(String(s.id))}
                           onChange={() => toggleSet(serversSel, setServersSel, String(s.id))}
@@ -810,7 +810,7 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
             <RadioRow name="playbooks" mode={pbMode} setMode={setPbMode} />
             {pbMode === 'restricted' && (
               <div className="space-y-1 rounded-md border p-3">
-                {(playbooksQ.data || []).map(pb => (
+                {asArray<PlaybookRow>(playbooksQ.data).map(pb => (
                   <CheckRow key={pb.filename}
                     checked={pbSel.has(pb.filename)}
                     onChange={() => toggleSet(pbSel, setPbSel, pb.filename)}

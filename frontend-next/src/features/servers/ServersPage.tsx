@@ -7,9 +7,10 @@ import {
   FolderPlus, Tags, FileJson, FileSpreadsheet, FileUp, Download,
   Play, ChevronRight, ChevronDown, Folder, FolderOpen,
   Pencil, Trash2, FolderTree, CircleDot, Info,
-  X, Rows3, Rows2, AlignJustify, CheckCircle2, Hash,
+  X, Rows3, Rows2, AlignJustify, CheckCircle2, Hash, Filter,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { asArray } from '@/lib/utils';
 import { useUi } from '@/lib/store';
 import { useProfile, hasCap } from '@/lib/queries';
 import { showToast } from '@/lib/toast';
@@ -21,6 +22,7 @@ import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/ui/page-header';
 import { LiveDot, StatusBadge } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
+import { QueryErrorState } from '@/components/ui/query-error-state';
 import { SkeletonRow } from '@/components/ui/skeleton';
 import { OverflowMenu, OverflowItem, OverflowSep } from '@/components/ui/overflow-menu';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -221,7 +223,7 @@ export function ServersPage() {
   useEffect(() => { sessionStorage.setItem('shipyard.lastNonDetailRoute', '/servers'); }, []);
 
   // ── Data queries ────────────────────────────────────────────
-  const { data: rawServers, isLoading } = useQuery({
+  const { data: rawServers, isLoading, isError: serversFailed, error: serversError, refetch: refetchServers } = useQuery({
     queryKey: ['servers'],
     queryFn: () => api.getServers() as Promise<Record<string, unknown>[]>,
   });
@@ -235,10 +237,15 @@ export function ServersPage() {
     const allServers = Array.isArray(rawServers) ? rawServers : [];
     return allServers.map(normalizeServer).filter((server) => String((server as ServerRow & { environment_id?: string }).environment_id || 'default') === environmentId);
   }, [rawServers, environmentId]);
-  const groups = useMemo(() => (rawGroups ?? []) as ServerGroup[], [rawGroups]);
+  const groups = useMemo(() => asArray<ServerGroup>(rawGroups), [rawGroups]);
 
   // ── Local UI state ──────────────────────────────────────────
   const [activeTag, setActiveTag] = useState<string | null>(() => localStorage.getItem('shipyard-next.server-tag') || null);
+  const [activeStatus, setActiveStatus] = useState<'all' | 'online' | 'offline' | 'unknown'>(() => {
+    const saved = localStorage.getItem('shipyard-next.server-status');
+    return saved === 'online' || saved === 'offline' || saved === 'unknown' ? saved : 'all';
+  });
+  const [activeGroup, setActiveGroup] = useState<string>(() => localStorage.getItem('shipyard-next.server-group') || 'all');
   const [search, setSearch] = useState(() => localStorage.getItem('shipyard-next.server-search') || '');
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -262,6 +269,8 @@ export function ServersPage() {
     else localStorage.removeItem('shipyard-next.server-tag');
   }, [activeTag]);
   useEffect(() => { localStorage.setItem('shipyard-next.server-search', search); }, [search]);
+  useEffect(() => { localStorage.setItem('shipyard-next.server-status', activeStatus); }, [activeStatus]);
+  useEffect(() => { localStorage.setItem('shipyard-next.server-group', activeGroup); }, [activeGroup]);
   useEffect(() => {
     const focusSearch = (event: KeyboardEvent) => {
       if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return;
@@ -286,10 +295,16 @@ export function ServersPage() {
     const query = search.trim().toLowerCase();
     return servers.filter((server) => {
       const matchesTag = !activeTag || (server.tags || []).includes(activeTag);
+      const matchesStatus = activeStatus === 'all' || server.status === activeStatus;
+      const scopedGroups = activeGroup === 'all' || activeGroup === '__ungrouped__'
+        ? undefined
+        : getDescendantIds(groups, activeGroup);
+      const matchesGroup = activeGroup === 'all'
+        || (activeGroup === '__ungrouped__' ? !server.group_id : scopedGroups?.has(String(server.group_id)));
       const haystack = [server.name, server.ip_address, ...(server.tags || [])].join(' ').toLowerCase();
-      return matchesTag && (!query || haystack.includes(query));
+      return matchesTag && matchesStatus && matchesGroup && (!query || haystack.includes(query));
     });
-  }, [servers, activeTag, search]);
+  }, [servers, groups, activeTag, activeStatus, activeGroup, search]);
   const sortedServers = useMemo(() => [...filtered].sort((a, b) => {
     if (sortBy === 'status') {
       const rank = (status?: string) => status === 'offline' ? 0 : status === 'unknown' ? 1 : 2;
@@ -854,35 +869,46 @@ export function ServersPage() {
         </div>
       )}
 
-      {/* Tag filter bar */}
-      {(allTags.length > 0 || search) && (
-        <div className="flex flex-wrap items-center gap-1.5" aria-label={t('srv.filterTags')}>
-          <button type="button"
-            onClick={() => { setActiveTag(null); setPage(1); }}
-            className={`inline-flex h-7 items-center rounded-full px-3 text-xs font-medium transition-colors ${
-              activeTag === null
-                ? 'bg-primary text-primary-foreground border border-primary'
-                : 'border border-border bg-background text-muted-foreground hover:border-foreground/30 hover:text-foreground'
-            }`}>
-            {t('srv.filterAll')}
-          </button>
-          {allTags.map(tag => {
-            const active = activeTag === tag;
-            return (
-              <button key={tag} type="button"
-                onClick={() => { setActiveTag(tag); setPage(1); }}
-                className={`inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-xs font-medium transition-colors ${
-                  active
-                    ? 'bg-primary text-primary-foreground border border-primary'
-                    : 'border border-border bg-background text-muted-foreground hover:border-foreground/30 hover:text-foreground'
-                }`}>
-                <Hash className={`h-3 w-3 ${active ? '' : 'opacity-60'}`} />
-                {tag}
-              </button>
-            );
-          })}
-          {(activeTag || search) && (
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => { setActiveTag(null); setSearch(''); setPage(1); }}>
+      {/* Operational filters */}
+      {(allTags.length > 0 || groups.length > 0 || search || activeStatus !== 'all') && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-card px-3 py-2.5" aria-label={t('srv.filterTags')}>
+          <span className="section-label flex items-center gap-1.5"><Filter className="h-3.5 w-3.5" /> {t('srv.filters')}</span>
+
+          <div className="inline-flex rounded-md border bg-muted/30 p-0.5" aria-label={t('srv.filterStatus')}>
+            {(['all', 'online', 'offline', 'unknown'] as const).map(status => {
+              const label = status === 'all' ? t('srv.statusAll') : status === 'online' ? t('common.online') : status === 'offline' ? t('common.offline') : t('common.unknown');
+              return <button key={status} type="button" onClick={() => { setActiveStatus(status); setPage(1); }}
+                className={`h-7 rounded-sm px-2.5 text-xs font-medium transition-colors ${activeStatus === status ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
+                {label}
+              </button>;
+            })}
+          </div>
+
+          {groups.length > 0 && (
+            <select value={activeGroup} onChange={event => { setActiveGroup(event.target.value); setPage(1); }} aria-label={t('srv.filterGroup')}
+              className="h-8 max-w-48 rounded-md border bg-background px-2 text-xs text-muted-foreground">
+              <option value="all">{t('srv.groupAll')}</option>
+              <option value="__ungrouped__">{t('srv.moveToRoot')}</option>
+              {groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}
+            </select>
+          )}
+
+          {allTags.length > 0 && (
+            <div className="flex max-w-full flex-wrap items-center gap-1.5" aria-label={t('srv.filterTags')}>
+              {allTags.map(tag => {
+                const active = activeTag === tag;
+                return (
+                  <button key={tag} type="button" onClick={() => { setActiveTag(active ? null : tag); setPage(1); }}
+                    className={`inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-xs font-medium transition-colors ${active ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background text-muted-foreground hover:border-foreground/30 hover:text-foreground'}`}>
+                    <Hash className={`h-3 w-3 ${active ? '' : 'opacity-60'}`} />{tag}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {(activeTag || activeStatus !== 'all' || activeGroup !== 'all' || search) && (
+            <Button variant="ghost" size="sm" className="ml-auto h-7 px-2 text-xs" onClick={() => { setActiveTag(null); setActiveStatus('all'); setActiveGroup('all'); setSearch(''); setPage(1); }}>
               <X className="h-3 w-3" /> {t('common.clear')}
             </Button>
           )}
@@ -896,6 +922,8 @@ export function ServersPage() {
             <div className="py-2">
               {Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} cols={6} />)}
             </div>
+          ) : serversFailed ? (
+            <QueryErrorState compact error={serversError} onRetry={() => { void refetchServers(); }} title="Server konnten nicht geladen werden" />
           ) : servers.length === 0 ? (
             <EmptyState
               icon={<ServerIcon className="h-5 w-5" />}
@@ -1147,7 +1175,7 @@ export function ServersPage() {
               <select value={selectedPlaybook} onChange={e => setSelectedPlaybook(e.target.value)}
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
                 <option value="">{t('srv.choosePlaybook')}</option>
-                {(playbooks ?? []).filter(p => !p.isInternal).map(p => <option key={p.filename} value={p.filename}>{p.description || p.filename}</option>)}
+                {asArray<{ filename: string; description?: string; isInternal?: boolean }>(playbooks).filter(p => !p.isInternal).map(p => <option key={p.filename} value={p.filename}>{p.description || p.filename}</option>)}
               </select>
             </div>
             <div className="space-y-1.5">

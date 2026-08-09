@@ -12,6 +12,7 @@ import { showToast } from '@/lib/toast';
 import { ws } from '@/lib/ws';
 import { actionLabel, statusLabel } from '@/lib/history-labels';
 import { useUi } from '@/lib/store';
+import { asArray } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -153,7 +154,7 @@ export function DashboardPage() {
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const onlineIds = (data?.servers ?? [])
+      const onlineIds = asArray<ServerInfo>(data?.servers)
         .filter(s => s.status === 'online')
         .map(s => s.id);
       // Force-refresh both system info and updates cache for all online servers in parallel
@@ -181,11 +182,11 @@ export function DashboardPage() {
   const isBusy = isFetching || refreshing;
 
   const servers = useMemo(() => {
-    const allServers = Array.isArray(data?.servers) ? data.servers as ServerInfo[] : [];
+    const allServers = asArray<ServerInfo>(data?.servers);
     return allServers.filter((server) => String((server as ServerInfo & { environment_id?: string }).environment_id || 'default') === environmentId);
   }, [data?.servers, environmentId]);
   const summary = useMemo(() => ({ total: servers.length, online: servers.filter(s => s.status === 'online').length, offline: servers.filter(s => s.status === 'offline').length, rebootRequired: servers.filter(s => s.reboot_required).length, totalUpdates: servers.reduce((total, s) => total + (s.updates_count ?? 0), 0), criticalDisk: 0, criticalRam: 0 }), [servers]);
-  const recentHistory = data?.recentHistory ?? [];
+  const recentHistory = asArray<HistoryEntry>(data?.recentHistory);
   const [attentionOnly, setAttentionOnly] = [
     useUi((s) => s.dashAttentionOnly),
     useUi((s) => s.setDashAttentionOnly),
@@ -400,7 +401,7 @@ function UpdatesCell({ s }: { s: ServerInfo }) {
 
 function ServerRow({ s, t }: { s: ServerInfo; t: (k: string) => string }) {
   const navigate = useNavigate();
-  const tags = s.tags ?? [];
+  const tags = asArray<string>(s.tags);
   return (
     <tr className="border-b transition-colors last:border-b-0 hover:bg-muted/50 cursor-pointer"
       onClick={() => navigate({ to: '/servers/$id', params: { id: String(s.id) } })}>
@@ -442,7 +443,7 @@ function ServerRow({ s, t }: { s: ServerInfo; t: (k: string) => string }) {
 function ServerCard({ s, t }: { s: ServerInfo; t: (k: string) => string }) {
   const dotCls = s.status === 'online' ? 'bg-emerald-500' : s.status === 'offline' ? 'bg-destructive' : 'bg-muted-foreground';
   const statusLabel = s.status === 'online' ? t('common.online') : s.status === 'offline' ? t('common.offline') : t('common.unknown');
-  const tags = s.tags ?? [];
+  const tags = asArray<string>(s.tags);
   return (
     <Link to="/servers/$id" params={{ id: String(s.id) }}
       className="rounded-lg border bg-card p-4 transition-colors hover:bg-muted/50">

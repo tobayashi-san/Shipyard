@@ -1,10 +1,10 @@
-import { apiDownload, apiFetch, type AnyObj } from '../api';
+import { apiDownload, apiFetch, apiFetchArray, type AnyObj } from '../api';
 
 type Id = string | number;
 
 /** Server inventory, monitoring, Docker, and custom-update API surface. */
 export const serversApi = {
-  getServers: () => apiFetch<AnyObj[]>('/servers'),
+  getServers: () => apiFetchArray<AnyObj>('/servers'),
   getServer: (id: Id) => apiFetch<AnyObj>(`/servers/${id}`),
   createServer: (data: AnyObj) => apiFetch<AnyObj>('/servers', { method: 'POST', body: data }),
   updateServer: (id: Id, data: AnyObj) => apiFetch(`/servers/${id}`, { method: 'PUT', body: data }),
@@ -13,7 +13,7 @@ export const serversApi = {
   resetServerHostKey: (id: Id) => apiFetch(`/servers/${id}/reset-host-key`, { method: 'POST' }),
   autoGroupByTags: () => apiFetch('/servers/auto-group-by-tags', { method: 'POST' }),
   setServerGroup: (serverId: Id, groupId: Id | null) => apiFetch(`/servers/${serverId}/group`, { method: 'PUT', body: { group_id: groupId } }),
-  getServerGroups: () => apiFetch<AnyObj[]>('/servers/groups'),
+  getServerGroups: () => apiFetchArray<AnyObj>('/servers/groups'),
   createServerGroup: (name: string, color?: string, parentId?: Id | null) => apiFetch('/servers/groups', { method: 'POST', body: { name, color, parent_id: parentId ?? null } }),
   updateServerGroup: (id: Id, name: string, color?: string) => apiFetch(`/servers/groups/${id}`, { method: 'PUT', body: { name, color } }),
   deleteServerGroup: (id: Id) => apiFetch(`/servers/groups/${id}`, { method: 'DELETE' }),
@@ -23,7 +23,7 @@ export const serversApi = {
   getServerInfo: (id: Id, force = false) => apiFetch<AnyObj>(`/servers/${id}/info${force ? '?force=1' : ''}`),
   getServerServices: (id: Id) => apiFetch<AnyObj>(`/servers/${id}/services`),
   getServerUpdates: (id: Id, force = false) => apiFetch<AnyObj>(`/servers/${id}/updates${force ? '?force=1' : ''}`),
-  getServerHistory: (id: Id) => apiFetch<AnyObj[]>(`/servers/${id}/history`),
+  getServerHistory: (id: Id) => apiFetchArray<AnyObj>(`/servers/${id}/history`),
   getServerNotes: (id: Id) => apiFetch<{ notes: string }>(`/servers/${id}/notes`),
   saveServerNotes: (id: Id, notes: string) => apiFetch(`/servers/${id}/notes`, { method: 'PUT', body: { notes } }),
   getServerAlertSettings: (id: Id) => apiFetch<AnyObj>(`/servers/${id}/alert-settings`),
@@ -33,7 +33,7 @@ export const serversApi = {
   getContainerLogs: (id: Id, container: string, tail = 200) => apiFetch<{ logs: string }>(`/servers/${id}/docker/${encodeURIComponent(container)}/logs?tail=${tail}`),
   checkImageUpdates: (id: Id) => apiFetch(`/servers/${id}/docker/image-updates`),
   getCachedImageUpdates: (id: Id) => apiFetch(`/servers/${id}/docker/image-updates/cached`),
-  getCustomUpdateTasks: (serverId: Id) => apiFetch<AnyObj[]>(`/servers/${serverId}/custom-updates`),
+  getCustomUpdateTasks: (serverId: Id) => apiFetchArray<AnyObj>(`/servers/${serverId}/custom-updates`),
   createCustomUpdateTask: (serverId: Id, data: AnyObj) => apiFetch(`/servers/${serverId}/custom-updates`, { method: 'POST', body: data }),
   updateCustomUpdateTask: (serverId: Id, taskId: Id, data: AnyObj) => apiFetch(`/servers/${serverId}/custom-updates/${taskId}`, { method: 'PUT', body: data }),
   deleteCustomUpdateTask: (serverId: Id, taskId: Id) => apiFetch(`/servers/${serverId}/custom-updates/${taskId}`, { method: 'DELETE' }),

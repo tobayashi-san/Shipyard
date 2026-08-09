@@ -21,6 +21,17 @@ interface ActivityItem {
   lastLine?: string;
 }
 
+const ACTIVITY_STORAGE_KEY = 'fleet.activity.v1';
+
+function loadActivities(): ActivityItem[] {
+  try {
+    const stored = JSON.parse(localStorage.getItem(ACTIVITY_STORAGE_KEY) || '[]');
+    if (!Array.isArray(stored)) return [];
+    return stored.filter((item): item is ActivityItem => Boolean(item && typeof item.id === 'string' && typeof item.startedAt === 'number'))
+      .slice(0, 30);
+  } catch { return []; }
+}
+
 function now() {
   return Date.now();
 }
@@ -128,7 +139,7 @@ function formatAge(ts: number) {
 export function ActivityCenter({ placement = 'floating' }: { placement?: 'floating' | 'header' }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const [items, setItems] = useState<ActivityItem[]>([]);
+  const [items, setItems] = useState<ActivityItem[]>(loadActivities);
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -164,6 +175,12 @@ export function ActivityCenter({ placement = 'floating' }: { placement?: 'floati
       });
     });
   }, [t]);
+
+  // Keep the activity drawer useful after a page reload, but never retain an
+  // unbounded amount of operational data in the browser.
+  useEffect(() => {
+    try { localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(items.slice(0, 30))); } catch { /* storage unavailable */ }
+  }, [items]);
 
   useEffect(() => {
     if (!open) return;

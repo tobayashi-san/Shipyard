@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { SkeletonRow } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { QueryErrorState } from '@/components/ui/query-error-state';
+import { asArray } from '@/lib/utils';
 import { SettingsSection } from '../_row';
 
 interface AuditMeta { actions?: string[]; users?: string[]; count?: number }
@@ -60,8 +62,9 @@ export function AuditTab() {
 
   useEffect(() => {
     if (!rowsQ.data) return;
-    if (filters.offset === 0) setAllRows(rowsQ.data);
-    else setAllRows((prev) => [...prev, ...rowsQ.data]);
+    const rows = asArray<AuditRow>(rowsQ.data);
+    if (filters.offset === 0) setAllRows(rows);
+    else setAllRows((prev) => [...prev, ...rows]);
   }, [rowsQ.data, filters.offset]);
 
   // Reset accumulator when filters (except offset) change
@@ -91,13 +94,13 @@ export function AuditTab() {
         <Field label={t('set.auditFilterAction')}>
           <SelectInput value={filters.action} onChange={(v) => resetAndSet({ action: v })}>
             <option value="">{t('set.auditFilterAll')}</option>
-            {(meta.actions || []).map((a) => <option key={a} value={a}>{a}</option>)}
+            {asArray<string>(meta.actions).map((a) => <option key={a} value={a}>{a}</option>)}
           </SelectInput>
         </Field>
         <Field label={t('set.auditFilterUser')}>
           <SelectInput value={filters.user} onChange={(v) => resetAndSet({ user: v })}>
             <option value="">{t('set.auditFilterAll')}</option>
-            {(meta.users || []).map((u) => <option key={u} value={u}>{u}</option>)}
+            {asArray<string>(meta.users).map((u) => <option key={u} value={u}>{u}</option>)}
           </SelectInput>
         </Field>
         <Field label={t('set.auditFilterStatus')}>
@@ -140,9 +143,7 @@ export function AuditTab() {
           <SkeletonRow cols={4} />
         </div>
       ) : rowsQ.isError ? (
-        <div className="py-4 text-sm text-destructive">
-          {t('set.auditLoadError')}: {(rowsQ.error as Error)?.message}
-        </div>
+        <QueryErrorState compact error={rowsQ.error} onRetry={() => { void rowsQ.refetch(); }} title="Audit-Log konnte nicht geladen werden" />
       ) : allRows.length === 0 ? (
         <EmptyState
           compact

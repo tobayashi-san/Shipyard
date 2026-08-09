@@ -176,6 +176,70 @@
   }
 }
 
+/* ─── Markdown notes ────────────────────────────────────────── */
+/* Kept independent of the typography plugin so light and dark console
+   themes always use the same semantic palette. */
+.note-markdown {
+  color: hsl(var(--foreground));
+  font-size: 0.875rem;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.note-markdown > :first-child { margin-top: 0; }
+.note-markdown > :last-child { margin-bottom: 0; }
+.note-markdown h1,
+.note-markdown h2,
+.note-markdown h3,
+.note-markdown h4 {
+  color: hsl(var(--foreground));
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+}
+.note-markdown h1 { margin: 1.5rem 0 0.75rem; font-size: 1.5rem; }
+.note-markdown h2 { margin: 1.4rem 0 0.65rem; padding-bottom: 0.45rem; border-bottom: 1px solid hsl(var(--border)); font-size: 1.2rem; }
+.note-markdown h3 { margin: 1.2rem 0 0.4rem; font-size: 1rem; }
+.note-markdown p { margin: 0.75rem 0; }
+.note-markdown a { color: hsl(var(--primary)); text-decoration: underline; text-underline-offset: 3px; }
+.note-markdown a:hover { color: hsl(var(--primary) / 0.8); }
+.note-markdown strong { color: hsl(var(--foreground)); font-weight: 650; }
+.note-markdown ul,
+.note-markdown ol { margin: 0.75rem 0; padding-left: 1.35rem; }
+.note-markdown li + li { margin-top: 0.25rem; }
+.note-markdown blockquote {
+  margin: 1rem 0;
+  border-left: 3px solid hsl(var(--primary) / 0.65);
+  background: hsl(var(--muted) / 0.45);
+  padding: 0.6rem 0.9rem;
+  color: hsl(var(--muted-foreground));
+}
+.note-markdown :not(pre) > code {
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.25rem;
+  background: hsl(var(--muted));
+  padding: 0.1rem 0.3rem;
+  color: hsl(var(--foreground));
+  font-size: 0.82em;
+}
+.note-markdown pre {
+  margin: 1rem 0;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.375rem;
+  background: hsl(var(--muted) / 0.65);
+  padding: 0.85rem 1rem;
+  color: hsl(var(--foreground));
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+.note-markdown pre code { background: transparent; padding: 0; color: inherit; }
+.note-markdown hr { margin: 1.25rem 0; border: 0; border-top: 1px solid hsl(var(--border)); }
+.note-markdown table { width: 100%; margin: 1rem 0; border-collapse: collapse; font-size: 0.82rem; }
+.note-markdown th { background: hsl(var(--muted) / 0.55); color: hsl(var(--foreground)); font-weight: 600; }
+.note-markdown th,
+.note-markdown td { border: 1px solid hsl(var(--border)); padding: 0.45rem 0.6rem; text-align: left; }
+
 /* ─── Scrollbars (subtle, themed) ──────────────────────────── */
 ::-webkit-scrollbar {
   width: 8px;

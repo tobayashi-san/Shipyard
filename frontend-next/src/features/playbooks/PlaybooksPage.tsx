@@ -8,6 +8,7 @@ import {
   KeyRound, Calendar, GitCommit,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { asArray } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +20,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
+import { QueryErrorState } from '@/components/ui/query-error-state';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton, SkeletonRow } from '@/components/ui/skeleton';
@@ -213,7 +215,7 @@ function TemplatesTab() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [yamlError, setYamlError] = useState<string | null>(null);
 
-  const { data: playbooks } = useQuery<Playbook[]>({
+  const { data: playbooks, isError: playbooksFailed, error: playbooksError, refetch: refetchPlaybooks } = useQuery<Playbook[]>({
     queryKey: ['playbooks'],
     queryFn: () => api.getPlaybooks() as unknown as Promise<Playbook[]>,
   });
@@ -236,7 +238,7 @@ function TemplatesTab() {
 
   // Grouped + filtered
   const grouped = useMemo(() => {
-    const list = playbooks ?? [];
+    const list = asArray<Playbook>(playbooks);
     const q = filter.trim().toLowerCase();
     const f = q ? list.filter(p =>
       p.filename.toLowerCase().includes(q) ||
@@ -331,7 +333,7 @@ function TemplatesTab() {
           <div className="flex items-center justify-between border-b px-3 py-2">
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold">{t('pb.title')}</span>
-              <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{playbooks?.length ?? 0}</Badge>
+              <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{asArray<Playbook>(playbooks).length}</Badge>
             </div>
             {hasCap(profile, 'canEditPlaybooks') && (
               <Button variant="outline" size="icon" className="h-7 w-7" onClick={startNew} title={t('pb.new')}>
@@ -344,6 +346,7 @@ function TemplatesTab() {
             <Input value={filter} onChange={e => setFilter(e.target.value)} placeholder={t('common.search')} className="pl-8 h-8 text-sm" />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2">
+            {playbooksFailed ? <QueryErrorState compact error={playbooksError} onRetry={() => { void refetchPlaybooks(); }} title="Playbooks konnten nicht geladen werden" /> : <>
             {Object.keys(grouped.catMap).sort().map(cat => {
               const key = `user:${cat}`;
               const open = !collapsed.has(key);
@@ -385,6 +388,7 @@ function TemplatesTab() {
             {Object.keys(grouped.catMap).length === 0 && grouped.internal.length === 0 && (
               <div className="py-4 text-center text-sm text-muted-foreground">{t('pb.noPlaybooks')}</div>
             )}
+            </>}
           </div>
         </CardContent>
       </Card>
@@ -506,7 +510,7 @@ function TemplateRunPanel({ filename, description, onClose }: { filename: string
   const { t } = useTranslation();
   const { data: profile } = useProfile();
   const servers = useQuery<Record<string, unknown>[]>({ queryKey: ['servers'], queryFn: () => api.getServers() as unknown as Promise<Record<string, unknown>[]> });
-  const srvList = servers.data ?? [];
+  const srvList = asArray<Record<string, unknown>>(servers.data);
 
   const [target, setTarget] = useState('');
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
@@ -632,8 +636,8 @@ function QuickRunTab() {
   const { t } = useTranslation();
   const { data: playbooks } = useQuery<Playbook[]>({ queryKey: ['playbooks'], queryFn: () => api.getPlaybooks() as unknown as Promise<Playbook[]> });
   const servers = useQuery<Record<string, unknown>[]>({ queryKey: ['servers'], queryFn: () => api.getServers() as unknown as Promise<Record<string, unknown>[]> });
-  const srvList = servers.data ?? [];
-  const userPbs = (playbooks ?? []).filter(p => !p.isInternal);
+  const srvList = asArray<Record<string, unknown>>(servers.data);
+  const userPbs = asArray<Playbook>(playbooks).filter(p => !p.isInternal);
 
   const [selPb, setSelPb] = useState('');
   const [allChecked, setAllChecked] = useState(false);
@@ -1021,7 +1025,7 @@ function SchedulesTab() {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <ScheduleDialog editId={editId} schedules={schedules ?? []} onSaved={() => { setDialogOpen(false); qc.invalidateQueries({ queryKey: ['schedules'] }); }} />
+        <ScheduleDialog editId={editId} schedules={asArray<Schedule>(schedules)} onSaved={() => { setDialogOpen(false); qc.invalidateQueries({ queryKey: ['schedules'] }); }} />
       </Dialog>
       <ConfirmDialog
         open={!!deleteSchedule}
@@ -1046,8 +1050,8 @@ function ScheduleDialog({ editId, schedules, onSaved }: { editId: string | null;
   const existing = editId ? schedules.find(s => s.id === editId) : null;
   const { data: playbooks } = useQuery<Playbook[]>({ queryKey: ['playbooks'], queryFn: () => api.getPlaybooks() as unknown as Promise<Playbook[]> });
   const servers = useQuery<Record<string, unknown>[]>({ queryKey: ['servers'], queryFn: () => api.getServers() as unknown as Promise<Record<string, unknown>[]> });
-  const srvList = servers.data ?? [];
-  const userPbs = (playbooks ?? []).filter(p => !p.isInternal);
+  const srvList = asArray<Record<string, unknown>>(servers.data);
+  const userPbs = asArray<Playbook>(playbooks).filter(p => !p.isInternal);
 
   const parsed = existing ? cronToSelectors(existing.cron_expression) : { interval: 'daily', hour: 3, minute: 0, weekday: 1, monthday: 1 };
   const parsedTargets = parsePlaybookTargets(existing?.targets ?? 'all');
@@ -1239,7 +1243,7 @@ function HistoryTab() {
             <select className="flex h-8 w-48 rounded-md border border-input bg-background px-2 py-1 text-xs"
               value={filterSchedule} onChange={e => setFilterSchedule(e.target.value)}>
               <option value="">{t('hist.filterAll')}</option>
-              {(schedules ?? []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              {asArray<Schedule>(schedules).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
           {isLoading ? (

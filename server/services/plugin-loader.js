@@ -39,6 +39,13 @@ const PRIVATE_UI_DIRS = new Set([
   'storage',
 ]);
 
+// Operators often keep an on-disk copy while upgrading a plugin. These are
+// not plugins and should neither produce startup warnings nor appear as a
+// broken plugin in the console.
+function isIgnoredPluginDirectory(name) {
+  return name.startsWith('.') || /(?:^|\.)bak(?:\.|$)/i.test(name) || /(?:^|[-_.])backup(?:[-_.]|$)/i.test(name);
+}
+
 const _loaded = new Map(); // id -> { manifest, router }
 const _failed = new Map(); // id -> error message (plugins that loaded their manifest but threw during register)
 let _helpers  = null;
@@ -154,7 +161,7 @@ function loadAll(helpers) {
   _helpers = helpers;
   if (!fs.existsSync(PLUGINS_DIR)) return;
   for (const entry of fs.readdirSync(PLUGINS_DIR, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
+    if (!entry.isDirectory() || isIgnoredPluginDirectory(entry.name)) continue;
     const pluginDir = path.join(PLUGINS_DIR, entry.name);
     try {
       _loadOne(pluginDir);
@@ -209,7 +216,7 @@ function list() {
   // Also include directories that failed to load (broken plugins)
   if (fs.existsSync(PLUGINS_DIR)) {
     for (const entry of fs.readdirSync(PLUGINS_DIR, { withFileTypes: true })) {
-      if (!entry.isDirectory() || seen.has(entry.name)) continue;
+      if (!entry.isDirectory() || isIgnoredPluginDirectory(entry.name) || seen.has(entry.name)) continue;
       const pluginDir = path.join(PLUGINS_DIR, entry.name);
       const loadError = _failed.get(entry.name) || null;
       try {

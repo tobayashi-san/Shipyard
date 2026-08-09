@@ -288,6 +288,35 @@ test('adhoc run is blocked for restricted user targeting inaccessible server', a
   }
 });
 
+test('server reboot uses become-enabled Ansible execution', async () => {
+  wipeDb();
+  await setupAdmin();
+  const token = await login('admin', 'testpass12345');
+  const server = db.servers.create({ name: 'reboot-target', hostname: 'reboot-target', ip_address: '10.0.0.42', tags: [], services: [] });
+  const originalRunAdHoc = ansibleRunner.runAdHoc;
+  let captured = null;
+  ansibleRunner.runAdHoc = async (target, module, args, _onOutput, options) => {
+    captured = { target, module, args, options };
+    return { success: false, stdout: '', stderr: 'permission check', code: 1 };
+  };
+
+  try {
+    const res = await request(app)
+      .post(`/api/servers/${server.id}/reboot`)
+      .set('Authorization', `Bearer ${token}`);
+    assert.equal(res.status, 200);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(captured, {
+      target: 'reboot-target',
+      module: 'reboot',
+      args: '',
+      options: { become: true },
+    });
+  } finally {
+    ansibleRunner.runAdHoc = originalRunAdHoc;
+  }
+});
+
 test('ansible entrypoints reject unknown or option-like targets for all-scope roles', async () => {
   wipeDb();
   await setupAdmin();

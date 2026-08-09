@@ -1,8 +1,8 @@
 {
   "id": "opentofu",
   "name": "OpenTofu",
-  "version": "1.9.1",
-  "description": "Manage OpenTofu / Terraform workspaces and run infrastructure-as-code commands.",
+  "version": "2.0.0",
+  "description": "Manage OpenTofu workspaces, Proxmox VM blueprints and infrastructure deployments.",
   "sidebar": {
     "icon": "fas fa-cube",
     "label": "OpenTofu"

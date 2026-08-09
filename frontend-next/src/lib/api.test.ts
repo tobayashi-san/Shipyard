@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiFetch } from './api';
+import { apiFetch, apiFetchArray } from './api';
 
 describe('apiFetch', () => {
   afterEach(() => {
@@ -31,5 +31,13 @@ describe('apiFetch', () => {
     await expect(apiFetch('/servers', { skipAuth: true })).rejects.toMatchObject({
       name: 'ApiError', status: 403, message: 'Denied',
     });
+  });
+
+  it('normalizes malformed collection responses to an empty list', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ stale: true }), {
+      headers: { 'content-type': 'application/json' },
+    })));
+
+    await expect(apiFetchArray('/servers', { skipAuth: true })).resolves.toEqual([]);
   });
 });

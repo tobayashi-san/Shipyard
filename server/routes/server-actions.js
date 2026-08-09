@@ -186,22 +186,31 @@ function createServerActionsRouter({ broadcast } = {}) {
         '',
         (type, data) => {
           emit({ type: 'update_output', serverId, historyId, stream: type, data });
-        }
+        },
+        // The reboot module must run with elevated privileges. Without become
+        // it fails for the common non-root SSH users that Shipyard supports.
+        { become: true }
       );
 
-      db.updateHistory.updateStatus(historyId, result.success ? 'success' : 'failed', result.stdout + result.stderr);
+      const status = result.success ? 'success' : 'failed';
+      db.updateHistory.updateStatus(historyId, status, result.stdout + result.stderr);
+      db.auditLog.write('server.reboot', `server=${server.name} status=${status}`, req.ip, result.success, req.user?.username);
       emit({ type: 'update_complete', serverId, historyId, success: result.success });
 
       if (result.success) {
-        setTimeout(() => {
+        const refreshTimer = setTimeout(() => {
           systemInfo.getSystemInfo(server)
             .then(info => { try { db.serverInfo.upsert(server.id, info); } catch {} })
             .then(() => { try { resourceAlerts.evaluateServer(server.id); } catch {} })
             .catch(() => {});
         }, 5000);
+        // A delayed cache refresh must never keep the process alive during a
+        // graceful shutdown or test run.
+        refreshTimer.unref?.();
       }
     } catch (error) {
       db.updateHistory.updateStatus(historyId, 'failed', error.message);
+      db.auditLog.write('server.reboot', `server=${server.name} error=${error.message}`, req.ip, false, req.user?.username);
       emit({ type: 'update_error', serverId, historyId, error: error.message });
     }
   });

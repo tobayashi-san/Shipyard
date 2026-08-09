@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams, useNavigate } from '@tanstack/react-router';
 import { Puzzle, RefreshCw, ArrowLeft } from 'lucide-react';
 import { api, apiFetch } from '@/lib/api';
+import { asArray } from '@/lib/utils';
 import { ws } from '@/lib/ws';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -51,7 +52,7 @@ export function PluginsPage() {
   const qc = useQueryClient();
   const { data: plugins, isLoading } = useQuery<PluginInfo[]>({
     queryKey: ['plugins'],
-    queryFn: async () => ((await api.getPlugins()) as unknown as PluginInfo[]) ?? [],
+    queryFn: async () => asArray<PluginInfo>(await api.getPlugins()),
   });
 
   const enable = useMutation({
@@ -154,14 +155,14 @@ export function PluginHostPage() {
 
   const { data: plugins } = useQuery<PluginInfo[]>({
     queryKey: ['plugins'],
-    queryFn: async () => ((await api.getPlugins()) as unknown as PluginInfo[]) ?? [],
+    queryFn: async () => asArray<PluginInfo>(await api.getPlugins()),
   });
   const { data: servers } = useQuery<unknown[]>({
     queryKey: ['servers'],
-    queryFn: async () => ((await api.getServers()) as unknown as unknown[]) ?? [],
+    queryFn: async () => asArray(await api.getServers()),
   });
 
-  const pluginInfo = plugins?.find(p => p.id === id);
+  const pluginInfo = asArray<PluginInfo>(plugins).find(p => p.id === id);
 
   useEffect(() => {
     ws.connect();
@@ -196,8 +197,8 @@ export function PluginHostPage() {
           state: {
             currentView: 'plugin',
             selectedServerId: null,
-            servers: servers ?? [],
-            plugins: plugins ?? [],
+            servers: asArray(servers),
+            plugins: asArray(plugins),
             user: profile ?? null,
             whiteLabel: settings ?? {},
           },
@@ -213,7 +214,7 @@ export function PluginHostPage() {
           },
           refreshServersState: async () => {
             try {
-              const nextServers = ((await api.getServers()) as unknown as unknown[]) ?? [];
+              const nextServers = asArray(await api.getServers());
               await Promise.all([
                 qc.invalidateQueries({ queryKey: ['servers'] }),
                 qc.invalidateQueries({ queryKey: ['server'] }),

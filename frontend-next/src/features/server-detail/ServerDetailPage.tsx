@@ -8,7 +8,7 @@ import {
   Terminal, Pencil, ArrowUp, Key, Power,
   Play, Square, CloudDownload, FileText, RotateCw, Plus, Trash2,
   ChevronDown, ChevronRight, Layers, Settings2, StickyNote, Eye, Bot,
-  Download, Shield, Sliders, History,
+  Download, Shield, Sliders, History, Code2,
   AlertTriangle, Bell,
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
@@ -122,6 +122,17 @@ interface AlertSettings {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────
+function parseArrayValue<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[];
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed as T[] : [];
+  } catch {
+    return [];
+  }
+}
+
 function formatUptime(s: number): string {
   const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
   if (d > 0) return `${d}d ${h}h ${m}m`;
@@ -247,14 +258,14 @@ export function ServerDetailPage() {
     return {
       ...s,
       id: String(s.id),
-      tags: typeof s.tags === 'string' ? JSON.parse(s.tags as string) : s.tags || [],
-      services: typeof s.services === 'string' ? JSON.parse(s.services as string) : s.services || [],
-      links: typeof s.links === 'string' ? JSON.parse(s.links as string) : s.links || [],
-      storage_mounts: typeof s.storage_mounts === 'string' ? JSON.parse(s.storage_mounts as string) : s.storage_mounts || [],
+      tags: parseArrayValue<string>(s.tags),
+      services: parseArrayValue<string>(s.services),
+      links: parseArrayValue<{ name: string; url: string }>(s.links),
+      storage_mounts: parseArrayValue<{ name: string; path: string }>(s.storage_mounts),
     } as ServerDetail;
   }, [rawServer]);
 
-  const { data: info, refetch: refetchInfo, isFetching: fetchingInfo } = useQuery<ServerInfo>({
+  const { data: info, refetch: refetchInfo, isFetching: fetchingInfo, isError: infoFailed, error: infoError } = useQuery<ServerInfo>({
     queryKey: ['server', id, 'info'],
     queryFn: () => api.getServerInfo(id) as unknown as Promise<ServerInfo>,
     enabled: !!id,
@@ -288,6 +299,9 @@ export function ServerDetailPage() {
     queryFn: () => api.getCustomUpdateTasks(id) as unknown as Promise<CustomTask[]>,
     enabled: !!id && hasCap(profile, 'canViewCustomUpdates'),
   });
+  // Older installations returned an object for an empty task list. Keep the
+  // detail view usable while those instances are being upgraded.
+  const customTaskList = Array.isArray(customTasks) ? customTasks : [];
   const { data: agentStatus, refetch: refetchAgent } = useQuery({
     queryKey: ['server', id, 'agent'],
     queryFn: () => api.getAgentStatus(id) as unknown as Promise<AgentStatus>,
@@ -349,6 +363,10 @@ export function ServerDetailPage() {
   // ── Notes state ─────────────────────────────────────────────
   const [notes, setNotes] = useState('');
   const [notesEditing, setNotesEditing] = useState(false);
+  const renderedNotes = useMemo(() => {
+    if (!notes.trim()) return '';
+    return DOMPurify.sanitize(marked.parse(notes, { async: false }) as string);
+  }, [notes]);
   const notesTimer = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => { if (notesData?.notes !== undefined) setNotes(notesData.notes); }, [notesData?.notes]);
   const saveNotesMut = useMutation({
@@ -375,9 +393,16 @@ export function ServerDetailPage() {
     },
   });
   const runRebootMut = useMutation({
-    mutationFn: () => api.runReboot(id),
-    onSuccess: () => showToast(t('det.rebootStarted'), 'success'),
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
+    mutationFn: () => api.runReboot(id) as unknown as Promise<{ historyId: string }>,
+    onMutate: () => startActionRun(`${t('det.reboot')} · ${server?.name || ''}`),
+    onSuccess: (data) => {
+      setActionRun(prev => prev ? { ...prev, historyId: data.historyId } : prev);
+      showToast(t('det.rebootStarted'), 'success');
+    },
+    onError: (e: Error) => {
+      setActionRun(prev => prev ? { ...prev, status: 'failed', lines: [...prev.lines, { text: t('common.errorPrefix', { msg: e.message }), cls: 'text-red-400' }] } : prev);
+      showToast(t('common.errorPrefix', { msg: e.message }), 'error');
+    },
   });
   const testConnMut = useMutation({
     mutationFn: () => api.testConnection(id),
@@ -596,7 +621,7 @@ export function ServerDetailPage() {
   // ── History pagination ──────────────────────────────────────
   const HIST_PAGE_SIZE = 25;
   const [histPage, setHistPage] = useState(1);
-  const histItems = history ?? [];
+  const histItems = Array.isArray(history) ? history : [];
   const histTotal = Math.max(1, Math.ceil(histItems.length / HIST_PAGE_SIZE));
   const histSafe = Math.min(histPage, histTotal);
   const histPage_ = histItems.slice((histSafe - 1) * HIST_PAGE_SIZE, histSafe * HIST_PAGE_SIZE);
@@ -609,16 +634,18 @@ export function ServerDetailPage() {
 
   const updatesList = useMemo(() => {
     if (!rawUpdates) return [];
-    const arr = Array.isArray(rawUpdates) ? rawUpdates : ((rawUpdates as Record<string, unknown>).updates as Record<string, unknown>[]) ?? [];
+    const nested = !Array.isArray(rawUpdates) ? (rawUpdates as Record<string, unknown>).updates : [];
+    const arr = Array.isArray(rawUpdates) ? rawUpdates : Array.isArray(nested) ? nested : [];
     return arr.filter((u: Record<string, unknown>) => !u.phased) as { package: string; version?: string; phased?: boolean; _cached?: boolean }[];
   }, [rawUpdates]);
   const phasedList = useMemo(() => {
     if (!rawUpdates) return [];
-    const arr = Array.isArray(rawUpdates) ? rawUpdates : ((rawUpdates as Record<string, unknown>).updates as Record<string, unknown>[]) ?? [];
+    const nested = !Array.isArray(rawUpdates) ? (rawUpdates as Record<string, unknown>).updates : [];
+    const arr = Array.isArray(rawUpdates) ? rawUpdates : Array.isArray(nested) ? nested : [];
     return arr.filter((u: Record<string, unknown>) => u.phased) as { package: string; version?: string }[];
   }, [rawUpdates]);
 
-  const containers = (dockerContainers ?? []) as ContainerRow[];
+  const containers = Array.isArray(dockerContainers) ? dockerContainers as ContainerRow[] : [];
   const stacks = useMemo(() => {
     const map: Record<string, { dir: string; containers: ContainerRow[] }> = {};
     const standalone: ContainerRow[] = [];
@@ -875,6 +902,12 @@ export function ServerDetailPage() {
             <Card>
               <CardHeader className="px-4 py-3"><CardTitle className="text-sm flex items-center gap-2"><Info className="h-4 w-4" />{t('det.sysinfo')}</CardTitle></CardHeader>
               <CardContent className="px-4 pb-4 pt-0 space-y-1">
+                {infoFailed && (
+                  <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-muted-foreground">
+                    <span>{t('det.infoUnavailable')}</span>
+                    <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2" onClick={() => refetchInfo()} disabled={fetchingInfo}>{t('common.retry')}</Button>
+                  </div>
+                )}
                 <dl className="grid gap-y-1.5 text-sm">
                   {([
                     [t('det.os'), info?.os],
@@ -925,7 +958,13 @@ export function ServerDetailPage() {
                 </Button>
               </CardHeader>
               <CardContent className="px-4 pb-4 pt-0 space-y-4">
-                {cpuPct === null && info?.ram_used_mb == null ? (
+                {infoFailed ? (
+                  <div className="flex min-h-28 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+                    <span>{t('det.infoUnavailable')}</span>
+                    <span className="max-w-sm text-xs">{infoError instanceof ApiError ? infoError.message : t('det.offlineHint')}</span>
+                    <Button variant="outline" size="sm" onClick={() => refetchInfo()} disabled={fetchingInfo}><RefreshCw className={`h-3.5 w-3.5 ${fetchingInfo ? 'animate-spin' : ''}`} />{t('common.retry')}</Button>
+                  </div>
+                ) : cpuPct === null && info?.ram_used_mb == null ? (
                   <p className="text-sm text-muted-foreground text-center py-4">{t('det.offline')}</p>
                 ) : (
                   <>
@@ -1171,39 +1210,47 @@ export function ServerDetailPage() {
                   )}
                 </CardHeader>
                 <CardContent className="p-0">
-                  {(!customTasks || customTasks.length === 0) ? (
+                  {customTaskList.length === 0 ? (
                     <div className="flex min-h-12 items-center px-4 py-3 text-sm text-muted-foreground">{t('det.noCustomTasks')}</div>
                   ) : (
                     <div className="overflow-x-auto">
-                    <table className="min-w-[620px] text-sm">
+                    <table className="w-full min-w-[760px] table-fixed text-sm">
+                      <colgroup>
+                        <col className="w-[21%]" />
+                        <col className="w-[12%]" />
+                        <col className="w-[19%]" />
+                        <col className="w-[19%]" />
+                        <col className="w-[17%]" />
+                        <col className="w-[12%]" />
+                      </colgroup>
                       <thead className="border-b bg-muted/30 text-left text-xs uppercase tracking-wider text-muted-foreground">
                         <tr>
-                          <th className="px-3 py-2">{t('common.name')}</th>
-                          <th className="px-3 py-2">{t('det.taskType')}</th>
-                          <th className="px-3 py-2">{t('det.currentVersion')}</th>
-                          <th className="px-3 py-2">{t('det.latestVersion')}</th>
-                          <th className="px-3 py-2">{t('common.status')}</th>
-                          <th className="px-3 py-2">{t('common.actions')}</th>
+                          <th className="px-4 py-2.5">{t('common.name')}</th>
+                          <th className="px-3 py-2.5">{t('det.taskType')}</th>
+                          <th className="px-3 py-2.5">{t('det.currentVersion')}</th>
+                          <th className="px-3 py-2.5">{t('det.latestVersion')}</th>
+                          <th className="px-3 py-2.5">{t('common.status')}</th>
+                          <th className="px-4 py-2.5 text-right">{t('common.actions')}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
-                        {customTasks.map(task => (
+                        {customTaskList.map(task => (
                           <tr key={task.id}>
-                            <td className="px-3 py-2 font-medium">{task.name}</td>
+                            <td className="px-4 py-3 font-medium truncate" title={task.name}>{task.name}</td>
                             <td className="px-3 py-2 text-xs text-muted-foreground">{task.type === 'github' ? 'GitHub' : task.type === 'trigger' ? t('det.taskTypeTriggerShort') : 'Script'}</td>
-                            <td className="px-3 py-2 font-mono text-xs">{task.current_version || '—'}</td>
-                            <td className="px-3 py-2 font-mono text-xs">{task.type === 'trigger' ? (task.trigger_output || task.last_version || '—') : (task.last_version || '—')}</td>
+                            <td className="px-3 py-3 font-mono text-xs truncate" title={task.current_version || undefined}>{task.current_version || '—'}</td>
+                            <td className="px-3 py-3 font-mono text-xs truncate" title={task.type === 'trigger' ? (task.trigger_output || task.last_version || undefined) : (task.last_version || undefined)}>{task.type === 'trigger' ? (task.trigger_output || task.last_version || '—') : (task.last_version || '—')}</td>
                             <td className="px-3 py-2">
                               {task.has_update ? <StatusBadge tone="warning">{t('det.imageUpdateAvail')}</StatusBadge>
                                 : task.last_checked_at ? <span className="text-xs text-emerald-500">✓ {t('det.imageUpToDate')}</span>
                                 : <span className="text-xs text-muted-foreground">—</span>}
                             </td>
-                            <td className="px-3 py-2">
-                              <div className="flex items-center gap-0.5">
-                                {hasCap(profile, 'canRunCustomUpdates') && <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => checkTaskMut.mutate(task.id)}><RefreshCw className="h-3 w-3" /></Button>}
-                                {hasCap(profile, 'canRunCustomUpdates') && task.update_command && <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => runTaskMut.mutate(task.id)}><Play className="h-3 w-3" /></Button>}
-                                {hasCap(profile, 'canEditCustomUpdates') && <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setTaskDialog({ open: true, task })}><Pencil className="h-3 w-3" /></Button>}
-                                {hasCap(profile, 'canDeleteCustomUpdates') && <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => setConfirmDeleteTask(task)}><Trash2 className="h-3 w-3" /></Button>}
+                            <td className="px-4 py-2 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                {hasCap(profile, 'canRunCustomUpdates') && <Button variant="ghost" size="icon" className="h-7 w-7" title={t('common.refresh')} aria-label={t('common.refresh')} onClick={() => checkTaskMut.mutate(task.id)}><RefreshCw className="h-3.5 w-3.5" /></Button>}
+                                {hasCap(profile, 'canRunCustomUpdates') && task.update_command && <Button variant="ghost" size="icon" className="h-7 w-7" title={t('common.run')} aria-label={t('common.run')} onClick={() => runTaskMut.mutate(task.id)}><Play className="h-3.5 w-3.5" /></Button>}
+                                {hasCap(profile, 'canEditCustomUpdates') && <Button variant="ghost" size="icon" className="h-7 w-7" title={t('common.edit')} aria-label={t('common.edit')} onClick={() => setTaskDialog({ open: true, task })}><Pencil className="h-3.5 w-3.5" /></Button>}
+                                {hasCap(profile, 'canDeleteCustomUpdates') && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" title={t('common.delete')} aria-label={t('common.delete')} onClick={() => setConfirmDeleteTask(task)}><Trash2 className="h-3.5 w-3.5" /></Button>}
                               </div>
                             </td>
                           </tr>
@@ -1433,24 +1480,53 @@ export function ServerDetailPage() {
         {hasCap(profile, 'canViewNotes') && (
           <TabsContent value="notes">
             <Card>
-              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 px-4 py-3">
-                <CardTitle className="text-sm">{t('det.tabNotes')}</CardTitle>
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b px-5 py-3.5">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md border bg-muted/40 text-muted-foreground">
+                    <StickyNote className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-sm">{t('det.tabNotes')}</CardTitle>
+                    <p className="mt-0.5 text-xs text-muted-foreground">Markdown</p>
+                  </div>
+                </div>
                 {hasCap(profile, 'canEditNotes') && (
-                  <Button size="sm" variant="secondary" onClick={() => setNotesEditing(!notesEditing)}>
-                    {notesEditing ? <><Eye className="h-3.5 w-3.5 mr-1" />{t('det.notesView')}</> : <><Pencil className="h-3.5 w-3.5 mr-1" />{t('det.notesEdit')}</>}
-                  </Button>
+                  <div className="inline-flex rounded-md border bg-muted/30 p-0.5">
+                    <Button size="sm" variant={!notesEditing ? 'secondary' : 'ghost'} className="h-7 px-2.5" onClick={() => setNotesEditing(false)}>
+                      <Eye className="mr-1.5 h-3.5 w-3.5" />{t('det.notesView')}
+                    </Button>
+                    <Button size="sm" variant={notesEditing ? 'secondary' : 'ghost'} className="h-7 px-2.5" onClick={() => setNotesEditing(true)}>
+                      <Pencil className="mr-1.5 h-3.5 w-3.5" />{t('det.notesEdit')}
+                    </Button>
+                  </div>
                 )}
               </CardHeader>
-              <CardContent className="px-4 pb-4 pt-0">
+              <CardContent className="p-5">
                 {notesEditing ? (
-                  <Textarea value={notes} rows={12} placeholder={t('det.notesPlaceholder')} className="font-mono text-sm"
-                    onChange={e => { setNotes(e.target.value); autoSaveNotes(e.target.value); }} />
-                ) : notes.trim() ? (
-                  <div className="prose prose-sm dark:prose-invert max-w-none">
-                    <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(notes, { async: false }) as string) }} />
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    <section className="overflow-hidden rounded-md border bg-background">
+                      <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2">
+                        <span className="section-label flex items-center gap-1.5"><Code2 className="h-3.5 w-3.5" /> Markdown</span>
+                        <span className="text-xs text-muted-foreground">{saveNotesMut.isPending ? 'Wird gespeichert…' : 'Automatisch gespeichert'}</span>
+                      </div>
+                      <Textarea value={notes} placeholder={t('det.notesPlaceholder')} className="min-h-[360px] resize-y rounded-none border-0 bg-transparent px-3 py-3 font-mono text-sm leading-6 focus-visible:ring-0"
+                        onChange={e => { setNotes(e.target.value); autoSaveNotes(e.target.value); }} />
+                    </section>
+                    <section className="overflow-hidden rounded-md border bg-background">
+                      <div className="flex items-center border-b bg-muted/30 px-3 py-2">
+                        <span className="section-label flex items-center gap-1.5"><Eye className="h-3.5 w-3.5" /> {t('det.notesView')}</span>
+                      </div>
+                      {notes.trim() ? (
+                        <div className="note-markdown min-h-[360px] px-5 py-4" dangerouslySetInnerHTML={{ __html: renderedNotes }} />
+                      ) : (
+                        <div className="flex min-h-[360px] items-center justify-center px-5 text-center text-sm text-muted-foreground">{t('det.notesPlaceholder')}</div>
+                      )}
+                    </section>
                   </div>
+                ) : notes.trim() ? (
+                  <div className="note-markdown rounded-md border bg-background px-5 py-4" dangerouslySetInnerHTML={{ __html: renderedNotes }} />
                 ) : (
-                  <div className="flex min-h-12 items-center gap-2 rounded-md border border-dashed bg-muted/20 px-3 py-2.5 text-sm text-muted-foreground">
+                  <div className="flex min-h-28 items-center justify-center gap-2 rounded-md border border-dashed bg-muted/20 px-4 py-5 text-sm text-muted-foreground">
                     <StickyNote className="h-4 w-4 shrink-0" />
                     <span>{t('det.notesEmpty')}</span>
                   </div>

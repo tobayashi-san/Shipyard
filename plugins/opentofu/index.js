@@ -716,6 +716,134 @@ function upsertManagedShipyardOutputs(existingContent, generatedBlock) {
   return `${trimmed}\n\n${generatedBlock}`;
 }
 
+// ── Fleet-managed Proxmox VM blueprints ───────────────────────────────────
+// These helpers deliberately generate a separate .tf file.  A workspace may
+// still contain hand-written Terraform, but VM definitions created in Fleet do
+// not require its users to edit HCL.
+const PROXMOX_VM_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/;
+const PROXMOX_IDENTIFIER_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+const PROXMOX_TF_IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/;
+const PROXMOX_INTERFACE_RE = /^(?:scsi|virtio|sata|ide)\d+$/;
+const IPV4_CIDR_RE = /^(?:\d{1,3}\.){3}\d{1,3}(?:\/(?:[0-9]|[12]\d|3[0-2]))?$/;
+
+function proxmoxInt(value, fallback, { min, max, field }) {
+  const raw = String(value ?? '').trim();
+  const number = raw === '' ? fallback : (/^\d+$/.test(raw) ? Number(raw) : NaN);
+  const result = Number.isFinite(number) ? number : fallback;
+  if (raw && !Number.isFinite(number)) throw new Error(`Invalid ${field}`);
+  if (result < min || result > max) throw new Error(`${field} must be between ${min} and ${max}`);
+  return result;
+}
+
+function proxmoxString(value, fallback, { field, pattern = PROXMOX_IDENTIFIER_RE, max = 100 } = {}) {
+  const result = String(value ?? fallback ?? '').trim();
+  if (!result || result.length > max || !pattern.test(result)) throw new Error(`Invalid ${field}`);
+  return result;
+}
+
+function normalizeProxmoxVm(input = {}) {
+  const diskDiscard = String(input.disk_discard ?? 'on');
+  if (!['on', 'ignore'].includes(diskDiscard)) throw new Error('Invalid disk discard setting');
+  const ipv4Address = String(input.ipv4_address ?? 'dhcp').trim().toLowerCase();
+  if (ipv4Address !== 'dhcp' && !isValidIpv4Cidr(ipv4Address)) throw new Error('IPv4 address must be DHCP or an IPv4 address with optional CIDR');
+  const gateway = String(input.ipv4_gateway ?? '').trim();
+  if (gateway && !isValidIpv4Cidr(gateway)) throw new Error('Invalid IPv4 gateway');
+  const vlanRaw = String(input.vlan_id ?? '').trim();
+  const vlanId = vlanRaw === '' ? null : proxmoxInt(vlanRaw, null, { min: 1, max: 4094, field: 'VLAN ID' });
+
+  return {
+    name: proxmoxString(input.name, '', { field: 'VM name', pattern: PROXMOX_VM_NAME_RE, max: 63 }),
+    node_name: proxmoxString(input.node_name, '', { field: 'Proxmox node' }),
+    started: input.started !== false && input.started !== 'false',
+    clone_vm_id: proxmoxInt(input.clone_vm_id, 9000, { min: 1, max: 999999999, field: 'Template VM ID' }),
+    clone_retries: proxmoxInt(input.clone_retries, 3, { min: 0, max: 10, field: 'Clone retries' }),
+    disk_datastore: proxmoxString(input.disk_datastore, '', { field: 'Disk datastore' }),
+    disk_interface: proxmoxString(input.disk_interface, 'scsi0', { field: 'Disk interface', pattern: PROXMOX_INTERFACE_RE, max: 10 }),
+    disk_size_gb: proxmoxInt(input.disk_size_gb, 40, { min: 1, max: 65536, field: 'Disk size' }),
+    disk_discard: diskDiscard,
+    cpu_cores: proxmoxInt(input.cpu_cores, 2, { min: 1, max: 128, field: 'CPU cores' }),
+    cpu_type: proxmoxString(input.cpu_type, 'host', { field: 'CPU type', pattern: /^[A-Za-z0-9._-]{1,60}$/, max: 60 }),
+    memory_mb: proxmoxInt(input.memory_mb, 4096, { min: 256, max: 1048576, field: 'Memory' }),
+    agent_enabled: input.agent_enabled !== false && input.agent_enabled !== 'false',
+    bridge: proxmoxString(input.bridge, 'vmbr0', { field: 'Network bridge' }),
+    vlan_id: vlanId,
+    ipv4_address: ipv4Address,
+    ipv4_gateway: ipv4Address === 'dhcp' ? '' : gateway,
+    username: proxmoxString(input.username, 'ubuntu', { field: 'Guest username', pattern: /^[a-z_][a-z0-9_-]{0,31}$/, max: 32 }),
+    ssh_public_key_variable: proxmoxString(input.ssh_public_key_variable, 'ssh_public_key', { field: 'SSH public key variable', pattern: PROXMOX_TF_IDENTIFIER_RE, max: 63 }),
+  };
+}
+
+function isValidIpv4Cidr(value) {
+  if (!IPV4_CIDR_RE.test(value)) return false;
+  const [ip] = value.split('/');
+  return ip.split('.').every(part => Number(part) >= 0 && Number(part) <= 255);
+}
+
+function renderProxmoxVmHcl(vm) {
+  const lines = [
+    `resource "proxmox_virtual_environment_vm" ${JSON.stringify(vm.name)} {`,
+    `  name      = ${JSON.stringify(vm.name)}`,
+    `  node_name = ${JSON.stringify(vm.node_name)}`,
+    `  started   = ${vm.started}`,
+    '', '  clone {', `    vm_id   = ${vm.clone_vm_id}`, `    retries = ${vm.clone_retries}`, '  }',
+    '', '  disk {', `    datastore_id = ${JSON.stringify(vm.disk_datastore)}`,
+    `    interface    = ${JSON.stringify(vm.disk_interface)}`, `    size         = ${vm.disk_size_gb}`,
+    `    discard      = ${JSON.stringify(vm.disk_discard)}`, '  }',
+    '', '  cpu {', `    cores = ${vm.cpu_cores}`, `    type  = ${JSON.stringify(vm.cpu_type)}`, '  }',
+    '', '  memory {', `    dedicated = ${vm.memory_mb}`, '  }',
+    '', '  agent {', `    enabled = ${vm.agent_enabled}`, '  }',
+    '', '  network_device {', `    bridge = ${JSON.stringify(vm.bridge)}`,
+  ];
+  if (vm.vlan_id !== null) lines.push(`    vlan_id = ${vm.vlan_id}`);
+  lines.push('  }', '', '  initialization {', '    ip_config {', '      ipv4 {', `        address = ${JSON.stringify(vm.ipv4_address)}`);
+  if (vm.ipv4_gateway) lines.push(`        gateway = ${JSON.stringify(vm.ipv4_gateway)}`);
+  lines.push('      }', '    }', '', '    user_account {', `      username = ${JSON.stringify(vm.username)}`, `      keys     = [var.${vm.ssh_public_key_variable}]`, '    }', '  }', '}');
+  return lines.join('\n');
+}
+
+function buildProxmoxProviderFiles(vms) {
+  const sshVariables = [...new Set(vms.map(vm => vm.ssh_public_key_variable))];
+  return {
+    provider: `# Generated by Fleet. Connection values are set under Variables in this workspace.\nterraform {\n  required_providers {\n    proxmox = {\n      source  = "bpg/proxmox"\n      version = "~> 0.66"\n    }\n  }\n}\n\nprovider "proxmox" {\n  endpoint  = var.proxmox_endpoint\n  api_token = var.proxmox_api_token\n  insecure  = var.proxmox_insecure\n}\n`,
+    variables: `# Generated by Fleet. Secret values are never written to this file.\nvariable "proxmox_endpoint" {\n  type = string\n}\n\nvariable "proxmox_api_token" {\n  type      = string\n  sensitive = true\n}\n\nvariable "proxmox_insecure" {\n  type    = bool\n  default = false\n}\n${sshVariables.map(name => `\nvariable "${name}" {\n  type      = string\n  sensitive = true\n}\n`).join('')}`,
+    vms: `# Generated by Fleet OpenTofu VM form. Edit VMs in the Fleet console.\n\n${vms.map(renderProxmoxVmHcl).join('\n\n')}\n`,
+  };
+}
+
+function getProxmoxStateResources(state) {
+  const resources = flattenStateResources(state?.values?.root_module);
+  return resources.filter(resource => resource.type === 'proxmox_virtual_environment_vm');
+}
+
+function buildProxmoxResourceOverview(vms, state = null) {
+  const nodeMap = new Map();
+  const addToNode = vm => {
+    const entry = nodeMap.get(vm.node_name) || { name: vm.node_name, vm_count: 0, cpu_cores: 0, memory_mb: 0, disk_gb: 0 };
+    entry.vm_count++; entry.cpu_cores += vm.cpu_cores; entry.memory_mb += vm.memory_mb; entry.disk_gb += vm.disk_size_gb;
+    nodeMap.set(vm.node_name, entry);
+  };
+  vms.forEach(addToNode);
+  const actual = getProxmoxStateResources(state).map(resource => ({
+    address: resource.address,
+    name: resource.values?.name || resource.name,
+    node_name: resource.values?.node_name || null,
+    vm_id: resource.values?.vm_id || null,
+    status: resource.values?.started === false ? 'stopped' : 'managed',
+    ip_addresses: resource.values?.ipv4_addresses || [],
+  }));
+  return {
+    desired: {
+      vm_count: vms.length,
+      cpu_cores: vms.reduce((sum, vm) => sum + vm.cpu_cores, 0),
+      memory_mb: vms.reduce((sum, vm) => sum + vm.memory_mb, 0),
+      disk_gb: vms.reduce((sum, vm) => sum + vm.disk_size_gb, 0),
+      nodes: [...nodeMap.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    },
+    actual: { available: !!state, vm_count: actual.length, resources: actual },
+  };
+}
+
 function pruneWorkspaceRuns(db, workspaceId, keep = TOFU_RUN_HISTORY_MAX) {
   const limit = Math.max(1, parseInt(keep, 10) || TOFU_RUN_HISTORY_MAX);
   return db.db.prepare(`
@@ -807,6 +935,18 @@ function register({ router, db, broadcast }) {
       output       TEXT NOT NULL DEFAULT '',
       started_at   TEXT NOT NULL DEFAULT (datetime('now')),
       completed_at TEXT
+    )
+  `).run();
+
+  db.db.prepare(`
+    CREATE TABLE IF NOT EXISTS tofu_proxmox_vms (
+      id           TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      name         TEXT NOT NULL,
+      config       TEXT NOT NULL,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(workspace_id, name)
     )
   `).run();
 
@@ -1118,7 +1258,55 @@ override.tf.json
     const row = getWorkspaceRow(id);
     if (!row) return null;
     if (!isAllowedPath(row.path)) return null;
-    return { ...row, env_vars: sanitizeEnvVars(JSON.parse(row.env_vars || '{}')) };
+    let envVars = {};
+    try { envVars = JSON.parse(row.env_vars || '{}'); } catch {}
+    return { ...row, env_vars: sanitizeEnvVars(envVars) };
+  }
+
+  function getProxmoxVms(workspaceId) {
+    return db.db.prepare('SELECT * FROM tofu_proxmox_vms WHERE workspace_id = ? ORDER BY name COLLATE NOCASE').all(workspaceId)
+      .map(row => {
+        try { return { ...JSON.parse(row.config), id: row.id, created_at: row.created_at, updated_at: row.updated_at }; }
+        catch { return null; }
+      })
+      .filter(Boolean);
+  }
+
+  function writeFleetProxmoxFiles(workspace) {
+    const vms = getProxmoxVms(workspace.id);
+    const files = buildProxmoxProviderFiles(vms);
+    fs.mkdirSync(workspace.path, { recursive: true });
+    const handWrittenTerraform = readTerraformFiles(workspace.path)
+      .filter(file => !file.name.startsWith('fleet-proxmox-'))
+      .map(file => file.content)
+      .join('\n');
+    const hasProvider = /provider\s+"proxmox"\s*\{/.test(handWrittenTerraform);
+    const hasVariable = name => new RegExp(`variable\\s+"${escapeRegExp(name)}"\\s*\\{`).test(handWrittenTerraform);
+    const missingVariables = [
+      ['proxmox_endpoint', 'type = string'],
+      ['proxmox_api_token', 'type = string\n  sensitive = true'],
+      ['proxmox_insecure', 'type = bool\n  default = false'],
+      ...[...new Set(vms.map(vm => vm.ssh_public_key_variable))].map(name => [name, 'type = string\n  sensitive = true']),
+    ].filter(([name]) => !hasVariable(name));
+    const providerPath = path.join(workspace.path, 'fleet-proxmox-provider.tf');
+    const variablesPath = path.join(workspace.path, 'fleet-proxmox-variables.tf');
+    const vmPath = path.join(workspace.path, 'fleet-proxmox-vms.tf');
+    fs.writeFileSync(providerPath, hasProvider
+      ? '# Fleet uses the existing Proxmox provider configuration in this workspace.\n'
+      : files.provider, 'utf8');
+    fs.writeFileSync(variablesPath, missingVariables.length
+      ? `# Generated by Fleet. Secret values are never written to this file.\n${missingVariables.map(([name, body]) => `\nvariable "${name}" {\n  ${body.replace(/\n/g, '\n  ')}\n}\n`).join('')}`
+      : '# This workspace already declares the variables required by Fleet Proxmox VMs.\n', 'utf8');
+    fs.writeFileSync(vmPath, files.vms, 'utf8');
+    return { files: ['fleet-proxmox-provider.tf', 'fleet-proxmox-variables.tf', 'fleet-proxmox-vms.tf'], vms };
+  }
+
+  function syncFleetWorkspace(workspace, message) {
+    const gs = getGitSync();
+    if (gs?.isConfigured()) {
+      syncOneToGit(workspace.name, workspace.path);
+      gs.autoPush(message).catch(error => log.warn({ err: error, workspace: workspace.name }, 'Could not auto-push Proxmox workspace'));
+    }
   }
 
   function getAllWorkspaces() {
@@ -1559,6 +1747,98 @@ override.tf.json
     }
   });
 
+  // ── Routes: Fleet Proxmox VM form ────────────────────────────────────────
+
+  router.get('/workspaces/:id/proxmox-vms', (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    res.json({
+      vms: getProxmoxVms(workspace.id),
+      generated_files: ['fleet-proxmox-provider.tf', 'fleet-proxmox-variables.tf', 'fleet-proxmox-vms.tf'],
+    });
+  });
+
+  router.post('/workspaces/:id/proxmox-vms', (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    const mkdirErr = ensureWorkspacePath(workspace);
+    if (mkdirErr) return res.status(400).json({ error: permissionError(mkdirErr, workspace.path) });
+    try {
+      const vm = normalizeProxmoxVm(req.body || {});
+      const id = randomUUID();
+      db.db.prepare('INSERT INTO tofu_proxmox_vms (id, workspace_id, name, config) VALUES (?, ?, ?, ?)')
+        .run(id, workspace.id, vm.name, JSON.stringify(vm));
+      const generated = writeFleetProxmoxFiles(workspace);
+      res.status(201).json({ vm: { ...vm, id }, generated_files: generated.files });
+      syncFleetWorkspace(workspace, `Add Fleet Proxmox VM ${vm.name}`);
+    } catch (error) {
+      res.status(/UNIQUE constraint failed/.test(error.message) ? 409 : 400).json({ error: error.message });
+    }
+  });
+
+  router.put('/workspaces/:id/proxmox-vms/:vmId', (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    const existing = db.db.prepare('SELECT id FROM tofu_proxmox_vms WHERE id = ? AND workspace_id = ?').get(req.params.vmId, workspace.id);
+    if (!existing) return res.status(404).json({ error: 'VM definition not found' });
+    try {
+      const vm = normalizeProxmoxVm(req.body || {});
+      db.db.prepare("UPDATE tofu_proxmox_vms SET name = ?, config = ?, updated_at = datetime('now') WHERE id = ? AND workspace_id = ?")
+        .run(vm.name, JSON.stringify(vm), existing.id, workspace.id);
+      const generated = writeFleetProxmoxFiles(workspace);
+      res.json({ vm: { ...vm, id: existing.id }, generated_files: generated.files });
+      syncFleetWorkspace(workspace, `Update Fleet Proxmox VM ${vm.name}`);
+    } catch (error) {
+      res.status(/UNIQUE constraint failed/.test(error.message) ? 409 : 400).json({ error: error.message });
+    }
+  });
+
+  router.delete('/workspaces/:id/proxmox-vms/:vmId', (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    const result = db.db.prepare('DELETE FROM tofu_proxmox_vms WHERE id = ? AND workspace_id = ?').run(req.params.vmId, workspace.id);
+    if (!result.changes) return res.status(404).json({ error: 'VM definition not found' });
+    try {
+      const generated = writeFleetProxmoxFiles(workspace);
+      res.json({ success: true, generated_files: generated.files });
+      syncFleetWorkspace(workspace, 'Remove Fleet Proxmox VM');
+    } catch (error) {
+      res.status(500).json({ error: permissionError(error, workspace.path) });
+    }
+  });
+
+  router.post('/workspaces/:id/proxmox-vms/regenerate', (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    const mkdirErr = ensureWorkspacePath(workspace);
+    if (mkdirErr) return res.status(400).json({ error: permissionError(mkdirErr, workspace.path) });
+    try {
+      const generated = writeFleetProxmoxFiles(workspace);
+      res.json({ success: true, generated_files: generated.files, count: generated.vms.length });
+      syncFleetWorkspace(workspace, 'Regenerate Fleet Proxmox files');
+    } catch (error) {
+      res.status(500).json({ error: permissionError(error, workspace.path) });
+    }
+  });
+
+  router.get('/workspaces/:id/resources-overview', async (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    const vms = getProxmoxVms(workspace.id);
+    const binary = findBinary();
+    if (!binary || !fs.existsSync(workspace.path)) {
+      return res.json({ ...buildProxmoxResourceOverview(vms), actual: { available: false, vm_count: 0, resources: [], reason: binary ? 'Workspace path is unavailable' : 'OpenTofu binary is not installed' } });
+    }
+    try {
+      const state = await loadWorkspaceState({ binary, workspace, env: { ...process.env, ...workspace.env_vars } });
+      res.json(buildProxmoxResourceOverview(vms, state));
+    } catch (error) {
+      const overview = buildProxmoxResourceOverview(vms);
+      overview.actual.reason = String(error.stderr || error.stdout || error.message || 'No state available').trim();
+      res.json(overview);
+    }
+  });
+
   // ── Routes: State ─────────────────────────────────────────────────────────
 
   router.get('/workspaces/:id/state', (req, res) => {
@@ -1642,6 +1922,10 @@ module.exports = {
     detectTerraformResources,
     generateShipyardOutputsBlock,
     upsertManagedShipyardOutputs,
+    normalizeProxmoxVm,
+    renderProxmoxVmHcl,
+    buildProxmoxProviderFiles,
+    buildProxmoxResourceOverview,
     pruneWorkspaceRuns,
     moveWorkspaceDirectory,
   },
