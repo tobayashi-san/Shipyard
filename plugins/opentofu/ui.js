@@ -1697,6 +1697,7 @@ function openProxmoxSettingsModal(ws, onSaved) {
 function openProxmoxVmModal(ws, vm = null) {
   const value = (key, fallback = '') => esc(vm?.[key] ?? fallback);
   const checked = (key, fallback = true) => (vm?.[key] ?? fallback) ? 'checked' : '';
+  const staticIp = Boolean(vm?.ipv4_address && vm.ipv4_address !== 'dhcp');
   showModal(`
     <h2>${icon('cube',16)} ${vm ? 'Proxmox-VM bearbeiten' : 'Proxmox-VM hinzufügen'}</h2>
     <p class="tp-muted" style="font-size:12px;margin:-8px 0 10px;">Diese Angaben erzeugen eine <span class="tp-mono">proxmox_virtual_environment_vm</span>-Ressource.</p>
@@ -1718,8 +1719,9 @@ function openProxmoxVmModal(ws, vm = null) {
         <div class="tp-form-group" style="display:flex;align-items:end;padding-bottom:8px;"><label class="tp-checkbox"><input type="checkbox" name="agent_enabled" ${checked('agent_enabled')}> QEMU Guest Agent aktivieren</label></div>
         <div class="tp-form-group"><label class="tp-label">Bridge</label><select class="tp-input tp-select tp-input-mono" id="tofu-proxmox-bridge" name="bridge"><option value="${value('bridge', 'vmbr0')}">${value('bridge', 'vmbr0')} (Vorauswahl)</option></select></div>
         <div class="tp-form-group"><label class="tp-label">VLAN-ID <span class="tp-muted">(optional)</span></label><input class="tp-input" name="vlan_id" type="number" min="1" max="4094" value="${value('vlan_id')}"></div>
-        <div class="tp-form-group"><label class="tp-label">IPv4-Adresse</label><input class="tp-input tp-input-mono" name="ipv4_address" value="${value('ipv4_address', 'dhcp')}" placeholder="dhcp oder 10.20.1.20/24"></div>
-        <div class="tp-form-group"><label class="tp-label">IPv4-Gateway <span class="tp-muted">(bei statisch)</span></label><input class="tp-input tp-input-mono" name="ipv4_gateway" value="${value('ipv4_gateway')}" placeholder="10.20.1.1"></div>
+        <div class="tp-form-group"><label class="tp-label">IPv4-Konfiguration</label><select class="tp-input tp-select" id="tofu-proxmox-ipv4-mode" name="ipv4_mode"><option value="dhcp" ${!staticIp ? 'selected' : ''}>DHCP – automatisch beziehen</option><option value="static" ${staticIp ? 'selected' : ''}>Statisch – Adresse festlegen</option></select></div>
+        <div class="tp-form-group" id="tofu-proxmox-static-ip-group" ${staticIp ? '' : 'hidden'}><label class="tp-label">IPv4-Adresse</label><input class="tp-input tp-input-mono" id="tofu-proxmox-ipv4-address" name="ipv4_address" ${staticIp ? 'required' : 'disabled'} value="${staticIp ? value('ipv4_address') : ''}" inputmode="decimal" placeholder="10.20.1.20/24"><div class="tp-form-hint">Mit Präfix, z. B. <span class="tp-mono">10.20.1.20/24</span>.</div></div>
+        <div class="tp-form-group" id="tofu-proxmox-static-gateway-group" ${staticIp ? '' : 'hidden'}><label class="tp-label">IPv4-Gateway <span class="tp-muted">(optional)</span></label><input class="tp-input tp-input-mono" id="tofu-proxmox-ipv4-gateway" name="ipv4_gateway" ${staticIp ? '' : 'disabled'} value="${staticIp ? value('ipv4_gateway') : ''}" inputmode="decimal" placeholder="10.20.1.1"></div>
         <div class="tp-form-group"><label class="tp-label">Gastbenutzer</label><input class="tp-input tp-input-mono" name="username" value="${value('username', 'ubuntu')}"></div>
         <div class="tp-form-group"><label class="tp-label">SSH-Key-Variable <span class="tp-muted">(optional)</span></label><input class="tp-input tp-input-mono" name="ssh_public_key_variable" value="${value('ssh_public_key_variable')}" placeholder="ssh_public_key"><div class="tp-form-hint">Nur setzen, wenn der Key beim Klonen per Cloud-Init in der VM hinterlegt werden soll.</div></div>
       </div>
@@ -1729,7 +1731,20 @@ function openProxmoxVmModal(ws, vm = null) {
       const modal = document.getElementById('tofu-proxmox-vm-form');
       const status = document.getElementById('tofu-proxmox-catalog-status');
       const nodeSelect = document.getElementById('tofu-proxmox-node');
+      const ipv4Mode = document.getElementById('tofu-proxmox-ipv4-mode');
+      const staticIpGroup = document.getElementById('tofu-proxmox-static-ip-group');
+      const staticGatewayGroup = document.getElementById('tofu-proxmox-static-gateway-group');
+      const staticIpInput = document.getElementById('tofu-proxmox-ipv4-address');
+      const staticGatewayInput = document.getElementById('tofu-proxmox-ipv4-gateway');
       const readValue = name => String(new FormData(modal).get(name) || '').trim();
+      const syncIpv4Mode = () => {
+        const isStatic = ipv4Mode.value === 'static';
+        staticIpGroup.hidden = !isStatic;
+        staticGatewayGroup.hidden = !isStatic;
+        staticIpInput.disabled = !isStatic;
+        staticGatewayInput.disabled = !isStatic;
+        staticIpInput.required = isStatic;
+      };
       const replaceOptions = (element, entries, toValue, toLabel, preferred, emptyLabel) => {
         const current = preferred ?? element.value;
         const options = entries.map(entry => ({ value: String(toValue(entry)), label: String(toLabel(entry)) }));
@@ -1766,6 +1781,8 @@ function openProxmoxVmModal(ws, vm = null) {
       document.getElementById('tofu-proxmox-cancel').addEventListener('click', closeModal);
       document.getElementById('tofu-proxmox-next-id').addEventListener('click', () => loadCatalog({ refreshVmId:true }));
       nodeSelect.addEventListener('change', () => loadCatalog());
+      ipv4Mode.addEventListener('change', syncIpv4Mode);
+      syncIpv4Mode();
       loadCatalog();
       modal.addEventListener('submit', async event => {
         event.preventDefault();
