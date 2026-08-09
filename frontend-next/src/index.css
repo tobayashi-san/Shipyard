@@ -7,31 +7,32 @@
 
 @layer base {
   :root {
-    /* ── Surfaces (3 levels for depth) ─────────────────────── */
-    --surface-1: 220 20% 97%;      /* sidebar / chrome */
-    --surface-2: 0 0% 100%;        /* main background */
-    --surface-3: 0 0% 100%;        /* cards / elevated */
+    /* Shadcn UI's neutral default palette. Brand variables remain available
+       for white-label accents without changing the base component language. */
+    --surface-1: 210 25% 98%;
+    --surface-2: 0 0% 100%;
+    --surface-3: 0 0% 100%;
 
-    --background: 220 20% 98.5%;
-    --foreground: 224 15% 12%;
+    --background: 210 25% 98%;
+    --foreground: 222.2 84% 4.9%;
 
     --card: 0 0% 100%;
-    --card-foreground: 224 15% 12%;
+    --card-foreground: 222.2 84% 4.9%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 224 15% 12%;
+    --popover-foreground: 222.2 84% 4.9%;
 
-    --primary: 224 18% 16%;
+    --primary: 222.2 47.4% 11.2%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 15% 95%;
-    --secondary-foreground: 224 15% 16%;
+    --secondary: 210 25% 95%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
 
-    --muted: 220 15% 95.5%;
-    --muted-foreground: 220 9% 44%;
+    --muted: 210 25% 95%;
+    --muted-foreground: 215.4 16.3% 46.9%;
 
-    --accent: 220 15% 94%;
-    --accent-foreground: 224 15% 16%;
+    --accent: 210 35% 94%;
+    --accent-foreground: 222.2 47.4% 11.2%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
@@ -40,10 +41,10 @@
     --warning: 35 92% 50%;
     --info: 217 91% 56%;
 
-    --border: 220 13% 89%;
-    --border-strong: 220 13% 82%;
-    --input: 220 13% 89%;
-    --ring: 224 76% 48%;
+    --border: 214 28% 89%;
+    --border-strong: 214 28% 82%;
+    --input: 214 28% 89%;
+    --ring: 211 100% 37%;
 
     --radius: 0.5rem;
 
@@ -62,30 +63,31 @@
   }
 
   .dark {
-    --surface-1: 224 18% 7%;       /* sidebar */
-    --surface-2: 224 18% 9%;       /* main bg */
-    --surface-3: 224 16% 11%;      /* cards */
+    /* Neutral dark surfaces with a dedicated cloud-console action color. */
+    --surface-1: 0 0% 3.9%;
+    --surface-2: 0 0% 3.9%;
+    --surface-3: 0 0% 9%;
 
-    --background: 224 18% 9%;
-    --foreground: 220 15% 92%;
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
 
-    --card: 224 16% 11%;
-    --card-foreground: 220 15% 92%;
+    --card: 0 0% 9%;
+    --card-foreground: 0 0% 98%;
 
-    --popover: 224 18% 12%;
-    --popover-foreground: 220 15% 92%;
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 98%;
 
-    --primary: 220 15% 92%;
-    --primary-foreground: 224 18% 9%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
 
-    --secondary: 224 14% 16%;
-    --secondary-foreground: 220 15% 92%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
 
-    --muted: 224 14% 14%;
-    --muted-foreground: 220 9% 60%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
 
-    --accent: 224 14% 17%;
-    --accent-foreground: 220 15% 92%;
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
 
     --destructive: 0 65% 48%;
     --destructive-foreground: 0 0% 100%;
@@ -94,10 +96,10 @@
     --warning: 35 92% 58%;
     --info: 217 91% 62%;
 
-    --border: 224 14% 18%;
-    --border-strong: 224 14% 24%;
-    --input: 224 14% 18%;
-    --ring: 217 91% 60%;
+    --border: 0 0% 14.9%;
+    --border-strong: 0 0% 24%;
+    --input: 0 0% 14.9%;
+    --ring: 211 90% 58%;
 
     --brand: 217 91% 60%;
     --brand-hover: 217 91% 70%;
@@ -121,6 +123,7 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    scroll-behavior: smooth;
   }
 
   body {
@@ -129,6 +132,7 @@
     font-variation-settings: normal;
     font-size: 14px;
     line-height: 1.5;
+    -webkit-tap-highlight-color: transparent;
   }
 
   /* All numbers tabular by default — critical for dashboards */
@@ -136,15 +140,33 @@
     font-variant-numeric: tabular-nums;
   }
 
+  button, [role='button'] { -webkit-tap-highlight-color: transparent; }
+  input[type='checkbox'], input[type='radio'] { accent-color: hsl(var(--primary)); }
+  input[type='number'] { font-variant-numeric: tabular-nums; }
+  :target { scroll-margin-top: 1rem; }
+
   /* Mono font for code-like elements */
   code, kbd, samp, pre, .font-mono {
     font-family: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
     font-feature-settings: 'liga' 0, 'calt' 1;
   }
 
-  /* Improve focus ring visibility */
+  /*
+   * Console controls are deliberately quiet when reached with Tab. The app
+   * exposes the current control through its own state (selected menu item,
+   * open popover, text caret, etc.), so the browser's additional blue frame
+   * is visual noise here. Forced-colors mode below keeps a system focus cue.
+   */
+  :focus,
   :focus-visible {
-    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    border-color: hsl(var(--input)) !important;
   }
 
   /* Selection color uses brand */
@@ -156,9 +178,10 @@
 
 /* ─── Scrollbars (subtle, themed) ──────────────────────────── */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
@@ -169,6 +192,26 @@
 }
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground) / 0.5);
+}
+
+* { scrollbar-color: hsl(var(--border-strong)) transparent; scrollbar-width: thin; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root { --border-strong: 214.3 31.8% 70%; }
+  .dark { --border-strong: 0 0% 38%; }
+}
+
+@media (forced-colors: active) {
+  :focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
 }
 
 /* ─── Utility Classes ──────────────────────────────────────── */

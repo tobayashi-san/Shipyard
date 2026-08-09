@@ -210,7 +210,7 @@ function SelectInput({ value, onChange, children }: { value: string; onChange: (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="h-8 min-w-[110px] rounded-md border border-input bg-background px-2 text-xs"
+      className="h-8 w-full min-w-0 rounded-md border border-input bg-background px-2 text-xs sm:w-auto sm:min-w-[110px]"
     >
       {children}
     </select>

@@ -68,7 +68,7 @@ export function PluginsPage() {
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <PageHeader
         title={t('plugins.title')}
         actions={
@@ -89,7 +89,7 @@ export function PluginsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {plugins.map((p) => (
             <Card key={p.id}>
               <CardContent className="space-y-3 p-4">
@@ -258,7 +258,7 @@ export function PluginHostPage() {
   }, [id, navigate, t, plugins, servers, profile, settings, qc]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <PageHeader
         title={pluginInfo?.name || id}
         badge={pluginInfo?.version

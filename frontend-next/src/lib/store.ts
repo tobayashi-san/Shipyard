@@ -15,12 +15,15 @@ interface UiState {
   setTimeFormat: (f: TimeFormat) => void;
   dashAttentionOnly: boolean;
   setDashAttentionOnly: (v: boolean) => void;
+  environmentId: string;
+  setEnvironmentId: (id: string) => void;
 }
 
 const THEME_KEY = 'shipyard_theme_next';
 const SIDEBAR_KEY = 'shipyard_sidebar_collapsed_next';
 const TIME_FORMAT_KEY = 'timeFormat';
 const DASH_ATTENTION_KEY = 'shipyard_dash_attention';
+const ENVIRONMENT_KEY = 'shipyard_environment';
 
 function readTheme(): Theme {
   try {
@@ -54,6 +57,7 @@ function readTimeFormat(): TimeFormat {
 function readDashAttention(): boolean {
   try { return localStorage.getItem(DASH_ATTENTION_KEY) === '1'; } catch { return false; }
 }
+function readEnvironment(): string { try { return localStorage.getItem(ENVIRONMENT_KEY) || 'default'; } catch { return 'default'; } }
 
 export const useUi = create<UiState>((set) => ({
   sidebarCollapsed: readSidebar(),
@@ -93,6 +97,8 @@ export const useUi = create<UiState>((set) => ({
       try { localStorage.setItem(DASH_ATTENTION_KEY, v ? '1' : '0'); } catch { /* ignore */ }
       return { dashAttentionOnly: v };
     }),
+  environmentId: readEnvironment(),
+  setEnvironmentId: (id) => set(() => { try { localStorage.setItem(ENVIRONMENT_KEY, id); } catch {} return { environmentId: id }; }),
 }));
 
 export function applyTheme(theme: Theme): void {

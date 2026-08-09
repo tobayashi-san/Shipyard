@@ -214,7 +214,7 @@ function GitDashboard({ cfg }: { cfg: GitConfig }) {
           <select
             value={selectedBranch}
             onChange={(e) => setSelectedBranch(e.target.value)}
-            className="h-9 min-w-[160px] rounded-md border border-input bg-background px-2 text-sm"
+            className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm sm:w-auto sm:min-w-[160px]"
           >
             {allBranches.map((b) => <option key={b} value={b}>{b}</option>)}
           </select>

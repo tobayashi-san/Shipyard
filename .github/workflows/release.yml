@@ -68,6 +68,10 @@ jobs:
         working-directory: server
         run: npm test
 
+      - name: Audit production backend dependencies
+        working-directory: server
+        run: npm audit --omit=dev
+
   frontend-build:
     name: Frontend build
     needs: validate
@@ -90,6 +94,22 @@ jobs:
       - name: Build frontend
         working-directory: frontend-next
         run: npm run build
+
+      - name: Check frontend types
+        working-directory: frontend-next
+        run: npm run typecheck
+
+      - name: Lint frontend
+        working-directory: frontend-next
+        run: npm run lint
+
+      - name: Run frontend tests
+        working-directory: frontend-next
+        run: npm test
+
+      - name: Audit production frontend dependencies
+        working-directory: frontend-next
+        run: npm audit --omit=dev
 
   docker-build:
     name: Docker build

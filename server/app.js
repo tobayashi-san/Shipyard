@@ -18,6 +18,7 @@ const resetRouter = require('./routes/reset');
 const dashboardRouter = require('./routes/dashboard');
 const createAnsibleRouter = require('./routes/ansible');
 const serversRouter = require('./routes/servers');
+const environmentsRouter = require('./routes/environments');
 const createServerActionsRouter = require('./routes/server-actions');
 const customUpdatesRouter = require('./routes/custom-updates');
 const systemRouter = require('./routes/system');
@@ -29,8 +30,6 @@ const adhocRouter = require('./routes/adhoc');
 const gitPlaybooksRouter = require('./routes/git-playbooks');
 const pluginsAdminRouter = require('./routes/plugins-admin');
 const agentAdminRouter = require('./routes/agent-admin');
-const alertsRouter = require('./routes/alerts');
-const resourceAlerts = require('./services/resource-alerts');
 
 const PLUGIN_UI_CONTENT_TYPES = {
   '.css': 'text/css; charset=utf-8',
@@ -147,7 +146,7 @@ function createApp({ isHttps = false } = {}) {
 
   app.use('/api/reset', resetRouter);
   app.use('/api/dashboard', dashboardRouter);
-  app.use('/api/alerts', alertsRouter);
+  app.use('/api/environments', environmentsRouter);
   app.use('/api/ansible', createAnsibleRouter({ broadcast: emit }));
   app.use('/api/servers/:id/custom-updates', customUpdatesRouter);
   app.use('/api/servers', createServerActionsRouter({ broadcast: emit }));
@@ -220,7 +219,6 @@ function createApp({ isHttps = false } = {}) {
     allowedOrigins,
     setBroadcast: (nextBroadcast) => {
       broadcast = typeof nextBroadcast === 'function' ? nextBroadcast : broadcast;
-      resourceAlerts.setBroadcast(broadcast);
     },
   };
 }

@@ -15,6 +15,7 @@ function applySchema(db) {
       last_seen TEXT,
       notes TEXT NOT NULL DEFAULT '',
       group_id TEXT,
+      environment_id TEXT DEFAULT 'default',
       host_fingerprint TEXT DEFAULT '',
       docker_enabled INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
@@ -97,6 +98,15 @@ function applySchema(db) {
       last_status TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS environments (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    INSERT OR IGNORE INTO environments (id, name) VALUES ('default', 'Standardumgebung');
   `);
 
   db.exec(`

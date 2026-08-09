@@ -12,6 +12,12 @@ function applyMigrations(db) {
   // Trust-on-first-use SSH host key fingerprint, sha256 base64 of server-presented host key.
   try { db.exec("ALTER TABLE servers ADD COLUMN host_fingerprint TEXT DEFAULT ''"); } catch {}
   try { db.exec('ALTER TABLE servers ADD COLUMN docker_enabled INTEGER DEFAULT 0'); } catch {}
+  try { db.exec("CREATE TABLE IF NOT EXISTS environments (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TEXT DEFAULT (datetime('now'))) "); } catch {}
+  try { db.exec("INSERT OR IGNORE INTO environments (id, name) VALUES ('default', 'Standardumgebung')"); } catch {}
+  try { db.exec("ALTER TABLE servers ADD COLUMN environment_id TEXT DEFAULT 'default'"); } catch {}
+  try { db.exec("UPDATE servers SET environment_id = 'default' WHERE environment_id IS NULL OR environment_id = ''"); } catch {}
+  // Rename the untouched legacy product default without overwriting a custom white-label name.
+  try { db.exec("UPDATE app_settings SET value = 'Fleet' WHERE key = 'wl_app_name' AND value = 'Shipyard'"); } catch {}
   try { db.exec("ALTER TABLE update_history ADD COLUMN triggered_by TEXT"); } catch {}
   try {
     db.exec(`

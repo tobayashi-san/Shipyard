@@ -3,7 +3,7 @@
  * Call this whenever settings change to update document.title, favicon, accent CSS vars, and meta tags.
  */
 
-const DEFAULT_NAME = 'Shipyard';
+const DEFAULT_NAME = 'Fleet';
 const DEFAULT_ACCENT = '#3b82f6';
 
 export interface WhiteLabelSettings {

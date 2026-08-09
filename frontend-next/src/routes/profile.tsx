@@ -141,7 +141,7 @@ export function ProfilePage() {
   const qrSrc = setupData?.qrDataUrl || setupData?.otpauthUrl || '';
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4">
+    <div className="mx-auto max-w-2xl space-y-6">
       {/* Page header */}
       <div className="flex items-center gap-4">
         <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground text-lg">

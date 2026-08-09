@@ -44,7 +44,7 @@ export function SettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-6">
         <PageHeader title={t('set.title')} description={t('set.subtitle')} />
       </div>
     );
@@ -52,7 +52,7 @@ export function SettingsPage() {
 
   if (profile?.role !== 'admin') {
     return (
-      <div className="space-y-4">
+      <div className="space-y-6">
         <PageHeader title={t('set.title')} description={t('set.subtitle')} />
         <EmptyState
           icon={<Lock className="h-5 w-5" />}
@@ -80,12 +80,12 @@ function AdminSettingsPage() {
   const ActiveComponent = visibleTabs.find((tab) => tab.id === activeId)?.Component;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <PageHeader title={t('set.title')} description={t('set.subtitle')} />
 
-      <div className="flex flex-col gap-4 lg:flex-row">
+      <div className="flex flex-col gap-6 lg:flex-row">
         <nav className="lg:w-56 shrink-0">
-          <ul className="flex flex-row gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
+          <ul className="-mx-4 flex flex-row gap-1 overflow-x-auto px-4 pb-1 lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0">
             {visibleTabs.map((tab) => {
               const isActive = tab.id === activeId;
               return (
@@ -94,7 +94,7 @@ function AdminSettingsPage() {
                     to="/settings/$tab"
                     params={{ tab: tab.id }}
                     className={cn(
-                      'block whitespace-nowrap rounded-md px-3 py-2 text-sm transition-colors',
+                      'block whitespace-nowrap rounded-md px-3 py-2.5 text-sm transition-colors',
                       isActive
                         ? 'bg-accent text-accent-foreground font-medium'
                         : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'

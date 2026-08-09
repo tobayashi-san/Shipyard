@@ -1,5 +1,7 @@
 # ── Stage 1: Build frontend ───────────────────────────────────
-FROM node:20-alpine AS builder
+# Keep the Node release explicit so builds do not silently move to a different
+# runtime. Update this value through the normal dependency-update process.
+FROM node:20.19.5-alpine3.21@sha256:9a45663150c1bdf4bab4a4bbcaa4bd50e5a0624b6de32646cd662135d7bfc735 AS builder
 WORKDIR /app
 COPY frontend-next/package*.json ./frontend-next/
 RUN cd frontend-next && npm ci
@@ -9,7 +11,7 @@ RUN cd frontend-next && npm run build
 # ── Stage 2: Runtime ─────────────────────────────────────────
 # node:20-slim (Debian) is required — better-sqlite3 is a native addon
 # that needs glibc (fcntl64). Alpine's musl libc is incompatible.
-FROM node:20-slim
+FROM node:20.19.5-bookworm-slim@sha256:9e70124bd00f47dd023e349cd587132ae61892acc0e47ed641416c3e18f401c3
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ansible openssh-client openssl gosu curl unzip git build-essential \

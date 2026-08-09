@@ -15,12 +15,12 @@ export function EmptyState({ icon, title, description, action, className, compac
     <div
       className={cn(
         'flex flex-col items-center justify-center text-center gap-3',
-        compact ? 'py-8' : 'py-14',
+        compact ? 'py-8' : 'py-12 sm:py-14',
         className
       )}
     >
       {icon && (
-        <div className="flex h-11 w-11 items-center justify-center rounded-full border bg-muted/40 text-muted-foreground">
+        <div className="flex h-11 w-11 items-center justify-center rounded-md border bg-muted/50 text-muted-foreground">
           {icon}
         </div>
       )}

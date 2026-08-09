@@ -82,6 +82,10 @@ Images are published to GitHub Container Registry:
 
 The Docker image serves the React frontend from `frontend-next/dist` and bundles the default plugins and starter playbooks. On first start, bundled plugins are seeded into `/app/plugins`; later starts update bundled plugins when their bundled version changes.
 
+### Plugin trust
+
+Plugins run as server-side code and have the same access as Shipyard itself. Install plugins only from sources you trust. In production Shipyard logs the digest of untrusted plugins. For a strict allowlist, set `SHIPYARD_PLUGIN_TRUST_POLICY=enforce` and `SHIPYARD_TRUSTED_PLUGIN_SHA256=plugin-id:<sha256>` (multiple entries are comma-separated). Obtain the digest from the plugin list/log after reviewing the plugin contents, then pin it before enabling strict mode.
+
 ## Documentation
 
 **[Wiki](https://github.com/tobayashi-san/Shipyard/wiki)** — [Installation](https://github.com/tobayashi-san/Shipyard/wiki/Installation) · [Configuration](https://github.com/tobayashi-san/Shipyard/wiki/Configuration) · [Security Guide](https://github.com/tobayashi-san/Shipyard/wiki/Security-Guide) · [Server Management](https://github.com/tobayashi-san/Shipyard/wiki/Server-Management) · [Playbooks & Schedules](https://github.com/tobayashi-san/Shipyard/wiki/Playbooks-and-Schedules) · [Docker Management](https://github.com/tobayashi-san/Shipyard/wiki/Docker-Management) · [Plugin System](https://github.com/tobayashi-san/Shipyard/wiki/Plugin-System) · [API Reference](https://github.com/tobayashi-san/Shipyard/wiki/API-Reference) · [Troubleshooting](https://github.com/tobayashi-san/Shipyard/wiki/Troubleshooting)

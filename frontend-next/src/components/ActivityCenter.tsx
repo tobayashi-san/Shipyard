@@ -125,7 +125,7 @@ function formatAge(ts: number) {
   return `${Math.round(diff / 3_600_000)}h`;
 }
 
-export function ActivityCenter() {
+export function ActivityCenter({ placement = 'floating' }: { placement?: 'floating' | 'header' }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<ActivityItem[]>([]);
@@ -186,9 +186,9 @@ export function ActivityCenter() {
   const visibleItems = useMemo(() => items.slice(0, 20), [items]);
 
   return (
-    <div ref={panelRef} className="fixed bottom-4 right-4 z-40 flex flex-col items-end">
+    <div ref={panelRef} className={cn('z-40 flex flex-col items-end', placement === 'header' ? 'relative' : 'fixed bottom-4 right-4')}>
       {open && (
-        <div className="mb-2 w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-xl">
+        <div className={cn('w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-xl', placement === 'header' ? 'absolute right-0 top-10' : 'mb-2')}>
           <div className="flex items-center justify-between border-b px-3 py-2">
             <div>
               <div className="text-sm font-semibold">{t('activity.title')}</div>
@@ -250,11 +250,11 @@ export function ActivityCenter() {
         variant="secondary"
         size="sm"
         onClick={() => setOpen(v => !v)}
-        className="relative h-9 gap-2 border bg-background/90 shadow-sm backdrop-blur"
+        className={cn('relative gap-2 border bg-background/90 shadow-sm backdrop-blur', placement === 'header' ? 'h-8 w-8 px-0' : 'h-9')}
         title={t('activity.title')}
       >
         <Activity className="h-4 w-4" />
-        <span className="hidden sm:inline">{t('activity.trigger')}</span>
+        {placement === 'floating' && <span className="hidden sm:inline">{t('activity.trigger')}</span>}
         {runningCount > 0 && (
           <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-semibold text-white">
             {runningCount}

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { getToken } from '@/lib/auth';
+import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
 
 interface SshTerminalProps {
@@ -15,6 +17,8 @@ interface SshTerminalProps {
  */
 export function SshTerminal({ server, onClose }: SshTerminalProps) {
   const { t } = useTranslation();
+  const theme = useUi((state) => state.theme);
+  const isDark = theme === 'dark' || (theme === 'system' && typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   const containerRef = useRef<HTMLDivElement>(null);
   const statusRef = useRef<HTMLSpanElement>(null);
   const dotRef = useRef<HTMLSpanElement>(null);
@@ -51,19 +55,16 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
         fontSize: 13,
         fontFamily: '"JetBrains Mono","Fira Code","Cascadia Code",monospace',
         scrollback: 5000,
-        theme: {
-          background:          '#0d1117',
-          foreground:          '#c9d1d9',
-          cursor:              '#58a6ff',
-          selectionBackground: 'rgba(88,166,255,0.25)',
-          black:   '#484f58', brightBlack:   '#6e7681',
-          red:     '#ff7b72', brightRed:     '#ffa198',
-          green:   '#3fb950', brightGreen:   '#56d364',
-          yellow:  '#d29922', brightYellow:  '#e3b341',
-          blue:    '#58a6ff', brightBlue:    '#79c0ff',
-          magenta: '#bc8cff', brightMagenta: '#d2a8ff',
-          cyan:    '#39c5cf', brightCyan:    '#56d4dd',
-          white:   '#b1bac4', brightWhite:   '#f0f6fc',
+        theme: isDark ? {
+          background: '#0d1117', foreground: '#c9d1d9', cursor: '#58a6ff', selectionBackground: 'rgba(88,166,255,0.25)',
+          black: '#484f58', brightBlack: '#6e7681', red: '#ff7b72', brightRed: '#ffa198', green: '#3fb950', brightGreen: '#56d364',
+          yellow: '#d29922', brightYellow: '#e3b341', blue: '#58a6ff', brightBlue: '#79c0ff', magenta: '#bc8cff', brightMagenta: '#d2a8ff',
+          cyan: '#39c5cf', brightCyan: '#56d4dd', white: '#b1bac4', brightWhite: '#f0f6fc',
+        } : {
+          background: '#ffffff', foreground: '#172b4d', cursor: '#0f6cbd', selectionBackground: 'rgba(15,108,189,0.18)',
+          black: '#172b4d', brightBlack: '#5e6c84', red: '#c9372c', brightRed: '#e34935', green: '#216e4e', brightGreen: '#2a8b65',
+          yellow: '#8f6b00', brightYellow: '#a87b00', blue: '#0c66e4', brightBlue: '#0055cc', magenta: '#803fa5', brightMagenta: '#9747ff',
+          cyan: '#006b75', brightCyan: '#007f89', white: '#dfe1e6', brightWhite: '#ffffff',
         },
       });
       termRef.current = term;
@@ -159,46 +160,49 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
         try { previouslyFocused.focus(); } catch { /* ignore */ }
       }
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isDark]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const userLabel = (server.ssh_user as string) || 'root';
   const serverName = (server.name as string) || '';
   const hostname = (server.hostname as string) || serverName;
   const ip = (server.ip_address as string) || '';
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/70"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-[2000] flex items-start justify-center bg-black/55 p-4 pt-16"
+      onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={t('term.dialogLabel', { name: serverName || hostname || 'server' })}
-        className="flex h-[75vh] w-[calc(100vw-2rem)] max-w-[1100px] flex-col overflow-hidden rounded-lg border border-[#30363d] bg-[#0d1117] shadow-lg"
+        className={cn(
+          'flex h-[calc(100dvh-8rem)] max-h-[48rem] w-full max-w-[1100px] flex-col overflow-hidden rounded-lg border shadow-xl',
+          isDark ? 'border-[#30363d] bg-[#0d1117]' : 'border-border-strong bg-card'
+        )}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-[#30363d] px-4 py-2.5">
+        <div className={cn('flex items-center justify-between border-b px-4 py-2.5', isDark ? 'border-[#30363d]' : 'border-border bg-secondary/45')}>
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-2 text-sm">
-              <span className="text-xs font-medium uppercase tracking-wider text-[#8b949e]">
+              <span className={cn('text-xs font-medium uppercase tracking-wider', isDark ? 'text-[#8b949e]' : 'text-muted-foreground')}>
                 {t('common.terminal')}
               </span>
-              <span className="truncate font-semibold text-[#c9d1d9]">{serverName}</span>
+              <span className={cn('truncate font-semibold', isDark ? 'text-[#c9d1d9]' : 'text-foreground')}>{serverName}</span>
             </div>
-            <div className="truncate text-xs text-[#8b949e]">
+            <div className={cn('truncate text-xs', isDark ? 'text-[#8b949e]' : 'text-muted-foreground')}>
               {userLabel}@{hostname} &middot; {ip}
             </div>
           </div>
           <div className="flex items-center gap-3" aria-live="polite">
             <span ref={dotRef} aria-hidden="true" className="inline-block h-2 w-2 animate-pulse rounded-full bg-yellow-500" />
-            <span ref={statusRef} className="text-xs text-[#8b949e]">{t('term.connecting')}</span>
+            <span ref={statusRef} className={cn('text-xs', isDark ? 'text-[#8b949e]' : 'text-muted-foreground')}>{t('term.connecting')}</span>
             <button
               type="button"
               onClick={onClose}
               aria-label={t('common.close')}
-              className="rounded p-1 text-[#8b949e] hover:bg-[#21262d] hover:text-[#c9d1d9] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className={cn('rounded p-1 focus-visible:outline-none', isDark ? 'text-[#8b949e] hover:bg-[#21262d] hover:text-[#c9d1d9]' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}
               title={`${t('common.close')} (Esc)`}
             >
               <X className="h-4 w-4" />
@@ -207,10 +211,11 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
         </div>
 
         {/* Terminal container */}
-        <div className="flex-1 p-1">
+        <div className={cn('flex-1 overflow-hidden', isDark ? 'bg-[#0d1117]' : 'bg-white')}>
           <div ref={containerRef} className="h-full w-full" />
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

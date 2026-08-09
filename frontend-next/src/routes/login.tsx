@@ -2,14 +2,15 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { Anchor, Lock, LogIn } from 'lucide-react';
+import { Anchor, Lock, LogIn, Server, ShieldCheck } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { setToken } from '@/lib/auth';
 import { applyWhiteLabel } from '@/lib/whitelabel';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+
+const MFA_TOKEN_KEY = 'shipyard.login.mfa-token';
 
 export function LoginPage() {
   const { t } = useTranslation();
@@ -40,7 +41,11 @@ export function LoginPage() {
   const [username, setUsername] = useState(isSetup ? 'admin' : '');
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
-  const [tempToken, setTempToken] = useState<string | null>(null);
+  const [tempToken, setTempToken] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const isMfaStep = new URLSearchParams(window.location.search).has('mfa');
+    return isMfaStep ? window.sessionStorage.getItem(MFA_TOKEN_KEY) : null;
+  });
   const [totpCode, setTotpCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -65,7 +70,11 @@ export function LoginPage() {
         : await api.authLogin(username, password);
 
       if ('requires2FA' in res && res.requires2FA && res.tempToken) {
-        setTempToken(res.tempToken);
+        // MFA is intentionally a real second page step. Password managers often only
+        // inspect OTP fields on page load, not when React inserts them after login.
+        window.sessionStorage.setItem(MFA_TOKEN_KEY, res.tempToken);
+        window.location.assign(`${window.location.pathname}?mfa=1`);
+        return;
       } else if (res.token) {
         setToken(res.token);
         await navigate({ to: '/' });
@@ -89,6 +98,7 @@ export function LoginPage() {
     setError(null);
     try {
       const res = await api.totpLogin(tempToken, code);
+      window.sessionStorage.removeItem(MFA_TOKEN_KEY);
       setToken(res.token);
       await navigate({ to: '/' });
     } catch (err) {
@@ -100,91 +110,109 @@ export function LoginPage() {
   };
 
   return (
-    <div className="grid min-h-screen place-items-center surface-2 p-4">
-      <Card className="w-full max-w-md shadow-subtle">
-        <CardHeader className="space-y-2 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-            <Anchor className="h-6 w-6 text-primary" />
+    <div className="flex min-h-svh items-center justify-center bg-muted/40 p-4 sm:p-6">
+      <main className="mx-auto grid w-full max-w-4xl overflow-hidden rounded-xl border bg-card shadow-lg md:min-h-[500px] md:grid-cols-[0.8fr_1fr]">
+        <aside className="relative hidden min-h-0 flex-col justify-between overflow-hidden text-white md:flex">
+          <img src="/login-infrastructure.webp" alt="" className="absolute inset-0 h-full w-full object-cover" />
+          <div className="absolute inset-0 bg-slate-950/45" />
+          <div className="relative p-7">
+          <div>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/25 bg-slate-950/35 backdrop-blur-sm">
+                <Anchor className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="text-lg font-semibold tracking-tight">{appName}</div>
+                <div className="text-sm text-white/75">{appTagline}</div>
+              </div>
+            </div>
+            <div className="mt-12 max-w-xs">
+              <h1 className="text-2xl font-semibold leading-tight tracking-tight">{t('login.consoleTitle')}</h1>
+              <p className="mt-3 text-sm leading-6 text-white/80">{t('login.consoleDescription')}</p>
+            </div>
           </div>
-          <CardTitle className="text-2xl">{appName}</CardTitle>
-          <CardDescription>{tempToken ? t('login.totpTitle') : isSetup ? t('login.setup') : t('login.signin')}</CardDescription>
-        </CardHeader>
+          </div>
+          <div className="relative m-7 space-y-3 border-t border-white/20 pt-5 text-sm">
+            <div className="flex gap-3">
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+              <div><p className="font-medium">{t('login.featureSecure')}</p><p className="mt-0.5 text-xs leading-5 text-white/75">{t('login.featureSecureDesc')}</p></div>
+            </div>
+            <div className="flex gap-3">
+              <Server className="mt-0.5 h-4 w-4 shrink-0" />
+              <div><p className="font-medium">{t('login.featureControl')}</p><p className="mt-0.5 text-xs leading-5 text-white/75">{t('login.featureControlDesc')}</p></div>
+            </div>
+          </div>
+        </aside>
 
-        <CardContent>
-          {!tempToken ? (
-            <form onSubmit={onSubmit} className="space-y-4">
-              {isSetup && <p className="text-sm text-muted-foreground">{t('login.hint')}</p>}
-              <div className="space-y-1.5">
-                <Label htmlFor="username">{t('login.username')}</Label>
-                <Input
-                  id="username"
-                  autoComplete="username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="admin"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="password">{isSetup ? t('login.newPassword') : t('login.password')}</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  autoComplete={isSetup ? 'new-password' : 'current-password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={isSetup ? t('login.minChars') : ''}
-                />
-              </div>
-              {isSetup && (
+        <section className="flex min-h-[calc(100svh-2rem)] flex-col px-5 py-6 sm:px-10 sm:py-10 md:min-h-0 md:px-9 md:py-8">
+          <div className="flex items-center gap-3 md:hidden">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-[#0f6cbd] text-white"><Anchor className="h-4 w-4" /></div>
+            <div><p className="font-semibold">{appName}</p><p className="text-xs text-muted-foreground">{appTagline}</p></div>
+          </div>
+          <div className="my-auto w-full max-w-sm md:mx-auto">
+            <div className="mb-6 mt-12 md:mt-0">
+              <h2 className="text-2xl font-semibold tracking-tight">{tempToken ? t('login.totpTitle') : isSetup ? t('login.setup') : t('login.accessHeading', { appName })}</h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{tempToken ? t('login.totpHint') : isSetup ? t('login.hint') : t('login.accessDescription')}</p>
+            </div>
+            {!tempToken ? (
+              <form onSubmit={onSubmit} className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="password2">{t('login.confirmPassword')}</Label>
+                  <Label htmlFor="username">{t('login.username')}</Label>
+                  <Input id="username" autoFocus autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="admin" className="h-10" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="password">{isSetup ? t('login.newPassword') : t('login.password')}</Label>
+                  <Input id="password" type="password" autoComplete={isSetup ? 'new-password' : 'current-password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={isSetup ? t('login.minChars') : ''} className="h-10" />
+                </div>
+                {isSetup && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="password2">{t('login.confirmPassword')}</Label>
+                    <Input id="password2" type="password" autoComplete="new-password" value={password2} onChange={(e) => setPassword2(e.target.value)} className="h-10" />
+                  </div>
+                )}
+                {error && <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</p>}
+                <Button type="submit" disabled={submitting} className="h-10 w-full bg-[#0f6cbd] text-white hover:bg-[#005a9e]">
+                  {isSetup ? <Lock className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
+                  {isSetup ? t('login.setPassword') : t('login.loginBtn')}
+                </Button>
+              </form>
+            ) : (
+              <form onSubmit={onTotpSubmit} autoComplete="one-time-code" className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="totp">{t('login.totpTitle')}</Label>
                   <Input
-                    id="password2"
-                    type="password"
-                    autoComplete="new-password"
-                    value={password2}
-                    onChange={(e) => setPassword2(e.target.value)}
+                    id="totp"
+                    name="one-time-code"
+                    inputMode="numeric"
+                    pattern="[0-9 ]*"
+                    maxLength={7}
+                    autoComplete="one-time-code"
+                    aria-label={t('login.totpPlaceholder')}
+                    autoFocus
+                    value={totpCode}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/[^0-9]/g, '').slice(0, 6);
+                      setTotpCode(digits.length > 3 ? `${digits.slice(0, 3)} ${digits.slice(3)}` : digits);
+                    }}
+                    className="h-10 text-center text-lg tracking-widest"
                   />
                 </div>
-              )}
-              {error && <p className="text-sm text-destructive">{error}</p>}
-              <Button type="submit" disabled={submitting} className="w-full">
-                {isSetup ? <Lock className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
-                {isSetup ? t('login.setPassword') : t('login.loginBtn')}
-              </Button>
-            </form>
-          ) : (
-            <form onSubmit={onTotpSubmit} className="space-y-4">
-              <p className="text-sm text-muted-foreground">{t('login.totpHint')}</p>
-              <div className="space-y-1.5">
-                <Label htmlFor="totp">{t('login.totpTitle')}</Label>
-                <Input
-                  id="totp"
-                  name="otp"
-                  inputMode="numeric"
-                  pattern="[0-9 ]*"
-                  maxLength={7}
-                  autoComplete="one-time-code"
-                  aria-label={t('login.totpPlaceholder')}
-                  value={totpCode}
-                  onChange={(e) => {
-                    const digits = e.target.value.replace(/[^0-9]/g, '').slice(0, 6);
-                    setTotpCode(digits.length > 3 ? `${digits.slice(0, 3)} ${digits.slice(3)}` : digits);
-                  }}
-                  className="text-center text-lg tracking-widest"
-                />
-              </div>
-              {error && <p className="text-sm text-destructive">{error}</p>}
-              <Button type="submit" disabled={submitting} className="w-full">{t('login.totpBtn')}</Button>
-              <Button type="button" variant="ghost" className="w-full" onClick={() => { setTempToken(null); setTotpCode(''); }}>
-                {t('login.totpBack')}
-              </Button>
-            </form>
-          )}
-
-          <p className="mt-6 text-center text-xs text-muted-foreground">{appTagline}</p>
-        </CardContent>
-      </Card>
+                {error && <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</p>}
+                <Button type="submit" disabled={submitting} className="h-10 w-full bg-[#0f6cbd] text-white hover:bg-[#005a9e]">{t('login.totpBtn')}</Button>
+                <Button type="button" variant="ghost" className="w-full" onClick={() => {
+                  window.sessionStorage.removeItem(MFA_TOKEN_KEY);
+                  window.history.replaceState(null, '', window.location.pathname);
+                  setTempToken(null);
+                  setTotpCode('');
+                }}>
+                  {t('login.totpBack')}
+                </Button>
+              </form>
+            )}
+          </div>
+          <p className="mt-8 text-xs text-muted-foreground md:mt-0">{appName} · {appTagline}</p>
+        </section>
+      </main>
     </div>
   );
 }

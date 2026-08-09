@@ -1,4 +1,5 @@
 import { getToken, notifyUnauthorized } from './auth';
+import { serversApi } from './api/servers';
 
 const API_BASE = '/api';
 
@@ -143,7 +144,7 @@ export async function apiDownload(path: string, filename: string): Promise<void>
 // Field names preserve snake_case at the API boundary (per AGENTS.md). Return types are deliberately
 // loose (`unknown`/`any`) for now to avoid blocking parity work; tighten per view.
 
-type AnyObj = Record<string, unknown>;
+export type AnyObj = Record<string, unknown>;
 
 export const api = {
   // Auth
@@ -165,12 +166,17 @@ export const api = {
 
   // Dashboard
   getDashboard:      () => apiFetch<AnyObj>('/dashboard'),
+  getEnvironments:   () => apiFetch<AnyObj[]>('/environments'),
+  createEnvironment: (name: string) => apiFetch<AnyObj>('/environments', { method: 'POST', body: { name } }),
   getAlerts:         (status = 'active') => apiFetch<AnyObj[]>(`/alerts?status=${encodeURIComponent(status)}`),
   acknowledgeAlert:  (id: string | number) => apiFetch(`/alerts/${id}/ack`, { method: 'POST' }),
   unacknowledgeAlert:(id: string | number) => apiFetch(`/alerts/${id}/unack`, { method: 'POST' }),
   ping:              () => apiFetch<{ ok: boolean; ts: number }>('/ping'),
 
-  // Servers
+  ...serversApi,
+
+  /* Server API lives in ./api/servers.ts. */
+  /*
   getServers:        () => apiFetch<AnyObj[]>('/servers'),
   getServer:         (id: string | number) => apiFetch<AnyObj>(`/servers/${id}`),
   createServer:      (data: AnyObj) => apiFetch<AnyObj>('/servers', { method: 'POST', body: data }),
@@ -231,6 +237,8 @@ export const api = {
     apiFetch(`/servers/${id}/docker/compose/action`, { method: 'POST', body: { path: p, action } }),
   deleteComposeStack:(id: string | number, p: string) =>
     apiFetch(`/servers/${id}/docker/compose/stack?path=${encodeURIComponent(p)}`, { method: 'DELETE' }),
+
+  */
 
   // SSH / System
   getSSHKey:         () => apiFetch<{ publicKey: string }>('/system/key'),

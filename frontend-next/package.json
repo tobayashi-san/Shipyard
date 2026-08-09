@@ -8,7 +8,9 @@
     "dev": "vite --host --port 5174",
     "build": "tsc -b && vite build",
     "preview": "vite preview --port 5174",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc -b --noEmit",
+    "lint": "eslint src --max-warnings=0",
+    "test": "vitest run"
   },
   "dependencies": {
     "@codemirror/lang-yaml": "^6.1.2",
@@ -51,10 +53,13 @@
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "eslint-plugin-react-hooks": "^5.2.0",
     "postcss": "^8.5.2",
     "tailwindcss": "^3.4.17",
     "tailwindcss-animate": "^1.0.7",
+    "typescript-eslint": "^8.37.0",
     "typescript": "^5.7.3",
-    "vite": "^6.2.2"
+    "vite": "^6.2.2",
+    "vitest": "^3.2.4"
   }
 }

@@ -1,5 +1,6 @@
 const fs   = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const log  = require('../utils/logger').child('plugins');
 
 const PLUGINS_DIR  = process.env.PLUGINS_DIR || '/app/plugins';
@@ -42,6 +43,49 @@ const _loaded = new Map(); // id -> { manifest, router }
 const _failed = new Map(); // id -> error message (plugins that loaded their manifest but threw during register)
 let _helpers  = null;
 
+// Plugins execute inside the Shipyard process and must therefore be treated as
+// trusted server-side code. Operators can opt into an allowlist by setting
+// SHIPYARD_PLUGIN_TRUST_POLICY=enforce and providing id:sha256 pairs in
+// SHIPYARD_TRUSTED_PLUGIN_SHA256. "warn" is the production default to keep
+// existing installations compatible while exposing the verification state.
+const TRUST_POLICY = ['off', 'warn', 'enforce'].includes(process.env.SHIPYARD_PLUGIN_TRUST_POLICY)
+  ? process.env.SHIPYARD_PLUGIN_TRUST_POLICY
+  : (process.env.NODE_ENV === 'production' ? 'warn' : 'off');
+
+function trustedPluginDigests() {
+  const trusted = new Map();
+  for (const raw of (process.env.SHIPYARD_TRUSTED_PLUGIN_SHA256 || '').split(',')) {
+    const [id, digest] = raw.trim().split(':');
+    if (PLUGIN_ID_RE.test(id || '') && /^[a-f0-9]{64}$/i.test(digest || '')) trusted.set(id, digest.toLowerCase());
+  }
+  return trusted;
+}
+
+function pluginDigest(pluginDir) {
+  const files = [];
+  const visit = (dir, relative = '') => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === 'node_modules' || entry.name === '.bundle-version') continue;
+      const rel = path.posix.join(relative, entry.name);
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) visit(full, rel);
+      else if (entry.isFile()) files.push([rel, full]);
+    }
+  };
+  visit(pluginDir);
+  files.sort(([a], [b]) => a.localeCompare(b));
+  const hash = crypto.createHash('sha256');
+  for (const [relative, full] of files) {
+    hash.update(relative).update('\0').update(fs.readFileSync(full)).update('\0');
+  }
+  return hash.digest('hex');
+}
+
+function pluginTrust(id, digest) {
+  const expected = trustedPluginDigests().get(id);
+  return { digest, trusted: Boolean(expected && expected === digest), policy: TRUST_POLICY };
+}
+
 // ── DB helpers ──────────────────────────────────────────────────────────────
 
 function _db()          { return require('../db'); }
@@ -71,6 +115,13 @@ function _readManifest(pluginDir) {
 function _loadOne(pluginDir) {
   const manifest = _readManifest(pluginDir);
   const { id }   = manifest;
+  const trust = pluginTrust(id, pluginDigest(pluginDir));
+  if (TRUST_POLICY === 'enforce' && !trust.trusted) {
+    throw new Error(`Plugin '${id}' is not trusted by SHIPYARD_TRUSTED_PLUGIN_SHA256`);
+  }
+  if (TRUST_POLICY === 'warn' && !trust.trusted) {
+    log.warn({ plugin: id, digest: trust.digest }, 'Loaded untrusted plugin; configure a digest allowlist before enabling strict plugin trust');
+  }
 
   const express        = require('express');
   const authMiddleware = require('../middleware/auth');
@@ -89,7 +140,7 @@ function _loadOne(pluginDir) {
     }
   }
 
-  _loaded.set(id, { manifest, router: pluginRouter });
+  _loaded.set(id, { manifest, router: pluginRouter, trust });
   return manifest;
 }
 
@@ -150,8 +201,8 @@ function list() {
   const result = [];
   const seen   = new Set();
 
-  for (const [id, { manifest }] of _loaded) {
-    result.push({ ...manifest, enabled: isEnabled(id), loaded: true });
+  for (const [id, { manifest, trust }] of _loaded) {
+    result.push({ ...manifest, enabled: isEnabled(id), loaded: true, trust });
     seen.add(id);
   }
 

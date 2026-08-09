@@ -72,11 +72,11 @@ const serverQueries = {
   getAll: db.prepare('SELECT * FROM servers ORDER BY name'),
   getById: db.prepare('SELECT * FROM servers WHERE id = ?'),
   insert: db.prepare(`
-    INSERT INTO servers (id, name, hostname, ip_address, ssh_port, ssh_user, tags, services, links, storage_mounts)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO servers (id, name, hostname, ip_address, ssh_port, ssh_user, tags, services, links, storage_mounts, environment_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `),
   update: db.prepare(`
-    UPDATE servers SET name = ?, hostname = ?, ip_address = ?, ssh_port = ?, ssh_user = ?, tags = ?, services = ?, links = ?, storage_mounts = ?, docker_enabled = ?, updated_at = datetime('now')
+    UPDATE servers SET name = ?, hostname = ?, ip_address = ?, ssh_port = ?, ssh_user = ?, tags = ?, services = ?, links = ?, storage_mounts = ?, docker_enabled = ?, environment_id = ?, updated_at = datetime('now')
     WHERE id = ?
   `),
   delete: db.prepare('DELETE FROM servers WHERE id = ?'),
@@ -208,7 +208,8 @@ module.exports = {
         JSON.stringify(server.tags || []),
         JSON.stringify(server.services || []),
         JSON.stringify(server.links || []),
-        JSON.stringify(server.storage_mounts || [])
+        JSON.stringify(server.storage_mounts || []),
+        server.environment_id || 'default'
       );
       return serverQueries.getById.get(id);
     },
@@ -224,6 +225,7 @@ module.exports = {
         JSON.stringify(server.links || []),
         JSON.stringify(server.storage_mounts || []),
         server.docker_enabled ? 1 : 0,
+        server.environment_id || 'default',
         id
       );
       return serverQueries.getById.get(id);

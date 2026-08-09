@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link, useNavigate } from '@tanstack/react-router';
 import {
   ArrowLeft, RefreshCw, CircleDot, Cpu, HardDrive, MemoryStick, Clock,
-  HeartPulse, Box, Satellite, Boxes, ExternalLink, Copy, Info,
+  HeartPulse, Box, Satellite, Boxes, ExternalLink, Info,
   Terminal, Pencil, ArrowUp, Key, Power,
   Play, Square, CloudDownload, FileText, RotateCw, Plus, Trash2,
   ChevronDown, ChevronRight, Layers, Settings2, StickyNote, Eye, Bot,
@@ -17,7 +17,6 @@ import { useProfile, useSettings, hasCap } from '@/lib/queries';
 import { useUi } from '@/lib/store';
 import { showToast } from '@/lib/toast';
 import { actionLabel, statusLabel } from '@/lib/history-labels';
-import { SshTerminal } from '@/components/SshTerminal';
 import { CreateServerDialog } from '@/components/CreateServerDialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -34,11 +33,14 @@ import { Skeleton, SkeletonRow } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { OverflowMenu, OverflowItem, OverflowSep } from '@/components/ui/overflow-menu';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { MetricBar, metricTextClass } from '@/components/ui/metric-bar';
+import { metricTextClass } from '@/components/ui/metric-bar';
 import { ActionRunDialog, type OutputLine, type RunStatus } from '@/components/ui/action-run-dialog';
 import { Switch } from '@/components/ui/switch';
+import { CopyButton, StatCard, ThresholdBar } from './components/summary-cards';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+
+const SshTerminal = lazy(() => import('@/components/SshTerminal').then((module) => ({ default: module.SshTerminal })));
 
 // ─── Types ────────────────────────────────────────────────────
 interface ServerDetail {
@@ -136,42 +138,6 @@ function formatDate(d?: string, hour12?: boolean): string {
   if (!d) return '—';
   const utc = !d.endsWith('Z') ? d.replace(' ', 'T') + 'Z' : d;
   try { return new Date(utc).toLocaleString(undefined, hour12 !== undefined ? { hour12 } : undefined); } catch { return d; }
-}
-
-function ThresholdBar({ pct, warningAt }: { pct: number | null; warningAt?: number }) {
-  return <MetricBar pct={pct} size="md" showTicks warningAt={warningAt} />;
-}
-
-function StatCard({ icon, label, value, hint, variant }: {
-  icon: React.ReactNode; label: string; value: string; hint?: string;
-  variant?: 'ok' | 'warning' | 'error' | 'muted';
-}) {
-  const valColor = variant === 'ok' ? 'text-emerald-500' : variant === 'warning' ? 'text-amber-500' : variant === 'error' ? 'text-destructive' : '';
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-3 p-3">
-        <div className={`flex h-9 w-9 items-center justify-center rounded-md ${variant === 'ok' ? 'bg-emerald-500/10 text-emerald-500' : variant === 'warning' ? 'bg-amber-500/10 text-amber-500' : variant === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'}`}>{icon}</div>
-        <div className="min-w-0">
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
-          <div className={`truncate font-semibold ${valColor}`}>{value}</div>
-          {hint && <div className="text-xs text-muted-foreground">{hint}</div>}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function CopyButton({ value, label }: { value: string; label: string }) {
-  const { t } = useTranslation();
-  return (
-    <Button variant="ghost" size="icon" className="h-6 w-6"
-      onClick={async () => {
-        try { await navigator.clipboard.writeText(value); showToast(`${label} ${t('common.copied')}`, 'success'); }
-        catch { showToast(t('common.error'), 'error'); }
-      }}>
-      <Copy className="h-3 w-3" />
-    </Button>
-  );
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -664,7 +630,7 @@ export function ServerDetailPage() {
 
   // ── Loading / not found ─────────────────────────────────────
   if (isLoading) return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center gap-3">
         <Skeleton className="h-8 w-8 rounded-md" />
         <div className="space-y-2">
@@ -672,7 +638,7 @@ export function ServerDetailPage() {
           <Skeleton className="h-3 w-64" />
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={i} className="h-24 w-full" />
         ))}
@@ -689,7 +655,7 @@ export function ServerDetailPage() {
 
   // ═══════════════════════════════════════════════════════════
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* ── Header ──────────────────────────────────────────── */}
       <PageHeader
         back={<Button variant="ghost" size="icon" onClick={() => navigate({ to: (sessionStorage.getItem('shipyard.lastNonDetailRoute') as '/' | '/servers' | '/playbooks' | '/settings' | '/profile' | null) ?? '/servers' })}><ArrowLeft className="h-4 w-4" /></Button>}
@@ -835,14 +801,10 @@ export function ServerDetailPage() {
 
       {/* ── Tabs ─────────────────────────────────────────────── */}
       <Tabs defaultValue="overview">
-        <TabsList className="flex-wrap">
+        <TabsList className="h-auto flex-wrap justify-start rounded-none border-b bg-transparent p-0 [&>[role=tab]]:rounded-none [&>[role=tab]]:px-3 [&>[role=tab]]:py-2 [&>[data-state=active]]:border-b-2 [&>[data-state=active]]:border-primary [&>[data-state=active]]:bg-transparent [&>[data-state=active]]:shadow-none">
           <TabsTrigger value="overview">{t('det.tabOverview')}</TabsTrigger>
           {hasCap(profile, 'canViewDocker') && !!server.docker_enabled && <TabsTrigger value="docker">{t('det.tabDocker')}</TabsTrigger>}
           {(hasCap(profile, 'canViewUpdates') || hasCap(profile, 'canRunUpdates') || hasCap(profile, 'canRebootServers') || hasCap(profile, 'canViewCustomUpdates') || hasCap(profile, 'canRunCustomUpdates') || hasCap(profile, 'canEditCustomUpdates') || hasCap(profile, 'canDeleteCustomUpdates')) && <TabsTrigger value="updates">{t('det.tabUpdates')}</TabsTrigger>}
-          <TabsTrigger value="monitoring" className="gap-1">
-            <Bell className="h-3 w-3" />{t('det.tabMonitoring')}
-            {serverAlerts.some(a => a.status === 'active' || a.status === 'pending') && <span className="h-1.5 w-1.5 rounded-full bg-destructive" />}
-          </TabsTrigger>
           <TabsTrigger value="history">{t('det.tabHistory')}</TabsTrigger>
           {agentEnabled && profile?.role === 'admin' && <TabsTrigger value="agent">{t('det.tabAgent')}</TabsTrigger>}
           {hasCap(profile, 'canViewNotes') && (
@@ -854,18 +816,41 @@ export function ServerDetailPage() {
         </TabsList>
 
         {/* ════ OVERVIEW ════ */}
-        <TabsContent value="overview" className="space-y-3">
+        <TabsContent value="overview" className="space-y-4">
           {/* Stat cards */}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-2 lg:grid-cols-4">
             <StatCard icon={<HeartPulse className="h-5 w-5" />} label={t('det.health')}
               value={server.status === 'offline' ? t('common.offline') : (info?.updates_count ?? 0) > 0 ? t('det.statusAttention') : info ? t('det.statusHealthy') : t('det.statusCached')}
-              variant={server.status === 'offline' ? 'error' : (info?.updates_count ?? 0) > 0 ? 'warning' : info ? 'ok' : 'warning'} />
+              variant={server.status === 'offline' ? 'error' : (info?.updates_count ?? 0) > 0 ? 'warning' : info ? 'ok' : 'warning'} compact />
             <StatCard icon={<Box className="h-5 w-5" />} label={t('det.tabUpdates')}
-              value={server.status === 'offline' ? '—' : String(updatesList.length)} variant={server.status === 'offline' ? 'muted' : updatesList.length > 0 ? 'warning' : 'ok'} />
-            <StatCard icon={<Satellite className="h-5 w-5" />} label={t('det.latency')} value={server.status === 'offline' ? '—' : latencyMs !== null ? `${latencyMs} ms` : '—'} variant={server.status === 'offline' ? 'muted' : latencyMs !== null ? (latencyMs > 500 ? 'warning' : 'ok') : 'muted'} />
+              value={server.status === 'offline' ? '—' : String(updatesList.length)} variant={server.status === 'offline' ? 'muted' : updatesList.length > 0 ? 'warning' : 'ok'} compact />
+            <StatCard icon={<Satellite className="h-5 w-5" />} label={t('det.latency')} value={server.status === 'offline' ? '—' : latencyMs !== null ? `${latencyMs} ms` : '—'} variant={server.status === 'offline' ? 'muted' : latencyMs !== null ? (latencyMs > 500 ? 'warning' : 'ok') : 'muted'} compact />
             <StatCard icon={<Boxes className="h-5 w-5" />} label={t('det.tabDocker')}
-              value={server.status === 'offline' ? '—' : containers.length ? String(containers.length) : t('det.statusIdle')} variant={server.status === 'offline' ? 'muted' : containers.length ? undefined : 'muted'} />
+              value={server.status === 'offline' ? '—' : containers.length ? String(containers.length) : t('det.statusIdle')} variant={server.status === 'offline' ? 'muted' : containers.length ? undefined : 'muted'} compact />
           </div>
+
+          {server.status === 'offline' && (
+            <Card className="border-destructive/50">
+              <CardContent className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="mt-0.5 h-5 w-5 text-destructive" />
+                  <div>
+                    <p className="font-medium text-destructive">{t('det.offline')}</p>
+                    <p className="text-sm text-muted-foreground">{t('det.offlineHint')}</p>
+                    {typeof server.last_seen === 'string' && <p className="mt-1 text-xs text-muted-foreground">{t('det.lastSuccessfulContact', { time: formatDate(server.last_seen, hour12) })}</p>}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => testConnMut.mutate()} disabled={testConnMut.isPending}>
+                    <Satellite className={`h-4 w-4 ${testConnMut.isPending ? 'animate-pulse' : ''}`} /> {t('det.testConn')}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => refetchInfo()} disabled={fetchingInfo} title={t('common.refresh')}>
+                    <RefreshCw className={`h-4 w-4 ${fetchingInfo ? 'animate-spin' : ''}`} /> <span className="sr-only">{t('common.refresh')}</span>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Quick links */}
           {(server.links || []).length > 0 && (
@@ -882,7 +867,7 @@ export function ServerDetailPage() {
             </Card>
           )}
 
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid items-start gap-4 lg:grid-cols-2">
             {/* System info */}
             <Card>
               <CardHeader className="px-4 py-3"><CardTitle className="text-sm flex items-center gap-2"><Info className="h-4 w-4" />{t('det.sysinfo')}</CardTitle></CardHeader>
@@ -930,7 +915,7 @@ export function ServerDetailPage() {
 
             {/* Resources */}
             <Card>
-              <CardHeader className="px-4 py-3 flex flex-row items-center justify-between">
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 px-4 py-3">
                 <CardTitle className="text-sm">{t('det.resources')}</CardTitle>
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => refetchInfo()} disabled={fetchingInfo}>
                   <RefreshCw className={`h-3.5 w-3.5 ${fetchingInfo ? 'animate-spin' : ''}`} />
@@ -1015,7 +1000,7 @@ export function ServerDetailPage() {
         {hasCap(profile, 'canViewDocker') && !!server.docker_enabled && (
           <TabsContent value="docker" className="space-y-4">
             <Card>
-              <CardHeader className="px-4 py-3 flex flex-row items-center justify-between">
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 px-4 py-3">
                 <CardTitle className="text-sm flex items-center gap-2"><Boxes className="h-4 w-4" />{t('det.docker')}</CardTitle>
                 <div className="flex items-center gap-2">
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => qc.invalidateQueries({ queryKey: ['server', id, 'docker'] })} disabled={fetchingDocker}>
@@ -1118,7 +1103,7 @@ export function ServerDetailPage() {
           <TabsContent value="updates" className="space-y-4">
             {hasCap(profile, 'canViewUpdates') && (
               <Card>
-                <CardHeader className="px-4 py-3 flex flex-row items-center justify-between">
+                <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 px-4 py-3">
                   <CardTitle className="text-sm">{t('det.tabUpdates')}</CardTitle>
                   <Button variant="ghost" size="icon" className="h-7 w-7"
                     onClick={() => qc.invalidateQueries({ queryKey: ['server', id, 'updates'] })} disabled={fetchingUpdates}>
@@ -1174,7 +1159,7 @@ export function ServerDetailPage() {
             {/* Custom tasks */}
             {(hasCap(profile, 'canViewCustomUpdates') || hasCap(profile, 'canRunCustomUpdates') || hasCap(profile, 'canEditCustomUpdates') || hasCap(profile, 'canDeleteCustomUpdates')) && (
               <Card>
-                <CardHeader className="px-4 py-3 flex flex-row items-center justify-between">
+                <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 px-4 py-3">
                   <CardTitle className="text-sm">{t('det.customUpdates')}</CardTitle>
                   {hasCap(profile, 'canEditCustomUpdates') && (
                     <Button size="sm" onClick={() => setTaskDialog({ open: true, task: null })}>
@@ -1184,9 +1169,10 @@ export function ServerDetailPage() {
                 </CardHeader>
                 <CardContent className="p-0">
                   {(!customTasks || customTasks.length === 0) ? (
-                    <div className="p-4 text-sm text-muted-foreground">{t('det.noCustomTasks')}</div>
+                    <div className="flex min-h-12 items-center px-4 py-3 text-sm text-muted-foreground">{t('det.noCustomTasks')}</div>
                   ) : (
-                    <table className="w-full text-sm">
+                    <div className="overflow-x-auto">
+                    <table className="min-w-[620px] text-sm">
                       <thead className="border-b bg-muted/30 text-left text-xs uppercase tracking-wider text-muted-foreground">
                         <tr>
                           <th className="px-3 py-2">{t('common.name')}</th>
@@ -1221,6 +1207,7 @@ export function ServerDetailPage() {
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -1239,7 +1226,8 @@ export function ServerDetailPage() {
                 {serverAlerts.length === 0 ? (
                   <EmptyState compact icon={<AlertTriangle className="h-5 w-5" />} title={t('det.noAlerts')} />
                 ) : (
-                  <table className="w-full text-sm">
+                  <div className="overflow-x-auto">
+                  <table className="min-w-[620px] text-sm">
                     <thead className="border-b bg-muted/30 text-left text-xs uppercase tracking-wider text-muted-foreground">
                       <tr>
                         <th className="px-3 py-2">{t('det.alertMessage')}</th>
@@ -1281,6 +1269,7 @@ export function ServerDetailPage() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -1289,29 +1278,36 @@ export function ServerDetailPage() {
               <CardHeader className="px-4 py-3">
                 <CardTitle className="text-sm flex items-center gap-2"><Sliders className="h-4 w-4" />{t('det.thresholds')}</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3 px-4 pb-4 pt-0">
+              <CardContent className="space-y-4 px-4 pb-4 pt-0">
                 {alertForm && (
                   <>
-                    <div className="flex items-center justify-between gap-3">
-                      <Label>{t('det.monitoring')}</Label>
-                      <Switch checked={alertForm.enabled} onCheckedChange={(v) => setAlertForm({ ...alertForm, enabled: v })} />
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <Label>{t('det.notify')}</Label>
-                      <Switch checked={alertForm.notify_enabled} onCheckedChange={(v) => setAlertForm({ ...alertForm, notify_enabled: v })} />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>{t('det.triggerDelay')}</Label>
-                      <Input type="number" min={0} max={86400} value={alertForm.trigger_after_seconds}
-                        onChange={(e) => setAlertForm({ ...alertForm, trigger_after_seconds: Number(e.target.value) })} />
-                    </div>
-                    {(['cpu', 'ram', 'disk', 'storage'] as const).map(key => (
-                      <div key={key} className="space-y-1">
-                        <Label className="uppercase">{key} %</Label>
-                        <Input type="number" min={0} max={100} value={alertForm.thresholds[key]}
-                          onChange={(e) => setAlertForm({ ...alertForm, thresholds: { ...alertForm.thresholds, [key]: Number(e.target.value) } })} />
+                    <div className="space-y-3 rounded-md border bg-muted/20 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label>{t('det.monitoring')}</Label>
+                        <Switch checked={alertForm.enabled} onCheckedChange={(v) => setAlertForm({ ...alertForm, enabled: v })} />
                       </div>
-                    ))}
+                      <div className="flex items-center justify-between gap-3">
+                        <Label>{t('det.notify')}</Label>
+                        <Switch checked={alertForm.notify_enabled} onCheckedChange={(v) => setAlertForm({ ...alertForm, notify_enabled: v })} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>{t('det.triggerDelay')}</Label>
+                        <Input type="number" min={0} max={86400} value={alertForm.trigger_after_seconds}
+                          onChange={(e) => setAlertForm({ ...alertForm, trigger_after_seconds: Number(e.target.value) })} />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <SectionLabel>{t('det.thresholds')}</SectionLabel>
+                      <div className="grid grid-cols-2 gap-3">
+                        {(['cpu', 'ram', 'disk', 'storage'] as const).map(key => (
+                          <div key={key} className="space-y-1">
+                            <Label className="uppercase">{key} %</Label>
+                            <Input type="number" min={0} max={100} value={alertForm.thresholds[key]}
+                              onChange={(e) => setAlertForm({ ...alertForm, thresholds: { ...alertForm.thresholds, [key]: Number(e.target.value) } })} />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                     <Button size="sm" onClick={() => saveAlertSettingsMut.mutate()} disabled={saveAlertSettingsMut.isPending}>
                       {t('common.save')}
                     </Button>
@@ -1324,13 +1320,17 @@ export function ServerDetailPage() {
 
         {/* ════ HISTORY ════ */}
         <TabsContent value="history">
-          <Card>
-            <CardContent className="p-0">
-              {histItems.length === 0 ? (
-                <EmptyState compact icon={<History className="h-5 w-5" />} title={t('det.noHistory')} />
-              ) : (
+          {histItems.length === 0 ? (
+            <div className="flex min-h-14 items-center gap-3 rounded-lg border bg-card px-4 py-3 text-sm text-muted-foreground">
+              <History className="h-4 w-4 shrink-0" />
+              <span>{t('det.noHistory')}</span>
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="p-0">
                 <>
-                  <table className="w-full text-sm">
+                  <div className="overflow-x-auto">
+                  <table className="min-w-[620px] text-sm">
                     <thead className="border-b bg-muted/30 text-left text-xs uppercase tracking-wider text-muted-foreground">
                       <tr>
                         <th className="px-3 py-2">{t('det.colAction')}</th>
@@ -1359,8 +1359,9 @@ export function ServerDetailPage() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                   {histTotal > 1 && (
-                    <div className="flex items-center justify-between border-t px-4 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-2">
                       <span className="text-xs text-muted-foreground">
                         {t('det.histPageInfo', { from: (histSafe - 1) * HIST_PAGE_SIZE + 1, to: Math.min(histSafe * HIST_PAGE_SIZE, histItems.length), total: histItems.length })}
                       </span>
@@ -1377,9 +1378,9 @@ export function ServerDetailPage() {
                     </div>
                   )}
                 </>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* ════ AGENT ════ */}
@@ -1429,7 +1430,7 @@ export function ServerDetailPage() {
         {hasCap(profile, 'canViewNotes') && (
           <TabsContent value="notes">
             <Card>
-              <CardHeader className="px-4 py-3 flex flex-row items-center justify-between">
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 px-4 py-3">
                 <CardTitle className="text-sm">{t('det.tabNotes')}</CardTitle>
                 {hasCap(profile, 'canEditNotes') && (
                   <Button size="sm" variant="secondary" onClick={() => setNotesEditing(!notesEditing)}>
@@ -1439,11 +1440,16 @@ export function ServerDetailPage() {
               </CardHeader>
               <CardContent className="px-4 pb-4 pt-0">
                 {notesEditing ? (
-                  <Textarea value={notes} rows={16} placeholder={t('det.notesPlaceholder')} className="font-mono text-sm"
+                  <Textarea value={notes} rows={12} placeholder={t('det.notesPlaceholder')} className="font-mono text-sm"
                     onChange={e => { setNotes(e.target.value); autoSaveNotes(e.target.value); }} />
+                ) : notes.trim() ? (
+                  <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(notes, { async: false }) as string) }} />
+                  </div>
                 ) : (
-                  <div className="prose prose-sm dark:prose-invert max-w-none min-h-[200px]">
-                    {notes.trim() ? <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(notes, { async: false }) as string) }} /> : <p className="text-muted-foreground">{t('det.notesEmpty')}</p>}
+                  <div className="flex min-h-12 items-center gap-2 rounded-md border border-dashed bg-muted/20 px-3 py-2.5 text-sm text-muted-foreground">
+                    <StickyNote className="h-4 w-4 shrink-0" />
+                    <span>{t('det.notesEmpty')}</span>
                   </div>
                 )}
               </CardContent>
@@ -1512,7 +1518,9 @@ export function ServerDetailPage() {
 
       {/* SSH Terminal overlay */}
       {terminalOpen && (
-        <SshTerminal server={server} onClose={() => setTerminalOpen(false)} />
+        <Suspense fallback={<div className="p-4 text-sm text-muted-foreground">{t('common.loading')}</div>}>
+          <SshTerminal server={server} onClose={() => setTerminalOpen(false)} />
+        </Suspense>
       )}
       <ActionRunDialog
         open={!!actionRun}

@@ -97,20 +97,21 @@ export function CommandPalette() {
     <>
       <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
         <DialogPrimitive.Portal>
-          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
           <DialogPrimitive.Content
             className={cn(
-              'fixed left-1/2 top-[12%] z-50 w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 overflow-hidden rounded-lg border bg-popover shadow-pop sm:top-[20%]',
+              'fixed left-1/2 top-[12%] z-50 w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 overflow-hidden rounded-xl border bg-popover shadow-lg sm:top-[20%]',
               'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95'
             )}
           >
             <DialogPrimitive.Title className="sr-only">{t('cmd.title')}</DialogPrimitive.Title>
             <Command label={t('cmd.title')} className="flex flex-col">
-              <div className="flex items-center border-b px-3">
-                <Search className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
+              <div className="group flex items-center border-b px-3 transition-colors focus-within:bg-muted/30">
+                <Search className="mr-2 h-4 w-4 shrink-0 text-muted-foreground transition-colors group-focus-within:text-foreground" />
                 <Command.Input
                   placeholder={t('cmd.placeholder')}
-                  className="flex h-12 w-full bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground focus:outline-none border-none ring-0 focus:ring-0 shadow-none"
+                  className="flex h-12 w-full border-0 bg-transparent py-3 text-sm shadow-none outline-none placeholder:text-muted-foreground focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0"
+                  style={{ outline: 'none', boxShadow: 'none' }}
                 />
                 <span className="kbd ml-2">ESC</span>
               </div>
@@ -242,8 +243,8 @@ function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void
   return (
     <DialogPrimitive.Root open={open} onOpenChange={v => !v && onClose()}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border bg-popover p-5 shadow-pop data-[state=open]:animate-in data-[state=open]:zoom-in-95">
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border bg-popover p-5 shadow-lg data-[state=open]:animate-in data-[state=open]:zoom-in-95">
           <DialogPrimitive.Title className="text-base font-semibold mb-4">{t('cmd.shortcutsTitle')}</DialogPrimitive.Title>
           <div className="space-y-4">
             {groups.map(g => (

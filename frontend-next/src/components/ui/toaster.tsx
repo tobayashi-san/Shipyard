@@ -56,7 +56,7 @@ export function Toaster() {
               key={t.id}
               style={stackedStyle}
               className={cn(
-                'pointer-events-auto relative flex items-start gap-3 rounded-lg border bg-popover/95 backdrop-blur-md p-3 shadow-pop',
+                'pointer-events-auto relative flex items-start gap-3 rounded-lg border bg-popover p-3',
                 'animate-slide-up transition-all duration-200'
               )}
               role="status"
@@ -83,7 +83,7 @@ export function Toaster() {
               >
                 <X className="h-3.5 w-3.5" />
               </button>
-              <ProgressBar id={t.id} duration={t.duration ?? (t.kind === 'error' ? 6500 : 4000)} createdAt={t.createdAt} />
+              <ProgressBar id={t.id} duration={t.duration ?? (t.kind === 'error' ? 0 : 4000)} createdAt={t.createdAt} />
             </div>
           );
         })}

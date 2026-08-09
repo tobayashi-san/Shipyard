@@ -1,8 +1,9 @@
 import * as React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '@/lib/api';
 import { showToast } from '@/lib/toast';
+import { useUi } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -51,7 +52,7 @@ function FieldRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-[180px_1fr] items-center gap-4 py-2.5">
+    <div className="grid grid-cols-1 gap-1.5 py-3 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center sm:gap-4">
       <div>
         <span className="text-sm font-medium text-foreground">
           {label}
@@ -59,7 +60,7 @@ function FieldRow({
         </span>
         {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
       </div>
-      <div className="flex items-center gap-2">{children}</div>
+      <div className="flex min-w-0 items-center gap-2">{children}</div>
     </div>
   );
 }
@@ -67,6 +68,8 @@ function FieldRow({
 export function CreateServerDialog({ editServer = null, trigger, onSuccess, open: openProp, onOpenChange: onOpenChangeProp }: CreateServerDialogProps) {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const activeEnvironmentId = useUi((s) => s.environmentId);
+  const { data: environments = [] } = useQuery({ queryKey: ['environments'], queryFn: () => api.getEnvironments() });
   const isEdit = !!editServer;
 
   const isControlled = openProp !== undefined;
@@ -87,6 +90,7 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
   const [mounts, setMounts] = React.useState<MountEntry[]>([]);
   const [sshPassword, setSshPassword] = React.useState('');
   const [dockerEnabled, setDockerEnabled] = React.useState(false);
+  const [environmentId, setEnvironmentId] = React.useState(activeEnvironmentId);
   const [error, setError] = React.useState<string | null>(null);
 
   const reset = React.useCallback(() => {
@@ -103,16 +107,18 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
       const ms = (editServer.storage_mounts as MountEntry[]) || [];
       setMounts(ms.map((m) => ({ ...m })));
       setDockerEnabled(!!(editServer.docker_enabled));
+      setEnvironmentId((editServer.environment_id as string) || 'default');
     } else {
       setName(''); setIp(''); setHostname(''); setSshUser('root'); setSshPort('22');
       setServices(''); setTags('');
       setLinks([]);
       setMounts([]);
       setDockerEnabled(false);
+      setEnvironmentId(activeEnvironmentId);
     }
     setSshPassword('');
     setError(null);
-  }, [editServer]);
+  }, [editServer, activeEnvironmentId]);
 
   React.useEffect(() => { if (open) reset(); }, [open, reset]);
 
@@ -138,6 +144,7 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
         tags: tags.split(',').map((s) => s.trim()).filter(Boolean),
         links: links.filter((l) => l.name || l.url),
         storage_mounts: mounts.filter((m) => m.path),
+        environment_id: environmentId,
         ...(isEdit && { dockerEnabled }),
       };
 
@@ -188,7 +195,7 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
 
       <DialogContent className="flex max-h-[90vh] flex-col gap-0 p-0 sm:max-w-2xl">
         {/* ── Header ──────────────────────────────────── */}
-        <DialogHeader className="border-b px-6 py-4">
+        <DialogHeader className="border-b px-4 py-4 sm:px-6">
           <DialogTitle>{isEdit ? t('add.titleEdit') : t('add.titleAdd')}</DialogTitle>
           {isEdit && !!(editServer?.name || editServer?.ip_address) && (
             <p className="text-sm text-muted-foreground">
@@ -209,7 +216,7 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
             if (!name.trim() || !ip.trim()) { setError(t('common.error')); return; }
             mutation.mutate();
           }}
-          className="flex-1 overflow-y-auto px-6 pt-5 pb-4"
+          className="flex-1 overflow-y-auto px-4 pb-4 pt-5 sm:px-6"
         >
           {/* ── Basic Information ───────────────────────── */}
           <SectionHeading icon={<Server className="h-3.5 w-3.5" />} title={t('add.sectionBasic')} />
@@ -285,6 +292,11 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
               className="w-full"
             />
           </FieldRow>
+          <FieldRow label="Umgebung" hint="Legt fest, in welcher Console-Umgebung dieser Server erscheint.">
+            <select value={environmentId} onChange={(e) => setEnvironmentId(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+              {environments.map((environment) => <option key={String(environment.id)} value={String(environment.id)}>{String(environment.name)}</option>)}
+            </select>
+          </FieldRow>
 
           {/* ── Links ───────────────────────────────────── */}
           <div className="flex items-center justify-between border-b pb-2 pt-5">
@@ -309,26 +321,26 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
           ) : (
             <div className="space-y-1.5 py-2">
               {links.map((link, i) => (
-                <div key={i} className="grid grid-cols-[1fr_1.4fr_auto] items-center gap-2">
+                <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] sm:items-center">
                   <Input
                     placeholder={t('add.linkNamePlaceholder')}
                     value={link.name}
                     onChange={(e) => setLink(i, 'name', e.target.value)}
-                    className="h-8 text-sm"
+                    className="h-8 w-full text-sm"
                   />
                   <Input
                     type="url"
                     placeholder="https://..."
                     value={link.url}
                     onChange={(e) => setLink(i, 'url', e.target.value)}
-                    className="h-8 text-sm"
+                    className="h-8 w-full text-sm"
                   />
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
                     onClick={() => removeLink(i)}
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    className="h-8 w-8 justify-self-end text-muted-foreground hover:text-destructive"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -360,25 +372,25 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
           ) : (
             <div className="space-y-1.5 py-2">
               {mounts.map((m, i) => (
-                <div key={i} className="grid grid-cols-[1fr_1.4fr_auto] items-center gap-2">
+                <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] sm:items-center">
                   <Input
                     placeholder={t('add.storageMountNamePlaceholder')}
                     value={m.name}
                     onChange={(e) => setMount(i, 'name', e.target.value)}
-                    className="h-8 text-sm"
+                    className="h-8 w-full text-sm"
                   />
                   <Input
                     placeholder="/mnt/media"
                     value={m.path}
                     onChange={(e) => setMount(i, 'path', e.target.value)}
-                    className="h-8 text-sm"
+                    className="h-8 w-full text-sm"
                   />
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
                     onClick={() => removeMount(i)}
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    className="h-8 w-8 justify-self-end text-muted-foreground hover:text-destructive"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -424,9 +436,9 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
         </form>
 
         {/* ── Sticky footer ───────────────────────────── */}
-        <div className="flex flex-col gap-2 border-t bg-muted/30 px-6 py-3">
+        <div className="flex flex-col gap-2 border-t bg-muted/30 px-4 py-3 sm:px-6">
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               {t('common.cancel')}
             </Button>

@@ -52,7 +52,7 @@ export const useToastStore = create<ToastState>((set, get) => ({
       createdAt: Date.now(),
     };
     set({ toasts: [...get().toasts, item] });
-    const ttl = opts.duration ?? (opts.kind === 'error' ? 6500 : 4000);
+    const ttl = opts.duration ?? (opts.kind === 'error' ? 0 : 4000);
     if (ttl > 0) setTimeout(() => get().dismiss(id), ttl);
     return id;
   },

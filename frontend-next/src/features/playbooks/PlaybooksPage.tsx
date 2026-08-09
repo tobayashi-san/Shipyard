@@ -1,8 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import CodeMirror from '@uiw/react-codemirror';
-import { yaml } from '@codemirror/lang-yaml';
 import {
   FileText, Plus, Save, Trash2, Play, History, Search, ChevronDown,
   FolderCog, Folder, ArrowLeft, X, Eye, Undo2, Clock, SlidersHorizontal,
@@ -31,6 +29,13 @@ import { useProfile, hasCap } from '@/lib/queries';
 import { showToast } from '@/lib/toast';
 import { ws } from '@/lib/ws';
 import { useNavigate } from '@tanstack/react-router';
+import {
+  buildAllExceptTargets, cronToSelectors, formatDate as fmtDate, INTERVALS,
+  loadCollapsedCategories as loadCollapsed, parsePlaybookTargets,
+  saveCollapsedCategories as saveCollapsed, selectorsToCron, TEMPLATE_YAML, WEEKDAYS,
+} from './playbook-utils';
+
+const PlaybookEditor = lazy(() => import('./components/PlaybookEditor'));
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -76,63 +81,6 @@ interface PlaybookVersion {
   content?: string;
 }
 
-// ── Target helpers ───────────────────────────────────────────────────────────
-
-function buildAllExceptTargets(excluded: string[]): string {
-  const u = [...new Set(excluded.map(n => String(n || '').trim()).filter(Boolean))];
-  if (u.length === 0) return 'all';
-  return `all:${u.map(n => `!${n}`).join(':')}`;
-}
-
-function parsePlaybookTargets(targets: string) {
-  const raw = String(targets || '').trim();
-  if (!raw || raw === 'all') return { mode: 'all' as const, excluded: [] as string[], included: [] as string[] };
-  const parts = raw.split(':').map(t => t.trim()).filter(Boolean);
-  if (parts[0] === 'all' && parts.slice(1).every(t => t.startsWith('!') && t.length > 1)) {
-    return { mode: 'all' as const, excluded: parts.slice(1).map(t => t.slice(1)), included: [] as string[] };
-  }
-  return { mode: 'list' as const, excluded: [] as string[], included: raw.split(',').map(t => t.trim()).filter(Boolean) };
-}
-
-// ── Cron helpers ─────────────────────────────────────────────────────────────
-
-interface IntervalDef { value: string; labelKey: string; needsTime: boolean; needsWeekday: boolean; needsMonthday: boolean }
-const INTERVALS: IntervalDef[] = [
-  { value: 'daily', labelKey: 'sc.daily', needsTime: true, needsWeekday: false, needsMonthday: false },
-  { value: 'weekly', labelKey: 'sc.weekly', needsTime: true, needsWeekday: true, needsMonthday: false },
-  { value: 'monthly', labelKey: 'sc.monthly', needsTime: true, needsWeekday: false, needsMonthday: true },
-  { value: 'every_6h', labelKey: 'sc.every6h', needsTime: false, needsWeekday: false, needsMonthday: false },
-  { value: 'every_12h', labelKey: 'sc.every12h', needsTime: false, needsWeekday: false, needsMonthday: false },
-];
-const WEEKDAYS = [
-  { value: 1, labelKey: 'sc.mon' }, { value: 2, labelKey: 'sc.tue' }, { value: 3, labelKey: 'sc.wed' },
-  { value: 4, labelKey: 'sc.thu' }, { value: 5, labelKey: 'sc.fri' }, { value: 6, labelKey: 'sc.sat' },
-  { value: 0, labelKey: 'sc.sun' },
-];
-
-function cronToSelectors(cron: string) {
-  if (cron === '0 */6 * * *') return { interval: 'every_6h', hour: 3, minute: 0, weekday: 1, monthday: 1 };
-  if (cron === '0 */12 * * *') return { interval: 'every_12h', hour: 3, minute: 0, weekday: 1, monthday: 1 };
-  const mo = cron.match(/^(\d+) (\d+) (\d+) \* \*$/);
-  if (mo) return { interval: 'monthly', minute: +mo[1], hour: +mo[2], weekday: 1, monthday: +mo[3] };
-  const d = cron.match(/^(\d+) (\d+) \* \* \*$/);
-  if (d) return { interval: 'daily', minute: +d[1], hour: +d[2], weekday: 1, monthday: 1 };
-  const w = cron.match(/^(\d+) (\d+) \* \* (\d+)$/);
-  if (w) return { interval: 'weekly', minute: +w[1], hour: +w[2], weekday: +w[3], monthday: 1 };
-  return { interval: 'daily', hour: 3, minute: 0, weekday: 1, monthday: 1 };
-}
-
-function selectorsToCron(iv: string, h: number, m: number, wd: number, md: number) {
-  switch (iv) {
-    case 'daily': return `${m} ${h} * * *`;
-    case 'weekly': return `${m} ${h} * * ${wd}`;
-    case 'monthly': return `${m} ${h} ${md} * *`;
-    case 'every_6h': return `${m} */6 * * *`;
-    case 'every_12h': return `${m} */12 * * *`;
-    default: return `${m} ${h} * * *`;
-  }
-}
-
 function useCronLabel() {
   const { t } = useTranslation();
   return useCallback((cron: string) => {
@@ -147,30 +95,6 @@ function useCronLabel() {
     return `${lbl}, ${ts}`;
   }, [t]);
 }
-
-function fmtDate(d?: string) {
-  if (!d) return '';
-  try { return new Date(d).toLocaleString(); } catch { return d; }
-}
-
-// ── Collapsed categories persistence ─────────────────────────────────────────
-
-const COLLAPSED_KEY = 'shipyard.ui.playbooks.collapsedCategories';
-function loadCollapsed(): Set<string> {
-  try { const r = localStorage.getItem(COLLAPSED_KEY); if (!r) return new Set(); const a = JSON.parse(r); return Array.isArray(a) ? new Set(a.filter((v: unknown) => typeof v === 'string')) : new Set(); } catch { return new Set(); }
-}
-function saveCollapsed(s: Set<string>) {
-  try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...s])); } catch { /* */ }
-}
-
-const TEMPLATE_YAML = `---
-- name: My New Playbook
-  hosts: all
-  become: yes
-  tasks:
-    - name: Ping all hosts
-      ping:
-`;
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Main page
@@ -196,7 +120,7 @@ export function PlaybooksPage() {
   useEffect(() => { if (!allowed.find(a => a.value === tab)) setTab(allowed[0]?.value ?? 'templates'); }, [allowed, tab]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Header + Git widget */}
       <PageHeader
         title={t('pb.title')}
@@ -205,7 +129,7 @@ export function PlaybooksPage() {
       />
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
+        <TabsList className="h-auto flex-wrap justify-start rounded-none border-b bg-transparent p-0 [&>[role=tab]]:rounded-none [&>[role=tab]]:px-3 [&>[role=tab]]:py-2 [&>[data-state=active]]:border-b-2 [&>[data-state=active]]:border-primary [&>[data-state=active]]:bg-transparent [&>[data-state=active]]:shadow-none">
           {allowed.map(tb => (
             <TabsTrigger key={tb.value} value={tb.value} className="gap-1.5">
               {tb.icon} {tb.label}
@@ -287,6 +211,7 @@ function TemplatesTab() {
   const [runDescription, setRunDescription] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [yamlError, setYamlError] = useState<string | null>(null);
 
   const { data: playbooks } = useQuery<Playbook[]>({
     queryKey: ['playbooks'],
@@ -359,6 +284,7 @@ function TemplatesTab() {
     setFilenameInput('');
     setContent(TEMPLATE_YAML);
     setOrigContent('');
+    setYamlError(null);
     setPanel('editor');
   };
 
@@ -398,12 +324,15 @@ function TemplatesTab() {
   const closePanel = () => { setPanel('none'); setSelected(null); };
 
   return (
-    <div className="grid gap-4 lg:max-h-[calc(100vh-12rem)] lg:grid-cols-[300px_minmax(0,1fr)]">
+    <div className="grid gap-4 lg:h-[calc(100vh-15rem)] lg:max-h-[46rem] lg:grid-cols-[300px_minmax(0,1fr)]">
       {/* ── List panel ─────────────────────────── */}
-      <Card className={`${panel === 'none' ? '' : 'hidden lg:flex'} min-h-0 lg:flex-col lg:overflow-hidden`}>
-        <CardContent className="p-0">
+      <Card className={`${panel === 'none' ? 'flex' : 'hidden lg:flex'} h-[calc(100dvh-15rem)] min-h-[24rem] flex-col overflow-hidden lg:h-full`}>
+        <CardContent className="flex min-h-0 flex-1 flex-col p-0">
           <div className="flex items-center justify-between border-b px-3 py-2">
-            <span className="text-sm font-semibold">{t('pb.title')}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold">{t('pb.title')}</span>
+              <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{playbooks?.length ?? 0}</Badge>
+            </div>
             {hasCap(profile, 'canEditPlaybooks') && (
               <Button variant="outline" size="icon" className="h-7 w-7" onClick={startNew} title={t('pb.new')}>
                 <Plus className="h-3.5 w-3.5" />
@@ -414,7 +343,7 @@ function TemplatesTab() {
             <Search className="pointer-events-none absolute left-5 top-4 h-4 w-4 text-muted-foreground" />
             <Input value={filter} onChange={e => setFilter(e.target.value)} placeholder={t('common.search')} className="pl-8 h-8 text-sm" />
           </div>
-          <div className="px-1 pb-2 lg:max-h-[calc(100vh-18rem)] lg:overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2">
             {Object.keys(grouped.catMap).sort().map(cat => {
               const key = `user:${cat}`;
               const open = !collapsed.has(key);
@@ -468,17 +397,21 @@ function TemplatesTab() {
               icon={<Terminal className="h-5 w-5" />}
               title={t('pb.noPlaybooks')}
               description={t('pb.selectHint')}
+              action={hasCap(profile, 'canEditPlaybooks') ? <Button size="sm" onClick={startNew}><Plus className="h-4 w-4" /> {t('pb.new')}</Button> : undefined}
             />
           </CardContent>
         </Card>
       )}
 
       {panel === 'editor' && (
-        <Card className="min-h-0 min-w-0 overflow-hidden">
-          <CardContent className="space-y-3 p-4">
+        <Card className="flex min-h-0 min-w-0 flex-col overflow-hidden lg:self-start">
+          <CardContent className="flex min-h-0 flex-1 flex-col gap-3 p-4">
             {/* Editor header */}
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="min-w-0 truncate font-medium">{isNew ? t('pb.new') : (selected ?? '')}</span>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="truncate font-medium">{isNew ? t('pb.new') : (selected ?? '')}</span>
+                {dirty && <Badge variant="secondary" className="shrink-0">{t('pb.unsaved')}</Badge>}
+              </div>
               <div className="flex flex-wrap justify-end gap-1.5">
                 <Button variant="outline" size="sm" className="lg:hidden" onClick={closePanel}>
                   <ArrowLeft className="h-4 w-4" /> {t('common.back')}
@@ -488,16 +421,19 @@ function TemplatesTab() {
                     <History className="h-4 w-4" /> {t('pb.history')}
                   </Button>
                 )}
-                {!isNew && !selectedPb?.isInternal && hasCap(profile, 'canDeletePlaybooks') && (
-                  <Button variant="destructive" size="sm" onClick={() => setDeleteConfirmOpen(true)} disabled={deleteMut.isPending}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-                <Button variant="outline" size="sm" onClick={closePanel}>{t('common.cancel')}</Button>
+                <Button variant="ghost" size="sm" onClick={closePanel}>{t('common.cancel')}</Button>
                 {hasCap(profile, 'canEditPlaybooks') && (
-                  <Button size="sm" onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>
+                  <Button size="sm" onClick={() => saveMut.mutate()} disabled={saveMut.isPending || !!yamlError}>
                     <Save className="h-4 w-4" /> {t('common.save')}
                   </Button>
+                )}
+                {!isNew && !selectedPb?.isInternal && hasCap(profile, 'canDeletePlaybooks') && (
+                  <>
+                    <Separator orientation="vertical" className="mx-1 h-6" />
+                    <Button variant="destructive" size="icon" className="h-8 w-8" onClick={() => setDeleteConfirmOpen(true)} disabled={deleteMut.isPending} title={t('common.delete')}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </>
                 )}
               </div>
             </div>
@@ -509,13 +445,11 @@ function TemplatesTab() {
                   placeholder={t('pb.filenamePlaceholder')} className="font-mono text-sm" disabled={!isNew && !!selected} />
               </div>
             )}
-            <div className="space-y-1">
+            <div className="flex min-h-0 flex-1 flex-col space-y-1">
               <Label>{t('pb.yaml')}</Label>
-              <div className="overflow-hidden rounded-md border">
-                <CodeMirror value={content} onChange={setContent} extensions={[yaml()]}
-                  theme={isDark ? 'dark' : 'light'} height="clamp(360px, calc(100vh - 22rem), 620px)"
-                  basicSetup={{ lineNumbers: true, highlightActiveLine: true }} />
-              </div>
+              <Suspense fallback={<Skeleton className="h-[420px] w-full" />}>
+                <PlaybookEditor value={content} onChange={setContent} onValidityChange={setYamlError} dark={isDark} />
+              </Suspense>
             </div>
           </CardContent>
         </Card>

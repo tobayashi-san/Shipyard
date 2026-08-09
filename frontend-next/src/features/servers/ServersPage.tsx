@@ -10,6 +10,7 @@ import {
   X, Rows3, Rows2, AlignJustify, CheckCircle2, Hash,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useUi } from '@/lib/store';
 import { useProfile, hasCap } from '@/lib/queries';
 import { showToast } from '@/lib/toast';
 import { CreateServerDialog } from '@/components/CreateServerDialog';
@@ -27,6 +28,11 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import {
+  buildGroupTree, countDescendantServers, formatRelativeTime, getDescendantIds,
+  loadCollapsedGroups, normalizeServer, parseCsvServers, saveCollapsedGroups,
+  type GroupNode, type ServerGroup, type ServerInfo, type ServerRow,
+} from './server-list-utils';
 
 function buildAllExceptTargets(excluded: string[]): string {
   const unique = [...new Set(excluded.map(v => String(v || '').trim()).filter(Boolean))];
@@ -34,139 +40,9 @@ function buildAllExceptTargets(excluded: string[]): string {
   return `all:${unique.map(v => `!${v}`).join(':')}`;
 }
 
-// ─── Types ────────────────────────────────────────────────────
-interface ServerRow {
-  id: string;
-  name: string;
-  ip_address?: string;
-  hostname?: string;
-  ssh_user?: string;
-  ssh_port?: number;
-  status?: 'online' | 'offline' | string;
-  group_id?: string | null;
-  group_name?: string;
-  tags?: string[];
-  services?: string[];
-  links?: { name: string; url: string }[];
-  storage_mounts?: { name: string; path: string }[];
-  last_seen?: string;
-  [k: string]: unknown;
-}
-
-interface ServerGroup {
-  id: string;
-  name: string;
-  color?: string;
-  parent_id?: string | null;
-}
-
-interface GroupNode extends ServerGroup {
-  children: GroupNode[];
-}
-
-interface ServerInfo {
-  os?: string;
-  cpu_usage_pct?: number;
-  ram_used_mb?: number;
-  ram_total_mb?: number;
-  disk_used_gb?: number;
-  disk_total_gb?: number;
-}
-
 // ─── Constants ────────────────────────────────────────────────
 const PAGE_SIZE = 20;
-const STORAGE_KEY_COLLAPSED = 'shipyard.ui.servers.collapsedGroups';
 const PRESET_COLORS = ['#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f97316'];
-
-function normalizeServer(s: Record<string, unknown>): ServerRow {
-  return {
-    ...s,
-    id: String(s.id),
-    name: String(s.name ?? ''),
-    tags: typeof s.tags === 'string' ? JSON.parse(s.tags) : (s.tags as string[]) || [],
-    services: typeof s.services === 'string' ? JSON.parse(s.services) : (s.services as string[]) || [],
-    links: typeof s.links === 'string' ? JSON.parse(s.links) : (s.links as { name: string; url: string }[]) || [],
-    storage_mounts: typeof s.storage_mounts === 'string' ? JSON.parse(s.storage_mounts) : (s.storage_mounts as { name: string; path: string }[]) || [],
-  } as ServerRow;
-}
-
-function loadCollapsedGroups(): Set<string> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_COLLAPSED);
-    if (!raw) return new Set();
-    const arr = JSON.parse(raw);
-    return new Set(Array.isArray(arr) ? arr.filter((v: unknown) => typeof v === 'string') : []);
-  } catch { return new Set(); }
-}
-function saveCollapsedGroups(s: Set<string>) {
-  try { localStorage.setItem(STORAGE_KEY_COLLAPSED, JSON.stringify([...s])); } catch { /* */ }
-}
-function buildGroupTree(groups: ServerGroup[], parentId: string | null = null, visited = new Set<string>()): GroupNode[] {
-  if (parentId !== null && visited.has(parentId)) return [];
-  if (parentId !== null) visited.add(parentId);
-  return groups
-    .filter(g => (g.parent_id || null) === parentId)
-    .map(g => ({ ...g, children: buildGroupTree(groups, g.id, new Set(visited)) }));
-}
-
-function countDescendantServers(node: GroupNode, byGroup: Record<string, ServerRow[]>, visited = new Set<string>()): number {
-  if (visited.has(node.id)) return 0;
-  visited.add(node.id);
-  let count = 0;
-  for (const child of node.children) {
-    count += (byGroup[child.id] || []).length + countDescendantServers(child, byGroup, visited);
-  }
-  return count;
-}
-
-function getDescendantIds(groups: ServerGroup[], id: string): Set<string> {
-  const ids = new Set([id]);
-  const add = (pid: string) => groups.filter(g => g.parent_id === pid).forEach(g => {
-    if (!ids.has(g.id)) { ids.add(g.id); add(g.id); }
-  });
-  add(id);
-  return ids;
-}
-
-function formatRelativeTime(dateStr: string, t: (k: string, o?: Record<string, unknown>) => string): string {
-  const utc = dateStr && !dateStr.endsWith('Z') ? dateStr.replace(' ', 'T') + 'Z' : dateStr;
-  const diff = Math.floor((Date.now() - new Date(utc).getTime()) / 1000);
-  if (diff < 60) return t('dash.justNow');
-  if (diff < 3600) return Math.floor(diff / 60) + 'm';
-  if (diff < 86400) return Math.floor(diff / 3600) + 'h';
-  return Math.floor(diff / 86400) + 'd';
-}
-
-function parseCsvServers(text: string): Record<string, unknown>[] {
-  const lines = text.split(/\r?\n/).filter(l => l.trim());
-  if (lines.length < 2) return [];
-  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-  return lines.slice(1).map(line => {
-    const fields: string[] = [];
-    let cur = '', inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (inQ) {
-        if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; continue; }
-        if (ch === '"') { inQ = false; continue; }
-        cur += ch;
-      } else {
-        if (ch === '"') { inQ = true; }
-        else if (ch === ',') { fields.push(cur); cur = ''; }
-        else { cur += ch; }
-      }
-    }
-    fields.push(cur);
-    const obj: Record<string, unknown> = {};
-    headers.forEach((h, i) => { obj[h] = fields[i] ?? ''; });
-    try { obj.tags = JSON.parse((obj.tags as string) || '[]'); } catch { obj.tags = []; }
-    try { obj.services = JSON.parse((obj.services as string) || '[]'); } catch { obj.services = []; }
-    try { obj.links = JSON.parse((obj.links as string) || '[]'); } catch { obj.links = []; }
-    try { obj.storage_mounts = JSON.parse((obj.storage_mounts as string) || '[]'); } catch { obj.storage_mounts = []; }
-    obj.ssh_port = parseInt(String(obj.ssh_port)) || 22;
-    return obj;
-  }).filter(o => o.name && o.ip_address);
-}
 
 // ─── MetricBar Component ──────────────────────────────────────
 function MetricBar({ pct }: { pct: number | null }) {
@@ -339,6 +215,7 @@ function MoveDropdown({ groups, onSelect, onClose, anchorRef }: {
 export function ServersPage() {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const environmentId = useUi((s) => s.environmentId);
   const { data: profile } = useProfile();
   const navigate = useNavigate();
   useEffect(() => { sessionStorage.setItem('shipyard.lastNonDetailRoute', '/servers'); }, []);
@@ -354,11 +231,12 @@ export function ServersPage() {
     staleTime: 30_000,
   });
 
-  const servers = useMemo(() => (rawServers ?? []).map(normalizeServer), [rawServers]);
+  const servers = useMemo(() => (rawServers ?? []).map(normalizeServer).filter((server) => String((server as ServerRow & { environment_id?: string }).environment_id || 'default') === environmentId), [rawServers, environmentId]);
   const groups = useMemo(() => (rawGroups ?? []) as ServerGroup[], [rawGroups]);
 
   // ── Local UI state ──────────────────────────────────────────
-  const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [activeTag, setActiveTag] = useState<string | null>(() => localStorage.getItem('shipyard-next.server-tag') || null);
+  const [search, setSearch] = useState(() => localStorage.getItem('shipyard-next.server-search') || '');
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsedGroups);
@@ -369,30 +247,68 @@ export function ServersPage() {
   const [moveFor, setMoveFor] = useState<string | null>(null);
   const moveRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [density, setDensity] = useState<'compact' | 'cozy' | 'comfortable'>(() => {
     const saved = localStorage.getItem('shipyard-next.density');
     return (saved === 'compact' || saved === 'comfortable') ? saved : 'cozy';
   });
   useEffect(() => { localStorage.setItem('shipyard-next.density', density); }, [density]);
+  useEffect(() => {
+    if (activeTag) localStorage.setItem('shipyard-next.server-tag', activeTag);
+    else localStorage.removeItem('shipyard-next.server-tag');
+  }, [activeTag]);
+  useEffect(() => { localStorage.setItem('shipyard-next.server-search', search); }, [search]);
+  useEffect(() => {
+    const focusSearch = (event: KeyboardEvent) => {
+      if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (!window.matchMedia('(min-width: 640px)').matches) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.matches('input, textarea, select, [contenteditable="true"]')) return;
+      event.preventDefault();
+      searchInputRef.current?.focus();
+    };
+    window.addEventListener('keydown', focusSearch);
+    return () => window.removeEventListener('keydown', focusSearch);
+  }, []);
+  const [sortBy, setSortBy] = useState<'name' | 'status' | 'ip'>(() => {
+    const saved = localStorage.getItem('shipyard-next.server-sort');
+    return saved === 'status' || saved === 'ip' ? saved : 'name';
+  });
+  useEffect(() => { localStorage.setItem('shipyard-next.server-sort', sortBy); }, [sortBy]);
 
   // ── Derived data ────────────────────────────────────────────
   const allTags = useMemo(() => [...new Set(servers.flatMap(s => s.tags || []))].sort(), [servers]);
-  const filtered = useMemo(() => activeTag ? servers.filter(s => (s.tags || []).includes(activeTag!)) : servers, [servers, activeTag]);
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return servers.filter((server) => {
+      const matchesTag = !activeTag || (server.tags || []).includes(activeTag);
+      const haystack = [server.name, server.ip_address, ...(server.tags || [])].join(' ').toLowerCase();
+      return matchesTag && (!query || haystack.includes(query));
+    });
+  }, [servers, activeTag, search]);
+  const sortedServers = useMemo(() => [...filtered].sort((a, b) => {
+    if (sortBy === 'status') {
+      const rank = (status?: string) => status === 'offline' ? 0 : status === 'unknown' ? 1 : 2;
+      return rank(a.status) - rank(b.status) || a.name.localeCompare(b.name);
+    }
+    if (sortBy === 'ip') return String(a.ip_address || '').localeCompare(String(b.ip_address || '')) || a.name.localeCompare(b.name);
+    return a.name.localeCompare(b.name);
+  }), [filtered, sortBy]);
   const useGroups = groups.length > 0;
 
-  const totalPages = useGroups ? 1 : Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const totalPages = useGroups ? 1 : Math.max(1, Math.ceil(sortedServers.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  const pageServers = useGroups ? filtered : filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const pageServers = useGroups ? sortedServers : sortedServers.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   const onlineCount = servers.filter(s => s.status === 'online').length;
   const offlineCount = servers.filter(s => s.status === 'offline').length;
 
   // Load server info for visible rows
   const visibleIds = useMemo(() => {
-    if (useGroups) return filtered.map(s => s.id);
+    if (useGroups) return sortedServers.map(s => s.id);
     return pageServers.map(s => s.id);
-  }, [useGroups, filtered, pageServers]);
+  }, [useGroups, sortedServers, pageServers]);
   const { infoMap, loadInfos } = useServerInfoMap(visibleIds);
 
   // ── Mutations ───────────────────────────────────────────────
@@ -654,14 +570,13 @@ export function ServersPage() {
   function renderServerRow(s: ServerRow, depth = 0, folderColor?: string | null) {
     const info = infoMap[s.id];
     const os = info?.os?.split(' ')[0] || '—';
-    const cpuPct = info?.cpu_usage_pct ?? null;
-    const ramPct = info?.ram_total_mb ? Math.round((info.ram_used_mb! / info.ram_total_mb) * 100) : null;
-    const diskPct = info?.disk_total_gb ? Math.round((info.disk_used_gb! / info.disk_total_gb) * 100) : null;
     const lastSeen = fmtLastSeen(s);
+    const statusTone = s.status === 'online' ? 'success' : s.status === 'offline' ? 'danger' : 'muted';
+    const statusLabel = s.status === 'online' ? t('common.online') : s.status === 'offline' ? t('common.offline') : t('common.unknown');
 
     return (
       <tr key={s.id}
-        className={`hover:bg-accent/40 cursor-pointer ${selectedIds.has(s.id) ? 'bg-accent/20' : ''}`}
+        className={`cursor-pointer border-b border-border/70 transition-colors last:border-0 hover:bg-accent/45 ${selectedIds.has(s.id) ? 'bg-accent/35' : ''}`}
         draggable
         onDragStart={e => { e.dataTransfer.setData('text/plain', `server:${s.id}`); setDragItem({ type: 'server', id: s.id }); }}
         onDragEnd={() => setDragItem(null)}
@@ -670,34 +585,34 @@ export function ServersPage() {
           navigate({ to: '/servers/$id', params: { id: s.id } });
         }}
       >
-        <td className="px-2 py-2.5 w-9 srv-checkbox" style={folderColor ? { borderLeft: `3px solid ${folderColor}` } : undefined}
+        <td className="w-12 px-4 py-3.5 srv-checkbox" style={folderColor ? { borderLeft: `3px solid ${folderColor}` } : undefined}
           onClick={e => e.stopPropagation()}>
           <input type="checkbox" className="rounded" checked={selectedIds.has(s.id)}
             onChange={() => toggleSelect(s.id)} />
         </td>
-        <td className="px-1 py-2.5 w-3">
-          {s.status === 'online' ? (
-            <LiveDot tone="success" />
-          ) : (
-            <CircleDot className={`h-3 w-3 ${s.status === 'offline' ? 'text-rose-500' : 'text-muted-foreground'}`} />
-          )}
+        <td className="px-3 py-3.5" style={{ paddingLeft: depth > 0 ? `${14 + (depth - 1) * 14}px` : undefined }}>
+          <div className="flex items-center gap-2">
+            {s.status === 'online' ? <LiveDot tone="success" /> : <CircleDot className={`h-3.5 w-3.5 ${s.status === 'offline' ? 'text-rose-500' : 'text-muted-foreground'}`} />}
+            <Link to="/servers/$id" params={{ id: s.id }} className="font-medium hover:underline">{s.name}</Link>
+          </div>
         </td>
-        <td className="px-3 py-2.5" style={{ paddingLeft: depth > 0 ? `${14 + (depth - 1) * 14}px` : undefined }}>
-                <Link to="/servers/$id" params={{ id: s.id }} className="font-medium hover:underline">{s.name}</Link>
-          {(s.tags || []).length > 0 && (
-            <span className="ml-2 inline-flex gap-1">
-              {s.tags!.map(tag => <Badge key={tag} variant="secondary" className="text-[10px] px-1.5 py-0">{tag}</Badge>)}
-            </span>
-          )}
+        <td className="w-52 px-3 py-3.5">
+          <div className="font-mono text-xs tabular-nums text-foreground/80">{s.ip_address || '—'}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{os}</div>
         </td>
-        <td className="px-3 py-2.5 text-muted-foreground text-xs tabular-nums">{s.ip_address || '—'}</td>
-        <td className="px-3 py-2.5 text-muted-foreground text-xs">{os}</td>
-        <td className="px-3 py-2.5"><MetricBar pct={cpuPct} /></td>
-        <td className="px-3 py-2.5"><MetricBar pct={ramPct} /></td>
-        <td className="px-3 py-2.5"><MetricBar pct={diskPct} /></td>
-        <td className="px-3 py-2.5 text-muted-foreground text-xs tabular-nums">{lastSeen}</td>
-         <td className="px-3 py-2.5 w-[100px] srv-actions" onClick={e => e.stopPropagation()}>
-           <div className="flex items-center justify-start gap-0.5">
+        <td className="w-48 px-3 py-3.5">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <StatusBadge tone={statusTone} dot>{statusLabel}</StatusBadge>
+            <span className="text-xs tabular-nums text-muted-foreground">{lastSeen}</span>
+          </div>
+        </td>
+        <td className="w-56 px-3 py-3.5">
+          <div className="flex flex-wrap gap-1">
+            {(s.tags || []).length > 0 ? s.tags!.map(tag => <Badge key={tag} variant="secondary" className="px-1.5 py-0 text-[10px]">{tag}</Badge>) : <span className="text-xs text-muted-foreground">—</span>}
+          </div>
+        </td>
+         <td className="w-28 px-4 py-3.5 srv-actions" onClick={e => e.stopPropagation()}>
+           <div className="flex items-center justify-end gap-0.5">
             {useGroups && hasCap(profile, 'canEditServers') && (
               <div className="relative" ref={moveFor === s.id ? moveRef : undefined}>
                 <Button variant="ghost" size="icon" className="h-7 w-7" title={t('srv.moveTo')}
@@ -752,7 +667,7 @@ export function ServersPage() {
           onDragLeave={e => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDragOverGroup(null); }}
           onDrop={e => { e.preventDefault(); handleDrop(node.id); }}
         >
-          <td colSpan={9} style={{ borderLeft: `3px solid ${color}` }}>
+          <td colSpan={5} style={{ borderLeft: `3px solid ${color}` }}>
             <div className="flex items-center gap-2 py-1.5" style={{ paddingLeft: `${12 + depth * 20}px` }}>
               {isCollapsed ? <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" /> : <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
               {isCollapsed ? <Folder className="h-4 w-4 flex-shrink-0" style={{ color }} /> : <FolderOpen className="h-4 w-4 flex-shrink-0" style={{ color }} />}
@@ -760,8 +675,8 @@ export function ServersPage() {
               <Badge variant="secondary" className="text-[10px] ml-1">{total}</Badge>
             </div>
           </td>
-          <td className="px-3 py-1.5 w-[100px] srv-actions" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-start gap-0.5">
+          <td className="w-28 px-3 py-1.5 srv-actions" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-end gap-0.5">
               {hasCap(profile, 'canAddServers') && (
                 <Button variant="ghost" size="icon" className="h-7 w-7" title={t('srv.createSubfolder')}
                   onClick={() => setGroupDialog({ open: true, title: t('srv.newSubfolderIn', { parent: node.name }), confirmText: t('common.create'), parentId: node.id, editId: null })}>
@@ -786,7 +701,7 @@ export function ServersPage() {
         {!isCollapsed && (
           <>
             {members.length === 0 && node.children.length === 0 && (
-              <tr><td colSpan={10}><div className="flex items-center gap-1.5 text-muted-foreground text-xs py-1.5" style={{ paddingLeft: `${34 + depth * 20}px` }}>
+              <tr><td colSpan={6}><div className="flex items-center gap-1.5 text-muted-foreground text-xs py-1.5" style={{ paddingLeft: `${34 + depth * 20}px` }}>
                 <Info className="h-3 w-3" /> {t('srv.emptyGroup')}
               </div></td></tr>
             )}
@@ -802,7 +717,7 @@ export function ServersPage() {
   const serversByGroup = useMemo(() => {
     const map: Record<string, ServerRow[]> = {};
     const ungrouped: ServerRow[] = [];
-    for (const s of filtered) {
+    for (const s of sortedServers) {
       const gid = s.group_id;
       if (gid && groups.find(g => g.id === gid)) {
         (map[gid] = map[gid] || []).push(s);
@@ -811,7 +726,7 @@ export function ServersPage() {
       }
     }
     return { map, ungrouped };
-  }, [filtered, groups]);
+  }, [sortedServers, groups]);
 
   const tree = useMemo(() => buildGroupTree(groups), [groups]);
 
@@ -819,16 +734,29 @@ export function ServersPage() {
   // ─── JSX ──────────────────────────────────────────────────
   // ═══════════════════════════════════════════════════════════
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Header */}
       <PageHeader
         title={t('srv.title')}
-        description={`${t('srv.count', { total: servers.length, online: onlineCount, offline: offlineCount })}${activeTag ? ` · ${t('srv.filtered', { tag: activeTag })}` : ''}`}
+        description={`${t('srv.count', { total: servers.length, online: onlineCount, offline: offlineCount })}${activeTag ? ` · ${t('srv.filtered', { tag: activeTag })}` : ''}${search ? ` · ${t('srv.results', { count: filtered.length })}` : ''}`}
         actions={
           <>
           {hasCap(profile, 'canAddServers') && (
             <CreateServerDialog />
           )}
+          <div className="relative hidden w-52 sm:block">
+            <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input ref={searchInputRef} value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} className="h-8 pl-8 pr-7 text-xs" placeholder={t('srv.searchServers')} aria-label={t('srv.searchServers')} />
+            {!search && <span className="pointer-events-none absolute right-2 top-1.5 kbd">/</span>}
+          </div>
+          <label className="hidden items-center gap-2 sm:flex">
+            <span className="sr-only">{t('dash.sortBy')}</span>
+            <select value={sortBy} onChange={(event) => { setSortBy(event.target.value as typeof sortBy); setPage(1); }} className="h-8 rounded-md border border-input bg-background px-2 text-xs text-muted-foreground">
+              <option value="name">{t('dash.sortName')}</option>
+              <option value="status">{t('dash.sortStatus')}</option>
+              <option value="ip">{t('dash.sortIp')}</option>
+            </select>
+          </label>
           <div className="hidden sm:inline-flex items-center rounded-md border bg-background p-0.5">
             {([
               { val: 'compact' as const, Icon: Rows3, label: t('srv.densityCompact') },
@@ -894,6 +822,11 @@ export function ServersPage() {
         }
       />
 
+      <div className="relative sm:hidden">
+        <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} className="pl-9" placeholder={t('srv.searchServers')} aria-label={t('srv.searchServers')} />
+      </div>
+
       {/* Bulk bar */}
       {selectedIds.size > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-primary/25 bg-primary/[0.04] px-4 py-2.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-200">
@@ -919,8 +852,8 @@ export function ServersPage() {
       )}
 
       {/* Tag filter bar */}
-      {allTags.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
+      {(allTags.length > 0 || search) && (
+        <div className="flex flex-wrap items-center gap-1.5" aria-label={t('srv.filterTags')}>
           <button type="button"
             onClick={() => { setActiveTag(null); setPage(1); }}
             className={`inline-flex h-7 items-center rounded-full px-3 text-xs font-medium transition-colors ${
@@ -945,11 +878,16 @@ export function ServersPage() {
               </button>
             );
           })}
+          {(activeTag || search) && (
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => { setActiveTag(null); setSearch(''); setPage(1); }}>
+              <X className="h-3 w-3" /> {t('common.clear')}
+            </Button>
+          )}
         </div>
       )}
 
       {/* Main table card */}
-      <Card>
+      <Card className="border-strong shadow-sm">
         <CardContent className="p-0">
           {isLoading ? (
             <div className="py-2">
@@ -962,27 +900,31 @@ export function ServersPage() {
               description={t('srv.noServersHint')}
               action={hasCap(profile, 'canAddServers') ? <CreateServerDialog /> : undefined}
             />
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              compact
+              icon={<Search className="h-5 w-5" />}
+              title={t('srv.noMatchingServers')}
+              description={t('srv.noMatchingServersHint')}
+              action={<Button variant="outline" size="sm" onClick={() => { setActiveTag(null); setSearch(''); setPage(1); }}>{t('common.clear')}</Button>}
+            />
           ) : (
             <>
               {/* Desktop table */}
-              <div className="hidden md:block overflow-x-auto">
+              <div className="hidden max-h-[calc(100vh-18rem)] overflow-auto md:block">
                 <table className="w-full text-sm" data-density={density}>
-                  <thead className="border-b bg-muted/30 text-left text-xs uppercase tracking-wider text-muted-foreground">
+                  <thead className="sticky top-0 z-10 border-b border-border-strong bg-secondary/85 text-left text-[11px] font-semibold uppercase tracking-[0.075em] text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]">
                     <tr>
-                      <th className="px-2 py-2 w-9">
+                      <th className="w-12 px-4 py-2.5">
                         <input type="checkbox" className="rounded" checked={allSelected}
                           ref={el => { if (el) el.indeterminate = someSelected; }}
                           onChange={e => selectAll(e.target.checked)} />
                       </th>
-                      <th className="px-1 py-2 w-3"></th>
-                      <th className="px-3 py-2">{t('srv.colName')}</th>
-                      <th className="px-3 py-2">{t('srv.colIp')}</th>
-                      <th className="px-3 py-2">{t('srv.colOs')}</th>
-                      <th className="px-3 py-2 w-[140px]">{t('srv.colCpu')}</th>
-                      <th className="px-3 py-2 w-[140px]">{t('srv.colRam')}</th>
-                      <th className="px-3 py-2 w-[140px]">{t('srv.colDisk')}</th>
-                      <th className="px-3 py-2">{t('srv.colLastSeen')}</th>
-                      <th className="px-3 py-2 w-[100px]">{t('common.actions')}</th>
+                      <th className="px-3 py-2.5">{t('srv.colName')}</th>
+                      <th className="w-52 px-3 py-2.5">{t('srv.colIp')}</th>
+                      <th className="w-48 px-3 py-2.5">{t('common.status')}</th>
+                      <th className="w-56 px-3 py-2.5">{t('srv.tags')}</th>
+                      <th className="w-28 px-4 py-2.5 text-right">{t('common.actions')}</th>
                     </tr>
                   </thead>
                   {useGroups ? (
@@ -994,8 +936,8 @@ export function ServersPage() {
                             onDragOver={e => { e.preventDefault(); setDragOverGroup('__root__'); }}
                             onDragLeave={() => setDragOverGroup(null)}
                             onDrop={e => { e.preventDefault(); handleDrop(null); }}>
-                            <td colSpan={10}>
-                              <div className={`flex items-center gap-2 py-2 px-3 ${dragOverGroup === '__root__' ? 'bg-accent/50' : ''}`}>
+                            <td colSpan={6}>
+                              <div className={`flex items-center gap-2 px-4 py-2.5 ${dragOverGroup === '__root__' ? 'bg-accent/50' : ''}`}>
                                 <ServerIcon className="h-3.5 w-3.5 text-muted-foreground" />
                                 <span className="text-muted-foreground text-sm">{t('srv.moveToRoot')}</span>
                                 <Badge variant="secondary" className="text-[10px] ml-1">{serversByGroup.ungrouped.length}</Badge>
@@ -1089,7 +1031,7 @@ export function ServersPage() {
               {!useGroups && totalPages > 1 && (
                 <div className="flex items-center justify-between border-t px-4 py-2">
                   <span className="text-xs text-muted-foreground">
-                    {t('srv.pageInfo', { from: (safePage - 1) * PAGE_SIZE + 1, to: Math.min(safePage * PAGE_SIZE, filtered.length), total: filtered.length })}
+                    {t('srv.pageInfo', { from: (safePage - 1) * PAGE_SIZE + 1, to: Math.min(safePage * PAGE_SIZE, sortedServers.length), total: sortedServers.length })}
                   </span>
                   <div className="flex items-center gap-1">
                     <Button size="sm" variant="ghost" disabled={safePage === 1} onClick={() => setPage(safePage - 1)}>‹</Button>

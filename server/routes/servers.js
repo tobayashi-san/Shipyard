@@ -376,7 +376,7 @@ router.get('/:id', guardServerAccess, guard('canViewServers'), (req, res) => {
 // POST /api/servers - Add a new server
 router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAddServers')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
-    const { name, hostname, ip_address, ssh_port, ssh_user, tags, services, links, storage_mounts } = req.body;
+    const { name, hostname, ip_address, ssh_port, ssh_user, tags, services, links, storage_mounts, environment_id } = req.body;
     if (!name || typeof name !== 'string' || !ip_address || typeof ip_address !== 'string') {
       return res.status(400).json({ error: 'Name and IP address are required' });
     }
@@ -391,6 +391,8 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
     const normalizedLinks = normalizeServerLinks(links || []);
     const normalizedStorageMounts = normalizeStorageMounts(storage_mounts || []);
     const normalizedTags = Array.isArray(tags) ? tags.filter(t => typeof t === 'string').map(t => t.slice(0, 100)) : [];
+    const environmentId = environment_id || 'default';
+    if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found' });
     const server = db.servers.create({
       name: normalizedName,
       hostname: (hostname || ip_address).slice(0, 255),
@@ -401,6 +403,7 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
       services: Array.isArray(services) ? services.filter(s => typeof s === 'string').map(s => s.slice(0, 100)) : [],
       links: normalizedLinks,
       storage_mounts: normalizedStorageMounts,
+      environment_id: environmentId,
     });
     const autoGroupId = resolveGroupIdByTags(normalizedTags, allGroups);
     if (autoGroupId) {
@@ -421,7 +424,7 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
     const existing = req.server;
     const allGroups = db.serverGroups.getAll();
 
-    const { name, hostname, ip_address, ssh_port, ssh_user, tags, services, links, storage_mounts, dockerEnabled } = req.body;
+    const { name, hostname, ip_address, ssh_port, ssh_user, tags, services, links, storage_mounts, dockerEnabled, environment_id } = req.body;
     const sName   = name !== undefined ? String(name).trim().slice(0, 100) : existing.name;
     if (name !== undefined) {
       const nameErr = validateInventoryHostName(sName);
@@ -436,12 +439,15 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
     const sLinks  = links !== undefined ? normalizeServerLinks(links) : parseServerLinks(existing.links);
     const sMounts = storage_mounts !== undefined ? normalizeStorageMounts(storage_mounts) : parseConfiguredStorageMounts(existing.storage_mounts);
     const sDockerEnabled = dockerEnabled !== undefined ? (dockerEnabled ? 1 : 0) : (existing.docker_enabled || 0);
+    const environmentId = environment_id !== undefined ? environment_id : (existing.environment_id || 'default');
+    if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found' });
     const server = db.servers.update(req.params.id, {
       name: sName, hostname: sHost, ip_address: sIp,
       ssh_port: sPort, ssh_user: sUser, tags: sTags, services: sSvcs,
       links: sLinks,
       storage_mounts: sMounts,
       docker_enabled: sDockerEnabled,
+      environment_id: environmentId,
     });
     if (tags !== undefined) {
       const autoGroupId = resolveGroupIdByTags(sTags, allGroups);

@@ -16,12 +16,12 @@ export interface PageHeaderProps {
 
 export function PageHeader({ title, description, actions, badge, back, className }: PageHeaderProps) {
   return (
-    <div className={cn('flex flex-wrap items-start justify-between gap-3', className)}>
+    <div className={cn('flex flex-wrap items-start justify-between gap-4', className)}>
       <div className="flex min-w-0 max-w-full items-start gap-3">
         {back}
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="break-words text-2xl font-semibold text-foreground">{title}</h1>
+            <h1 className="break-words text-2xl font-bold tracking-tight text-foreground sm:text-3xl">{title}</h1>
             {badge}
           </div>
           {description && (
@@ -29,7 +29,7 @@ export function PageHeader({ title, description, actions, badge, back, className
           )}
         </div>
       </div>
-      {actions && <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2">{actions}</div>}
+      {actions && <div className="flex w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:justify-end">{actions}</div>}
     </div>
   );
 }

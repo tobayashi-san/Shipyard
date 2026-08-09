@@ -5,6 +5,7 @@ server/node_modules/
 
 # Build output
 frontend/dist/
+frontend-next/dist/
 
 # Runtime data — never commit
 server/data/

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import {
-  Server, CheckCircle2, XCircle, RotateCcw, AlertTriangle, RefreshCw,
+  Server, CheckCircle2, XCircle, RotateCcw, RefreshCw,
   HeartPulse, Bell, Clock, Filter, Plus, Bot, PackagePlus, Container, Cog,
   HardDrive, Cpu, MemoryStick,
 } from 'lucide-react';
@@ -123,6 +123,7 @@ function formatCurrentTime(hour12: boolean) {
 export function DashboardPage() {
   const { t } = useTranslation();
   const timeFormat = useUi((s) => s.timeFormat);
+  const environmentId = useUi((s) => s.environmentId);
   const hour12 = timeFormat === '12h';
   useEffect(() => { sessionStorage.setItem('shipyard.lastNonDetailRoute', '/'); }, []);
   const qc = useQueryClient();
@@ -140,10 +141,9 @@ export function DashboardPage() {
     ws.connect();
     const unsub = ws.subscribe((raw) => {
       const msg = raw as { type?: string };
-      if (msg?.type === 'cache_updated' || msg?.type === 'docker_refreshed' || msg?.type === 'resource_alert_triggered' || msg?.type === 'resource_alert_updated') {
+      if (msg?.type === 'cache_updated' || msg?.type === 'docker_refreshed') {
         void qc.invalidateQueries({ queryKey: ['dashboard'] });
       }
-      if (msg?.type === 'resource_alert_triggered') showToast(t('dash.alerts'), 'warning');
     });
     return unsub;
   }, [qc, t]);
@@ -180,10 +180,9 @@ export function DashboardPage() {
 
   const isBusy = isFetching || refreshing;
 
-  const summary = data?.summary ?? { total: 0, online: 0, offline: 0, rebootRequired: 0, totalUpdates: 0, criticalDisk: 0, criticalRam: 0 };
-  const servers = data?.servers ?? [];
+  const servers = useMemo(() => (data?.servers ?? []).filter((server) => String((server as ServerInfo & { environment_id?: string }).environment_id || 'default') === environmentId), [data?.servers, environmentId]);
+  const summary = useMemo(() => ({ total: servers.length, online: servers.filter(s => s.status === 'online').length, offline: servers.filter(s => s.status === 'offline').length, rebootRequired: servers.filter(s => s.reboot_required).length, totalUpdates: servers.reduce((total, s) => total + (s.updates_count ?? 0), 0), criticalDisk: 0, criticalRam: 0 }), [servers]);
   const recentHistory = data?.recentHistory ?? [];
-  const resourceAlerts = data?.alerts ?? [];
   const [attentionOnly, setAttentionOnly] = [
     useUi((s) => s.dashAttentionOnly),
     useUi((s) => s.setDashAttentionOnly),
@@ -200,7 +199,7 @@ export function DashboardPage() {
   const updatesServerCount = servers.filter(s => (s.updates_count ?? 0) > 0 || (s.image_updates_count ?? 0) > 0 || (s.custom_updates_count ?? 0) > 0).length;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Header */}
       <PageHeader
         title={t('dash.title')}
@@ -217,7 +216,7 @@ export function DashboardPage() {
       )}
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-3 lg:grid-cols-5">
         <StatCard icon={<Server className="h-4 w-4" />} value={summary.total} label={t('dash.totalServers')}
           footer={t('dash.statFooterReachable', { n: summary.online })} />
         <StatCard icon={<CheckCircle2 className="h-4 w-4" />} value={summary.online} label={t('dash.online')}
@@ -231,18 +230,13 @@ export function DashboardPage() {
         <StatCard icon={<PackagePlus className="h-4 w-4" />} value={summary.totalUpdates} label={t('dash.updatesAvailable')}
           color={summary.totalUpdates > 0 ? 'warning' : undefined}
           footer={summary.totalUpdates > 0 ? t('dash.statFooterOnServers', { n: updatesServerCount }) : t('dash.statFooterAllClear')} />
-        <StatCard icon={<AlertTriangle className="h-4 w-4" />} value={resourceAlerts.filter(a => a.status !== 'acknowledged').length} label={t('dash.resourcesCritical')}
-          color={resourceAlerts.some(a => a.status !== 'acknowledged') ? 'error' : undefined}
-          footer={resourceAlerts.length > 0
-            ? t('dash.statFooterDiskRam', { disk: summary.criticalDisk, ram: summary.criticalRam })
-            : t('dash.statFooterAllClear')} />
       </div>
 
       {/* Main grid: health table + side */}
       <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[1fr_340px]">
         {/* Server Health */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 py-3">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 pb-3 pt-5 sm:px-4 sm:pb-3 sm:pt-5">
             <CardTitle className="flex items-center gap-2 text-base">
               <HeartPulse className="h-4 w-4 text-muted-foreground" />
               {t('dash.serverHealth')}
@@ -279,13 +273,13 @@ export function DashboardPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b text-left text-xs text-muted-foreground">
-                        <th className="w-7 px-4 py-2" />
-                        <th className="px-2 py-2">{t('common.name')}</th>
-                        <th className="w-[170px] px-2 py-2">{t('dash.colRam')}</th>
-                        <th className="w-[170px] px-2 py-2">{t('dash.colDisk')}</th>
-                        <th className="w-[150px] px-2 py-2">{t('dash.colCpu')}</th>
-                        <th className="w-[90px] px-2 py-2">{t('dash.colUptime')}</th>
-                        <th className="w-[130px] px-2 py-2">{t('dash.colUpdates')}</th>
+                        <th className="w-7 px-4 py-3" />
+                        <th className="px-2 py-3">{t('common.name')}</th>
+                        <th className="w-[170px] px-2 py-3">{t('dash.colRam')}</th>
+                        <th className="w-[170px] px-2 py-3">{t('dash.colDisk')}</th>
+                        <th className="w-[150px] px-2 py-3">{t('dash.colCpu')}</th>
+                        <th className="w-[90px] px-2 py-3">{t('dash.colUptime')}</th>
+                        <th className="w-[130px] px-2 py-3">{t('dash.colUpdates')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -304,51 +298,20 @@ export function DashboardPage() {
 
         {/* Side column */}
         <div className="flex flex-col gap-4">
-          {/* Alerts */}
-          <Card>
-            <CardHeader className="flex flex-row items-center gap-2 space-y-0 px-4 py-3">
-              <Bell className="h-4 w-4 text-amber-500" />
-              <CardTitle className="text-base">{t('dash.alerts')}</CardTitle>
-              {resourceAlerts.length > 0 && <Badge variant="secondary">{resourceAlerts.length}</Badge>}
-            </CardHeader>
-            <CardContent className="space-y-0 p-0">
-              {resourceAlerts.length === 0 ? (
-                  <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" /> {t('dash.allClear')}
-                </div>
-              ) : (
-                <div className="max-h-[320px] overflow-y-auto">
-                  {resourceAlerts.map((a) => (
-                    <div key={a.id} className="flex items-center gap-2.5 border-b px-4 py-2 text-sm last:border-b-0">
-                      <Link to="/servers/$id" params={{ id: String(a.server_id) }}
-                        className="flex min-w-0 flex-1 items-center gap-2.5 transition-colors hover:text-primary">
-                        <span className={a.severity === 'critical' ? 'text-destructive' : a.status === 'acknowledged' ? 'text-muted-foreground' : 'text-amber-500'}>
-                          <AlertTriangle className="h-3.5 w-3.5" />
-                        </span>
-                        <span className="truncate">{a.message}</span>
-                        {a.status === 'acknowledged' && <StatusBadge tone="muted">{t('det.acknowledged')}</StatusBadge>}
-                      </Link>
-                      {a.status !== 'acknowledged' && (
-                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => ackAlert.mutate(a.id)}>
-                          {t('det.acknowledge')}
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
           {/* Recent Activity */}
           <Card>
-            <CardHeader className="flex flex-row items-center gap-2 space-y-0 px-4 py-3">
+            <CardHeader className="flex flex-row items-center gap-2 space-y-0 px-4 pb-2 pt-4 sm:px-4 sm:pb-2 sm:pt-4">
               <Clock className="h-4 w-4 text-muted-foreground" />
               <CardTitle className="text-base">{t('dash.recentActivity')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-0 p-0">
               {recentHistory.length === 0 ? (
-                <div className="px-4 py-3 text-sm text-muted-foreground">{t('dash.noActivity')}</div>
+                <div className="px-4 pb-3 pt-2">
+                  <p className="text-sm text-muted-foreground">{t('dash.noActivity')}</p>
+                  <Button variant="link" size="sm" className="mt-1 h-auto px-0" asChild>
+                    <Link to="/playbooks">{t('dash.startPlaybook')}</Link>
+                  </Button>
+                </div>
               ) : (
                 recentHistory.map((h, i) => (
                   <div key={h.id ?? i} className="flex items-center gap-3 border-b px-4 py-2 text-sm last:border-b-0">
@@ -385,16 +348,14 @@ function StatCard({ icon, value, label, color, footer }: {
     color === 'warning' ? 'text-amber-500' :
     color === 'success' ? 'text-emerald-500' : 'text-foreground';
   return (
-    <Card>
-      <CardContent className="p-3">
-        <div className="flex items-start justify-between gap-2">
-          <span className="text-muted-foreground">{icon}</span>
-          <span className="min-w-0 text-right text-xs leading-tight text-muted-foreground">{label}</span>
-        </div>
-        <div className={`mt-1 text-2xl font-semibold tabular-nums ${valueClass}`}>{value}</div>
-        <div className="mt-0.5 text-[11px] text-muted-foreground">{footer}</div>
-      </CardContent>
-    </Card>
+    <div className="min-w-0 bg-card px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-muted-foreground">{icon}</span>
+        <span className="truncate text-right text-xs text-muted-foreground">{label}</span>
+      </div>
+      <div className={`mt-1 text-xl font-semibold tabular-nums ${valueClass}`}>{value}</div>
+      <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{footer}</div>
+    </div>
   );
 }
 
@@ -440,14 +401,14 @@ function ServerRow({ s, t }: { s: ServerInfo; t: (k: string) => string }) {
   return (
     <tr className="border-b transition-colors last:border-b-0 hover:bg-muted/50 cursor-pointer"
       onClick={() => navigate({ to: '/servers/$id', params: { id: String(s.id) } })}>
-      <td className="px-4 py-2.5">
+      <td className="px-4 py-3">
         {s.status === 'online' ? (
           <LiveDot tone="success" />
         ) : (
           <span className={`inline-block h-2 w-2 rounded-full ${s.status === 'offline' ? 'bg-destructive' : 'bg-muted-foreground'}`} />
         )}
       </td>
-      <td className="px-2 py-2.5">
+      <td className="px-2 py-3">
         <div className="flex min-w-0 items-center gap-1.5">
           <span className="truncate font-medium">{s.name}</span>
           <AgentBadge s={s} />
@@ -462,15 +423,15 @@ function ServerRow({ s, t }: { s: ServerInfo; t: (k: string) => string }) {
           </div>
         )}
       </td>
-      <td className="px-2 py-2.5"><MiniBar pct={s.ram_pct} warningAt={s.alert_thresholds?.ram} /></td>
-      <td className="px-2 py-2.5"><MiniBar pct={s.disk_pct} warningAt={s.alert_thresholds?.disk} /></td>
-      <td className="px-2 py-2.5"><MiniBar pct={s.cpu_pct} warningAt={s.alert_thresholds?.cpu} /></td>
-      <td className="px-2 py-2.5">
+      <td className="px-2 py-3"><MiniBar pct={s.ram_pct} warningAt={s.alert_thresholds?.ram} /></td>
+      <td className="px-2 py-3"><MiniBar pct={s.disk_pct} warningAt={s.alert_thresholds?.disk} /></td>
+      <td className="px-2 py-3"><MiniBar pct={s.cpu_pct} warningAt={s.alert_thresholds?.cpu} /></td>
+      <td className="px-2 py-3">
         <span className={`font-mono text-xs ${!s.uptime_seconds ? 'text-muted-foreground' : ''}`}>
           {formatUptime(s.uptime_seconds)}
         </span>
       </td>
-      <td className="px-2 py-2.5"><UpdatesCell s={s} /></td>
+      <td className="px-2 py-3"><UpdatesCell s={s} /></td>
     </tr>
   );
 }
