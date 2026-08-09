@@ -177,11 +177,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           <div className="hidden md:block"><ActivityCenter placement="header" /></div>
           <div ref={profileMenuRef} className="relative">
-            <button type="button" onClick={() => { setProfileOpen((open) => !open); setHelpOpen(false); }} aria-expanded={profileOpen} aria-label="Profilmenü" className="flex h-8 w-8 items-center justify-center rounded-full border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+            <button type="button" onClick={() => { setProfileOpen((open) => !open); setHelpOpen(false); setMobileNavOpen(false); }} aria-expanded={profileOpen} aria-label="Profilmenü" className="flex h-8 w-8 items-center justify-center rounded-full border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
               <User className="h-4 w-4" />
             </button>
             {profileOpen && (
-              <div className="absolute right-0 top-10 z-50 w-72 max-w-[calc(100vw-1rem)] rounded-md border border-border/90 bg-popover p-2.5 text-popover-foreground shadow-2xl shadow-black/40 dark:bg-[#242424]">
+              <div className="fixed inset-x-3 top-14 z-[60] w-auto rounded-md border border-border/90 bg-popover p-2.5 text-popover-foreground shadow-2xl shadow-black/40 dark:bg-[#242424] md:absolute md:inset-x-auto md:right-0 md:top-10 md:w-72 md:max-w-[calc(100vw-1rem)]">
                 <div className="flex items-center gap-3.5 border-b px-3 py-3.5">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[#0f6cbd]/10 text-[#0f6cbd]"><User className="h-5 w-5" /></div>
                   <div className="min-w-0">
