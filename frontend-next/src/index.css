@@ -169,10 +169,16 @@
     border-color: hsl(var(--input)) !important;
   }
 
-  /* Selection color uses brand */
+  /* Text selection must stay visible even when a white-label accent is very
+     light (for example #ffffff). The semantic focus colour is always usable. */
   ::selection {
-    background-color: hsl(var(--brand) / 0.25);
-    color: hsl(var(--foreground));
+    background-color: hsl(var(--ring));
+    color: hsl(var(--primary-foreground));
+  }
+
+  ::-moz-selection {
+    background-color: hsl(var(--ring));
+    color: hsl(var(--primary-foreground));
   }
 }
 

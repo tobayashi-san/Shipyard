@@ -5,20 +5,22 @@ const PLUGIN_STYLES = `
   --tp-bg:          hsl(var(--background, 0 0% 100%));
   --tp-bg2:         hsl(var(--muted, 220 15% 95.5%));
   --tp-fg:          hsl(var(--foreground, 224 15% 12%));
-  --tp-fg-muted:    hsl(var(--muted-foreground, 215 16% 46%));
+  /* Do not use the configurable --brand for controls: an administrator may
+     intentionally choose a white accent. The console needs reliable contrast. */
+  --tp-fg-muted:    hsl(215 25% 37%);
   --tp-border:      hsl(var(--border, 220 13% 89%));
   --tp-radius:      var(--radius,        8px);
   --tp-mono:        'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
-  --tp-primary:     hsl(var(--brand,     217 91% 56%));
+  --tp-primary:     hsl(var(--info,      217 91% 56%));
   --tp-primary-fg:  hsl(var(--primary-foreground, 0 0% 100%));
-  --tp-primary-h:   hsl(var(--brand-hover, 217 91% 48%));
+  --tp-primary-h:   hsl(211 90% 42%);
   --tp-danger:      hsl(var(--destructive, 0 72% 51%));
   --tp-danger-h:    hsl(var(--destructive, 0 72% 45%));
   --tp-danger-fg:   hsl(var(--destructive-foreground, 0 0% 100%));
   --tp-success:     hsl(var(--success,   152 65% 38%));
   --tp-warning:     hsl(var(--warning,   35 92% 50%));
-  --tp-accent-bg:   hsl(var(--brand-light, 217 91% 96%));
-  --tp-accent-fg:   hsl(var(--brand,     217 91% 56%));
+  --tp-accent-bg:   hsl(var(--accent, 210 35% 94%));
+  --tp-accent-fg:   hsl(var(--info, 217 91% 56%));
   --tp-secondary-bg: hsl(var(--secondary, 220 15% 95%));
   --tp-secondary-fg: hsl(var(--secondary-foreground, 224 15% 16%));
   --tp-card:        hsl(var(--card,      0 0% 100%));
@@ -28,6 +30,9 @@ const PLUGIN_STYLES = `
   font-size: 14px;
   line-height: 1.5;
 }
+.dark .tofu-plugin { --tp-fg-muted: hsl(215 20% 70%); }
+.tofu-plugin ::selection { background: var(--tp-primary); color: var(--tp-primary-fg); }
+.tofu-plugin ::-moz-selection { background: var(--tp-primary); color: var(--tp-primary-fg); }
 
 /* ── Buttons ─── */
 .tofu-plugin .tp-btn {
@@ -37,7 +42,7 @@ const PLUGIN_STYLES = `
   cursor: pointer; white-space: nowrap; transition: background 120ms, opacity 120ms;
   font-family: inherit;
 }
-.tofu-plugin .tp-btn:disabled { opacity: .45; cursor: not-allowed; }
+.tofu-plugin .tp-btn:disabled { opacity: 1; cursor: not-allowed; background: var(--tp-secondary-bg); border-color: var(--tp-border); color: var(--tp-fg-muted); }
 .tofu-plugin .tp-btn-primary {
   background: var(--tp-primary); color: var(--tp-primary-fg); border-color: var(--tp-primary);
 }
@@ -89,14 +94,14 @@ const PLUGIN_STYLES = `
   display: inline-flex; align-items: center; gap: 5px;
   padding: 5px 14px; font-size: 13px; font-weight: 500;
   border-radius: calc(var(--tp-radius) - 2px); border: none; cursor: pointer;
-  background: transparent; color: var(--tp-fg-muted); transition: background 120ms, color 120ms;
+  background: transparent; color: var(--tp-fg-muted) !important; transition: background 120ms, color 120ms;
   font-family: inherit;
 }
 .tofu-plugin .tp-tab.active {
-  background: var(--tp-card); color: var(--tp-fg);
+  background: var(--tp-card); color: var(--tp-fg) !important;
   box-shadow: 0 1px 3px rgba(0,0,0,.08);
 }
-.tofu-plugin .tp-tab:not(.active):hover { background: var(--tp-border); color: var(--tp-fg); }
+.tofu-plugin .tp-tab:not(.active):hover { background: var(--tp-border); color: var(--tp-fg) !important; }
 
 .tofu-plugin .tp-tab-bar {
   display: flex; gap: 0; border-bottom: 1px solid var(--tp-border);
@@ -105,14 +110,14 @@ const PLUGIN_STYLES = `
   display: inline-flex; align-items: center; gap: 5px;
   padding: 8px 14px; font-size: 13px; font-weight: 500;
   border: none; border-bottom: 2px solid transparent;
-  background: transparent; color: var(--tp-fg-muted); cursor: pointer;
+  background: transparent; color: var(--tp-fg-muted) !important; cursor: pointer;
   margin-bottom: -1px; transition: color 120ms, border-color 120ms;
   font-family: inherit;
 }
 .tofu-plugin .tp-tab-bar-btn.active {
-  color: var(--tp-primary); border-bottom-color: var(--tp-primary);
+  color: var(--tp-primary) !important; border-bottom-color: var(--tp-primary);
 }
-.tofu-plugin .tp-tab-bar-btn:hover { color: var(--tp-fg); }
+.tofu-plugin .tp-tab-bar-btn:hover { color: var(--tp-fg) !important; }
 
 /* ── Badge ─── */
 .tofu-plugin .tp-badge {
@@ -248,6 +253,15 @@ const PLUGIN_STYLES = `
   border-radius: var(--tp-radius); font-size: 12px; color: var(--tp-fg-muted);
   background: var(--tp-bg2);
 }
+.tofu-plugin .tp-dashboard-overview { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:16px; align-items:center; margin-bottom:16px; }
+.tofu-plugin .tp-dashboard-overview h2 { margin:0; font-size:16px; line-height:1.25; }
+.tofu-plugin .tp-dashboard-overview p { margin:4px 0 0; font-size:12px; color:var(--tp-fg-muted); }
+.tofu-plugin .tp-dashboard-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(270px, 1fr)); gap:12px; }
+.tofu-plugin .tp-dashboard-card { cursor:pointer; transition:border-color 120ms, box-shadow 120ms, transform 120ms; }
+.tofu-plugin .tp-dashboard-card:hover { border-color:color-mix(in srgb, var(--tp-primary) 55%, var(--tp-border)); box-shadow:0 5px 15px rgba(15,23,42,.08); transform:translateY(-1px); }
+.dark .tofu-plugin .tp-dashboard-card:hover { box-shadow:0 5px 15px rgba(0,0,0,.2); }
+.tofu-plugin .tp-dashboard-meta { display:grid; grid-template-columns:1fr auto; gap:10px; align-items:end; }
+.tofu-plugin .tp-dashboard-path { font-family:var(--tp-mono); font-size:11px; color:var(--tp-fg-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
 /* pre block */
 .tofu-plugin .tp-pre {
@@ -262,6 +276,7 @@ const PLUGIN_STYLES = `
   .tofu-plugin .tp-summary-metric:nth-child(2) { border-right:none; }
   .tofu-plugin .tp-summary-metric:nth-child(-n+2) { border-bottom:1px solid var(--tp-border); }
   .tofu-plugin .tp-tab-bar { overflow-x:auto; }
+  .tofu-plugin .tp-dashboard-overview { grid-template-columns:1fr; }
 }
 `;
 
@@ -664,9 +679,16 @@ function renderDashboard(content) {
   }
 
   content.innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;">
+    <section class="tp-dashboard-overview">
+      <div>
+        <h2>Workspaces</h2>
+        <p>${_workspaces.length} Workspace${_workspaces.length === 1 ? '' : 's'} · Infrastruktur, Status und letzte Ausführung auf einen Blick.</p>
+      </div>
+      ${btn('primary sm', 'dash-btn-new', icon('plus',12)+' Workspace erstellen')}
+    </section>
+    <div class="tp-dashboard-grid">
       ${_workspaces.map(ws => `
-        <div class="tp-card tofu-dash-card" data-id="${esc(ws.id)}" style="cursor:pointer;transition:box-shadow 150ms;">
+        <article class="tp-card tp-dashboard-card tofu-dash-card" data-id="${esc(ws.id)}">
           <div class="tp-card-header">
             <div class="tp-card-title">
               <div class="tp-card-icon">${icon('layers', 14)}</div>
@@ -675,26 +697,27 @@ function renderDashboard(content) {
             <div class="tofu-card-status">${statusBadge(ws.last_run)}</div>
           </div>
           <div class="tp-card-body">
-            <div style="font-family:var(--tp-mono);font-size:11px;color:var(--tp-fg-muted);margin-bottom:6px;
-                        overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(ws.path)}</div>
-            ${ws.description ? `<p style="font-size:13px;color:var(--tp-fg-muted);margin:0 0 6px;">${esc(ws.description)}</p>` : ''}
-            ${ws.last_run ? `
-              <div style="font-size:12px;color:var(--tp-fg-muted);display:flex;align-items:center;gap:4px;">
-                Last: ${actionBadge(ws.last_run.action)} &nbsp;·&nbsp; ${esc(fmt(ws.last_run.started_at))}
-              </div>` : '<div style="font-size:12px;color:var(--tp-fg-muted);">No runs yet</div>'}
+            <div class="tp-dashboard-path">${esc(ws.path)}</div>
+            ${ws.description ? `<p style="font-size:13px;color:var(--tp-fg-muted);margin:8px 0 0;">${esc(ws.description)}</p>` : '<p style="font-size:13px;color:var(--tp-fg-muted);margin:8px 0 0;">Keine Beschreibung</p>'}
+            <div class="tp-dashboard-meta" style="margin-top:14px;">
+              <span class="tp-muted" style="font-size:12px;display:inline-flex;align-items:center;gap:5px;">${ws.last_run ? `${actionBadge(ws.last_run.action)} · ${esc(fmt(ws.last_run.started_at))}` : 'Noch nicht ausgeführt'}</span>
+              <span class="tp-muted" style="font-size:12px;">Öffnen →</span>
+            </div>
           </div>
-        </div>
+        </article>
       `).join('')}
     </div>
   `;
 
+  document.getElementById('dash-btn-new')?.addEventListener('click', () => openWorkspaceModal(null));
   content.querySelectorAll('.tofu-dash-card').forEach(card => {
-    card.addEventListener('click', () => {
+    const open = () => {
       _selected = card.dataset.id;
       _mainTab  = 'workspaces';
       _wsTab    = 'runs';
       renderApp();
-    });
+    };
+    card.addEventListener('click', open);
   });
 
 }
@@ -1494,7 +1517,7 @@ async function openFileEditor(ws, relPath) {
           ${btn('primary sm', 'tofu-btn-save-file', icon('save',12)+' Save', 'disabled')}
         </div>
       </div>
-      <textarea id="tofu-file-content" class="tp-input tp-input-mono"
+      <textarea id="tofu-file-content" class="tp-input tp-input-mono" spellcheck="false"
         style="min-height:420px;resize:vertical;border:none;border-top:1px solid var(--tp-border);
                border-radius:0 0 var(--tp-radius) var(--tp-radius);font-size:12px;line-height:1.6;
                display:block;width:100%;box-sizing:border-box;padding:12px 14px;"
