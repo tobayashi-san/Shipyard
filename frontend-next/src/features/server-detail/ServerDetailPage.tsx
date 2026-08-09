@@ -300,7 +300,10 @@ export function ServerDetailPage() {
     enabled: !!id,
     staleTime: 30_000,
   });
-  const serverAlerts = useMemo(() => (allAlerts ?? []).filter(a => String(a.server_id) === String(id)), [allAlerts, id]);
+  const serverAlerts = useMemo(() => {
+    const alerts = Array.isArray(allAlerts) ? allAlerts : [];
+    return alerts.filter((alert) => String(alert.server_id) === String(id));
+  }, [allAlerts, id]);
   const { data: alertSettings } = useQuery({
     queryKey: ['server', id, 'alertSettings'],
     queryFn: () => api.getServerAlertSettings(id) as unknown as Promise<AlertSettings>,
@@ -465,7 +468,7 @@ export function ServerDetailPage() {
   const runTaskMut = useMutation({
     mutationFn: (taskId: string) => api.runCustomUpdateTask(id, taskId) as unknown as Promise<{ historyId: string }>,
     onMutate: (taskId) => {
-      const task = (customTasks ?? []).find(t2 => t2.id === taskId);
+      const task = (Array.isArray(customTasks) ? customTasks : []).find(t2 => t2.id === taskId);
       startActionRun(`${t('det.output')} · ${task?.name || t('det.customUpdates')}`);
     },
     onSuccess: (data) => {
