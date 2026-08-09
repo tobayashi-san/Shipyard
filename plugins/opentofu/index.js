@@ -64,7 +64,10 @@ const SHIPYARD_OUTPUT_GENERATORS = {
     providerTag: 'proxmox',
     sshUser: 'root',
     nameExpr: (address, name) => `try(${address}.name, ${JSON.stringify(name)})`,
-    ipExpr: (address) => `try(${address}.ipv4_addresses[1][0], ${address}.ipv4_addresses[0][0], null)`,
+    // The bpg/proxmox provider returns a nested list and its interface index is
+    // not stable. Flatten it so the managed output keeps working for both a
+    // single NIC and multi-NIC guests.
+    ipExpr: (address) => `try(flatten(${address}.ipv4_addresses)[0], null)`,
   },
   hcloud_server: {
     providerTag: 'hcloud',
@@ -604,6 +607,7 @@ async function waitForManagedServers({
   maxWaitMs = APPLY_SYNC_MAX_WAIT_MS,
   retryMs = APPLY_SYNC_RETRY_MS,
   sleepFn = sleep,
+  hydrateServers = null,
 }) {
   const startedAt = Date.now();
   let attempts = 0;
@@ -614,17 +618,24 @@ async function waitForManagedServers({
     const state = await loadState();
     lastSync = extractManagedServersFromState(state, workspaceName);
 
-    if (lastSync.servers.length > 0) {
-      return { ...lastSync, attempts, waitedMs: Date.now() - startedAt, timedOut: false };
+    let pending = false;
+    if (lastSync.servers.length > 0 && typeof hydrateServers === 'function') {
+      const hydrated = await hydrateServers({ state, servers: lastSync.servers });
+      if (hydrated?.servers) lastSync = { ...lastSync, servers: hydrated.servers };
+      pending = hydrated?.pending === true;
+    }
+
+    if (lastSync.servers.length > 0 && !pending) {
+      return { ...lastSync, state, attempts, waitedMs: Date.now() - startedAt, timedOut: false };
     }
 
     if (lastSync.source === 'outputs' && !lastSync.authoritative) {
-      return { ...lastSync, attempts, waitedMs: Date.now() - startedAt, timedOut: false };
+      return { ...lastSync, state, attempts, waitedMs: Date.now() - startedAt, timedOut: false };
     }
 
     const elapsed = Date.now() - startedAt;
     if (elapsed >= maxWaitMs) {
-      return { ...lastSync, attempts, waitedMs: elapsed, timedOut: true };
+      return { ...lastSync, state, attempts, waitedMs: elapsed, timedOut: true };
     }
 
     await sleepFn(Math.min(retryMs, Math.max(0, maxWaitMs - elapsed)));
@@ -826,6 +837,70 @@ function buildProxmoxProviderFiles(vms) {
 function getProxmoxStateResources(state) {
   const resources = flattenStateResources(state?.values?.root_module);
   return resources.filter(resource => resource.type === 'proxmox_virtual_environment_vm');
+}
+
+function normalizeResourceKey(resource) {
+  if (!resource) return null;
+  const address = String(resource.address || '').trim();
+  return address ? `resource:${address}` : null;
+}
+
+function extractProxmoxGuestIpv4(payload) {
+  const interfaces = Array.isArray(payload)
+    ? payload
+    : (Array.isArray(payload?.result) ? payload.result : []);
+
+  for (const iface of interfaces) {
+    if (!iface || String(iface.name || '').toLowerCase() === 'lo') continue;
+    const addresses = Array.isArray(iface['ip-addresses'])
+      ? iface['ip-addresses']
+      : (Array.isArray(iface.ip_addresses) ? iface.ip_addresses : []);
+    for (const address of addresses) {
+      const type = String(address?.['ip-address-type'] || address?.ip_address_type || '').toLowerCase();
+      const ip = normalizeIp(address?.['ip-address'] || address?.ip_address || address?.address);
+      if (!ip || net.isIP(ip) !== 4 || ip.startsWith('127.') || ip.startsWith('169.254.')) continue;
+      if (!type || type === 'ipv4') return ip;
+    }
+  }
+  return null;
+}
+
+function applyFleetProxmoxBlueprintMetadata({ servers, state, vms, guestIps = new Map() }) {
+  const resourcesByKey = new Map(
+    getProxmoxStateResources(state)
+      .map(resource => [normalizeResourceKey(resource), resource])
+      .filter(([key]) => key)
+  );
+  const vmByResourceKey = new Map((Array.isArray(vms) ? vms : []).map(vm => [
+    `resource:proxmox_virtual_environment_vm.${vm.name}`,
+    vm,
+  ]));
+  const pendingDhcpResourceKeys = [];
+
+  const enriched = (Array.isArray(servers) ? servers : []).map(server => {
+    const vm = vmByResourceKey.get(server.resource_key);
+    if (!vm) return server;
+
+    const resource = resourcesByKey.get(server.resource_key);
+    const guestIp = guestIps.get(server.resource_key);
+    const next = {
+      ...server,
+      // The Cloud-Init account is the account Fleet must use afterwards. Never
+      // fall back to the generic provider default for form-created VMs.
+      ssh_user: vm.username || server.ssh_user,
+      hostname: vm.name || server.hostname,
+    };
+    if (guestIp) next.ip_address = guestIp;
+
+    // A successful agent query without a routable address means DHCP is still
+    // in progress. Let the existing state retry loop wait for the real lease.
+    if (vm.ipv4_address === 'dhcp' && resource && !guestIp) {
+      pendingDhcpResourceKeys.push(server.resource_key);
+    }
+    return next;
+  });
+
+  return { servers: enriched, pendingDhcpResourceKeys };
 }
 
 function buildProxmoxResourceOverview(vms, state = null) {
@@ -1438,6 +1513,62 @@ override.tf.json
     };
   }
 
+  async function resolveFleetProxmoxServers({ workspace, state, servers }) {
+    const vms = getProxmoxVms(workspace.id);
+    const matchingVms = vms.filter(vm =>
+      Array.isArray(servers) && servers.some(server =>
+        server.resource_key === `resource:proxmox_virtual_environment_vm.${vm.name}`
+      )
+    );
+    if (!matchingVms.length) return { servers, pending: false };
+
+    let connection;
+    try {
+      connection = readProxmoxConnection(workspace.env_vars);
+    } catch (error) {
+      // OpenTofu state remains a useful fallback for old workspaces that do
+      // not have API credentials configured in the Fleet form yet.
+      log.warn({ err: error, workspace: workspace.name }, 'Could not enrich Fleet Proxmox server details');
+      return { ...applyFleetProxmoxBlueprintMetadata({ servers, state, vms }), pending: false };
+    }
+
+    const resourceByKey = new Map(
+      getProxmoxStateResources(state)
+        .map(resource => [normalizeResourceKey(resource), resource])
+        .filter(([key]) => key)
+    );
+    const guestIps = new Map();
+    const settled = await Promise.allSettled(matchingVms.map(async vm => {
+      const resourceKey = `resource:proxmox_virtual_environment_vm.${vm.name}`;
+      const resource = resourceByKey.get(resourceKey);
+      const vmId = Number.parseInt(String(resource?.values?.vm_id ?? vm.vm_id ?? ''), 10);
+      const nodeName = String(resource?.values?.node_name || vm.node_name || '').trim();
+      if (!Number.isInteger(vmId) || vmId <= 0 || !nodeName) return { resourceKey, queried: false };
+      const data = await requestProxmoxApi(
+        connection,
+        `/nodes/${encodeURIComponent(nodeName)}/qemu/${vmId}/agent/network-get-interfaces`
+      );
+      const ip = extractProxmoxGuestIpv4(data);
+      if (ip) guestIps.set(resourceKey, ip);
+      return { resourceKey, queried: true };
+    }));
+    const queriedKeys = new Set(settled
+      .filter(result => result.status === 'fulfilled' && result.value.queried)
+      .map(result => result.value.resourceKey));
+    const failed = settled.filter(result => result.status === 'rejected');
+    if (failed.length) {
+      log.warn({ workspace: workspace.name, count: failed.length }, 'Could not read one or more Proxmox guest IP addresses');
+    }
+
+    const enriched = applyFleetProxmoxBlueprintMetadata({ servers, state, vms, guestIps });
+    return {
+      servers: enriched.servers,
+      // Only wait if the guest agent has responded successfully. If the agent
+      // is missing/unreachable, keep the state value and never delay apply.
+      pending: enriched.pendingDhcpResourceKeys.some(key => queriedKeys.has(key)),
+    };
+  }
+
   function getAllWorkspaces() {
     return db.db.prepare('SELECT id, name, path FROM tofu_workspaces').all().filter(w => isAllowedPath(w.path));
   }
@@ -1700,6 +1831,7 @@ override.tf.json
               const sync = await waitForManagedServers({
                 loadState: () => loadWorkspaceState({ binary, workspace, env }),
                 workspaceName: workspace.name,
+                hydrateServers: ({ state, servers }) => resolveFleetProxmoxServers({ workspace, state, servers }),
               });
               if (sync.source === 'outputs' && !sync.authoritative && sync.servers.length === 0) {
                 emitMeta('[Shipyard] Output "shipyard_server(s)" is present but invalid. Skipping server sync to avoid deleting existing entries.');
@@ -2073,6 +2205,8 @@ module.exports = {
     proxmoxApiUrl,
     buildProxmoxProviderFiles,
     buildProxmoxResourceOverview,
+    applyFleetProxmoxBlueprintMetadata,
+    extractProxmoxGuestIpv4,
     pruneWorkspaceRuns,
     moveWorkspaceDirectory,
   },

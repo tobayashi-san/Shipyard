@@ -22,6 +22,8 @@ const {
   detectTerraformResources,
   generateShipyardOutputsBlock,
   upsertManagedShipyardOutputs,
+  applyFleetProxmoxBlueprintMetadata,
+  extractProxmoxGuestIpv4,
   pruneWorkspaceRuns,
   moveWorkspaceDirectory,
 } = opentofuPlugin._test;
@@ -151,8 +153,37 @@ test('generateShipyardOutputsBlock builds a managed output for supported VM reso
   const block = generateShipyardOutputsBlock(resources);
   assert.match(block, /output "shipyard_servers"/);
   assert.match(block, /"ubuntu_cloud_vm" = \{/);
-  assert.match(block, /proxmox_virtual_environment_vm\.ubuntu_cloud_vm\.ipv4_addresses\[1\]\[0\]/);
+  assert.match(block, /flatten\(proxmox_virtual_environment_vm\.ubuntu_cloud_vm\.ipv4_addresses\)\[0\]/);
   assert.match(block, /tags\s+= \["proxmox"\]/);
+});
+
+test('Fleet Proxmox blueprints use the selected guest user and guest-agent DHCP address', () => {
+  const state = {
+    values: { root_module: { resources: [{
+      address: 'proxmox_virtual_environment_vm.app',
+      type: 'proxmox_virtual_environment_vm',
+      values: { name: 'app', node_name: 'pve001', vm_id: 123, ipv4_addresses: [['10.10.10.99']] },
+    }] } },
+  };
+  const result = applyFleetProxmoxBlueprintMetadata({
+    state,
+    servers: [{ resource_key: 'resource:proxmox_virtual_environment_vm.app', name: 'app', hostname: 'app', ip_address: '10.10.10.99', ssh_user: 'root' }],
+    vms: [{ name: 'app', username: 'ubuntu', ipv4_address: 'dhcp', node_name: 'pve001', vm_id: 123 }],
+    guestIps: new Map([['resource:proxmox_virtual_environment_vm.app', '10.10.10.24']]),
+  });
+  assert.equal(result.servers[0].ssh_user, 'ubuntu');
+  assert.equal(result.servers[0].ip_address, '10.10.10.24');
+  assert.deepEqual(result.pendingDhcpResourceKeys, []);
+});
+
+test('extractProxmoxGuestIpv4 ignores loopback and link-local addresses', () => {
+  assert.equal(extractProxmoxGuestIpv4({ result: [
+    { name: 'lo', 'ip-addresses': [{ 'ip-address-type': 'ipv4', 'ip-address': '127.0.0.1' }] },
+    { name: 'ens18', 'ip-addresses': [
+      { 'ip-address-type': 'ipv4', 'ip-address': '169.254.3.4' },
+      { 'ip-address-type': 'ipv4', 'ip-address': '10.20.30.40' },
+    ] },
+  ] }), '10.20.30.40');
 });
 
 test('upsertManagedShipyardOutputs replaces only the managed section', () => {
