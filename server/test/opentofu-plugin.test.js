@@ -96,6 +96,23 @@ test('extractManagedServersFromState falls back to VM-like resources in state', 
   assert.equal(result.servers[0].ssh_port, 2222);
 });
 
+test('extractManagedServersFromState ignores Proxmox loopback addresses and DHCP markers', () => {
+  const state = {
+    values: { root_module: { resources: [{
+      address: 'proxmox_virtual_environment_vm.dhcp',
+      type: 'proxmox_virtual_environment_vm',
+      values: {
+        name: 'dhcp-node',
+        ipv4_address: 'dhcp',
+        ipv4_addresses: [['127.0.0.1', '10.10.1.101']],
+      },
+    }] } },
+  };
+  const result = extractManagedServersFromState(state, 'lab-dhcp');
+  assert.equal(result.servers.length, 1);
+  assert.equal(result.servers[0].ip_address, '10.10.1.101');
+});
+
 test('waitForManagedServers retries until DHCP-style IP appears in state', async () => {
   let calls = 0;
   const result = await waitForManagedServers({
@@ -153,7 +170,8 @@ test('generateShipyardOutputsBlock builds a managed output for supported VM reso
   const block = generateShipyardOutputsBlock(resources);
   assert.match(block, /output "shipyard_servers"/);
   assert.match(block, /"ubuntu_cloud_vm" = \{/);
-  assert.match(block, /flatten\(proxmox_virtual_environment_vm\.ubuntu_cloud_vm\.ipv4_addresses\)\[0\]/);
+  assert.match(block, /flatten\(proxmox_virtual_environment_vm\.ubuntu_cloud_vm\.ipv4_addresses\)/);
+  assert.match(block, /!startswith\(ip, "127\."\)/);
   assert.match(block, /tags\s+= \["proxmox"\]/);
 });
 

@@ -67,7 +67,7 @@ const SHIPYARD_OUTPUT_GENERATORS = {
     // The bpg/proxmox provider returns a nested list and its interface index is
     // not stable. Flatten it so the managed output keeps working for both a
     // single NIC and multi-NIC guests.
-    ipExpr: (address) => `try(flatten(${address}.ipv4_addresses)[0], null)`,
+    ipExpr: (address) => `try([for ip in flatten(${address}.ipv4_addresses) : ip if !startswith(ip, "127.") && !startswith(ip, "169.254.")][0], null)`,
   },
   hcloud_server: {
     providerTag: 'hcloud',
@@ -237,9 +237,34 @@ function normalizeIp(value) {
   return null;
 }
 
+function isUsableGuestIp(ip) {
+  if (!ip) return false;
+  if (net.isIP(ip) === 4) return !ip.startsWith('127.') && !ip.startsWith('169.254.');
+  if (net.isIP(ip) === 6) return ip !== '::1' && !ip.toLowerCase().startsWith('fe80:');
+  return false;
+}
+
+function collectUsableIps(value, output = [], depth = 0) {
+  if (depth > 6 || value == null) return output;
+  if (typeof value === 'string') {
+    const ip = normalizeIp(value);
+    if (isUsableGuestIp(ip) && !output.includes(ip)) output.push(ip);
+    return output;
+  }
+  if (Array.isArray(value)) {
+    value.forEach(item => collectUsableIps(item, output, depth + 1));
+    return output;
+  }
+  if (isPlainObject(value)) Object.values(value).forEach(item => collectUsableIps(item, output, depth + 1));
+  return output;
+}
+
 function findFirstIp(value, depth = 0) {
   if (depth > 5 || value == null) return null;
-  if (typeof value === 'string') return normalizeIp(value);
+  if (typeof value === 'string') {
+    const ip = normalizeIp(value);
+    return isUsableGuestIp(ip) ? ip : null;
+  }
   if (Array.isArray(value)) {
     for (const item of value) {
       const ip = findFirstIp(item, depth + 1);
@@ -288,10 +313,12 @@ function normalizeServerCandidate(candidate, {
     ['opentofu', `opentofu:${workspaceName}`]
   );
 
-  const ipAddress = firstNonEmptyString(
+  const directIpAddress = firstNonEmptyString(
     ...DIRECT_IP_KEYS.map(key => typeof base[key] === 'string' ? base[key] : null)
-  ) || findFirstIp(base);
-  const normalizedIp = normalizeIp(ipAddress);
+  );
+  // Proxmox uses "dhcp" in the desired Cloud-Init configuration. It is not
+  // an address and must not prevent scanning the actual guest addresses.
+  const normalizedIp = (isUsableGuestIp(normalizeIp(directIpAddress)) && normalizeIp(directIpAddress)) || findFirstIp(base);
   if (!normalizedIp) return null;
 
   const name = firstNonEmptyString(
@@ -917,7 +944,9 @@ function buildProxmoxResourceOverview(vms, state = null) {
     node_name: resource.values?.node_name || null,
     vm_id: resource.values?.vm_id || null,
     status: resource.values?.started === false ? 'stopped' : 'managed',
-    ip_addresses: resource.values?.ipv4_addresses || [],
+    // Proxmox exposes loopback before the configured NIC in many states.
+    // Present only routable guest addresses in the resource overview.
+    ip_addresses: collectUsableIps(resource.values?.ipv4_addresses || []),
   }));
   return {
     desired: {

@@ -55,9 +55,10 @@ test('Proxmox resource overview totals desired capacity and reads state resource
   const overview = _test.buildProxmoxResourceOverview([vm], {
     values: { root_module: { resources: [{
       address: 'proxmox_virtual_environment_vm.app-1', type: 'proxmox_virtual_environment_vm', name: 'app-1',
-      values: { name: 'app-1', node_name: 'pve001', vm_id: 101, started: true, ipv4_addresses: [['10.20.0.10']] },
+      values: { name: 'app-1', node_name: 'pve001', vm_id: 101, started: true, ipv4_addresses: [['127.0.0.1', '10.20.0.10']] },
     }] } },
   });
   assert.deepEqual(overview.desired, { vm_count: 1, cpu_cores: 4, memory_mb: 8192, disk_gb: 80, nodes: [{ name: 'pve001', vm_count: 1, cpu_cores: 4, memory_mb: 8192, disk_gb: 80 }] });
   assert.equal(overview.actual.resources[0].vm_id, 101);
+  assert.deepEqual(overview.actual.resources[0].ip_addresses, ['10.20.0.10']);
 });
