@@ -175,6 +175,11 @@ const PLUGIN_STYLES = `
 .tofu-plugin .tp-input-mono { font-family: var(--tp-mono); }
 .tofu-plugin .tp-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; padding-right: 28px; }
 .tofu-plugin .tp-label { display: block; font-size: 12px; font-weight: 500; margin-bottom: 5px; }
+.tofu-plugin .tp-link-button {
+  appearance: none; border: 0; padding: 0; margin-left: 6px; background: transparent;
+  color: var(--tp-primary); font: inherit; font-size: 11px; font-weight: 500; cursor: pointer;
+}
+.tofu-plugin .tp-link-button:hover { color: var(--tp-primary-h); text-decoration: underline; }
 .tofu-plugin .tp-form-hint { font-size: 12px; color: var(--tp-fg-muted); margin-top: 4px; }
 .tofu-plugin .tp-form-group { margin-bottom: 14px; }
 .tofu-plugin .tp-form-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 8px; margin-top: 8px; border-top: 1px solid var(--tp-border); }
@@ -1609,6 +1614,7 @@ async function loadProxmoxTab(el, ws) {
           <div class="tp-muted" style="font-size:12px;margin-top:3px;">VMs per Formular definieren. Fleet erzeugt die OpenTofu-Dateien und behält sensible Werte als Variablen.</div>
         </div>
         <div class="tp-card-actions">
+          ${btn('secondary sm', 'tofu-proxmox-settings', icon('sliders',12)+' Proxmox-Verbindung')}
           ${btn('secondary sm', 'tofu-proxmox-regenerate', icon('rotate',12)+' Dateien erzeugen')}
           ${btn('primary sm', 'tofu-proxmox-add', icon('plus',12)+' VM hinzufügen')}
         </div>
@@ -1618,7 +1624,7 @@ async function loadProxmoxTab(el, ws) {
         ${vms.length ? `<table class="tp-table"><thead><tr><th>Name</th><th>Node / Template</th><th>Compute</th><th>Disk</th><th>Netzwerk</th><th></th></tr></thead>
         <tbody>${vms.map(vm => `<tr>
           <td><strong>${esc(vm.name)}</strong><div class="tp-muted tp-mono" style="font-size:11px;margin-top:2px;">${esc(vm.username)} · ${esc(vm.ipv4_address)}</div></td>
-          <td>${esc(vm.node_name)}<div class="tp-muted tp-mono" style="font-size:11px;margin-top:2px;">VM ${esc(vm.clone_vm_id)}</div></td>
+          <td>${esc(vm.node_name)}<div class="tp-muted tp-mono" style="font-size:11px;margin-top:2px;">${vm.vm_id ? `Ziel-VM ${esc(vm.vm_id)}` : `Template ${esc(vm.clone_vm_id)}`}</div></td>
           <td>${esc(vm.cpu_cores)} vCPU<div class="tp-muted" style="font-size:11px;margin-top:2px;">${esc(vm.memory_mb)} MB</div></td>
           <td>${esc(vm.disk_size_gb)} GB<div class="tp-muted tp-mono" style="font-size:11px;margin-top:2px;">${esc(vm.disk_datastore)} · ${esc(vm.disk_interface)}</div></td>
           <td>${esc(vm.bridge)}${vm.vlan_id ? ` · VLAN ${esc(vm.vlan_id)}` : ''}</td>
@@ -1626,6 +1632,7 @@ async function loadProxmoxTab(el, ws) {
         </tr>`).join('')}</tbody></table>` : `<div class="tp-empty" style="padding:34px 20px;">${icon('cube',30)}<h3>Noch keine Proxmox-VM definiert</h3><p>Erstelle eine VM aus einem Proxmox-Template ohne HCL-Dateien zu bearbeiten.</p></div>`}
       </div>
       <div class="tp-muted" style="font-size:12px;margin-top:10px;">Generierte Dateien: <span class="tp-mono">fleet-proxmox-provider.tf</span>, <span class="tp-mono">fleet-proxmox-variables.tf</span>, <span class="tp-mono">fleet-proxmox-vms.tf</span></div>`;
+    document.getElementById('tofu-proxmox-settings')?.addEventListener('click', () => openProxmoxSettingsModal(ws, () => loadProxmoxTab(el, ws)));
     document.getElementById('tofu-proxmox-add')?.addEventListener('click', () => openProxmoxVmModal(ws));
     document.getElementById('tofu-proxmox-regenerate')?.addEventListener('click', async () => {
       try { await _pluginApi.request(`/workspaces/${ws.id}/proxmox-vms/regenerate`, { method:'POST' }); _showToast('OpenTofu-Dateien wurden erzeugt.', 'success'); await loadProxmoxTab(el, ws); }
@@ -1643,19 +1650,68 @@ async function loadProxmoxTab(el, ws) {
   }
 }
 
+function openProxmoxSettingsModal(ws, onSaved) {
+  const env = ws.env_vars || {};
+  const setting = (name, legacy = '') => String(env[`TF_VAR_${name}`] ?? env[legacy] ?? '');
+  const endpoint = setting('proxmox_endpoint', 'PROXMOX_ENDPOINT');
+  const apiToken = setting('proxmox_api_token', 'PROXMOX_API_TOKEN');
+  const insecure = ['1', 'true', 'yes', 'on'].includes(setting('proxmox_insecure', 'PROXMOX_INSECURE').toLowerCase());
+  const sshKey = setting('ssh_public_key');
+  showModal(`
+    <h2>${icon('sliders',16)} Proxmox-Verbindung</h2>
+    <p class="tp-muted" style="font-size:12px;margin:-8px 0 18px;">Diese Werte werden für Inventar, <span class="tp-mono">tofu plan</span> und <span class="tp-mono">tofu apply</span> verwendet.</p>
+    <form id="tofu-proxmox-settings-form">
+      <div class="tp-form-group"><label class="tp-label">Proxmox API-Endpoint</label><input class="tp-input tp-input-mono" name="endpoint" required value="${esc(endpoint)}" placeholder="https://pve.example.com:8006/"><div class="tp-form-hint">HTTPS-Adresse der Proxmox-API.</div></div>
+      <div class="tp-form-group"><label class="tp-label">API-Token</label><input class="tp-input tp-input-mono" name="api_token" required type="password" autocomplete="off" value="${esc(apiToken)}" placeholder="user@pam!fleet=…"><div class="tp-form-hint">Benötigt mindestens Leserechte für Node, Storage, Netzwerk und VM-Templates.</div></div>
+      <label class="tp-checkbox" style="margin:-2px 0 18px;"><input type="checkbox" name="insecure" ${insecure ? 'checked' : ''}> Selbstsigniertes Proxmox-Zertifikat akzeptieren</label>
+      <div class="tp-form-group"><label class="tp-label">Standard SSH Public Key</label><textarea class="tp-input tp-input-mono" name="ssh_public_key" rows="4" required spellcheck="false" placeholder="ssh-ed25519 AAAA…">${esc(sshKey)}</textarea><div class="tp-form-hint">Wird als <span class="tp-mono">TF_VAR_ssh_public_key</span> an OpenTofu übergeben.</div></div>
+      <div class="tp-form-actions">${btn('secondary', 'tofu-proxmox-settings-cancel', 'Abbrechen', 'type="button"')}${btn('primary', 'tofu-proxmox-settings-save', 'Speichern & testen')}</div>
+    </form>`, { maxWidth:'620px', onReady: () => {
+      const form = document.getElementById('tofu-proxmox-settings-form');
+      const save = document.getElementById('tofu-proxmox-settings-save');
+      document.getElementById('tofu-proxmox-settings-cancel').addEventListener('click', closeModal);
+      form.addEventListener('submit', async event => {
+        event.preventDefault();
+        const values = new FormData(form);
+        const envVars = { ...(ws.env_vars || {}) };
+        envVars.TF_VAR_proxmox_endpoint = String(values.get('endpoint') || '').trim();
+        envVars.TF_VAR_proxmox_api_token = String(values.get('api_token') || '').trim();
+        envVars.TF_VAR_proxmox_insecure = values.get('insecure') === 'on' ? 'true' : 'false';
+        envVars.TF_VAR_ssh_public_key = String(values.get('ssh_public_key') || '').trim();
+        save.disabled = true;
+        try {
+          await _pluginApi.request(`/workspaces/${ws.id}`, {
+            method:'PUT', body:JSON.stringify({ name:ws.name, path:ws.path, description:ws.description, env_vars:envVars }),
+          });
+          ws.env_vars = envVars;
+          _workspaces = _workspaces.map(item => item.id === ws.id ? { ...item, env_vars:envVars } : item);
+          await _pluginApi.request(`/workspaces/${ws.id}/proxmox-catalog`);
+          closeModal();
+          _showToast('Proxmox-Verbindung gespeichert und erfolgreich getestet.', 'success');
+          onSaved?.();
+        } catch (error) {
+          _showToast(error.message, 'error');
+          save.disabled = false;
+        }
+      });
+    }});
+}
+
 function openProxmoxVmModal(ws, vm = null) {
   const value = (key, fallback = '') => esc(vm?.[key] ?? fallback);
   const checked = (key, fallback = true) => (vm?.[key] ?? fallback) ? 'checked' : '';
   showModal(`
     <h2>${icon('cube',16)} ${vm ? 'Proxmox-VM bearbeiten' : 'Proxmox-VM hinzufügen'}</h2>
-    <p class="tp-muted" style="font-size:12px;margin:-8px 0 18px;">Diese Angaben erzeugen eine <span class="tp-mono">proxmox_virtual_environment_vm</span>-Ressource.</p>
+    <p class="tp-muted" style="font-size:12px;margin:-8px 0 10px;">Diese Angaben erzeugen eine <span class="tp-mono">proxmox_virtual_environment_vm</span>-Ressource.</p>
+    <div id="tofu-proxmox-catalog-status" class="tp-form-hint" style="margin:0 0 18px;">Proxmox-Inventar wird geladen …</div>
     <form id="tofu-proxmox-vm-form">
       <div class="tp-form-grid">
         <div class="tp-form-group"><label class="tp-label">VM-Name</label><input class="tp-input" name="name" required pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,62}" value="${value('name')}" placeholder="hr01-app-erpnext"></div>
-        <div class="tp-form-group"><label class="tp-label">Proxmox-Node</label><input class="tp-input" name="node_name" required value="${value('node_name')}" placeholder="pve001"></div>
-        <div class="tp-form-group"><label class="tp-label">Template VM-ID</label><input class="tp-input tp-input-mono" name="clone_vm_id" required type="number" min="1" value="${value('clone_vm_id', '9000')}"></div>
+        <div class="tp-form-group"><label class="tp-label">Proxmox-Node</label><select class="tp-input tp-select" id="tofu-proxmox-node" name="node_name" required><option value="${value('node_name')}">${value('node_name') || 'Nodes werden geladen …'}</option></select></div>
+        <div class="tp-form-group"><label class="tp-label">Ziel-VM-ID <button type="button" id="tofu-proxmox-next-id" class="tp-link-button">nächste freie laden</button></label><input class="tp-input tp-input-mono" name="vm_id" type="number" min="100" value="${value('vm_id')}" placeholder="Automatisch aus Proxmox"></div>
+        <div class="tp-form-group"><label class="tp-label">Template</label><select class="tp-input tp-select" id="tofu-proxmox-template" name="clone_vm_id" required><option value="${value('clone_vm_id', '9000')}">${value('clone_vm_id', '9000')} (Vorauswahl)</option></select></div>
         <div class="tp-form-group"><label class="tp-label">Clone-Versuche</label><input class="tp-input" name="clone_retries" type="number" min="0" max="10" value="${value('clone_retries', '3')}"></div>
-        <div class="tp-form-group"><label class="tp-label">Datastore</label><input class="tp-input" name="disk_datastore" required value="${value('disk_datastore')}" placeholder="NVME_VM_Store"></div>
+        <div class="tp-form-group"><label class="tp-label">Datastore</label><select class="tp-input tp-select" id="tofu-proxmox-datastore" name="disk_datastore" required><option value="${value('disk_datastore')}">${value('disk_datastore') || 'Datastores werden geladen …'}</option></select></div>
         <div class="tp-form-group"><label class="tp-label">Disk-Interface</label><input class="tp-input tp-input-mono" name="disk_interface" required value="${value('disk_interface', 'scsi0')}"></div>
         <div class="tp-form-group"><label class="tp-label">Disk-Grösse (GB)</label><input class="tp-input" name="disk_size_gb" type="number" min="1" value="${value('disk_size_gb', '40')}"></div>
         <div class="tp-form-group"><label class="tp-label">TRIM / Discard</label><select class="tp-input tp-select" name="disk_discard"><option value="on" ${value('disk_discard', 'on') === 'on' ? 'selected' : ''}>Aktiviert</option><option value="ignore" ${value('disk_discard') === 'ignore' ? 'selected' : ''}>Deaktiviert</option></select></div>
@@ -1663,7 +1719,7 @@ function openProxmoxVmModal(ws, vm = null) {
         <div class="tp-form-group"><label class="tp-label">CPU-Typ</label><input class="tp-input tp-input-mono" name="cpu_type" value="${value('cpu_type', 'host')}"></div>
         <div class="tp-form-group"><label class="tp-label">Arbeitsspeicher (MB)</label><input class="tp-input" name="memory_mb" type="number" min="256" value="${value('memory_mb', '4096')}"></div>
         <div class="tp-form-group" style="display:flex;align-items:end;padding-bottom:8px;"><label class="tp-checkbox"><input type="checkbox" name="agent_enabled" ${checked('agent_enabled')}> QEMU Guest Agent aktivieren</label></div>
-        <div class="tp-form-group"><label class="tp-label">Bridge</label><input class="tp-input tp-input-mono" name="bridge" value="${value('bridge', 'vmbr0')}"></div>
+        <div class="tp-form-group"><label class="tp-label">Bridge</label><select class="tp-input tp-select tp-input-mono" id="tofu-proxmox-bridge" name="bridge"><option value="${value('bridge', 'vmbr0')}">${value('bridge', 'vmbr0')} (Vorauswahl)</option></select></div>
         <div class="tp-form-group"><label class="tp-label">VLAN-ID <span class="tp-muted">(optional)</span></label><input class="tp-input" name="vlan_id" type="number" min="1" max="4094" value="${value('vlan_id')}"></div>
         <div class="tp-form-group"><label class="tp-label">IPv4-Adresse</label><input class="tp-input tp-input-mono" name="ipv4_address" value="${value('ipv4_address', 'dhcp')}" placeholder="dhcp oder 10.20.1.20/24"></div>
         <div class="tp-form-group"><label class="tp-label">IPv4-Gateway <span class="tp-muted">(bei statisch)</span></label><input class="tp-input tp-input-mono" name="ipv4_gateway" value="${value('ipv4_gateway')}" placeholder="10.20.1.1"></div>
@@ -1673,8 +1729,48 @@ function openProxmoxVmModal(ws, vm = null) {
       <label class="tp-checkbox" style="margin-bottom:16px;"><input type="checkbox" name="started" ${checked('started')}> VM nach dem Deploy starten</label>
       <div class="tp-form-actions">${btn('secondary', 'tofu-proxmox-cancel', 'Abbrechen', 'type="button"')}${btn('primary', 'tofu-proxmox-save', vm ? 'Änderungen speichern' : 'VM hinzufügen')}</div>
     </form>`, { maxWidth:'860px', onReady: () => {
+      const modal = document.getElementById('tofu-proxmox-vm-form');
+      const status = document.getElementById('tofu-proxmox-catalog-status');
+      const nodeSelect = document.getElementById('tofu-proxmox-node');
+      const readValue = name => String(new FormData(modal).get(name) || '').trim();
+      const replaceOptions = (element, entries, toValue, toLabel, preferred, emptyLabel) => {
+        const current = preferred ?? element.value;
+        const options = entries.map(entry => ({ value: String(toValue(entry)), label: String(toLabel(entry)) }));
+        if (current && !options.some(option => option.value === current)) {
+          options.unshift({ value: current, label: `${current} (aktuelle Vorauswahl)` });
+        }
+        if (!options.length && emptyLabel) options.push({ value: current || '', label: emptyLabel });
+        element.innerHTML = options.map(option => `<option value="${esc(option.value)}">${esc(option.label)}</option>`).join('');
+        if (current && options.some(option => option.value === current)) element.value = current;
+        else if (options[0]) element.value = options[0].value;
+      };
+      const loadCatalog = async ({ refreshVmId = false } = {}) => {
+        const oldNode = readValue('node_name');
+        const oldTemplate = readValue('clone_vm_id');
+        const oldDatastore = readValue('disk_datastore');
+        const oldBridge = readValue('bridge');
+        status.textContent = 'Proxmox-Inventar wird geladen …';
+        try {
+          const query = oldNode ? `?node=${encodeURIComponent(oldNode)}` : '';
+          const catalog = await _pluginApi.request(`/workspaces/${ws.id}/proxmox-catalog${query}`);
+          replaceOptions(nodeSelect, Array.isArray(catalog.nodes) ? catalog.nodes : [], item => item.name, item => `${item.name}${item.online ? '' : ' (offline)'}`, oldNode || catalog.node, 'Keine Nodes gefunden');
+          replaceOptions(document.getElementById('tofu-proxmox-template'), Array.isArray(catalog.templates) ? catalog.templates : [], item => item.vm_id, item => `${item.name} (VM ${item.vm_id})`, oldTemplate, 'Keine Templates gefunden');
+          replaceOptions(document.getElementById('tofu-proxmox-datastore'), Array.isArray(catalog.datastores) ? catalog.datastores : [], item => item.id, item => item.id, oldDatastore, 'Keine Datastores gefunden');
+          replaceOptions(document.getElementById('tofu-proxmox-bridge'), Array.isArray(catalog.bridges) ? catalog.bridges : [], item => item.name, item => `${item.name}${item.active ? '' : ' (inaktiv)'}`, oldBridge, 'Keine Bridges gefunden');
+          const vmId = modal.elements.vm_id;
+          if ((refreshVmId || !String(vmId.value).trim()) && catalog.next_vm_id) vmId.value = String(catalog.next_vm_id);
+          status.style.color = '';
+          status.textContent = `Inventar von ${catalog.node} geladen. Werte können bei Bedarf manuell angepasst werden.`;
+        } catch (error) {
+          status.textContent = `${error.message} Bestehende Formularwerte bleiben unverändert.`;
+          status.style.color = 'var(--tp-danger)';
+        }
+      };
       document.getElementById('tofu-proxmox-cancel').addEventListener('click', closeModal);
-      document.getElementById('tofu-proxmox-vm-form').addEventListener('submit', async event => {
+      document.getElementById('tofu-proxmox-next-id').addEventListener('click', () => loadCatalog({ refreshVmId:true }));
+      nodeSelect.addEventListener('change', () => loadCatalog());
+      loadCatalog();
+      modal.addEventListener('submit', async event => {
         event.preventDefault();
         const form = new FormData(event.currentTarget);
         const body = Object.fromEntries(form.entries());

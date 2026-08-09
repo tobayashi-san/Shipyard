@@ -750,10 +750,13 @@ function normalizeProxmoxVm(input = {}) {
   if (gateway && !isValidIpv4Cidr(gateway)) throw new Error('Invalid IPv4 gateway');
   const vlanRaw = String(input.vlan_id ?? '').trim();
   const vlanId = vlanRaw === '' ? null : proxmoxInt(vlanRaw, null, { min: 1, max: 4094, field: 'VLAN ID' });
+  const vmIdRaw = String(input.vm_id ?? '').trim();
+  const vmId = vmIdRaw === '' ? null : proxmoxInt(vmIdRaw, null, { min: 100, max: 999999999, field: 'VM ID' });
 
   return {
     name: proxmoxString(input.name, '', { field: 'VM name', pattern: PROXMOX_VM_NAME_RE, max: 63 }),
     node_name: proxmoxString(input.node_name, '', { field: 'Proxmox node' }),
+    vm_id: vmId,
     started: input.started !== false && input.started !== 'false',
     clone_vm_id: proxmoxInt(input.clone_vm_id, 9000, { min: 1, max: 999999999, field: 'Template VM ID' }),
     clone_retries: proxmoxInt(input.clone_retries, 3, { min: 0, max: 10, field: 'Clone retries' }),
@@ -785,6 +788,9 @@ function renderProxmoxVmHcl(vm) {
     `resource "proxmox_virtual_environment_vm" ${JSON.stringify(vm.name)} {`,
     `  name      = ${JSON.stringify(vm.name)}`,
     `  node_name = ${JSON.stringify(vm.node_name)}`,
+  ];
+  if (vm.vm_id !== null && vm.vm_id !== undefined) lines.push(`  vm_id     = ${vm.vm_id}`);
+  lines.push(
     `  started   = ${vm.started}`,
     '', '  clone {', `    vm_id   = ${vm.clone_vm_id}`, `    retries = ${vm.clone_retries}`, '  }',
     '', '  disk {', `    datastore_id = ${JSON.stringify(vm.disk_datastore)}`,
@@ -794,7 +800,7 @@ function renderProxmoxVmHcl(vm) {
     '', '  memory {', `    dedicated = ${vm.memory_mb}`, '  }',
     '', '  agent {', `    enabled = ${vm.agent_enabled}`, '  }',
     '', '  network_device {', `    bridge = ${JSON.stringify(vm.bridge)}`,
-  ];
+  );
   if (vm.vlan_id !== null) lines.push(`    vlan_id = ${vm.vlan_id}`);
   lines.push('  }', '', '  initialization {', '    ip_config {', '      ipv4 {', `        address = ${JSON.stringify(vm.ipv4_address)}`);
   if (vm.ipv4_gateway) lines.push(`        gateway = ${JSON.stringify(vm.ipv4_gateway)}`);
@@ -909,6 +915,71 @@ async function _fetchGitHubReleases() {
         } catch (e) { reject(e); }
       });
     }).on('error', reject);
+  });
+}
+
+function readProxmoxConnection(envVars = {}) {
+  const endpoint = String(envVars.TF_VAR_proxmox_endpoint || envVars.PROXMOX_ENDPOINT || '').trim();
+  const apiToken = String(envVars.TF_VAR_proxmox_api_token || envVars.PROXMOX_API_TOKEN || '').trim();
+  const insecureRaw = String(envVars.TF_VAR_proxmox_insecure || envVars.PROXMOX_INSECURE || '').trim().toLowerCase();
+  if (!endpoint || !apiToken) {
+    throw new Error('Proxmox API ist nicht konfiguriert. Setze unter Variablen TF_VAR_proxmox_endpoint und TF_VAR_proxmox_api_token.');
+  }
+  let base;
+  try { base = new URL(endpoint); }
+  catch { throw new Error('Die Proxmox-API-URL ist ungültig.'); }
+  if (base.protocol !== 'https:' || base.username || base.password) {
+    throw new Error('Die Proxmox-API muss eine HTTPS-URL ohne Zugangsdaten in der URL verwenden.');
+  }
+  return {
+    base,
+    apiToken,
+    insecure: ['1', 'true', 'yes', 'on'].includes(insecureRaw),
+  };
+}
+
+function proxmoxApiUrl(connection, apiPath) {
+  const url = new URL(connection.base.toString());
+  const basePath = url.pathname.replace(/\/+$/, '').replace(/\/api2\/json$/, '');
+  const [resourcePath, query = ''] = String(apiPath).split('?', 2);
+  url.pathname = `${basePath}/api2/json/${resourcePath.replace(/^\/+/, '')}`;
+  url.search = query ? `?${query}` : '';
+  return url;
+}
+
+function requestProxmoxApi(connection, apiPath) {
+  const url = proxmoxApiUrl(connection, apiPath);
+  return new Promise((resolve, reject) => {
+    const request = https.request(url, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `PVEAPIToken=${connection.apiToken}`,
+      },
+      rejectUnauthorized: !connection.insecure,
+    }, response => {
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', chunk => { body += chunk; });
+      response.on('end', () => {
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          reject(new Error(`Die Proxmox-API antwortete mit HTTP ${response.statusCode}.`));
+          return;
+        }
+        try {
+          const payload = JSON.parse(body || '{}');
+          if (payload?.errors) throw new Error('Die Proxmox-API hat die Anfrage abgelehnt.');
+          resolve(payload?.data);
+        } catch (error) {
+          reject(error.message ? error : new Error('Ungültige Antwort der Proxmox-API.'));
+        }
+      });
+    });
+    request.setTimeout(8000, () => request.destroy(new Error('Zeitüberschreitung bei der Proxmox-API.')));
+    request.on('error', error => reject(new Error(error.code === 'DEPTH_ZERO_SELF_SIGNED_CERT'
+      ? 'Das Proxmox-Zertifikat wird nicht vertraut. Setze TF_VAR_proxmox_insecure=true oder verwende ein gültiges Zertifikat.'
+      : 'Die Proxmox-API ist nicht erreichbar.')));
+    request.end();
   });
 }
 
@@ -1307,6 +1378,58 @@ override.tf.json
       syncOneToGit(workspace.name, workspace.path);
       gs.autoPush(message).catch(error => log.warn({ err: error, workspace: workspace.name }, 'Could not auto-push Proxmox workspace'));
     }
+  }
+
+  async function loadProxmoxCatalog(workspace, requestedNode = '') {
+    const connection = readProxmoxConnection(workspace.env_vars);
+    const nodesResponse = await requestProxmoxApi(connection, '/nodes');
+    const nodes = (Array.isArray(nodesResponse) ? nodesResponse : [])
+      .map(node => ({
+        name: String(node?.node || '').trim(),
+        status: String(node?.status || '').trim(),
+        online: String(node?.status || '').toLowerCase() === 'online',
+      }))
+      .filter(node => node.name && PROXMOX_IDENTIFIER_RE.test(node.name));
+    if (!nodes.length) throw new Error('In Proxmox wurden keine Nodes gefunden.');
+
+    const wantedNode = String(requestedNode || '').trim();
+    const nodeName = nodes.some(node => node.name === wantedNode)
+      ? wantedNode
+      : (nodes.find(node => node.online) || nodes[0]).name;
+    const safeNode = encodeURIComponent(nodeName);
+    const [nextIdResponse, templatesResponse, storageResponse, networkResponse] = await Promise.all([
+      requestProxmoxApi(connection, '/cluster/nextid'),
+      requestProxmoxApi(connection, `/nodes/${safeNode}/qemu?full=1`),
+      requestProxmoxApi(connection, `/nodes/${safeNode}/storage`),
+      requestProxmoxApi(connection, `/nodes/${safeNode}/network`),
+    ]);
+    const nextVmId = Number.parseInt(String(nextIdResponse?.vmid ?? nextIdResponse ?? ''), 10);
+    const templates = (Array.isArray(templatesResponse) ? templatesResponse : [])
+      .filter(item => item && (item.template === 1 || item.template === '1' || item.template === true))
+      .map(item => ({ vm_id: Number(item.vmid), name: String(item.name || `VM ${item.vmid}`), node_name: nodeName }))
+      .filter(item => Number.isInteger(item.vm_id) && item.vm_id > 0)
+      .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+    const datastores = (Array.isArray(storageResponse) ? storageResponse : [])
+      .filter(item => item && item.storage && item.active !== 0 && item.active !== '0')
+      .map(item => ({
+        id: String(item.storage),
+        content: Array.isArray(item.content) ? item.content : String(item.content || '').split(',').filter(Boolean),
+      }))
+      .filter(item => item.content.length === 0 || item.content.includes('images'))
+      .sort((a, b) => a.id.localeCompare(b.id, 'de'));
+    const bridges = (Array.isArray(networkResponse) ? networkResponse : [])
+      .filter(item => item && item.iface && (item.type === 'bridge' || String(item.iface).startsWith('vmbr')))
+      .map(item => ({ name: String(item.iface), active: item.active === 1 || item.active === '1' || item.active === true }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+
+    return {
+      nodes,
+      node: nodeName,
+      next_vm_id: Number.isInteger(nextVmId) && nextVmId > 0 ? nextVmId : null,
+      templates,
+      datastores,
+      bridges,
+    };
   }
 
   function getAllWorkspaces() {
@@ -1749,6 +1872,16 @@ override.tf.json
 
   // ── Routes: Fleet Proxmox VM form ────────────────────────────────────────
 
+  router.get('/workspaces/:id/proxmox-catalog', async (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    try {
+      res.json(await loadProxmoxCatalog(workspace, req.query.node));
+    } catch (error) {
+      res.status(502).json({ error: error.message || 'Proxmox catalog could not be loaded' });
+    }
+  });
+
   router.get('/workspaces/:id/proxmox-vms', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
@@ -1765,6 +1898,9 @@ override.tf.json
     if (mkdirErr) return res.status(400).json({ error: permissionError(mkdirErr, workspace.path) });
     try {
       const vm = normalizeProxmoxVm(req.body || {});
+      if (vm.vm_id !== null && getProxmoxVms(workspace.id).some(existing => existing.vm_id === vm.vm_id)) {
+        return res.status(409).json({ error: `VM-ID ${vm.vm_id} ist in diesem Workspace bereits definiert.` });
+      }
       const id = randomUUID();
       db.db.prepare('INSERT INTO tofu_proxmox_vms (id, workspace_id, name, config) VALUES (?, ?, ?, ?)')
         .run(id, workspace.id, vm.name, JSON.stringify(vm));
@@ -1783,6 +1919,9 @@ override.tf.json
     if (!existing) return res.status(404).json({ error: 'VM definition not found' });
     try {
       const vm = normalizeProxmoxVm(req.body || {});
+      if (vm.vm_id !== null && getProxmoxVms(workspace.id).some(item => item.id !== existing.id && item.vm_id === vm.vm_id)) {
+        return res.status(409).json({ error: `VM-ID ${vm.vm_id} ist in diesem Workspace bereits definiert.` });
+      }
       db.db.prepare("UPDATE tofu_proxmox_vms SET name = ?, config = ?, updated_at = datetime('now') WHERE id = ? AND workspace_id = ?")
         .run(vm.name, JSON.stringify(vm), existing.id, workspace.id);
       const generated = writeFleetProxmoxFiles(workspace);
@@ -1924,6 +2063,8 @@ module.exports = {
     upsertManagedShipyardOutputs,
     normalizeProxmoxVm,
     renderProxmoxVmHcl,
+    readProxmoxConnection,
+    proxmoxApiUrl,
     buildProxmoxProviderFiles,
     buildProxmoxResourceOverview,
     pruneWorkspaceRuns,

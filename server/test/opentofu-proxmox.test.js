@@ -4,7 +4,7 @@ const { _test } = require('../../plugins/opentofu');
 
 test('Proxmox VM blueprint normalizes the console form and renders safe HCL', () => {
   const vm = _test.normalizeProxmoxVm({
-    name: 'hr01-app-erpnext', node_name: 'pve001', clone_vm_id: '9000', clone_retries: '3',
+    name: 'hr01-app-erpnext', node_name: 'pve001', vm_id: '101', clone_vm_id: '9000', clone_retries: '3',
     disk_datastore: 'NVME_VM_Store', disk_interface: 'scsi0', disk_size_gb: '40',
     cpu_cores: '2', memory_mb: '4048', bridge: 'vmbr0', vlan_id: '2010',
     ipv4_address: 'dhcp', username: 'ubuntu', ssh_public_key_variable: 'ssh_public_key',
@@ -13,6 +13,7 @@ test('Proxmox VM blueprint normalizes the console form and renders safe HCL', ()
   assert.equal(vm.memory_mb, 4048);
   const hcl = _test.renderProxmoxVmHcl(vm);
   assert.match(hcl, /resource "proxmox_virtual_environment_vm" "hr01-app-erpnext"/);
+  assert.match(hcl, /vm_id\s+= 101/);
   assert.match(hcl, /vlan_id = 2010/);
   assert.match(hcl, /keys     = \[var\.ssh_public_key\]/);
 });
@@ -24,6 +25,18 @@ test('Proxmox VM blueprint rejects unsafe identifiers and invalid VLAN values', 
   assert.throws(() => _test.normalizeProxmoxVm({
     name: 'valid', node_name: 'pve001', disk_datastore: 'store', bridge: 'vmbr0', vlan_id: 5000,
   }), /VLAN ID/);
+});
+
+test('Proxmox catalog connection keeps API credentials server-side and preserves query parameters', () => {
+  const connection = _test.readProxmoxConnection({
+    TF_VAR_proxmox_endpoint: 'https://pve.example.test:8006/',
+    TF_VAR_proxmox_api_token: 'root@pam!fleet=secret',
+    TF_VAR_proxmox_insecure: 'true',
+  });
+  const url = _test.proxmoxApiUrl(connection, '/nodes/pve001/qemu?full=1');
+  assert.equal(url.toString(), 'https://pve.example.test:8006/api2/json/nodes/pve001/qemu?full=1');
+  assert.equal(connection.insecure, true);
+  assert.throws(() => _test.readProxmoxConnection({ TF_VAR_proxmox_endpoint: 'http://pve.example.test' }), /nicht konfiguriert/);
 });
 
 test('Proxmox resource overview totals desired capacity and reads state resources', () => {
