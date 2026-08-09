@@ -1656,7 +1656,6 @@ function openProxmoxSettingsModal(ws, onSaved) {
   const endpoint = setting('proxmox_endpoint', 'PROXMOX_ENDPOINT');
   const apiToken = setting('proxmox_api_token', 'PROXMOX_API_TOKEN');
   const insecure = ['1', 'true', 'yes', 'on'].includes(setting('proxmox_insecure', 'PROXMOX_INSECURE').toLowerCase());
-  const sshKey = setting('ssh_public_key');
   showModal(`
     <h2>${icon('sliders',16)} Proxmox-Verbindung</h2>
     <p class="tp-muted" style="font-size:12px;margin:-8px 0 18px;">Diese Werte werden für Inventar, <span class="tp-mono">tofu plan</span> und <span class="tp-mono">tofu apply</span> verwendet.</p>
@@ -1664,7 +1663,6 @@ function openProxmoxSettingsModal(ws, onSaved) {
       <div class="tp-form-group"><label class="tp-label">Proxmox API-Endpoint</label><input class="tp-input tp-input-mono" name="endpoint" required value="${esc(endpoint)}" placeholder="https://pve.example.com:8006/"><div class="tp-form-hint">HTTPS-Adresse der Proxmox-API.</div></div>
       <div class="tp-form-group"><label class="tp-label">API-Token</label><input class="tp-input tp-input-mono" name="api_token" required type="password" autocomplete="off" value="${esc(apiToken)}" placeholder="user@pam!fleet=…"><div class="tp-form-hint">Benötigt mindestens Leserechte für Node, Storage, Netzwerk und VM-Templates.</div></div>
       <label class="tp-checkbox" style="margin:-2px 0 18px;"><input type="checkbox" name="insecure" ${insecure ? 'checked' : ''}> Selbstsigniertes Proxmox-Zertifikat akzeptieren</label>
-      <div class="tp-form-group"><label class="tp-label">Standard SSH Public Key</label><textarea class="tp-input tp-input-mono" name="ssh_public_key" rows="4" required spellcheck="false" placeholder="ssh-ed25519 AAAA…">${esc(sshKey)}</textarea><div class="tp-form-hint">Wird als <span class="tp-mono">TF_VAR_ssh_public_key</span> an OpenTofu übergeben.</div></div>
       <div class="tp-form-actions">${btn('secondary', 'tofu-proxmox-settings-cancel', 'Abbrechen', 'type="button"')}${btn('primary', 'tofu-proxmox-settings-save', 'Speichern & testen')}</div>
     </form>`, { maxWidth:'620px', onReady: () => {
       const form = document.getElementById('tofu-proxmox-settings-form');
@@ -1677,7 +1675,6 @@ function openProxmoxSettingsModal(ws, onSaved) {
         envVars.TF_VAR_proxmox_endpoint = String(values.get('endpoint') || '').trim();
         envVars.TF_VAR_proxmox_api_token = String(values.get('api_token') || '').trim();
         envVars.TF_VAR_proxmox_insecure = values.get('insecure') === 'on' ? 'true' : 'false';
-        envVars.TF_VAR_ssh_public_key = String(values.get('ssh_public_key') || '').trim();
         save.disabled = true;
         try {
           await _pluginApi.request(`/workspaces/${ws.id}`, {
@@ -1724,7 +1721,7 @@ function openProxmoxVmModal(ws, vm = null) {
         <div class="tp-form-group"><label class="tp-label">IPv4-Adresse</label><input class="tp-input tp-input-mono" name="ipv4_address" value="${value('ipv4_address', 'dhcp')}" placeholder="dhcp oder 10.20.1.20/24"></div>
         <div class="tp-form-group"><label class="tp-label">IPv4-Gateway <span class="tp-muted">(bei statisch)</span></label><input class="tp-input tp-input-mono" name="ipv4_gateway" value="${value('ipv4_gateway')}" placeholder="10.20.1.1"></div>
         <div class="tp-form-group"><label class="tp-label">Gastbenutzer</label><input class="tp-input tp-input-mono" name="username" value="${value('username', 'ubuntu')}"></div>
-        <div class="tp-form-group"><label class="tp-label">SSH-Key-Variable</label><input class="tp-input tp-input-mono" name="ssh_public_key_variable" value="${value('ssh_public_key_variable', 'ssh_public_key')}"><div class="tp-form-hint">Wert unter Variablen setzen.</div></div>
+        <div class="tp-form-group"><label class="tp-label">SSH-Key-Variable <span class="tp-muted">(optional)</span></label><input class="tp-input tp-input-mono" name="ssh_public_key_variable" value="${value('ssh_public_key_variable')}" placeholder="ssh_public_key"><div class="tp-form-hint">Nur setzen, wenn der Key beim Klonen per Cloud-Init in der VM hinterlegt werden soll.</div></div>
       </div>
       <label class="tp-checkbox" style="margin-bottom:16px;"><input type="checkbox" name="started" ${checked('started')}> VM nach dem Deploy starten</label>
       <div class="tp-form-actions">${btn('secondary', 'tofu-proxmox-cancel', 'Abbrechen', 'type="button"')}${btn('primary', 'tofu-proxmox-save', vm ? 'Änderungen speichern' : 'VM hinzufügen')}</div>

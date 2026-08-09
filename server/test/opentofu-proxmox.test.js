@@ -27,6 +27,15 @@ test('Proxmox VM blueprint rejects unsafe identifiers and invalid VLAN values', 
   }), /VLAN ID/);
 });
 
+test('Proxmox VM blueprint does not require an SSH public key unless explicitly configured', () => {
+  const vm = _test.normalizeProxmoxVm({
+    name: 'app-without-key', node_name: 'pve001', disk_datastore: 'fast', bridge: 'vmbr0',
+  });
+  assert.equal(vm.ssh_public_key_variable, '');
+  assert.doesNotMatch(_test.renderProxmoxVmHcl(vm), /keys\s+=/);
+  assert.doesNotMatch(_test.buildProxmoxProviderFiles([vm]).variables, /ssh_public_key/);
+});
+
 test('Proxmox catalog connection keeps API credentials server-side and preserves query parameters', () => {
   const connection = _test.readProxmoxConnection({
     TF_VAR_proxmox_endpoint: 'https://pve.example.test:8006/',
