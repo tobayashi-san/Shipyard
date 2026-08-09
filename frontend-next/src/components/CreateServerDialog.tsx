@@ -69,7 +69,8 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
   const { t } = useTranslation();
   const qc = useQueryClient();
   const activeEnvironmentId = useUi((s) => s.environmentId);
-  const { data: environments = [] } = useQuery({ queryKey: ['environments'], queryFn: () => api.getEnvironments() });
+  const { data: environmentsData } = useQuery({ queryKey: ['environments'], queryFn: () => api.getEnvironments() });
+  const environments = Array.isArray(environmentsData) ? environmentsData : [];
   const isEdit = !!editServer;
 
   const isControlled = openProp !== undefined;

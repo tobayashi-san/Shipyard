@@ -2,10 +2,10 @@
 const PLUGIN_STYLES = `
 .tofu-plugin {
   /* Semantic aliases for the application theme. */
-  --tp-bg:          var(--card,          hsl(var(--background, 0 0% 100%)));
-  --tp-bg2:         var(--muted,         hsl(var(--muted, 220 15% 95.5%)));
-  --tp-fg:          var(--foreground,    hsl(var(--foreground, 224 15% 12%)));
-  --tp-fg-muted:    var(--muted-foreground, #64748b);
+  --tp-bg:          hsl(var(--background, 0 0% 100%));
+  --tp-bg2:         hsl(var(--muted, 220 15% 95.5%));
+  --tp-fg:          hsl(var(--foreground, 224 15% 12%));
+  --tp-fg-muted:    hsl(var(--muted-foreground, 215 16% 46%));
   --tp-border:      hsl(var(--border, 220 13% 89%));
   --tp-radius:      var(--radius,        8px);
   --tp-mono:        'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
@@ -14,6 +14,7 @@ const PLUGIN_STYLES = `
   --tp-primary-h:   hsl(var(--brand-hover, 217 91% 48%));
   --tp-danger:      hsl(var(--destructive, 0 72% 51%));
   --tp-danger-h:    hsl(var(--destructive, 0 72% 45%));
+  --tp-danger-fg:   hsl(var(--destructive-foreground, 0 0% 100%));
   --tp-success:     hsl(var(--success,   152 65% 38%));
   --tp-warning:     hsl(var(--warning,   35 92% 50%));
   --tp-accent-bg:   hsl(var(--brand-light, 217 91% 96%));
@@ -46,7 +47,7 @@ const PLUGIN_STYLES = `
 }
 .tofu-plugin .tp-btn-secondary:not(:disabled):hover { background: var(--tp-border); }
 .tofu-plugin .tp-btn-danger {
-  background: var(--tp-danger); color: #fff; border-color: var(--tp-danger);
+  background: var(--tp-danger); color: var(--tp-danger-fg); border-color: var(--tp-danger);
 }
 .tofu-plugin .tp-btn-danger:not(:disabled):hover { background: var(--tp-danger-h); }
 .tofu-plugin .tp-btn-sm { padding: 4px 10px; font-size: 12px; }
@@ -124,21 +125,26 @@ const PLUGIN_STYLES = `
 .tofu-plugin .tp-badge-muted   { background: var(--tp-bg2); color: var(--tp-fg-muted); }
 .tofu-plugin .tp-badge-primary { background: color-mix(in srgb, var(--tp-primary) 15%, transparent); color: var(--tp-primary); }
 
-/* ── Terminal ─── */
+/* ── Run output ───
+ * Keep it legible as a code surface, but let it belong to the console in
+ * light mode instead of introducing a large, unrelated black block. */
 .tofu-plugin .tp-terminal {
-  background: #0d1117; color: #e6edf3;
+  background: var(--tp-bg); color: var(--tp-fg);
   font-family: var(--tp-mono); font-size: 12px; line-height: 1.6;
+  border-top: 1px solid var(--tp-border);
   border-radius: 0 0 var(--tp-radius) var(--tp-radius);
 }
 .tofu-plugin .tp-terminal-header {
   display: flex; align-items: center; gap: 6px;
-  padding: 6px 12px; background: rgba(255,255,255,.05);
-  border-bottom: 1px solid rgba(255,255,255,.08); font-size: 11px; color: #8b949e;
+  padding: 6px 12px; background: var(--tp-bg2);
+  border-bottom: 1px solid var(--tp-border); font-size: 11px; color: var(--tp-fg-muted);
 }
 .tofu-plugin .tp-terminal-body {
   padding: 10px 14px; min-height: 120px; overflow-y: auto; white-space: pre-wrap;
   word-break: break-word;
 }
+.dark .tofu-plugin .tp-terminal { background: #0d1117; color: #e6edf3; border-top-color: #30363d; }
+.dark .tofu-plugin .tp-terminal-header { background: rgba(255,255,255,.05); border-bottom-color: rgba(255,255,255,.08); color: #8b949e; }
 
 /* ── Table ─── */
 .tofu-plugin .tp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -159,7 +165,7 @@ const PLUGIN_STYLES = `
   outline: none; transition: border-color 120ms; font-family: inherit;
   box-sizing: border-box;
 }
-.tofu-plugin .tp-input:focus { border-color: var(--tp-primary); }
+.tofu-plugin .tp-input:focus { border-color: var(--tp-border); box-shadow: none; }
 .tofu-plugin .tp-input::placeholder { color: var(--tp-fg-muted); opacity: .7; }
 .tofu-plugin .tp-input-mono { font-family: var(--tp-mono); }
 .tofu-plugin .tp-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; padding-right: 28px; }
@@ -428,10 +434,10 @@ function appendTerminal(data, stream) {
   if (!body) return;
   const span = document.createElement('span');
   const colors = {
-    stderr:  '#f85149',
-    success: '#3fb950',
-    error:   '#f85149',
-    meta:    '#8b949e',
+    stderr:  'var(--tp-danger)',
+    success: 'var(--tp-success)',
+    error:   'var(--tp-danger)',
+    meta:    'var(--tp-fg-muted)',
   };
   span.style.color = colors[stream] || 'inherit';
   span.style.whiteSpace = 'pre-wrap';

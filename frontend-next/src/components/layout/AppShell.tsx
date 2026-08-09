@@ -32,7 +32,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const setLanguage = useUi((s) => s.setLanguage);
   const environmentId = useUi((s) => s.environmentId);
   const setEnvironmentId = useUi((s) => s.setEnvironmentId);
-  const { data: environments = [] } = useQuery({ queryKey: ['environments'], queryFn: () => api.getEnvironments() });
+  const { data: environmentsData } = useQuery({ queryKey: ['environments'], queryFn: () => api.getEnvironments() });
+  const environments = Array.isArray(environmentsData) ? environmentsData : [];
   const [environmentOpen, setEnvironmentOpen] = useState(false);
   const [newEnvironmentName, setNewEnvironmentName] = useState('');
   const environmentMenuRef = useRef<HTMLDivElement>(null);

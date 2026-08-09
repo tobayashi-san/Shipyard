@@ -180,7 +180,10 @@ export function DashboardPage() {
 
   const isBusy = isFetching || refreshing;
 
-  const servers = useMemo(() => (data?.servers ?? []).filter((server) => String((server as ServerInfo & { environment_id?: string }).environment_id || 'default') === environmentId), [data?.servers, environmentId]);
+  const servers = useMemo(() => {
+    const allServers = Array.isArray(data?.servers) ? data.servers as ServerInfo[] : [];
+    return allServers.filter((server) => String((server as ServerInfo & { environment_id?: string }).environment_id || 'default') === environmentId);
+  }, [data?.servers, environmentId]);
   const summary = useMemo(() => ({ total: servers.length, online: servers.filter(s => s.status === 'online').length, offline: servers.filter(s => s.status === 'offline').length, rebootRequired: servers.filter(s => s.reboot_required).length, totalUpdates: servers.reduce((total, s) => total + (s.updates_count ?? 0), 0), criticalDisk: 0, criticalRam: 0 }), [servers]);
   const recentHistory = data?.recentHistory ?? [];
   const [attentionOnly, setAttentionOnly] = [

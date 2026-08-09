@@ -231,7 +231,10 @@ export function ServersPage() {
     staleTime: 30_000,
   });
 
-  const servers = useMemo(() => (rawServers ?? []).map(normalizeServer).filter((server) => String((server as ServerRow & { environment_id?: string }).environment_id || 'default') === environmentId), [rawServers, environmentId]);
+  const servers = useMemo(() => {
+    const allServers = Array.isArray(rawServers) ? rawServers : [];
+    return allServers.map(normalizeServer).filter((server) => String((server as ServerRow & { environment_id?: string }).environment_id || 'default') === environmentId);
+  }, [rawServers, environmentId]);
   const groups = useMemo(() => (rawGroups ?? []) as ServerGroup[], [rawGroups]);
 
   // ── Local UI state ──────────────────────────────────────────

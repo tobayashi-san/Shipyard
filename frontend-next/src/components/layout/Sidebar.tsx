@@ -45,7 +45,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
   const collapsed = useUi((s) => s.sidebarCollapsed);
   const path = useRouterState({ select: (s) => s.location.pathname });
   const { data: profile } = useProfile();
-  const { data: plugins = [] } = usePlugins();
+  const { data: pluginsData } = usePlugins();
   const { data: settings } = useSettings();
 
   // Online server count for badge
@@ -54,7 +54,8 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
     queryFn: () => api.getServers() as Promise<{ status?: string }[]>,
     staleTime: 30_000,
   });
-  const onlineCount = (rawServers ?? []).filter(s => s.status === 'online').length;
+  const onlineCount = (Array.isArray(rawServers) ? rawServers : []).filter(s => s.status === 'online').length;
+  const plugins = Array.isArray(pluginsData) ? pluginsData : [];
 
   // Branding from settings
   const wl = settings as Record<string, unknown> | undefined;
