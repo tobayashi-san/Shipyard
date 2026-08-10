@@ -1188,6 +1188,19 @@ function register({ router, db, broadcast }) {
       UNIQUE(environment_id, name)
     )
   `).run();
+  // Existing VMs can be adopted as Fleet hosts without becoming OpenTofu
+  // resources. The mapping keeps Proxmox-only actions such as snapshots
+  // available while preserving the VM's current configuration.
+  db.db.prepare(`
+    CREATE TABLE IF NOT EXISTS proxmox_inventory_servers (
+      server_id     TEXT PRIMARY KEY,
+      connection_id TEXT NOT NULL,
+      node_name     TEXT NOT NULL,
+      vm_id         INTEGER NOT NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(connection_id, node_name, vm_id)
+    )
+  `).run();
   // Existing Fleet installations get the same default environment as legacy
   // servers. The guards keep this migration safe for fresh and old databases.
   try { db.db.prepare("CREATE TABLE IF NOT EXISTS environments (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TEXT DEFAULT (datetime('now'))) ").run(); } catch {}
@@ -2171,9 +2184,62 @@ override.tf.json
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Permission denied' });
     const inUse = db.db.prepare('SELECT COUNT(*) AS count FROM tofu_workspaces WHERE proxmox_connection_id = ?').get(req.params.id);
     if (Number(inUse?.count || 0) > 0) return res.status(409).json({ error: `Diese Plattform-Verbindung wird noch von ${inUse.count} Deployment(s) verwendet. Ordne sie zuerst um oder löse die Verknüpfung.` });
+    const adopted = db.db.prepare('SELECT COUNT(*) AS count FROM proxmox_inventory_servers WHERE connection_id = ?').get(req.params.id);
+    if (Number(adopted?.count || 0) > 0) return res.status(409).json({ error: `Diese Plattform-Verbindung wird noch von ${adopted.count} übernommenen Fleet-Host(s) verwendet. Entferne zuerst deren Proxmox-Verknüpfung.` });
     const result = db.db.prepare('DELETE FROM tofu_proxmox_connections WHERE id = ?').run(req.params.id);
     if (!result.changes) return res.status(404).json({ error: 'Connection not found' });
     res.json({ success: true });
+  });
+
+  function getProxmoxConnectionSource(id) {
+    const source = db.db.prepare('SELECT * FROM tofu_proxmox_connections WHERE id = ?').get(id);
+    if (!source) {
+      const error = new Error('Proxmox-Plattform nicht gefunden.'); error.status = 404; throw error;
+    }
+    return { source, connection: readSavedProxmoxConnection(source) };
+  }
+
+  router.get('/proxmox-connections/:id/guest-ip', async (req, res) => {
+    if (!can(getPermissions(req.user), 'canViewServers')) return res.status(403).json({ error: 'Permission denied' });
+    try {
+      const nodeName = String(req.query.node || '').trim();
+      const vmId = Number.parseInt(String(req.query.vm_id || ''), 10);
+      if (!nodeName || !PROXMOX_IDENTIFIER_RE.test(nodeName) || !Number.isInteger(vmId) || vmId <= 0) return res.status(400).json({ error: 'Node und VM-ID sind erforderlich.' });
+      const { connection } = getProxmoxConnectionSource(req.params.id);
+      const payload = await requestProxmoxApi(connection, `/nodes/${encodeURIComponent(nodeName)}/qemu/${vmId}/agent/network-get-interfaces`);
+      res.json({ ip_address: extractProxmoxGuestIpv4(payload) || null });
+    } catch (error) { res.status(error.status || 502).json({ error: error.message || 'Gast-IP konnte nicht gelesen werden.' }); }
+  });
+
+  router.post('/proxmox-connections/:id/import-vm', async (req, res) => {
+    const permissions = getPermissions(req.user);
+    if (!can(permissions, 'canEditServers')) return res.status(403).json({ error: 'Permission denied' });
+    try {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const nodeName = String(body.node_name || '').trim();
+      const vmId = Number.parseInt(String(body.vm_id || ''), 10);
+      const name = String(body.name || '').trim().slice(0, 100);
+      const sshUser = String(body.ssh_user || 'root').trim().slice(0, 100) || 'root';
+      const sshPort = Number.parseInt(String(body.ssh_port || 22), 10);
+      const groupId = String(body.group_id || '').trim() || null;
+      if (!nodeName || !PROXMOX_IDENTIFIER_RE.test(nodeName) || !Number.isInteger(vmId) || vmId <= 0 || !name) return res.status(400).json({ error: 'Name, Node und VM-ID sind erforderlich.' });
+      if (!Number.isInteger(sshPort) || sshPort < 1 || sshPort > 65535) return res.status(400).json({ error: 'Ungültiger SSH-Port.' });
+      const { source, connection } = getProxmoxConnectionSource(req.params.id);
+      let ipAddress = String(body.ip_address || '').trim();
+      if (!ipAddress) {
+        const payload = await requestProxmoxApi(connection, `/nodes/${encodeURIComponent(nodeName)}/qemu/${vmId}/agent/network-get-interfaces`);
+        ipAddress = extractProxmoxGuestIpv4(payload) || '';
+      }
+      if (!ipAddress || net.isIP(ipAddress) !== 4) return res.status(400).json({ error: 'Keine verwendbare IPv4-Adresse gefunden. Gib die Adresse manuell an oder aktiviere den QEMU Guest Agent.' });
+      if (groupId && !db.db.prepare('SELECT 1 FROM server_groups WHERE id = ?').get(groupId)) return res.status(400).json({ error: 'Der gewählte Ordner existiert nicht.' });
+      const existing = db.db.prepare('SELECT * FROM servers WHERE environment_id = ? AND (ip_address = ? OR name = ?)').get(source.environment_id, ipAddress, name);
+      if (existing) return res.status(409).json({ error: `Ein Fleet-Host mit diesem Namen oder dieser IP existiert bereits (${existing.name}).` });
+      const server = db.servers.create({ name, hostname: name, ip_address: ipAddress, ssh_port: sshPort, ssh_user: sshUser, environment_id: source.environment_id, tags: ['proxmox', `proxmox:${source.name}`] });
+      if (groupId) db.serverGroups.setServerGroup(server.id, groupId);
+      db.db.prepare('INSERT INTO proxmox_inventory_servers (server_id, connection_id, node_name, vm_id) VALUES (?, ?, ?, ?)').run(server.id, source.id, nodeName, vmId);
+      db.auditLog.write('infrastructure.vm_import', `source=${source.name} node=${nodeName} vm=${vmId} server=${server.name}`, req.ip, true, req.user?.username);
+      res.status(201).json({ success: true, server: db.servers.getById(server.id) });
+    } catch (error) { res.status(error.status || 400).json({ error: error.message || 'VM konnte nicht in Fleet übernommen werden.' }); }
   });
 
   router.post('/workspaces', (req, res) => {
@@ -2689,7 +2755,21 @@ override.tf.json
     `).all(serverId);
     const mapping = mappings[0];
     if (!mapping) {
-      const error = new Error('Für diesen Server ist keine Proxmox-VM-Bereitstellung vorhanden.'); error.status = 404; throw error;
+      const imported = db.db.prepare(`
+        SELECT inventory.server_id, inventory.connection_id, inventory.node_name, inventory.vm_id, source.name AS source_name
+        FROM proxmox_inventory_servers inventory
+        JOIN tofu_proxmox_connections source ON source.id = inventory.connection_id
+        WHERE inventory.server_id = ?
+      `).get(serverId);
+      if (!imported) {
+        const error = new Error('Für diesen Server ist keine Proxmox-VM-Verknüpfung vorhanden.'); error.status = 404; throw error;
+      }
+      const { connection } = getProxmoxConnectionSource(imported.connection_id);
+      return {
+        mapping: { workspace_id: null, workspace_name: null, source_name: imported.source_name },
+        vm: { name: db.servers.getById(serverId)?.name || `VM ${imported.vm_id}`, node_name: imported.node_name, vm_id: imported.vm_id },
+        connection,
+      };
     }
     const vmName = String(mapping.resource_key).replace(/^resource:proxmox_virtual_environment_vm\./, '');
     const vm = getProxmoxVms(mapping.workspace_id).find(item => item.name === vmName);

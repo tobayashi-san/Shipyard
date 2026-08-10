@@ -1,11 +1,16 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight, CircleDot, Database, Folder, FolderTree, HardDrive, Server, ServerCog } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, apiFetch } from '@/lib/api';
 import { asArray, cn } from '@/lib/utils';
 import { useUi } from '@/lib/store';
 import { buildGroupTree, normalizeServer, type GroupNode, type ServerGroup, type ServerRow } from '@/features/servers/server-list-utils';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { showToast } from '@/lib/toast';
 
 const STORAGE_KEY = 'fleet.console.infrastructure-tree.collapsed';
 
@@ -34,7 +39,11 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
   const navigate = useNavigate();
   const path = useRouterState({ select: state => state.location.pathname });
   const environmentId = useUi(state => state.environmentId);
+  const queryClient = useQueryClient();
   const [collapsed, setCollapsed] = useState<Set<string>>(initialCollapsed);
+  const [folderOpen, setFolderOpen] = useState(false);
+  const [folderName, setFolderName] = useState('');
+  const [folderParentId, setFolderParentId] = useState('');
   const { data: rawServers } = useQuery({
     queryKey: ['servers'],
     queryFn: () => api.getServers() as Promise<Record<string, unknown>[]>,
@@ -69,6 +78,11 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
   const groupTree = useMemo(() => buildGroupTree(groups), [groups]);
   const ungrouped = byGroup.__ungrouped__ || [];
   const clusters = useMemo(() => Array.isArray(inventory?.clusters) ? inventory.clusters : [], [inventory]);
+  const createFolder = useMutation({
+    mutationFn: () => api.createServerGroup(folderName.trim(), '#64748b', folderParentId || null),
+    onSuccess: () => { showToast('Ordner erstellt.', 'success'); setFolderOpen(false); setFolderName(''); setFolderParentId(''); void queryClient.invalidateQueries({ queryKey: ['server-groups'] }); },
+    onError: (error: Error) => showToast(error.message, 'error'),
+  });
 
   useEffect(() => {
     // Expand a selected resource automatically. It makes direct links and
@@ -154,7 +168,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
       <CircleDot className="h-3.5 w-3.5 text-brand" /><span className="truncate">Umgebungsübersicht</span>
     </Link>
     <div className="pt-1">
-      <div className="flex items-center gap-2 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground"><FolderTree className="h-3.5 w-3.5" /> Ressourcen</div>
+      <div className="flex items-center gap-2 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground"><FolderTree className="h-3.5 w-3.5" /> Ressourcen{!compact && <button type="button" onClick={() => setFolderOpen(true)} className="ml-auto rounded-sm px-1 text-sm leading-none text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Ordner erstellen">+</button>}</div>
       <Link to="/infrastructure" onClick={onNavigate} className={cn('flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs transition-colors', path === '/infrastructure' ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground')}><Database className="h-3.5 w-3.5 text-brand" /><span className="truncate">Proxmox-Cluster</span></Link>
       {clusters.map(cluster => clusterNode(cluster))}
       {groupTree.map(group => groupNode(group))}
@@ -166,5 +180,6 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
       </div>}
       {!servers.length && <p className="px-2 py-2 text-xs text-muted-foreground">Noch keine Ressourcen in dieser Umgebung.</p>}
     </div>
+    <Dialog open={folderOpen} onOpenChange={setFolderOpen}><DialogContent className="max-w-sm"><DialogHeader><DialogTitle>Ordner erstellen</DialogTitle><DialogDescription>Strukturiere VMs und Fleet-Hosts wie in einer vCenter-Baumansicht.</DialogDescription></DialogHeader><form className="space-y-4" onSubmit={event => { event.preventDefault(); createFolder.mutate(); }}><div className="space-y-1.5"><Label htmlFor="tree-folder-name">Name</Label><Input id="tree-folder-name" required autoFocus value={folderName} onChange={event => setFolderName(event.target.value)} placeholder="Produktion" /></div><div className="space-y-1.5"><Label htmlFor="tree-folder-parent">Übergeordneter Ordner</Label><select id="tree-folder-parent" value={folderParentId} onChange={event => setFolderParentId(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="">Stammordner</option>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></div><DialogFooter><Button type="button" variant="outline" onClick={() => setFolderOpen(false)}>Abbrechen</Button><Button type="submit" disabled={createFolder.isPending}>Ordner erstellen</Button></DialogFooter></form></DialogContent></Dialog>
   </div>;
 }

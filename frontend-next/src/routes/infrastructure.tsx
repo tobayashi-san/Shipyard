@@ -14,6 +14,7 @@ import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import { useUi } from '@/lib/store';
 import { useProfile } from '@/lib/queries';
 import { ProxmoxConnectionDialog, type ProxmoxConnection } from '@/features/infrastructure/ProxmoxConnectionDialog';
+import { ImportProxmoxVmDialog } from '@/features/infrastructure/ImportProxmoxVmDialog';
 
 interface NodeInfo { name: string; status: string; cpu: number; maxcpu: number; mem: number; maxmem: number; disk: number; maxdisk: number; uptime: number }
 interface VmInfo { name: string; node_name: string; vm_id: number; status: string; cpu: number; maxcpu: number; mem: number; maxmem: number }
@@ -54,6 +55,7 @@ export function InfrastructurePage() {
   const [connectionDialogOpen, setConnectionDialogOpen] = useState(false);
   const [connectionToEdit, setConnectionToEdit] = useState<ProxmoxConnection | null>(null);
   const [connectionToDelete, setConnectionToDelete] = useState<ProxmoxConnection | null>(null);
+  const [vmToImport, setVmToImport] = useState<{ connectionId: string; vm: VmInfo } | null>(null);
   const isAdmin = profile?.role === 'admin';
   const inventoryQuery = useQuery({
     queryKey: ['opentofu', 'infrastructure', environmentId],
@@ -100,12 +102,13 @@ export function InfrastructurePage() {
           <Metric icon={HardDrive} label="Disk (Nodes)" value={capacity.diskTotal ? `${bytes(capacity.diskUsed)} / ${bytes(capacity.diskTotal)}` : '—'} />
           <Metric icon={HardDrive} label="Fleet-Hosts" value={hosts.length} />
         </div>
-        {clusters.map(cluster => <ClusterCard key={cluster.id} cluster={cluster} />)}
+        {clusters.map(cluster => <ClusterCard key={cluster.id} cluster={cluster} onImportVm={(connectionId, vm) => setVmToImport({ connectionId, vm })} />)}
         {hosts.length > 0 && <FleetHostsCard hosts={hosts} infos={hostInfoQueries.map(query => query.data)} />}
       </>}
     </>}
     <ProxmoxConnectionsCard connections={connections} isAdmin={isAdmin} onAdd={() => { setConnectionToEdit(null); setConnectionDialogOpen(true); }} onEdit={connection => { setConnectionToEdit(connection); setConnectionDialogOpen(true); }} onDelete={setConnectionToDelete} />
     <ProxmoxConnectionDialog environmentId={environmentId} connection={connectionToEdit} open={connectionDialogOpen} onOpenChange={setConnectionDialogOpen} />
+    {vmToImport && <ImportProxmoxVmDialog connectionId={vmToImport.connectionId} environmentId={environmentId} vm={vmToImport.vm} open={Boolean(vmToImport)} onOpenChange={open => !open && setVmToImport(null)} />}
     <ConfirmDeleteConnection connection={connectionToDelete} onOpenChange={open => !open && setConnectionToDelete(null)} onDeleted={() => { setConnectionToDelete(null); refresh(); }} />
   </div>;
 }
@@ -144,7 +147,7 @@ function Metric({ icon: Icon, label, value }: { icon: typeof Cpu; label: string;
   return <div className="flex min-w-0 items-center gap-3 border-b p-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0"><div className="rounded-md bg-muted p-2 text-muted-foreground"><Icon className="h-4 w-4" /></div><div className="min-w-0"><div className="text-xs text-muted-foreground">{label}</div><div className="mt-0.5 font-mono text-xl font-semibold tabular-nums">{value}</div></div></div>;
 }
 
-function ClusterCard({ cluster }: { cluster: Cluster }) {
+function ClusterCard({ cluster, onImportVm }: { cluster: Cluster; onImportVm: (connectionId: string, vm: VmInfo) => void }) {
   return <Card>
     <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 border-b">
       <div className="min-w-0"><CardTitle className="flex items-center gap-2 text-base"><Database className="h-4 w-4" />{cluster.endpoint}<StatusBadge tone={tone(cluster.status)} dot>{cluster.status === 'online' ? 'Verbunden' : 'Nicht erreichbar'}</StatusBadge></CardTitle><p className="mt-1 text-xs text-muted-foreground">Quelle: {cluster.connections?.map(connection => connection.name).join(', ') || 'Legacy-Deployment'} · Automatisiert durch: {cluster.deployments.map(deployment => deployment.name).join(', ') || '—'}</p></div>
@@ -152,7 +155,7 @@ function ClusterCard({ cluster }: { cluster: Cluster }) {
     </CardHeader>
     <CardContent className="space-y-5 p-0">
       <section><div className="flex items-center gap-2 border-b px-4 py-3 text-sm font-semibold"><Server className="h-4 w-4" />Nodes</div><div className="overflow-x-auto"><table className="w-full min-w-[780px] text-sm"><thead className="border-b bg-muted/30 text-left text-xs text-muted-foreground"><tr><th className="px-4 py-2.5 font-medium">Node</th><th className="px-4 py-2.5 font-medium">Status</th><th className="px-4 py-2.5 font-medium">CPU</th><th className="px-4 py-2.5 font-medium">Arbeitsspeicher</th><th className="px-4 py-2.5 font-medium">Disk</th><th className="px-4 py-2.5 font-medium">Uptime</th></tr></thead><tbody className="divide-y">{cluster.nodes.map(node => <tr key={node.name} className="hover:bg-muted/20"><td className="px-4 py-3 font-mono font-medium">{node.name}</td><td className="px-4 py-3"><StatusBadge tone={tone(node.status)} dot>{node.status}</StatusBadge></td><td className="px-4 py-3 tabular-nums">{node.maxcpu ? `${percent(node.cpu, 1)} · ${node.maxcpu} Kerne` : '—'}</td><td className="px-4 py-3 tabular-nums">{node.maxmem ? `${bytes(node.mem)} / ${bytes(node.maxmem)} · ${percent(node.mem, node.maxmem)}` : '—'}</td><td className="px-4 py-3 tabular-nums">{node.maxdisk ? `${bytes(node.disk)} / ${bytes(node.maxdisk)} · ${percent(node.disk, node.maxdisk)}` : '—'}</td><td className="px-4 py-3 font-mono text-xs">{uptime(node.uptime)}</td></tr>)}{cluster.nodes.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-muted-foreground">Keine Nodes gemeldet.</td></tr>}</tbody></table></div></section>
-      <section><div className="flex items-center gap-2 border-b px-4 py-3 text-sm font-semibold"><Boxes className="h-4 w-4" />Virtuelle Maschinen</div><div className="overflow-x-auto"><table className="w-full min-w-[720px] text-sm"><thead className="border-b bg-muted/30 text-left text-xs text-muted-foreground"><tr><th className="px-4 py-2.5 font-medium">VM</th><th className="px-4 py-2.5 font-medium">Node</th><th className="px-4 py-2.5 font-medium">VM-ID</th><th className="px-4 py-2.5 font-medium">Status</th><th className="px-4 py-2.5 font-medium">vCPU</th><th className="px-4 py-2.5 font-medium">Arbeitsspeicher</th></tr></thead><tbody className="divide-y">{cluster.vms.map(vm => <tr key={`${vm.node_name}-${vm.vm_id}`} className="hover:bg-muted/20"><td className="px-4 py-3 font-medium">{vm.name}</td><td className="px-4 py-3 font-mono text-xs">{vm.node_name}</td><td className="px-4 py-3 font-mono text-xs">{vm.vm_id}</td><td className="px-4 py-3"><StatusBadge tone={tone(vm.status)} dot>{vm.status}</StatusBadge></td><td className="px-4 py-3 tabular-nums">{vm.maxcpu || '—'}</td><td className="px-4 py-3 tabular-nums">{vm.maxmem ? `${bytes(vm.mem)} / ${bytes(vm.maxmem)}` : '—'}</td></tr>)}{cluster.vms.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-muted-foreground">Keine VMs gemeldet.</td></tr>}</tbody></table></div></section>
+      <section><div className="flex items-center gap-2 border-b px-4 py-3 text-sm font-semibold"><Boxes className="h-4 w-4" />Virtuelle Maschinen</div><div className="overflow-x-auto"><table className="w-full min-w-[790px] text-sm"><thead className="border-b bg-muted/30 text-left text-xs text-muted-foreground"><tr><th className="px-4 py-2.5 font-medium">VM</th><th className="px-4 py-2.5 font-medium">Node</th><th className="px-4 py-2.5 font-medium">VM-ID</th><th className="px-4 py-2.5 font-medium">Status</th><th className="px-4 py-2.5 font-medium">vCPU</th><th className="px-4 py-2.5 font-medium">Arbeitsspeicher</th><th className="px-4 py-2.5 text-right font-medium">Aktion</th></tr></thead><tbody className="divide-y">{cluster.vms.map(vm => <tr key={`${vm.node_name}-${vm.vm_id}`} className="hover:bg-muted/20"><td className="px-4 py-3 font-medium">{vm.name}</td><td className="px-4 py-3 font-mono text-xs">{vm.node_name}</td><td className="px-4 py-3 font-mono text-xs">{vm.vm_id}</td><td className="px-4 py-3"><StatusBadge tone={tone(vm.status)} dot>{vm.status}</StatusBadge></td><td className="px-4 py-3 tabular-nums">{vm.maxcpu || '—'}</td><td className="px-4 py-3 tabular-nums">{vm.maxmem ? `${bytes(vm.mem)} / ${bytes(vm.maxmem)}` : '—'}</td><td className="px-4 py-2 text-right">{cluster.connections?.[0]?.id ? <Button type="button" size="sm" variant="outline" onClick={() => onImportVm(cluster.connections![0].id, vm)}>In Fleet verwalten</Button> : <span className="text-xs text-muted-foreground">Quelle migrieren</span>}</td></tr>)}{cluster.vms.length === 0 && <tr><td colSpan={7} className="px-4 py-6 text-center text-muted-foreground">Keine VMs gemeldet.</td></tr>}</tbody></table></div></section>
     </CardContent>
   </Card>;
 }
