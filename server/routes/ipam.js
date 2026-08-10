@@ -174,10 +174,32 @@ router.post('/subnets/:id/reservations', guard('canEditServers'), (req, res) => 
     const rangeOverlap = getRanges(subnet.id).some(range => numeric >= ipv4(range.start_address) && numeric <= ipv4(range.end_address));
     if (rangeOverlap) return res.status(409).json({ error: 'Adresse ist bereits Teil eines reservierten IP-Bereichs.' });
     const status = validateChoice(req.body?.status, ADDRESS_STATUSES, 'active'); const role = validateChoice(req.body?.role, ADDRESS_ROLES, '');
-    db.db.prepare('INSERT INTO ipam_reservations (id, subnet_id, address, hostname, server_id, mac_address, status, role, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(id, subnet.id, address, String(req.body?.hostname || '').trim().slice(0, 100), String(req.body?.server_id || '').trim() || null, String(req.body?.mac_address || '').trim().slice(0, 32), status, role, String(req.body?.description || '').trim().slice(0, 500));
+    db.db.prepare('INSERT INTO ipam_reservations (id, subnet_id, address, hostname, server_id, mac_address, status, role, description, source_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(id, subnet.id, address, String(req.body?.hostname || '').trim().slice(0, 100), String(req.body?.server_id || '').trim() || null, String(req.body?.mac_address || '').trim().slice(0, 32), status, role, String(req.body?.description || '').trim().slice(0, 500), 'manual');
     db.auditLog.write('ipam.reservation_create', `subnet=${subnet.cidr} address=${address}`, req.ip, true, req.user?.username);
     res.status(201).json(db.db.prepare('SELECT * FROM ipam_reservations WHERE id = ?').get(id));
   } catch (error) { res.status(409).json({ error: error.message || 'Adresse ist bereits reserviert.' }); }
+});
+
+router.put('/reservations/:id', guard('canEditServers'), (req, res) => {
+  const reservation = db.db.prepare('SELECT * FROM ipam_reservations WHERE id = ?').get(req.params.id);
+  if (!reservation) return res.status(404).json({ error: 'IP-Adresse nicht gefunden.' });
+  const subnet = db.db.prepare('SELECT * FROM ipam_subnets WHERE id = ?').get(reservation.subnet_id);
+  const parsed = subnet && parseCidr(subnet.cidr);
+  if (!subnet || !parsed) return res.status(404).json({ error: 'Prefix nicht gefunden.' });
+  try {
+    const address = String(req.body?.address || reservation.address).trim();
+    const numeric = ipv4(address);
+    if (numeric === null || !isUsableAddress(numeric, parsed)) return res.status(400).json({ error: 'Adresse ist keine verwendbare Host-Adresse dieses Prefixes.' });
+    if (getRanges(subnet.id).some(range => numeric >= ipv4(range.start_address) && numeric <= ipv4(range.end_address))) return res.status(409).json({ error: 'Adresse ist Teil eines reservierten IP-Bereichs.' });
+    const status = validateChoice(req.body?.status, ADDRESS_STATUSES, reservation.status || 'active');
+    const role = validateChoice(req.body?.role, ADDRESS_ROLES, reservation.role || '');
+    const serverId = String(req.body?.server_id || '').trim() || null;
+    if (serverId && !db.db.prepare('SELECT 1 FROM servers WHERE id = ?').get(serverId)) return res.status(400).json({ error: 'Zugewiesener Fleet-Host wurde nicht gefunden.' });
+    db.db.prepare('UPDATE ipam_reservations SET address = ?, hostname = ?, server_id = ?, mac_address = ?, status = ?, role = ?, description = ? WHERE id = ?')
+      .run(address, String(req.body?.hostname || '').trim().slice(0, 100), serverId, String(req.body?.mac_address || '').trim().slice(0, 32), status, role, String(req.body?.description || '').trim().slice(0, 500), reservation.id);
+    db.auditLog.write('ipam.reservation_update', `subnet=${subnet.cidr} address=${address}`, req.ip, true, req.user?.username);
+    res.json(db.db.prepare('SELECT * FROM ipam_reservations WHERE id = ?').get(reservation.id));
+  } catch (error) { res.status(400).json({ error: error.message || 'IP-Adresse konnte nicht gespeichert werden.' }); }
 });
 
 router.post('/subnets/:id/reservations/range', guard('canEditServers'), (req, res) => {

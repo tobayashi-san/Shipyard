@@ -924,11 +924,11 @@ function normalizeResourceKey(resource) {
   return address ? `resource:${address}` : null;
 }
 
-function extractProxmoxGuestIpv4(payload) {
+function extractProxmoxGuestIpv4s(payload) {
   const interfaces = Array.isArray(payload)
     ? payload
     : (Array.isArray(payload?.result) ? payload.result : []);
-
+  const result = [];
   for (const iface of interfaces) {
     if (!iface || String(iface.name || '').toLowerCase() === 'lo') continue;
     const addresses = Array.isArray(iface['ip-addresses'])
@@ -938,10 +938,23 @@ function extractProxmoxGuestIpv4(payload) {
       const type = String(address?.['ip-address-type'] || address?.ip_address_type || '').toLowerCase();
       const ip = normalizeIp(address?.['ip-address'] || address?.ip_address || address?.address);
       if (!ip || net.isIP(ip) !== 4 || ip.startsWith('127.') || ip.startsWith('169.254.')) continue;
-      if (!type || type === 'ipv4') return ip;
+      if ((!type || type === 'ipv4') && !result.includes(ip)) result.push(ip);
     }
   }
-  return null;
+  return result;
+}
+function extractProxmoxGuestIpv4(payload) { return extractProxmoxGuestIpv4s(payload)[0] || null; }
+function ipv4Number(value) {
+  const chunks = String(value || '').split('.');
+  if (chunks.length !== 4 || chunks.some(chunk => !/^\d{1,3}$/.test(chunk) || Number(chunk) > 255)) return null;
+  return chunks.reduce((total, chunk) => total * 256 + Number(chunk), 0) >>> 0;
+}
+function subnetContainsIpv4(cidr, address) {
+  const [networkAddress, prefixText] = String(cidr || '').split('/');
+  const prefix = Number(prefixText); const network = ipv4Number(networkAddress); const ip = ipv4Number(address);
+  if (network === null || ip === null || !Number.isInteger(prefix) || prefix < 0 || prefix > 32) return false;
+  const mask = prefix === 0 ? 0 : ((0xffffffff << (32 - prefix)) >>> 0);
+  return (network & mask) === (ip & mask);
 }
 
 function applyFleetProxmoxBlueprintMetadata({ servers, state, vms, guestIps = new Map() }) {
@@ -2228,6 +2241,60 @@ override.tf.json
     } catch (error) { res.status(error.status || 502).json({ error: error.message || 'Gast-IP konnte nicht gelesen werden.' }); }
   });
 
+  // Synchronise guest addresses without making Proxmox the source of truth for
+  // manual IPAM metadata. Existing manual addresses are deliberately left
+  // untouched; only Fleet's own Proxmox-sourced rows are refreshed.
+  router.post('/proxmox-connections/:id/sync-ipam', async (req, res) => {
+    if (!can(getPermissions(req.user), 'canEditServers')) return res.status(403).json({ error: 'Permission denied' });
+    try {
+      const subnetId = String(req.body?.subnet_id || '').trim();
+      const subnet = db.db.prepare('SELECT * FROM ipam_subnets WHERE id = ?').get(subnetId);
+      if (!subnet) return res.status(404).json({ error: 'IPAM-Prefix nicht gefunden.' });
+      const { source, connection } = getProxmoxConnectionSource(req.params.id);
+      if (source.environment_id !== subnet.environment_id) return res.status(400).json({ error: 'Proxmox-Verbindung und IPAM-Prefix müssen derselben Umgebung angehören.' });
+      const resources = await requestProxmoxApi(connection, '/cluster/resources?type=vm');
+      const vms = (Array.isArray(resources) ? resources : []).filter(resource => String(resource?.type || '').toLowerCase() === 'qemu');
+      const mappedServers = new Map(db.db.prepare('SELECT server_id, node_name, vm_id FROM proxmox_inventory_servers WHERE connection_id = ?').all(source.id).map(row => [`${row.node_name}:${row.vm_id}`, row.server_id]));
+      const occupiedRanges = db.db.prepare('SELECT start_address, end_address FROM ipam_ip_ranges WHERE subnet_id = ?').all(subnet.id).map(row => ({ start: ipv4Number(row.start_address), end: ipv4Number(row.end_address) }));
+      const getReservation = db.db.prepare('SELECT * FROM ipam_reservations WHERE subnet_id = ? AND address = ?');
+      const insertReservation = db.db.prepare('INSERT INTO ipam_reservations (id, subnet_id, address, hostname, server_id, status, role, description, source_type, source_ref, last_synced_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime(\'now\'))');
+      const updateReservation = db.db.prepare('UPDATE ipam_reservations SET hostname = ?, server_id = ?, status = ?, source_ref = ?, last_synced_at = datetime(\'now\') WHERE id = ?');
+      const stats = { discovered: 0, created: 0, updated: 0, conflicts: 0, skipped: 0, failed: 0 };
+      for (const vm of vms) {
+        const nodeName = String(vm?.node || '').trim();
+        const vmId = Number(vm?.vmid);
+        if (!nodeName || !Number.isInteger(vmId)) { stats.skipped += 1; continue; }
+        try {
+          const payload = await requestProxmoxApi(connection, `/nodes/${encodeURIComponent(nodeName)}/qemu/${vmId}/agent/network-get-interfaces`);
+          const addresses = extractProxmoxGuestIpv4s(payload).filter(address => subnetContainsIpv4(subnet.cidr, address));
+          for (const address of addresses) {
+            stats.discovered += 1;
+            const number = ipv4Number(address);
+            if (number === null || occupiedRanges.some(range => range.start !== null && range.end !== null && number >= range.start && number <= range.end)) { stats.skipped += 1; continue; }
+            const sourceRef = `${source.id}:${nodeName}:${vmId}`;
+            const existing = getReservation.get(subnet.id, address);
+            const hostname = String(vm?.name || `VM ${vmId}`).slice(0, 100);
+            const serverId = mappedServers.get(`${nodeName}:${vmId}`) || null;
+            if (!existing) {
+              insertReservation.run(randomUUID(), subnet.id, address, hostname, serverId, 'active', '', `Aus Proxmox ${source.name} synchronisiert`, 'proxmox', sourceRef);
+              stats.created += 1;
+            } else if (existing.source_type === 'proxmox' && String(existing.source_ref || '').startsWith(`${source.id}:`)) {
+              updateReservation.run(hostname, serverId, 'active', sourceRef, existing.id);
+              stats.updated += 1;
+            } else {
+              stats.conflicts += 1;
+            }
+          }
+        } catch (error) {
+          stats.failed += 1;
+          log.warn({ err: error, connection: source.name, nodeName, vmId }, 'Could not read Proxmox guest addresses for IPAM sync');
+        }
+      }
+      db.auditLog.write('ipam.proxmox_sync', `source=${source.name} prefix=${subnet.cidr} discovered=${stats.discovered} created=${stats.created} updated=${stats.updated}`, req.ip, true, req.user?.username);
+      res.json(stats);
+    } catch (error) { res.status(error.status || 502).json({ error: error.message || 'Proxmox-IPAM-Abgleich fehlgeschlagen.' }); }
+  });
+
   router.post('/proxmox-connections/:id/import-vm', async (req, res) => {
     const permissions = getPermissions(req.user);
     if (!can(permissions, 'canEditServers')) return res.status(403).json({ error: 'Permission denied' });
@@ -3184,6 +3251,8 @@ module.exports = {
     buildProxmoxResourceOverview,
     applyFleetProxmoxBlueprintMetadata,
     extractProxmoxGuestIpv4,
+    extractProxmoxGuestIpv4s,
+    subnetContainsIpv4,
     pruneWorkspaceRuns,
     moveWorkspaceDirectory,
     destroyConfirmationPhrase,
