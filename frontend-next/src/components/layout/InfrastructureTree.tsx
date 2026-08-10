@@ -144,15 +144,16 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
     const open = !collapsed.has(node.id);
     const members = byGroup[node.id] || [];
     const hasChildren = members.length > 0 || node.children.length > 0;
+    const openManager = () => { setFolderToManage(node); setManagedFolderName(node.name); setManagedFolderParentId(node.parent_id || ''); };
     return <div key={node.id}>
-      <button type="button" onClick={() => hasChildren && toggle(node.id)} onDoubleClick={() => { if (!compact) { setFolderToManage(node); setManagedFolderName(node.name); setManagedFolderParentId(node.parent_id || ''); } }} title={!compact ? `${node.name} · Doppelklick zum Verwalten` : node.name} className={cn('group flex w-full min-w-0 items-center gap-1.5 rounded-sm py-1.5 pr-2 text-left text-xs text-foreground transition-colors hover:bg-accent/60', !hasChildren && 'cursor-default')}
-        style={{ paddingLeft: `${8 + depth * 14}px` }}>
-        {hasChildren ? (open ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />) : <span className="w-3.5" />}
-        <Folder className="h-3.5 w-3.5 shrink-0" style={{ color: node.color || undefined }} />
-        <span className="min-w-0 flex-1 truncate">{node.name}</span>
-        <span className="text-[10px] text-muted-foreground">{members.length}</span>
-        {!compact && <Settings2 className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" aria-label={`${node.name} verwalten`} />}
-      </button>
+      <div className="group flex min-w-0 items-center gap-1 pr-1" style={{ paddingLeft: `${8 + depth * 14}px` }}>
+        <button type="button" onClick={() => hasChildren && toggle(node.id)} className={cn('flex min-w-0 flex-1 items-center gap-1.5 rounded-sm py-1.5 text-left text-xs text-foreground transition-colors hover:bg-accent/60', !hasChildren && 'cursor-default')}>
+          {hasChildren ? (open ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />) : <span className="w-3.5" />}
+          <Folder className="h-3.5 w-3.5 shrink-0" style={{ color: node.color || undefined }} />
+          <span className="min-w-0 flex-1 truncate">{node.name}</span><span className="text-[10px] text-muted-foreground">{members.length}</span>
+        </button>
+        {!compact && <button type="button" onClick={openManager} className="rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={`${node.name} verwalten`} title="Ordner verwalten"><Settings2 className="h-3.5 w-3.5" /></button>}
+      </div>
       {open && <div>{members.map(server => serverRow(server, depth + 1))}{node.children.map(child => groupNode(child, depth + 1))}</div>}
     </div>;
   };
@@ -199,6 +200,19 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
       {!servers.length && <p className="px-2 py-2 text-xs text-muted-foreground">Noch keine Ressourcen in dieser Umgebung.</p>}
     </div>
     <Dialog open={folderOpen} onOpenChange={setFolderOpen}><DialogContent className="max-w-sm"><DialogHeader><DialogTitle>Ordner erstellen</DialogTitle><DialogDescription>Strukturiere VMs und Fleet-Hosts wie in einer vCenter-Baumansicht.</DialogDescription></DialogHeader><form className="space-y-4" onSubmit={event => { event.preventDefault(); createFolder.mutate(); }}><div className="space-y-1.5"><Label htmlFor="tree-folder-name">Name</Label><Input id="tree-folder-name" required autoFocus value={folderName} onChange={event => setFolderName(event.target.value)} placeholder="Produktion" /></div><div className="space-y-1.5"><Label htmlFor="tree-folder-parent">Übergeordneter Ordner</Label><select id="tree-folder-parent" value={folderParentId} onChange={event => setFolderParentId(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="">Stammordner</option>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></div><DialogFooter><Button type="button" variant="outline" onClick={() => setFolderOpen(false)}>Abbrechen</Button><Button type="submit" disabled={createFolder.isPending}>Ordner erstellen</Button></DialogFooter></form></DialogContent></Dialog>
-    <Dialog open={Boolean(folderToManage)} onOpenChange={open => !open && setFolderToManage(null)}><DialogContent className="max-w-sm"><DialogHeader><DialogTitle>Ordner verwalten</DialogTitle><DialogDescription>Ändere Name und Position in der Infrastruktur-Baumansicht.</DialogDescription></DialogHeader><form className="space-y-4" onSubmit={event => { event.preventDefault(); saveFolder.mutate(); }}><div className="space-y-1.5"><Label htmlFor="manage-folder-name">Name</Label><Input id="manage-folder-name" required value={managedFolderName} onChange={event => setManagedFolderName(event.target.value)} /></div><div className="space-y-1.5"><Label htmlFor="manage-folder-parent">Übergeordneter Ordner</Label><select id="manage-folder-parent" value={managedFolderParentId} onChange={event => setManagedFolderParentId(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="">Stammordner</option>{groups.filter(group => !folderToManage || !getDescendantIds(groups, folderToManage.id).has(group.id)).map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></div><DialogFooter className="sm:justify-between"><Button type="button" variant="destructive" onClick={() => deleteFolder.mutate()} disabled={deleteFolder.isPending}><Trash2 />Ordner löschen</Button><div className="flex gap-2"><Button type="button" variant="outline" onClick={() => setFolderToManage(null)}>Abbrechen</Button><Button type="submit" disabled={saveFolder.isPending || !managedFolderName.trim()}>Speichern</Button></div></DialogFooter><p className="text-xs text-muted-foreground">Beim Löschen bleiben enthaltene Hosts erhalten und werden dem Stammordner zugeordnet.</p></form></DialogContent></Dialog>
+    <Dialog open={Boolean(folderToManage)} onOpenChange={open => !open && setFolderToManage(null)}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader><DialogTitle>Ordner verwalten</DialogTitle><DialogDescription>Ändere Name oder Position in der Infrastruktur-Baumansicht.</DialogDescription></DialogHeader>
+        <form className="space-y-4" onSubmit={event => { event.preventDefault(); saveFolder.mutate(); }}>
+          <div className="space-y-1.5"><Label htmlFor="manage-folder-name">Name</Label><Input id="manage-folder-name" required autoFocus value={managedFolderName} onChange={event => setManagedFolderName(event.target.value)} /></div>
+          <div className="space-y-1.5"><Label htmlFor="manage-folder-parent">Übergeordneter Ordner</Label><select id="manage-folder-parent" value={managedFolderParentId} onChange={event => setManagedFolderParentId(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="">Stammordner</option>{groups.filter(group => !folderToManage || !getDescendantIds(groups, folderToManage.id).has(group.id)).map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></div>
+          <p className="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-muted-foreground">Beim Löschen bleiben enthaltene Hosts erhalten und Unterordner werden in den Stamm verschoben.</p>
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
+            <Button type="button" variant="destructive" onClick={() => deleteFolder.mutate()} disabled={deleteFolder.isPending}><Trash2 />Ordner löschen</Button>
+            <div className="flex gap-2"><Button type="button" variant="outline" onClick={() => setFolderToManage(null)}>Abbrechen</Button><Button type="submit" disabled={saveFolder.isPending || !managedFolderName.trim()}>Speichern</Button></div>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   </div>;
 }
