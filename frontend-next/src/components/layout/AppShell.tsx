@@ -141,10 +141,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                 const id = String(item.id);
                 const name = String(item.name);
                 return <div key={id} className={cn('group flex items-center rounded-sm hover:bg-accent', id === environmentId && 'bg-accent')}>
-                  <button type="button" onClick={() => { setEnvironmentId(id); setEnvironmentOpen(false); }} className={cn('flex min-w-0 flex-1 items-center justify-between px-2 py-2 text-sm', id === environmentId && 'font-medium')}><span className="truncate">{name}</span><span className="ml-2 text-xs text-muted-foreground">{String(item.server_count ?? 0)}</span></button>
+                  <button type="button" onClick={() => { setEnvironmentId(id); setEnvironmentOpen(false); }} className={cn('flex min-w-0 flex-1 items-center justify-between px-2 py-2 text-sm', id === environmentId && 'font-medium')}><span className="truncate">{name}</span><span className="ml-2 shrink-0 text-xs text-muted-foreground">{String(item.server_count ?? 0)} S · {String(item.deployment_count ?? 0)} D</span></button>
                   {isAdmin && <div className="mr-1 hidden items-center gap-0.5 group-hover:flex">
                     <button type="button" title="Umgebung umbenennen" className="rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground" onClick={() => { const next = window.prompt('Name der Umgebung', name)?.trim(); if (next && next !== name) renameEnvironment.mutate({ id, name: next }); }}><Pencil className="h-3 w-3" /></button>
-                    {id !== 'default' && <button type="button" title="Umgebung löschen" className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={() => { if (window.confirm(`Umgebung „${name}“ löschen? Zugeordnete Server werden in die Standardumgebung verschoben.`)) removeEnvironment.mutate(id); }}><Trash2 className="h-3 w-3" /></button>}
+                    {id !== 'default' && <button type="button" title="Umgebung löschen" className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={() => { if (window.confirm(`Umgebung „${name}“ löschen? Zugeordnete Server und Deployments werden in die Standardumgebung verschoben.`)) removeEnvironment.mutate(id); }}><Trash2 className="h-3 w-3" /></button>}
                   </div>}
                 </div>;
               })}
