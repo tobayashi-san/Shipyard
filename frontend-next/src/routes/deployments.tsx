@@ -1,14 +1,15 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from '@tanstack/react-router';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Boxes, CheckCircle2, Clock3, Cpu, HardDrive, Layers3, MemoryStick, RefreshCw, Server, TriangleAlert, Workflow } from 'lucide-react';
+import { ArrowRight, Boxes, CheckCircle2, Clock3, Cpu, FolderPlus, HardDrive, Layers3, MemoryStick, RefreshCw, Server, TriangleAlert, Workflow } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/ui/page-header';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
+import { CreateDeploymentDialog } from '@/features/deployments/CreateDeploymentDialog';
 
 interface OpenTofuStatus {
   installed?: boolean;
@@ -76,6 +77,7 @@ function Metric({ icon: Icon, label, value }: { icon: typeof Cpu; label: string;
 export function DeploymentsPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const [createOpen, setCreateOpen] = useState(false);
   const statusQuery = useQuery({
     queryKey: ['opentofu', 'status'],
     queryFn: () => apiFetch<OpenTofuStatus>('/plugin/opentofu/status'),
@@ -107,6 +109,7 @@ export function DeploymentsPage() {
       description={t('deploy.description')}
       actions={<>
         <Button type="button" variant="outline" onClick={refresh} disabled={isRefreshing}><RefreshCw className={isRefreshing ? 'animate-spin' : undefined} />{t('deploy.refresh')}</Button>
+        <Button type="button" onClick={() => setCreateOpen(true)}><FolderPlus />Deployment anlegen</Button>
         <Button asChild><Link to="/plugins/$id" params={{ id: 'opentofu' }}><Workflow />{t('deploy.advanced')}</Link></Button>
       </>}
     />
@@ -122,7 +125,7 @@ export function DeploymentsPage() {
       </CardContent>
     </Card>
 
-    {workspaceQuery.isLoading ? <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">{[0, 1, 2].map(item => <Card key={item}><CardContent className="h-52 animate-pulse bg-muted/40" /></Card>)}</div> : workspaces.length === 0 ? <Card><EmptyState icon={<Layers3 className="h-5 w-5" />} title={t('deploy.noWorkspaces')} description={t('deploy.noWorkspacesHint')} action={<Button asChild><Link to="/plugins/$id" params={{ id: 'opentofu' }}>{t('deploy.advanced')}</Link></Button>} /></Card> : <>
+    {workspaceQuery.isLoading ? <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">{[0, 1, 2].map(item => <Card key={item}><CardContent className="h-52 animate-pulse bg-muted/40" /></Card>)}</div> : workspaces.length === 0 ? <Card><EmptyState icon={<Layers3 className="h-5 w-5" />} title={t('deploy.noWorkspaces')} description={t('deploy.noWorkspacesHint')} action={<Button onClick={() => setCreateOpen(true)}><FolderPlus />Deployment anlegen</Button>} /></Card> : <>
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {workspaces.map(workspace => {
           const summary = summaries.get(workspace.id);
@@ -160,5 +163,6 @@ export function DeploymentsPage() {
       </div>
       <p className="text-xs text-muted-foreground">{t('deploy.legacyHint')}</p>
     </>}
+    <CreateDeploymentDialog open={createOpen} onOpenChange={setCreateOpen} />
   </div>;
 }
