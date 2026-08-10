@@ -659,7 +659,13 @@ module.exports = {
       return db.prepare('SELECT * FROM server_groups WHERE id = ?').get(id);
     },
     update: (id, name, color) => db.prepare('UPDATE server_groups SET name = ?, color = ? WHERE id = ?').run(name, color || '#6366f1', id),
-    delete: (id) => db.prepare('DELETE FROM server_groups WHERE id = ?').run(id),
+    delete: (id) => db.transaction((groupId) => {
+      // Folder deletion must never leave invisible hosts or orphaned child
+      // folders in the infrastructure tree.
+      db.prepare('UPDATE servers SET group_id = NULL WHERE group_id = ?').run(groupId);
+      db.prepare('UPDATE server_groups SET parent_id = NULL WHERE parent_id = ?').run(groupId);
+      return db.prepare('DELETE FROM server_groups WHERE id = ?').run(groupId);
+    })(id),
     setServerGroup: (serverId, groupId) => db.prepare('UPDATE servers SET group_id = ? WHERE id = ?').run(groupId || null, serverId),
     setGroupParent: (groupId, parentId) => db.prepare('UPDATE server_groups SET parent_id = ? WHERE id = ?').run(parentId || null, groupId),
   },
