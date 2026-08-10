@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ArrowRight, CheckCircle2, Clock3, Cpu, FileCode2, HardDrive, History, MemoryStick, Pencil, Play, Plus, RefreshCw, Server, Settings2, Trash2, Workflow } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Boxes, CheckCircle2, Clock3, Cpu, FileCode2, HardDrive, History, MemoryStick, Pencil, Play, Plus, RefreshCw, Server, Settings2, Trash2, Workflow } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
@@ -39,6 +39,10 @@ interface VmTemplateConfig {
 }
 interface VmTemplate { id: string; name: string; config?: VmTemplateConfig }
 interface VmTemplatesResponse { templates?: VmTemplate[] }
+interface ResourceOverview {
+  desired?: { vm_count?: number; cpu_cores?: number; memory_mb?: number; disk_gb?: number; nodes?: Array<{ name?: string; vm_count?: number }> };
+  actual?: { available?: boolean; reason?: string; vm_count?: number; resources?: Array<{ address?: string; name?: string; node_name?: string; vm_id?: string | number; status?: string; ip_addresses?: string[] }> };
+}
 
 function formatDate(value?: string) {
   if (!value) return '—';
@@ -73,6 +77,7 @@ export function DeploymentDetailPage() {
   const runsQuery = useQuery({ queryKey: ['opentofu', 'workspace', id, 'runs'], queryFn: () => apiFetch<RunsResponse>(`/plugin/opentofu/workspaces/${encodeURIComponent(id)}/runs?page_size=8`), enabled: Boolean(id), refetchInterval: query => query.state.data?.items?.some(run => run.status === 'running') ? 2_500 : false });
   const vmsQuery = useQuery({ queryKey: ['opentofu', 'workspace', id, 'vms'], queryFn: () => apiFetch<VmsResponse>(`/plugin/opentofu/workspaces/${encodeURIComponent(id)}/proxmox-vms`), enabled: Boolean(id) });
   const templatesQuery = useQuery({ queryKey: ['opentofu', 'workspace', id, 'vm-templates'], queryFn: () => apiFetch<VmTemplatesResponse>(`/plugin/opentofu/workspaces/${encodeURIComponent(id)}/proxmox-vm-templates`), enabled: Boolean(id) });
+  const resourceOverviewQuery = useQuery({ queryKey: ['opentofu', 'workspace', id, 'resources-overview'], queryFn: () => apiFetch<ResourceOverview>(`/plugin/opentofu/workspaces/${encodeURIComponent(id)}/resources-overview`), enabled: Boolean(id), staleTime: 15_000 });
   const vms = Array.isArray(vmsQuery.data?.vms) ? vmsQuery.data!.vms! : [];
   const vmTemplates = Array.isArray(templatesQuery.data?.templates) ? templatesQuery.data!.templates! : [];
   const runs = Array.isArray(runsQuery.data?.items) ? runsQuery.data!.items! : [];
@@ -148,9 +153,19 @@ export function DeploymentDetailPage() {
         <CardContent className="p-0">
           {vmsQuery.isLoading ? <div className="space-y-3 p-4"><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /></div> : vms.length === 0 ? <EmptyState compact icon={<Server className="h-5 w-5" />} title="Keine VM-Definitionen" description="Definiere deine erste VM direkt in Fleet." action={<Button size="sm" onClick={openNewVmDialog}><Plus />VM hinzufügen</Button>} /> : <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead className="border-b bg-muted/30 text-left text-xs text-muted-foreground"><tr><th className="px-4 py-3 font-medium">VM</th><th className="px-4 py-3 font-medium">Node</th><th className="px-4 py-3 font-medium">VM-ID</th><th className="px-4 py-3 font-medium">vCPU</th><th className="px-4 py-3 font-medium">RAM</th><th className="px-4 py-3 font-medium">Disk</th><th className="px-4 py-3 font-medium">Status</th><th className="w-24 px-4 py-3 text-right font-medium">Aktionen</th></tr></thead><tbody className="divide-y">{vms.map(vm => <tr key={vm.id} className="hover:bg-muted/20"><td className="px-4 py-3 font-medium">{vm.name}<div className="mt-0.5 text-xs text-muted-foreground">{vm.post_deploy_playbooks?.length ? `${vm.post_deploy_playbooks.length} Post-Deploy-Schritte` : 'Keine Post-Deploy-Schritte'}</div></td><td className="px-4 py-3 font-mono text-xs">{vm.node_name || '—'}</td><td className="px-4 py-3 font-mono text-xs">{vm.vm_id ?? 'Automatisch'}</td><td className="px-4 py-3 tabular-nums">{vm.cpu_cores || '—'}</td><td className="px-4 py-3 tabular-nums">{vm.memory_mb ? `${vm.memory_mb} MB` : '—'}</td><td className="px-4 py-3 tabular-nums">{vm.disk_size_gb ? `${vm.disk_size_gb} GB` : '—'}</td><td className="px-4 py-3"><StatusBadge tone={vm.started ? 'success' : 'muted'} dot>{vm.started ? 'Gestartet' : 'Aus'}</StatusBadge></td><td className="px-4 py-3"><div className="flex justify-end gap-1"><Button type="button" variant="ghost" size="icon" onClick={() => openEditVmDialog(vm)} aria-label={`${vm.name} bearbeiten`}><Pencil className="h-4 w-4" /></Button><Button type="button" variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => setVmToDelete(vm)} aria-label={`${vm.name} entfernen`}><Trash2 className="h-4 w-4" /></Button></div></td></tr>)}</tbody><tfoot className="border-t bg-muted/20 text-sm"><tr><td className="px-4 py-3 font-medium">Kapazität</td><td /><td /><td className="px-4 py-3 font-mono">{total(vms, 'cpu_cores')}</td><td className="px-4 py-3 font-mono">{total(vms, 'memory_mb')} MB</td><td className="px-4 py-3 font-mono">{total(vms, 'disk_size_gb')} GB</td><td /><td /></tr></tfoot></table></div>}
         </CardContent>
-      </Card>
+    </Card>
 
-      <Card>
+    <Card className="xl:order-2 xl:col-span-2">
+      <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b">
+        <div><CardTitle className="text-base">Bereitgestellte Ressourcen</CardTitle><p className="mt-1 text-sm text-muted-foreground">Abgleich zwischen der gewünschten Fleet-Konfiguration und dem aktuellen OpenTofu-State.</p></div>
+        <div className="flex items-center gap-2"><StatusBadge tone={resourceOverviewQuery.data?.actual?.available ? 'success' : 'muted'} dot>{resourceOverviewQuery.data?.actual?.available ? 'State verfügbar' : 'Noch kein State'}</StatusBadge><Button type="button" size="icon" variant="ghost" onClick={() => void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspace', id, 'resources-overview'] })} aria-label="Ressourcen aktualisieren"><RefreshCw className={resourceOverviewQuery.isFetching ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} /></Button></div>
+      </CardHeader>
+      <CardContent className="p-0">
+        {resourceOverviewQuery.isLoading ? <div className="space-y-3 p-4"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div> : resourceOverviewQuery.data?.actual?.available ? <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-sm"><thead className="border-b bg-muted/30 text-left text-xs text-muted-foreground"><tr><th className="px-4 py-3 font-medium">Ressource</th><th className="px-4 py-3 font-medium">Node</th><th className="px-4 py-3 font-medium">VM-ID</th><th className="px-4 py-3 font-medium">IP-Adresse</th><th className="px-4 py-3 font-medium">State</th></tr></thead><tbody className="divide-y">{(resourceOverviewQuery.data.actual.resources || []).map(resource => <tr key={resource.address || `${resource.name}-${resource.vm_id}`} className="hover:bg-muted/20"><td className="px-4 py-3"><div className="font-medium">{resource.name || '—'}</div><div className="mt-0.5 font-mono text-xs text-muted-foreground">{resource.address || '—'}</div></td><td className="px-4 py-3 font-mono text-xs">{resource.node_name || '—'}</td><td className="px-4 py-3 font-mono text-xs">{resource.vm_id ?? '—'}</td><td className="px-4 py-3 font-mono text-xs">{resource.ip_addresses?.length ? resource.ip_addresses.join(', ') : 'Wird ermittelt…'}</td><td className="px-4 py-3"><StatusBadge tone={resource.status === 'managed' ? 'success' : 'muted'} dot>{resource.status === 'managed' ? 'Verwaltet' : resource.status || '—'}</StatusBadge></td></tr>)}</tbody></table></div> : <EmptyState compact icon={<Boxes className="h-5 w-5" />} title="Noch keine Ressourcen aus dem State" description={resourceOverviewQuery.data?.actual?.reason || 'Führe nach dem Plan einen Apply aus, damit Fleet den tatsächlichen Zustand anzeigen kann.'} />}
+      </CardContent>
+    </Card>
+
+    <Card className="xl:order-1">
         <CardHeader className="flex-row items-center justify-between border-b"><CardTitle className="flex items-center gap-2 text-base"><History className="h-4 w-4" />Laufhistorie</CardTitle><Button type="button" size="icon" variant="ghost" onClick={refresh} aria-label={t('deploy.refresh')}><RefreshCw className="h-4 w-4" /></Button></CardHeader>
         <CardContent className="p-0">{runsQuery.isLoading ? <div className="space-y-3 p-4"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div> : runs.length === 0 ? <EmptyState compact icon={<Clock3 className="h-5 w-5" />} title={t('deploy.noRun')} /> : <ul className="divide-y">{runs.map(run => <li key={run.id} className="flex items-center gap-3 px-4 py-3"><StatusBadge tone={tone(run.status)} dot>{run.status || '—'}</StatusBadge><div className="min-w-0 flex-1"><div className="font-mono text-sm font-medium">{run.action || 'tofu'}</div><div className="mt-0.5 truncate text-xs text-muted-foreground">{formatDate(run.completed_at || run.started_at)}</div></div></li>)}</ul>}</CardContent>
       </Card>
