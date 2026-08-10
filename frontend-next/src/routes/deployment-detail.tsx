@@ -67,6 +67,7 @@ export function DeploymentDetailPage() {
   const id = params.id || '';
   const queryClient = useQueryClient();
   const [confirmApply, setConfirmApply] = useState(false);
+  const [confirmDestroy, setConfirmDestroy] = useState(false);
   const [vmDialogOpen, setVmDialogOpen] = useState(false);
   const [editingVm, setEditingVm] = useState<Vm | null>(null);
   const [vmToDelete, setVmToDelete] = useState<Vm | null>(null);
@@ -88,6 +89,16 @@ export function DeploymentDetailPage() {
       showToast(`${action} wurde gestartet.`, 'success');
       void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspace', id, 'runs'] });
       void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspaces'] });
+    },
+    onError: (error: Error) => showToast(error.message, 'error'),
+  });
+  const destroyMutation = useMutation({
+    mutationFn: () => apiFetch<{ dbRunId?: string }>(`/plugin/opentofu/workspaces/${encodeURIComponent(id)}/run`, { method: 'POST', body: { action: 'destroy', confirm_destroy: `DESTROY ${workspace?.name || ''}` } }),
+    onSuccess: () => {
+      showToast('Destroy wurde gestartet. Der Lauf bleibt in der Historie nachvollziehbar.', 'success');
+      void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspace', id, 'runs'] });
+      void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspaces'] });
+      void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspace', id, 'resources-overview'] });
     },
     onError: (error: Error) => showToast(error.message, 'error'),
   });
@@ -139,11 +150,11 @@ export function DeploymentDetailPage() {
         {runMutation.isPending && <StatusBadge tone="info" dot>Wird gestartet</StatusBadge>}
       </CardHeader>
       <CardContent className="flex flex-wrap gap-2 p-4">
-        <Button type="button" variant="outline" onClick={() => runMutation.mutate('init')} disabled={runMutation.isPending}><FileCode2 />Initialisieren</Button>
-        <Button type="button" variant="outline" onClick={() => runMutation.mutate('validate')} disabled={runMutation.isPending}><CheckCircle2 />Prüfen</Button>
-        <Button type="button" variant="outline" onClick={() => runMutation.mutate('plan')} disabled={runMutation.isPending}><Play />Plan erstellen</Button>
-        <Button type="button" onClick={() => setConfirmApply(true)} disabled={runMutation.isPending}><ArrowRight />Änderungen anwenden</Button>
-        <Button asChild type="button" variant="ghost" className="ml-auto text-destructive hover:text-destructive"><Link to="/plugins/$id" params={{ id: 'opentofu' }}>Destroy geschützt ausführen</Link></Button>
+        <Button type="button" variant="outline" onClick={() => runMutation.mutate('init')} disabled={runMutation.isPending || destroyMutation.isPending}><FileCode2 />Initialisieren</Button>
+        <Button type="button" variant="outline" onClick={() => runMutation.mutate('validate')} disabled={runMutation.isPending || destroyMutation.isPending}><CheckCircle2 />Prüfen</Button>
+        <Button type="button" variant="outline" onClick={() => runMutation.mutate('plan')} disabled={runMutation.isPending || destroyMutation.isPending}><Play />Plan erstellen</Button>
+        <Button type="button" onClick={() => setConfirmApply(true)} disabled={runMutation.isPending || destroyMutation.isPending}><ArrowRight />Änderungen anwenden</Button>
+        <Button type="button" variant="ghost" className="ml-auto text-destructive hover:text-destructive" onClick={() => setConfirmDestroy(true)} disabled={runMutation.isPending || destroyMutation.isPending}>Destroy …</Button>
       </CardContent>
     </Card>
 
@@ -182,6 +193,7 @@ export function DeploymentDetailPage() {
     </Card>
 
     <ConfirmDialog open={confirmApply} onOpenChange={setConfirmApply} title="Änderungen anwenden?" description="OpenTofu wendet den zuletzt berechneten gewünschten Zustand auf die Proxmox-Umgebung an. Prüfe den Plan vorher." confirmLabel="Anwenden" cancelLabel="Abbrechen" variant="warning" onConfirm={() => runMutation.mutate('apply')} isPending={runMutation.isPending} />
+    <ConfirmDialog open={confirmDestroy} onOpenChange={setConfirmDestroy} title="Deployment wirklich zerstören?" description={<>Dies startet <code>tofu destroy</code> für <strong>{workspace.name}</strong>. Alle von diesem Deployment verwalteten Ressourcen – etwa VMs, Disks und Netzwerkkonfigurationen – werden entfernt. Dieser Vorgang kann nicht rückgängig gemacht werden.</>} confirmLabel="Destroy starten" cancelLabel="Abbrechen" variant="destructive" confirmTextValue={`DESTROY ${workspace.name}`} confirmInputLabel="Zur Bestätigung eingeben" confirmInputHelp={<>Gib exakt <code className="font-mono text-foreground">DESTROY {workspace.name}</code> ein.</>} onConfirm={() => destroyMutation.mutate()} isPending={destroyMutation.isPending} />
     <ConfirmDialog open={Boolean(templateToDelete)} onOpenChange={open => !open && setTemplateToDelete(null)} title="VM-Vorlage löschen?" description={templateToDelete ? `Die Vorlage „${templateToDelete.name}“ wird gelöscht. Bereits definierte VMs bleiben unverändert.` : ''} confirmLabel="Vorlage löschen" cancelLabel="Abbrechen" variant="destructive" onConfirm={() => templateToDelete && deleteTemplateMutation.mutate(templateToDelete.id)} isPending={deleteTemplateMutation.isPending} />
     <ConfirmDialog open={Boolean(vmToDelete)} onOpenChange={open => !open && setVmToDelete(null)} title="VM-Definition entfernen?" description={vmToDelete ? `Die gewünschte Konfiguration für „${vmToDelete.name}“ wird entfernt. Der bestehende Proxmox-Server wird erst bei einem späteren, kontrollierten Apply geändert.` : ''} confirmLabel="Definition entfernen" cancelLabel="Abbrechen" variant="destructive" onConfirm={() => vmToDelete && deleteVmMutation.mutate(vmToDelete.id)} isPending={deleteVmMutation.isPending} />
     <VmFormDialog workspaceId={workspace.id} open={vmDialogOpen} onOpenChange={open => { setVmDialogOpen(open); if (!open) setEditingVm(null); }} initialVm={editingVm} />
