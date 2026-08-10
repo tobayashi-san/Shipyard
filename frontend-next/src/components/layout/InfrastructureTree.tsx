@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
-import { ChevronDown, ChevronRight, CircleDot, Folder, FolderTree, Server } from 'lucide-react';
+import { ChevronDown, ChevronRight, CircleDot, Database, Folder, FolderTree, Server } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { asArray, cn } from '@/lib/utils';
@@ -120,6 +120,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
     </Link>
     <div className="pt-1">
       <div className="flex items-center gap-2 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground"><FolderTree className="h-3.5 w-3.5" /> Ressourcen</div>
+      <Link to="/infrastructure" onClick={onNavigate} className={cn('flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs transition-colors', path === '/infrastructure' ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground')}><Database className="h-3.5 w-3.5 text-brand" /><span className="truncate">Proxmox-Cluster</span></Link>
       {groupTree.map(group => groupNode(group))}
       {ungrouped.length > 0 && <div>
         <button type="button" onClick={() => toggle('__ungrouped__')} className="flex w-full items-center gap-1.5 rounded-sm px-2 py-1.5 text-xs text-foreground hover:bg-accent/60">

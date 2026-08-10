@@ -1844,6 +1844,75 @@ override.tf.json
     return db.db.prepare('SELECT id, name, path FROM tofu_workspaces').all().filter(w => isAllowedPath(w.path));
   }
 
+  // Build a read-only inventory from every configured Proxmox connection.
+  // Connections are currently stored per deployment, so identical endpoints
+  // are grouped here into one cluster view. No token ever leaves the server.
+  async function loadProxmoxInfrastructure() {
+    const grouped = new Map();
+    const warnings = [];
+    for (const row of getAllWorkspaces()) {
+      const workspace = getWorkspace(row.id);
+      if (!workspace) continue;
+      try {
+        const connection = readProxmoxConnection(workspace.env_vars);
+        const key = `${connection.base.origin}${connection.base.pathname.replace(/\/+$/, '')}`;
+        const group = grouped.get(key) || { key, connection, workspaces: [] };
+        group.workspaces.push({ id: workspace.id, name: workspace.name });
+        grouped.set(key, group);
+      } catch {
+        // A regular OpenTofu workspace does not need to be a Proxmox source.
+      }
+    }
+
+    const settled = await Promise.allSettled([...grouped.values()].map(async group => {
+      const [nodesResponse, resourcesResponse] = await Promise.all([
+        requestProxmoxApi(group.connection, '/nodes'),
+        requestProxmoxApi(group.connection, '/cluster/resources?type=vm'),
+      ]);
+      const nodes = (Array.isArray(nodesResponse) ? nodesResponse : [])
+        .map(node => ({
+          name: String(node?.node || '').trim(),
+          status: String(node?.status || '').toLowerCase() || 'unknown',
+          cpu: Number(node?.cpu) || 0,
+          maxcpu: Number(node?.maxcpu) || 0,
+          mem: Number(node?.mem) || 0,
+          maxmem: Number(node?.maxmem) || 0,
+          disk: Number(node?.disk) || 0,
+          maxdisk: Number(node?.maxdisk) || 0,
+          uptime: Number(node?.uptime) || 0,
+        }))
+        .filter(node => node.name && PROXMOX_IDENTIFIER_RE.test(node.name));
+      const vms = (Array.isArray(resourcesResponse) ? resourcesResponse : [])
+        .filter(resource => String(resource?.type || '').toLowerCase() === 'qemu')
+        .map(resource => ({
+          name: String(resource?.name || `VM ${resource?.vmid || '?'}`),
+          node_name: String(resource?.node || '').trim(),
+          vm_id: Number(resource?.vmid) || null,
+          status: String(resource?.status || '').toLowerCase() || 'unknown',
+          cpu: Number(resource?.cpu) || 0,
+          maxcpu: Number(resource?.maxcpu) || 0,
+          mem: Number(resource?.mem) || 0,
+          maxmem: Number(resource?.maxmem) || 0,
+        }))
+        .filter(vm => vm.node_name && Number.isInteger(vm.vm_id));
+      return {
+        id: group.key,
+        endpoint: group.connection.base.host,
+        status: nodes.some(node => node.status === 'online') ? 'online' : 'offline',
+        deployments: group.workspaces,
+        nodes,
+        vms,
+      };
+    }));
+
+    const clusters = [];
+    for (const result of settled) {
+      if (result.status === 'fulfilled') clusters.push(result.value);
+      else warnings.push(result.reason?.message || 'Eine Proxmox-Verbindung konnte nicht abgefragt werden.');
+    }
+    return { clusters, warnings };
+  }
+
   function ensureWorkspacePath(workspace) {
     if (fs.existsSync(workspace.path)) return null;
     try { fs.mkdirSync(workspace.path, { recursive: true }); return null; }
@@ -2367,6 +2436,14 @@ override.tf.json
       res.json(await loadProxmoxCatalog(workspace, req.query.node));
     } catch (error) {
       res.status(502).json({ error: error.message || 'Proxmox catalog could not be loaded' });
+    }
+  });
+
+  router.get('/infrastructure', async (_req, res) => {
+    try {
+      res.json(await loadProxmoxInfrastructure());
+    } catch (error) {
+      res.status(502).json({ error: error.message || 'Proxmox-Inventar konnte nicht geladen werden.' });
     }
   });
 
