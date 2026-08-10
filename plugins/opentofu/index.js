@@ -1995,18 +1995,35 @@ override.tf.json
           uptime: Number(node?.uptime) || 0,
         }))
         .filter(node => node.name && PROXMOX_IDENTIFIER_RE.test(node.name));
+      const sourceIds = group.connections.map(connection => connection.id).filter(Boolean);
+      const adoptedByVm = new Map();
+      if (sourceIds.length) {
+        const placeholders = sourceIds.map(() => '?').join(', ');
+        const adopted = db.db.prepare(`
+          SELECT server_id, connection_id, node_name, vm_id
+          FROM proxmox_inventory_servers
+          WHERE connection_id IN (${placeholders})
+        `).all(...sourceIds);
+        for (const item of adopted) adoptedByVm.set(`${item.connection_id}:${item.node_name}:${item.vm_id}`, item.server_id);
+      }
       const vms = (Array.isArray(resourcesResponse) ? resourcesResponse : [])
         .filter(resource => String(resource?.type || '').toLowerCase() === 'qemu')
-        .map(resource => ({
-          name: String(resource?.name || `VM ${resource?.vmid || '?'}`),
-          node_name: String(resource?.node || '').trim(),
-          vm_id: Number(resource?.vmid) || null,
-          status: String(resource?.status || '').toLowerCase() || 'unknown',
-          cpu: Number(resource?.cpu) || 0,
-          maxcpu: Number(resource?.maxcpu) || 0,
-          mem: Number(resource?.mem) || 0,
-          maxmem: Number(resource?.maxmem) || 0,
-        }))
+        .map(resource => {
+          const nodeName = String(resource?.node || '').trim();
+          const vmId = Number(resource?.vmid) || null;
+          const adopted = sourceIds.map(sourceId => adoptedByVm.get(`${sourceId}:${nodeName}:${vmId}`)).find(Boolean) || null;
+          return {
+            name: String(resource?.name || `VM ${resource?.vmid || '?'}`),
+            node_name: nodeName,
+            vm_id: vmId,
+            status: String(resource?.status || '').toLowerCase() || 'unknown',
+            cpu: Number(resource?.cpu) || 0,
+            maxcpu: Number(resource?.maxcpu) || 0,
+            mem: Number(resource?.mem) || 0,
+            maxmem: Number(resource?.maxmem) || 0,
+            fleet_server_id: adopted,
+          };
+        })
         .filter(vm => vm.node_name && Number.isInteger(vm.vm_id));
       return {
         id: group.key,
@@ -2827,6 +2844,9 @@ override.tf.json
     }
     const serverId = String(req.params.serverId || '').trim();
     if (!serverId) return res.status(400).json({ error: 'Server ID is required' });
+    if (!filterServers(db.servers.getAll(), getPermissions(req.user)).some(server => server.id === serverId)) {
+      return res.status(404).json({ error: 'Server not found' });
+    }
     const mappings = db.db.prepare(`
       SELECT mapping.workspace_id, mapping.resource_key, workspace.name AS workspace_name
       FROM tofu_managed_servers mapping
@@ -2850,6 +2870,22 @@ override.tf.json
         } : null,
       };
     });
+    const adopted = db.db.prepare(`
+      SELECT inventory.connection_id, inventory.node_name, inventory.vm_id, source.name AS source_name
+      FROM proxmox_inventory_servers inventory
+      JOIN tofu_proxmox_connections source ON source.id = inventory.connection_id
+      WHERE inventory.server_id = ?
+    `).get(serverId);
+    if (adopted) {
+      const server = db.servers.getById(serverId);
+      resources.push({
+        workspace_id: null,
+        workspace_name: adopted.source_name,
+        resource_key: `inventory:proxmox:${adopted.connection_id}:${adopted.node_name}:${adopted.vm_id}`,
+        kind: 'inventory',
+        vm: { name: server?.name || `VM ${adopted.vm_id}`, node_name: adopted.node_name, vm_id: adopted.vm_id, post_deploy_playbooks: [] },
+      });
+    }
     res.json({ resources });
   });
 

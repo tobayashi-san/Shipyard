@@ -122,9 +122,10 @@ interface AlertSettings {
 }
 
 interface ManagedDeployment {
-  workspace_id: string;
+  workspace_id: string | null;
   workspace_name: string;
   resource_key: string;
+  kind?: 'inventory' | 'deployment';
   vm?: {
     id?: string;
     name?: string;
@@ -918,20 +919,20 @@ export function ServerDetailPage() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 py-3">
                 <CardTitle className="flex items-center gap-2 text-sm"><Workflow className="h-4 w-4 text-brand" /> {t('det.deployment')}</CardTitle>
-                <span className="text-xs text-muted-foreground">{t('det.managedByOpenTofu')}</span>
+                <span className="text-xs text-muted-foreground">{managedDeployments.some(item => item.kind === 'inventory') ? 'Übernommene Proxmox-VM' : t('det.managedByOpenTofu')}</span>
               </CardHeader>
               <CardContent className="space-y-2 border-t px-4 py-3">
                 {managedDeployments.map((deployment) => (
-                  <div key={`${deployment.workspace_id}:${deployment.resource_key}`} className="flex flex-col justify-between gap-2 rounded-md border bg-muted/20 px-3 py-2.5 sm:flex-row sm:items-center">
+                  <div key={`${deployment.workspace_id || 'inventory'}:${deployment.resource_key}`} className="flex flex-col justify-between gap-2 rounded-md border bg-muted/20 px-3 py-2.5 sm:flex-row sm:items-center">
                     <div className="min-w-0">
-                      <div className="font-medium">{deployment.workspace_name}</div>
+                      <div className="font-medium">{deployment.kind === 'inventory' ? `Proxmox · ${deployment.workspace_name}` : deployment.workspace_name}</div>
                       <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs text-muted-foreground">
                         {deployment.vm?.node_name && <span>{t('det.node')}: {deployment.vm.node_name}</span>}
                         {deployment.vm?.vm_id != null && <span>VM-ID: {deployment.vm.vm_id}</span>}
                         {deployment.vm?.post_deploy_playbooks?.length ? <span>{t('det.postDeploySteps', { count: deployment.vm.post_deploy_playbooks.length })}</span> : null}
                       </div>
                     </div>
-                    <Button variant="secondary" size="sm" asChild><Link to="/deployments">{t('det.openDeployment')}</Link></Button>
+                    <Button variant="secondary" size="sm" asChild><Link to={deployment.kind === 'inventory' ? '/infrastructure' : '/deployments'}>{deployment.kind === 'inventory' ? 'Infrastruktur öffnen' : t('det.openDeployment')}</Link></Button>
                   </div>
                 ))}
                 {managedProxmoxDeployment && (

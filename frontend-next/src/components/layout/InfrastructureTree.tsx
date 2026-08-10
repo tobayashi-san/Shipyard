@@ -31,7 +31,7 @@ function StatusDot({ status }: { status?: string }) {
 
 interface TreeProps { compact?: boolean; onNavigate?: () => void; }
 interface ProxmoxNode { name?: string; status?: string }
-interface ProxmoxVm { name?: string; node_name?: string; vm_id?: number | string; status?: string }
+interface ProxmoxVm { name?: string; node_name?: string; vm_id?: number | string; status?: string; fleet_server_id?: string | null }
 interface ProxmoxCluster { id?: string; endpoint?: string; connections?: Array<{ name?: string }>; nodes?: ProxmoxNode[]; vms?: ProxmoxVm[] }
 interface InfrastructureResponse { clusters?: ProxmoxCluster[] }
 
@@ -157,7 +157,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
           <button type="button" onClick={() => toggle(nodeId)} className="flex w-full min-w-0 items-center gap-1.5 rounded-sm py-1.5 pr-2 text-left text-xs text-muted-foreground hover:bg-accent/60" style={{ paddingLeft: '26px' }}>
             {nodeOpen ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}<StatusDot status={node.status} /><ServerCog className="h-3.5 w-3.5 shrink-0" /><span className="min-w-0 flex-1 truncate">{node.name || 'Node'}</span><span className="text-[10px]">{members.length}</span>
           </button>
-          {nodeOpen && members.map(vm => <Link key={`${nodeId}:vm:${vm.vm_id || vm.name}`} to="/infrastructure" onClick={onNavigate} title={`VM ${vm.vm_id || '—'} · ${vm.status || 'unknown'}`} className="group flex min-w-0 items-center gap-2 rounded-sm py-1.5 pr-2 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground" style={{ paddingLeft: '50px' }}><StatusDot status={vm.status} /><HardDrive className="h-3.5 w-3.5 shrink-0" /><span className="min-w-0 flex-1 truncate">{vm.name || `VM ${vm.vm_id || ''}`}</span><span className="font-mono text-[10px] opacity-0 transition-opacity group-hover:opacity-100">{vm.vm_id || '—'}</span></Link>)}
+          {nodeOpen && members.map(vm => vm.fleet_server_id ? <Link key={`${nodeId}:vm:${vm.vm_id || vm.name}`} to="/servers/$id" params={{ id: vm.fleet_server_id }} onClick={onNavigate} title={`Fleet-Host · VM ${vm.vm_id || '—'} · ${vm.status || 'unknown'}`} className="group flex min-w-0 items-center gap-2 rounded-sm py-1.5 pr-2 text-xs text-foreground transition-colors hover:bg-accent/60" style={{ paddingLeft: '50px' }}><StatusDot status={vm.status} /><HardDrive className="h-3.5 w-3.5 shrink-0 text-brand" /><span className="min-w-0 flex-1 truncate">{vm.name || `VM ${vm.vm_id || ''}`}</span><span className="rounded-sm bg-brand/10 px-1 font-mono text-[9px] text-brand">Fleet</span></Link> : <Link key={`${nodeId}:vm:${vm.vm_id || vm.name}`} to="/infrastructure" onClick={onNavigate} title={`VM ${vm.vm_id || '—'} · ${vm.status || 'unknown'}`} className="group flex min-w-0 items-center gap-2 rounded-sm py-1.5 pr-2 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground" style={{ paddingLeft: '50px' }}><StatusDot status={vm.status} /><HardDrive className="h-3.5 w-3.5 shrink-0" /><span className="min-w-0 flex-1 truncate">{vm.name || `VM ${vm.vm_id || ''}`}</span><span className="font-mono text-[10px] opacity-0 transition-opacity group-hover:opacity-100">{vm.vm_id || '—'}</span></Link>)}
         </div>;
       })}</div>}
     </div>;
