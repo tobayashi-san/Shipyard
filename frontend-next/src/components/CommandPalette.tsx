@@ -5,7 +5,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   Search, LayoutDashboard, Server, FileCode2, Settings, User,
-  HelpCircle, Sun, Moon, LogOut, Puzzle,
+  HelpCircle, Sun, Moon, LogOut, Puzzle, Workflow,
 } from 'lucide-react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { api } from '@/lib/api';
@@ -57,6 +57,7 @@ export function CommandPalette() {
         if (e.key === 's') navigate({ to: '/servers' });
         else if (e.key === 'd') navigate({ to: '/' });
         else if (e.key === 'p') navigate({ to: '/playbooks' });
+        else if (e.key === 'o') navigate({ to: '/deployments' });
         else if (e.key === ',') navigate({ to: '/settings' });
         prefix = false;
         return;
@@ -85,8 +86,9 @@ export function CommandPalette() {
     staleTime: 30_000,
   });
 
+  const openTofuAvailable = asArray<typeof plugins[number]>(plugins).some(p => p.id === 'opentofu' && p.enabled && canSeePlugin(profile, p.id));
   const sidebarPlugins = useMemo(
-    () => asArray<typeof plugins[number]>(plugins).filter(p => p.enabled && p.sidebar && canSeePlugin(profile, p.id)),
+    () => asArray<typeof plugins[number]>(plugins).filter(p => p.id !== 'opentofu' && p.enabled && p.sidebar && canSeePlugin(profile, p.id)),
     [plugins, profile]
   );
   const safeServers = asArray<ServerListItem>(servers);
@@ -125,6 +127,7 @@ export function CommandPalette() {
                 <Command.Group heading={t('cmd.navigate')} className="text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
                   <PaletteItem icon={<LayoutDashboard className="h-4 w-4" />} label={t('nav.dashboard')} shortcut="g d" onSelect={() => go('/')} />
                   {hasCap(profile, 'canViewServers') && <PaletteItem icon={<Server className="h-4 w-4" />} label={t('nav.servers')} shortcut="g s" onSelect={() => go('/servers')} />}
+                  {openTofuAvailable && <PaletteItem icon={<Workflow className="h-4 w-4" />} label={t('deploy.title')} shortcut="g o" onSelect={() => go('/deployments')} />}
                   {hasCap(profile, 'canViewPlaybooks') && <PaletteItem icon={<FileCode2 className="h-4 w-4" />} label={t('nav.playbooks')} shortcut="g p" onSelect={() => go('/playbooks')} />}
                   <PaletteItem icon={<User className="h-4 w-4" />} label={t('profile.settings')} onSelect={() => go('/profile')} />
                   {profile?.role === 'admin' && <PaletteItem icon={<Settings className="h-4 w-4" />} label={t('nav.settings')} shortcut="g ," onSelect={() => go('/settings')} />}

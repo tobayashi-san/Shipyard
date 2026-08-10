@@ -931,7 +931,7 @@ export function ServerDetailPage() {
                         {deployment.vm?.post_deploy_playbooks?.length ? <span>{t('det.postDeploySteps', { count: deployment.vm.post_deploy_playbooks.length })}</span> : null}
                       </div>
                     </div>
-                    <Button variant="secondary" size="sm" asChild><Link to="/plugins/$id" params={{ id: 'opentofu' }}>{t('det.openDeployment')}</Link></Button>
+                    <Button variant="secondary" size="sm" asChild><Link to="/deployments">{t('det.openDeployment')}</Link></Button>
                   </div>
                 ))}
                 {managedProxmoxDeployment && (

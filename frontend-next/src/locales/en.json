@@ -1297,5 +1297,28 @@
     "shortcutsNav": "Navigation",
     "openPalette": "Open palette",
     "closeDialog": "Close dialog"
+  },
+  "deploy": {
+    "title": "Deployments",
+    "description": "OpenTofu deployments, VM resources, and provisioning status.",
+    "advanced": "Advanced workspace management",
+    "refresh": "Refresh",
+    "status": "OpenTofu status",
+    "ready": "OpenTofu is ready",
+    "unavailable": "OpenTofu is not configured yet.",
+    "noWorkspaces": "No deployments yet",
+    "noWorkspacesHint": "Create an OpenTofu workspace to provision infrastructure.",
+    "open": "Open management",
+    "vmResources": "VM resources",
+    "vms": "VMs",
+    "started": "started",
+    "vcpu": "vCPU",
+    "memory": "Memory",
+    "disk": "Disk",
+    "lastRun": "Last run",
+    "noRun": "No runs yet",
+    "postDeploy": "Post-deploy",
+    "pending": "pending",
+    "legacyHint": "Full workspace management remains available while the integration is rolled out in stages."
   }
 }

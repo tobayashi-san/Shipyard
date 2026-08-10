@@ -65,7 +65,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
     <nav className="flex-1 space-y-4 overflow-y-auto p-2">
       <section className="space-y-1">
         {!collapsed && <div className="section-label px-3 pb-1">Automatisierung</div>}
-        {opentofu && <NavItem to="/plugins/$id" params={{ id: opentofu.id }} label="Deployments" icon={Workflow} active={path === `/plugins/${opentofu.id}`} collapsed={collapsed} onNavigate={onMobileClose} />}
+        {opentofu && <NavItem to="/deployments" label="Deployments" icon={Workflow} active={path === '/deployments'} collapsed={collapsed} onNavigate={onMobileClose} />}
         {canViewPlaybooks && <NavItem to="/playbooks" label="Playbook-Workflows" icon={FileCode2} active={path === '/playbooks'} collapsed={collapsed} onNavigate={onMobileClose} />}
       </section>
 

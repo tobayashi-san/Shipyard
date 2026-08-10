@@ -11,6 +11,7 @@ const ServersPage = lazy(() => import('@/routes/servers').then(module => ({ defa
 const ServerDetailPage = lazy(() => import('@/routes/server-detail').then(module => ({ default: module.ServerDetailPage })));
 const SettingsPage = lazy(() => import('@/routes/settings').then(module => ({ default: module.SettingsPage })));
 const ProfilePage = lazy(() => import('@/routes/profile').then(module => ({ default: module.ProfilePage })));
+const DeploymentsPage = lazy(() => import('@/routes/deployments').then(module => ({ default: module.DeploymentsPage })));
 const PluginHostPage = lazy(() => import('@/routes/_legacy/plugins').then(module => ({ default: module.PluginHostPage })));
 const LazyPage = ({ children }: { children: ReactNode }) => <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Lade Konsole…</div>}>{children}</Suspense>;
 
@@ -49,6 +50,7 @@ const serversRoute    = createRoute({ getParentRoute: () => protectedLayout, pat
 const serverDetail    = createRoute({ getParentRoute: () => protectedLayout, path: '/servers/$id',  component: () => <LazyPage><ServerDetailPage /></LazyPage> });
 const playbooksRoute  = createRoute({ getParentRoute: () => protectedLayout, path: '/playbooks',    component: () => <LazyPage><PlaybooksPage /></LazyPage> });
 const profileRoute    = createRoute({ getParentRoute: () => protectedLayout, path: '/profile',      component: () => <LazyPage><ProfilePage /></LazyPage> });
+const deploymentsRoute= createRoute({ getParentRoute: () => protectedLayout, path: '/deployments',  component: () => <LazyPage><DeploymentsPage /></LazyPage> });
 // Settings is the single page that hosts: appearance, ssh, system, agent-manifest,
 // notifications, git, plugins, users-roles, audit, danger.
 // Tab is selected via the optional :tab path segment (default = appearance).
@@ -66,6 +68,7 @@ const routeTree = rootRoute.addChildren([
     serverDetail,
     playbooksRoute,
     profileRoute,
+    deploymentsRoute,
     settingsRoute,
     settingsTabRoute,
     pluginHostRoute,
