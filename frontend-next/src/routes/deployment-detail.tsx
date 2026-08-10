@@ -15,6 +15,7 @@ import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import { VmFormDialog } from '@/features/deployments/VmFormDialog';
 import { DeploymentConnectionDialog } from '@/features/deployments/DeploymentConnectionDialog';
 import { RunDetailsDialog } from '@/features/deployments/RunDetailsDialog';
+import { DeploymentSettingsDialog } from '@/features/deployments/DeploymentSettingsDialog';
 
 interface Workspace { id: string; name: string; path?: string; description?: string }
 interface Run { id: string; action?: string; status?: string; started_at?: string; completed_at?: string }
@@ -75,6 +76,7 @@ export function DeploymentDetailPage() {
   const [connectionDialogOpen, setConnectionDialogOpen] = useState(false);
   const [templateToDelete, setTemplateToDelete] = useState<VmTemplate | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const workspacesQuery = useQuery({ queryKey: ['opentofu', 'workspaces'], queryFn: () => apiFetch<Workspace[]>('/plugin/opentofu/workspaces') });
   const workspace = (Array.isArray(workspacesQuery.data) ? workspacesQuery.data : []).find(item => item.id === id);
   const runsQuery = useQuery({ queryKey: ['opentofu', 'workspace', id, 'runs'], queryFn: () => apiFetch<RunsResponse>(`/plugin/opentofu/workspaces/${encodeURIComponent(id)}/runs?page_size=8`), enabled: Boolean(id), refetchInterval: query => query.state.data?.items?.some(run => run.status === 'running') ? 2_500 : false });
@@ -141,6 +143,7 @@ export function DeploymentDetailPage() {
       back={<Button asChild size="icon" variant="ghost" aria-label={t('deploy.title')}><Link to="/deployments"><ArrowLeft /></Link></Button>}
       actions={<>
         <Button type="button" variant="outline" onClick={refresh}><RefreshCw />{t('deploy.refresh')}</Button>
+        <Button type="button" variant="outline" onClick={() => setSettingsDialogOpen(true)}><Pencil />Deployment bearbeiten</Button>
         <Button type="button" variant="outline" onClick={() => setConnectionDialogOpen(true)}><Settings2 />Proxmox-Verbindung</Button>
         <Button asChild variant="outline"><Link to="/plugins/$id" params={{ id: 'opentofu' }}><Settings2 />{t('deploy.advanced')}</Link></Button>
       </>}
@@ -201,5 +204,6 @@ export function DeploymentDetailPage() {
     <VmFormDialog workspaceId={workspace.id} open={vmDialogOpen} onOpenChange={open => { setVmDialogOpen(open); if (!open) setEditingVm(null); }} initialVm={editingVm} />
     <DeploymentConnectionDialog workspaceId={workspace.id} open={connectionDialogOpen} onOpenChange={setConnectionDialogOpen} />
     <RunDetailsDialog workspaceId={workspace.id} runId={selectedRunId} open={Boolean(selectedRunId)} onOpenChange={open => { if (!open) setSelectedRunId(null); }} />
+    <DeploymentSettingsDialog workspace={workspace} open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen} />
   </div>;
 }

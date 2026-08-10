@@ -1987,6 +1987,20 @@ override.tf.json
     res.json({ success: true });
   });
 
+  // The console can safely update display metadata without receiving or
+  // round-tripping workspace environment variables (which may contain secrets).
+  router.patch('/workspaces/:id/metadata', (req, res) => {
+    const existing = getWorkspaceRow(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Workspace not found' });
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    const description = typeof req.body?.description === 'string' ? req.body.description.trim() : '';
+    if (!name) return res.status(400).json({ error: 'name is required' });
+    if (name.length > 120) return res.status(400).json({ error: 'name must be at most 120 characters' });
+    if (description.length > 1_000) return res.status(400).json({ error: 'description must be at most 1000 characters' });
+    db.db.prepare('UPDATE tofu_workspaces SET name=?, description=? WHERE id=?').run(name, description, req.params.id);
+    res.json({ success: true });
+  });
+
   router.delete('/workspaces/:id', (req, res) => {
     db.db.prepare('DELETE FROM tofu_workspaces WHERE id = ?').run(req.params.id);
     db.db.prepare('DELETE FROM tofu_runs WHERE workspace_id = ?').run(req.params.id);
