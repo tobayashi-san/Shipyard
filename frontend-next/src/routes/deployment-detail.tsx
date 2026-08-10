@@ -14,6 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import { VmFormDialog } from '@/features/deployments/VmFormDialog';
 import { DeploymentConnectionDialog } from '@/features/deployments/DeploymentConnectionDialog';
+import { RunDetailsDialog } from '@/features/deployments/RunDetailsDialog';
 
 interface Workspace { id: string; name: string; path?: string; description?: string }
 interface Run { id: string; action?: string; status?: string; started_at?: string; completed_at?: string }
@@ -73,6 +74,7 @@ export function DeploymentDetailPage() {
   const [vmToDelete, setVmToDelete] = useState<Vm | null>(null);
   const [connectionDialogOpen, setConnectionDialogOpen] = useState(false);
   const [templateToDelete, setTemplateToDelete] = useState<VmTemplate | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const workspacesQuery = useQuery({ queryKey: ['opentofu', 'workspaces'], queryFn: () => apiFetch<Workspace[]>('/plugin/opentofu/workspaces') });
   const workspace = (Array.isArray(workspacesQuery.data) ? workspacesQuery.data : []).find(item => item.id === id);
   const runsQuery = useQuery({ queryKey: ['opentofu', 'workspace', id, 'runs'], queryFn: () => apiFetch<RunsResponse>(`/plugin/opentofu/workspaces/${encodeURIComponent(id)}/runs?page_size=8`), enabled: Boolean(id), refetchInterval: query => query.state.data?.items?.some(run => run.status === 'running') ? 2_500 : false });
@@ -178,7 +180,7 @@ export function DeploymentDetailPage() {
 
     <Card className="xl:order-1">
         <CardHeader className="flex-row items-center justify-between border-b"><CardTitle className="flex items-center gap-2 text-base"><History className="h-4 w-4" />Laufhistorie</CardTitle><Button type="button" size="icon" variant="ghost" onClick={refresh} aria-label={t('deploy.refresh')}><RefreshCw className="h-4 w-4" /></Button></CardHeader>
-        <CardContent className="p-0">{runsQuery.isLoading ? <div className="space-y-3 p-4"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div> : runs.length === 0 ? <EmptyState compact icon={<Clock3 className="h-5 w-5" />} title={t('deploy.noRun')} /> : <ul className="divide-y">{runs.map(run => <li key={run.id} className="flex items-center gap-3 px-4 py-3"><StatusBadge tone={tone(run.status)} dot>{run.status || '—'}</StatusBadge><div className="min-w-0 flex-1"><div className="font-mono text-sm font-medium">{run.action || 'tofu'}</div><div className="mt-0.5 truncate text-xs text-muted-foreground">{formatDate(run.completed_at || run.started_at)}</div></div></li>)}</ul>}</CardContent>
+        <CardContent className="p-0">{runsQuery.isLoading ? <div className="space-y-3 p-4"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div> : runs.length === 0 ? <EmptyState compact icon={<Clock3 className="h-5 w-5" />} title={t('deploy.noRun')} /> : <ul className="divide-y">{runs.map(run => <li key={run.id}><button type="button" onClick={() => setSelectedRunId(run.id)} className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/30"><StatusBadge tone={tone(run.status)} dot>{run.status || '—'}</StatusBadge><div className="min-w-0 flex-1"><div className="font-mono text-sm font-medium">{run.action || 'tofu'}</div><div className="mt-0.5 truncate text-xs text-muted-foreground">{formatDate(run.completed_at || run.started_at)}</div></div><ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" /><span className="sr-only">Laufdetails öffnen</span></button></li>)}</ul>}</CardContent>
       </Card>
     </div>
 
@@ -198,5 +200,6 @@ export function DeploymentDetailPage() {
     <ConfirmDialog open={Boolean(vmToDelete)} onOpenChange={open => !open && setVmToDelete(null)} title="VM-Definition entfernen?" description={vmToDelete ? `Die gewünschte Konfiguration für „${vmToDelete.name}“ wird entfernt. Der bestehende Proxmox-Server wird erst bei einem späteren, kontrollierten Apply geändert.` : ''} confirmLabel="Definition entfernen" cancelLabel="Abbrechen" variant="destructive" onConfirm={() => vmToDelete && deleteVmMutation.mutate(vmToDelete.id)} isPending={deleteVmMutation.isPending} />
     <VmFormDialog workspaceId={workspace.id} open={vmDialogOpen} onOpenChange={open => { setVmDialogOpen(open); if (!open) setEditingVm(null); }} initialVm={editingVm} />
     <DeploymentConnectionDialog workspaceId={workspace.id} open={connectionDialogOpen} onOpenChange={setConnectionDialogOpen} />
+    <RunDetailsDialog workspaceId={workspace.id} runId={selectedRunId} open={Boolean(selectedRunId)} onOpenChange={open => { if (!open) setSelectedRunId(null); }} />
   </div>;
 }
