@@ -16,6 +16,7 @@ import { VmFormDialog } from '@/features/deployments/VmFormDialog';
 import { DeploymentConnectionDialog } from '@/features/deployments/DeploymentConnectionDialog';
 import { RunDetailsDialog } from '@/features/deployments/RunDetailsDialog';
 import { DeploymentSettingsDialog } from '@/features/deployments/DeploymentSettingsDialog';
+import { useUi } from '@/lib/store';
 
 interface Workspace { id: string; name: string; path?: string; description?: string }
 interface Run { id: string; action?: string; status?: string; started_at?: string; completed_at?: string }
@@ -67,6 +68,7 @@ export function DeploymentDetailPage() {
   const { t } = useTranslation();
   const params = useParams({ strict: false }) as { id?: string };
   const id = params.id || '';
+  const environmentId = useUi(state => state.environmentId);
   const queryClient = useQueryClient();
   const [confirmApply, setConfirmApply] = useState(false);
   const [confirmDestroy, setConfirmDestroy] = useState(false);
@@ -77,7 +79,7 @@ export function DeploymentDetailPage() {
   const [templateToDelete, setTemplateToDelete] = useState<VmTemplate | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
-  const workspacesQuery = useQuery({ queryKey: ['opentofu', 'workspaces'], queryFn: () => apiFetch<Workspace[]>('/plugin/opentofu/workspaces') });
+  const workspacesQuery = useQuery({ queryKey: ['opentofu', 'workspaces', environmentId], queryFn: () => apiFetch<Workspace[]>(`/plugin/opentofu/workspaces?environment_id=${encodeURIComponent(environmentId)}`) });
   const workspace = (Array.isArray(workspacesQuery.data) ? workspacesQuery.data : []).find(item => item.id === id);
   const runsQuery = useQuery({ queryKey: ['opentofu', 'workspace', id, 'runs'], queryFn: () => apiFetch<RunsResponse>(`/plugin/opentofu/workspaces/${encodeURIComponent(id)}/runs?page_size=8`), enabled: Boolean(id), refetchInterval: query => query.state.data?.items?.some(run => run.status === 'running') ? 2_500 : false });
   const vmsQuery = useQuery({ queryKey: ['opentofu', 'workspace', id, 'vms'], queryFn: () => apiFetch<VmsResponse>(`/plugin/opentofu/workspaces/${encodeURIComponent(id)}/proxmox-vms`), enabled: Boolean(id) });

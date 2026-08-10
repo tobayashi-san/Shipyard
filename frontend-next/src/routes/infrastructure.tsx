@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/ui/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
+import { useUi } from '@/lib/store';
 
 interface NodeInfo { name: string; status: string; cpu: number; maxcpu: number; mem: number; maxmem: number; disk: number; maxdisk: number; uptime: number }
 interface VmInfo { name: string; node_name: string; vm_id: number; status: string; cpu: number; maxcpu: number; mem: number; maxmem: number }
@@ -42,9 +43,10 @@ function uptime(seconds: number) {
 
 export function InfrastructurePage() {
   const queryClient = useQueryClient();
+  const environmentId = useUi(state => state.environmentId);
   const inventoryQuery = useQuery({
-    queryKey: ['opentofu', 'infrastructure'],
-    queryFn: () => apiFetch<InfrastructureResponse>('/plugin/opentofu/infrastructure'),
+    queryKey: ['opentofu', 'infrastructure', environmentId],
+    queryFn: () => apiFetch<InfrastructureResponse>(`/plugin/opentofu/infrastructure?environment_id=${encodeURIComponent(environmentId)}`),
     staleTime: 15_000,
   });
   const clusters = Array.isArray(inventoryQuery.data?.clusters) ? inventoryQuery.data!.clusters! : [];
@@ -56,7 +58,7 @@ export function InfrastructurePage() {
   }), { clusters: 0, nodes: 0, vms: 0, online: 0 }), [clusters]);
 
   return <div className="space-y-6">
-    <PageHeader title="Infrastruktur" description="Zentrale Proxmox-Übersicht über Cluster, Nodes und virtuelle Maschinen." actions={<Button type="button" variant="outline" onClick={() => void queryClient.invalidateQueries({ queryKey: ['opentofu', 'infrastructure'] })} disabled={inventoryQuery.isFetching}><RefreshCw className={inventoryQuery.isFetching ? 'animate-spin' : undefined} />Aktualisieren</Button>} />
+    <PageHeader title="Infrastruktur" description="Zentrale Proxmox-Übersicht über Cluster, Nodes und virtuelle Maschinen der gewählten Umgebung." actions={<Button type="button" variant="outline" onClick={() => void queryClient.invalidateQueries({ queryKey: ['opentofu', 'infrastructure', environmentId] })} disabled={inventoryQuery.isFetching}><RefreshCw className={inventoryQuery.isFetching ? 'animate-spin' : undefined} />Aktualisieren</Button>} />
 
     {inventoryQuery.isLoading ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{[0, 1, 2, 3].map(item => <Skeleton key={item} className="h-24" />)}</div> : <>
       {inventoryQuery.data?.warnings?.length ? <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-700 dark:text-amber-300"><div className="flex items-center gap-2 font-medium"><TriangleAlert className="h-4 w-4" />Nicht alle Proxmox-Verbindungen sind erreichbar</div><ul className="mt-1 list-disc pl-6 text-xs">{inventoryQuery.data.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div> : null}

@@ -15,7 +15,7 @@ function workspaceSlug(value: string) {
 
 interface CreateResult { id: string }
 
-export function CreateDeploymentDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function CreateDeploymentDialog({ environmentId, open, onOpenChange }: { environmentId: string; open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
@@ -41,7 +41,7 @@ export function CreateDeploymentDialog({ open, onOpenChange }: { open: boolean; 
       if (endpoint.trim()) env_vars.TF_VAR_proxmox_endpoint = endpoint.trim();
       if (apiToken.trim()) env_vars.TF_VAR_proxmox_api_token = apiToken.trim();
       if (sshKey.trim()) env_vars.TF_VAR_ssh_public_key = sshKey.trim();
-      return apiFetch<CreateResult>('/plugin/opentofu/workspaces', { method: 'POST', body: { name: name.trim(), path: path.trim(), description: description.trim(), env_vars, scaffold: { provider: 'proxmox' } } });
+      return apiFetch<CreateResult>('/plugin/opentofu/workspaces', { method: 'POST', body: { name: name.trim(), path: path.trim(), description: description.trim(), environment_id: environmentId, env_vars, scaffold: { provider: 'proxmox' } } });
     },
     onSuccess: result => {
       showToast('Deployment wurde mit einem Proxmox-Grundgerüst angelegt.', 'success');

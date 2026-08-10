@@ -1161,9 +1161,16 @@ function register({ router, db, broadcast }) {
       path        TEXT NOT NULL,
       description TEXT NOT NULL DEFAULT '',
       env_vars    TEXT NOT NULL DEFAULT '{}',
+      environment_id TEXT NOT NULL DEFAULT 'default',
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `).run();
+  // Existing Fleet installations get the same default environment as legacy
+  // servers. The guards keep this migration safe for fresh and old databases.
+  try { db.db.prepare("CREATE TABLE IF NOT EXISTS environments (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TEXT DEFAULT (datetime('now'))) ").run(); } catch {}
+  try { db.db.prepare("INSERT OR IGNORE INTO environments (id, name) VALUES ('default', 'Standardumgebung')").run(); } catch {}
+  try { db.db.prepare("ALTER TABLE tofu_workspaces ADD COLUMN environment_id TEXT DEFAULT 'default'").run(); } catch {}
+  try { db.db.prepare("UPDATE tofu_workspaces SET environment_id = 'default' WHERE environment_id IS NULL OR environment_id = ''").run(); } catch {}
 
   db.db.prepare(`
     CREATE TABLE IF NOT EXISTS tofu_runs (
@@ -1840,17 +1847,24 @@ override.tf.json
     };
   }
 
-  function getAllWorkspaces() {
-    return db.db.prepare('SELECT id, name, path FROM tofu_workspaces').all().filter(w => isAllowedPath(w.path));
+  function getWorkspaceRows(environmentId = null) {
+    const rows = environmentId
+      ? db.db.prepare('SELECT * FROM tofu_workspaces WHERE environment_id = ? ORDER BY name COLLATE NOCASE').all(environmentId)
+      : db.db.prepare('SELECT * FROM tofu_workspaces ORDER BY name COLLATE NOCASE').all();
+    return rows.filter(workspace => isAllowedPath(workspace.path));
+  }
+
+  function getAllWorkspaces(environmentId = null) {
+    return getWorkspaceRows(environmentId).map(workspace => ({ id: workspace.id, name: workspace.name, path: workspace.path }));
   }
 
   // Build a read-only inventory from every configured Proxmox connection.
   // Connections are currently stored per deployment, so identical endpoints
   // are grouped here into one cluster view. No token ever leaves the server.
-  async function loadProxmoxInfrastructure() {
+  async function loadProxmoxInfrastructure(environmentId = null) {
     const grouped = new Map();
     const warnings = [];
-    for (const row of getAllWorkspaces()) {
+    for (const row of getAllWorkspaces(environmentId)) {
       const workspace = getWorkspace(row.id);
       if (!workspace) continue;
       try {
@@ -2007,7 +2021,9 @@ override.tf.json
   });
 
   router.get('/workspaces', (req, res) => {
-    const rows = db.db.prepare('SELECT * FROM tofu_workspaces ORDER BY name ASC').all().filter(w => isAllowedPath(w.path));
+    const environmentId = String(req.query.environment_id || '').trim();
+    if (environmentId && !db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found' });
+    const rows = getWorkspaceRows(environmentId || null);
     const withStatus = rows.map(r => {
       const lastRun = getLastRun(r.id);
       return {
@@ -2021,11 +2037,13 @@ override.tf.json
 
   router.post('/workspaces', (req, res) => {
     const { name, path: wPath, description, env_vars, scaffold } = req.body;
+    const environmentId = String(req.body?.environment_id || 'default').trim() || 'default';
     if (!name || !wPath) return res.status(400).json({ error: 'name and path are required' });
     if (!isAllowedPath(wPath)) return res.status(400).json({ error: WORKSPACE_PATH_ERROR });
+    if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found' });
     const id = randomUUID();
-    db.db.prepare('INSERT INTO tofu_workspaces (id, name, path, description, env_vars) VALUES (?, ?, ?, ?, ?)')
-      .run(id, name.trim(), wPath.trim(), (description || '').trim(), JSON.stringify(env_vars || {}));
+    db.db.prepare('INSERT INTO tofu_workspaces (id, name, path, description, env_vars, environment_id) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(id, name.trim(), wPath.trim(), (description || '').trim(), JSON.stringify(env_vars || {}), environmentId);
     syncPathsFile();
     if (scaffold) {
       try { scaffoldWorkspace(wPath.trim(), scaffold.provider || null); } catch (e) { /* path not mounted yet — files can be created later */ }
@@ -2441,7 +2459,9 @@ override.tf.json
 
   router.get('/infrastructure', async (_req, res) => {
     try {
-      res.json(await loadProxmoxInfrastructure());
+      const environmentId = String(_req.query.environment_id || '').trim();
+      if (environmentId && !db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found' });
+      res.json(await loadProxmoxInfrastructure(environmentId || null));
     } catch (error) {
       res.status(502).json({ error: error.message || 'Proxmox-Inventar konnte nicht geladen werden.' });
     }

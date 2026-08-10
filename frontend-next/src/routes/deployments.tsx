@@ -10,6 +10,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/ui/page-header';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import { CreateDeploymentDialog } from '@/features/deployments/CreateDeploymentDialog';
+import { useUi } from '@/lib/store';
 
 interface OpenTofuStatus {
   installed?: boolean;
@@ -77,6 +78,7 @@ function Metric({ icon: Icon, label, value }: { icon: typeof Cpu; label: string;
 export function DeploymentsPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const environmentId = useUi(state => state.environmentId);
   const [createOpen, setCreateOpen] = useState(false);
   const statusQuery = useQuery({
     queryKey: ['opentofu', 'status'],
@@ -84,8 +86,8 @@ export function DeploymentsPage() {
     staleTime: 30_000,
   });
   const workspaceQuery = useQuery({
-    queryKey: ['opentofu', 'workspaces'],
-    queryFn: () => apiFetch<Workspace[]>('/plugin/opentofu/workspaces'),
+    queryKey: ['opentofu', 'workspaces', environmentId],
+    queryFn: () => apiFetch<Workspace[]>(`/plugin/opentofu/workspaces?environment_id=${encodeURIComponent(environmentId)}`),
     staleTime: 15_000,
   });
   const workspaces = Array.isArray(workspaceQuery.data) ? workspaceQuery.data : [];
@@ -162,6 +164,6 @@ export function DeploymentsPage() {
       </div>
       <p className="text-xs text-muted-foreground">{t('deploy.legacyHint')} <Link to="/plugins/$id" params={{ id: 'opentofu' }} className="font-medium text-primary hover:underline">{t('deploy.advanced')}</Link></p>
     </>}
-    <CreateDeploymentDialog open={createOpen} onOpenChange={setCreateOpen} />
+    <CreateDeploymentDialog environmentId={environmentId} open={createOpen} onOpenChange={setCreateOpen} />
   </div>;
 }
