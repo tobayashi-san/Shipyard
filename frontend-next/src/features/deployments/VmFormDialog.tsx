@@ -50,7 +50,22 @@ function selectItems(catalog: Catalog | undefined, key: 'nodes' | 'templates' | 
   return Array.isArray(catalog?.[key]) ? catalog![key]! : [];
 }
 
-export function VmFormDialog({ workspaceId, open, onOpenChange }: { workspaceId: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+function formFromVm(input?: Record<string, unknown> | null) {
+  if (!input) return initialForm;
+  const address = String(input.ipv4_address || 'dhcp');
+  const [ipv4Address, prefix] = address.split('/', 2);
+  const stringValue = (key: Exclude<keyof VmForm, 'agent_enabled' | 'started'>): string => input[key] == null ? String(initialForm[key]) : String(input[key]);
+  return {
+    ...initialForm,
+    name: stringValue('name'), node_name: stringValue('node_name'), vm_id: stringValue('vm_id'), clone_vm_id: stringValue('clone_vm_id'), clone_retries: stringValue('clone_retries'),
+    disk_datastore: stringValue('disk_datastore'), disk_interface: stringValue('disk_interface'), disk_size_gb: stringValue('disk_size_gb'), disk_discard: stringValue('disk_discard'),
+    cpu_cores: stringValue('cpu_cores'), cpu_type: stringValue('cpu_type'), memory_mb: stringValue('memory_mb'), bridge: stringValue('bridge'), vlan_id: stringValue('vlan_id'),
+    ipv4_mode: address === 'dhcp' ? 'dhcp' : 'static', ipv4_address: address === 'dhcp' ? '' : ipv4Address, ipv4_prefix: address === 'dhcp' ? initialForm.ipv4_prefix : prefix || String(input.ipv4_prefix || initialForm.ipv4_prefix), ipv4_gateway: String(input.ipv4_gateway || ''),
+    username: stringValue('username'), ssh_public_key_variable: String(input.ssh_public_key_variable || ''), agent_enabled: input.agent_enabled == null ? initialForm.agent_enabled : Boolean(input.agent_enabled), started: input.started == null ? initialForm.started : Boolean(input.started),
+  } satisfies VmForm;
+}
+
+export function VmFormDialog({ workspaceId, open, onOpenChange, initialVm }: { workspaceId: string; open: boolean; onOpenChange: (open: boolean) => void; initialVm?: Record<string, unknown> | null }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<VmForm>(initialForm);
   const [postDeploy, setPostDeploy] = useState<string[]>([]);
@@ -69,11 +84,11 @@ export function VmFormDialog({ workspaceId, open, onOpenChange }: { workspaceId:
 
   useEffect(() => {
     if (!open) return;
-    setForm(initialForm);
-    setPostDeploy([]);
+    setForm(formFromVm(initialVm));
+    setPostDeploy(Array.isArray(initialVm?.post_deploy_playbooks) ? initialVm!.post_deploy_playbooks.filter((item): item is string => typeof item === 'string') : []);
     setTemplateId('');
     setTemplateName('');
-  }, [open]);
+  }, [initialVm, open]);
 
   useEffect(() => {
     const catalog = catalogQuery.data;
@@ -97,9 +112,9 @@ export function VmFormDialog({ workspaceId, open, onOpenChange }: { workspaceId:
     post_deploy_playbooks: postDeploy,
   });
   const saveMutation = useMutation({
-    mutationFn: () => apiFetch(`/plugin/opentofu/workspaces/${encodeURIComponent(workspaceId)}/proxmox-vms`, { method: 'POST', body: payload() }),
+    mutationFn: () => apiFetch(`/plugin/opentofu/workspaces/${encodeURIComponent(workspaceId)}/proxmox-vms${initialVm?.id ? `/${encodeURIComponent(String(initialVm.id))}` : ''}`, { method: initialVm?.id ? 'PUT' : 'POST', body: payload() }),
     onSuccess: () => {
-      showToast('VM-Definition gespeichert. OpenTofu-Dateien wurden aktualisiert.', 'success');
+      showToast(initialVm?.id ? 'VM-Definition aktualisiert. OpenTofu-Dateien wurden angepasst.' : 'VM-Definition gespeichert. OpenTofu-Dateien wurden aktualisiert.', 'success');
       void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspace', workspaceId] });
       void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspaces'] });
       onOpenChange(false);
@@ -149,7 +164,7 @@ export function VmFormDialog({ workspaceId, open, onOpenChange }: { workspaceId:
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-4xl overflow-y-auto">
       <DialogHeader>
-        <DialogTitle className="flex items-center gap-2"><Server className="h-5 w-5" />Proxmox-VM hinzufügen</DialogTitle>
+        <DialogTitle className="flex items-center gap-2"><Server className="h-5 w-5" />{initialVm?.id ? 'Proxmox-VM bearbeiten' : 'Proxmox-VM hinzufügen'}</DialogTitle>
         <DialogDescription>Fleet generiert die benötigten OpenTofu-Dateien; sensible Proxmox-Werte bleiben als Workspace-Variablen gespeichert.</DialogDescription>
       </DialogHeader>
       <form className="space-y-6" onSubmit={event => { event.preventDefault(); saveMutation.mutate(); }}>
@@ -195,7 +210,7 @@ export function VmFormDialog({ workspaceId, open, onOpenChange }: { workspaceId:
 
         <div className="flex flex-wrap gap-5 border-t pt-5 text-sm"><label className="flex items-center gap-2"><input type="checkbox" checked={form.agent_enabled} onChange={event => update('agent_enabled', event.target.checked)} />QEMU Guest Agent aktivieren</label><label className="flex items-center gap-2"><input type="checkbox" checked={form.started} onChange={event => update('started', event.target.checked)} />VM nach dem Deploy starten</label></div>
         {catalogQuery.isError && <p className="text-sm text-destructive">Proxmox-Inventar konnte nicht geladen werden. Die vorhandenen Formularwerte können dennoch verwendet werden.</p>}
-        <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Abbrechen</Button><Button type="submit" disabled={saveMutation.isPending}>{saveMutation.isPending ? <RefreshCw className="animate-spin" /> : <Plus />}VM-Definition speichern</Button></DialogFooter>
+        <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Abbrechen</Button><Button type="submit" disabled={saveMutation.isPending}>{saveMutation.isPending ? <RefreshCw className="animate-spin" /> : <Plus />}{initialVm?.id ? 'VM-Definition aktualisieren' : 'VM-Definition speichern'}</Button></DialogFooter>
       </form>
     </DialogContent>
   </Dialog>;
