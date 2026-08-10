@@ -76,6 +76,11 @@ export function InfrastructurePage() {
     vms: result.vms + cluster.vms.length,
     online: result.online + cluster.vms.filter(vm => vm.status === 'running').length,
   }), { clusters: 0, nodes: 0, vms: 0, online: 0 }), [clusters]);
+  const capacity = useMemo(() => clusters.reduce((result, cluster) => cluster.nodes.reduce((next, node) => ({
+    cpuUsed: next.cpuUsed + (node.cpu * node.maxcpu), cpuTotal: next.cpuTotal + node.maxcpu,
+    memUsed: next.memUsed + node.mem, memTotal: next.memTotal + node.maxmem,
+    diskUsed: next.diskUsed + node.disk, diskTotal: next.diskTotal + node.maxdisk,
+  }), result), { cpuUsed: 0, cpuTotal: 0, memUsed: 0, memTotal: 0, diskUsed: 0, diskTotal: 0 }), [clusters]);
 
   const refreshing = inventoryQuery.isFetching || hostsQuery.isFetching || hostInfoQueries.some(query => query.isFetching);
   const refresh = () => { void queryClient.invalidateQueries({ queryKey: ['opentofu', 'infrastructure', environmentId] }); void queryClient.invalidateQueries({ queryKey: ['opentofu', 'proxmox-connections', environmentId] }); void queryClient.invalidateQueries({ queryKey: ['servers'] }); };
@@ -85,11 +90,14 @@ export function InfrastructurePage() {
     {inventoryQuery.isLoading ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{[0, 1, 2, 3].map(item => <Skeleton key={item} className="h-24" />)}</div> : <>
       {inventoryQuery.data?.warnings?.length ? <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-700 dark:text-amber-300"><div className="flex items-center gap-2 font-medium"><TriangleAlert className="h-4 w-4" />Nicht alle Proxmox-Verbindungen sind erreichbar</div><ul className="mt-1 list-disc pl-6 text-xs">{inventoryQuery.data.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div> : null}
       {inventoryQuery.isError && hosts.length === 0 ? <Card><EmptyState icon={<TriangleAlert className="h-5 w-5" />} title="Infrastruktur konnte nicht geladen werden" description="Prüfe die eingebundenen Plattformen oder Fleet-Hosts und versuche es erneut." /></Card> : clusters.length === 0 && hosts.length === 0 ? <Card><EmptyState icon={<Database className="h-5 w-5" />} title="Noch keine Infrastruktur verbunden" description="Füge einen Fleet-Host hinzu oder lege eine Proxmox-Verbindung in dieser Umgebung an." action={isAdmin ? <Button type="button" onClick={() => { setConnectionToEdit(null); setConnectionDialogOpen(true); }}><Plus />Proxmox verbinden</Button> : <Button asChild><Link to="/servers">Host hinzufügen</Link></Button>} /></Card> : <>
-        <div className="grid overflow-hidden rounded-lg border bg-card sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid overflow-hidden rounded-lg border bg-card sm:grid-cols-2 xl:grid-cols-4">
           <Metric icon={Database} label="Cluster" value={totals.clusters} />
           <Metric icon={Server} label="Nodes" value={totals.nodes} />
           <Metric icon={Boxes} label="VMs" value={totals.vms} />
           <Metric icon={Cpu} label="VMs gestartet" value={`${totals.online}/${totals.vms}`} />
+          <Metric icon={Cpu} label="CPU (Nodes)" value={capacity.cpuTotal ? `${Math.round((capacity.cpuUsed / capacity.cpuTotal) * 100)} % · ${capacity.cpuTotal} Cores` : '—'} />
+          <Metric icon={MemoryStick} label="RAM (Nodes)" value={capacity.memTotal ? `${bytes(capacity.memUsed)} / ${bytes(capacity.memTotal)}` : '—'} />
+          <Metric icon={HardDrive} label="Disk (Nodes)" value={capacity.diskTotal ? `${bytes(capacity.diskUsed)} / ${bytes(capacity.diskTotal)}` : '—'} />
           <Metric icon={HardDrive} label="Fleet-Hosts" value={hosts.length} />
         </div>
         {clusters.map(cluster => <ClusterCard key={cluster.id} cluster={cluster} />)}
