@@ -460,6 +460,15 @@ export function ServerDetailPage() {
       showToast(t('common.errorPrefix', { msg: e.message }), 'error');
     },
   });
+  const proxmoxRebootMut = useMutation({
+    mutationFn: () => apiFetch(`/plugin/opentofu/managed-servers/${encodeURIComponent(id)}/power`, { method: 'POST', body: { action: 'reboot' } }),
+    onSuccess: () => {
+      showToast('Proxmox-Neustart wurde gestartet.', 'success');
+      void qc.invalidateQueries({ queryKey: ['server', id] });
+      void qc.invalidateQueries({ queryKey: ['opentofu', 'infrastructure'] });
+    },
+    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
+  });
   const testConnMut = useMutation({
     mutationFn: () => api.testConnection(id),
     onSuccess: () => { showToast(t('det.reachable'), 'success'); void qc.invalidateQueries({ queryKey: ['server', id] }); },
@@ -829,11 +838,11 @@ export function ServerDetailPage() {
               open={confirmReboot}
               onOpenChange={setConfirmReboot}
               title={t('det.reboot')}
-              description={t('det.confirmReboot', { name: server.name })}
+              description={managedProxmoxDeployment ? `Fleet startet „${server.name}“ direkt über die verknüpfte Proxmox-Plattform neu. Der SSH-Zugang wird dafür nicht benötigt.` : t('det.confirmReboot', { name: server.name })}
               confirmLabel={t('det.reboot')}
               variant="warning"
-              onConfirm={() => runRebootMut.mutate()}
-              isPending={runRebootMut.isPending}
+              onConfirm={() => managedProxmoxDeployment ? proxmoxRebootMut.mutate() : runRebootMut.mutate()}
+              isPending={managedProxmoxDeployment ? proxmoxRebootMut.isPending : runRebootMut.isPending}
             />
             <ConfirmDialog
               open={confirmDelete}

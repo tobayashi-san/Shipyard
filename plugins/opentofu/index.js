@@ -2835,6 +2835,22 @@ override.tf.json
     }
   });
 
+  // Power operations stay deliberately small and explicit. They act on the
+  // already linked Proxmox VM and never synthesize or mutate OpenTofu state.
+  router.post('/managed-servers/:serverId/power', async (req, res) => {
+    if (!can(getPermissions(req.user), 'canRebootServers')) return res.status(403).json({ error: 'Permission denied' });
+    const action = String(req.body?.action || '').trim().toLowerCase();
+    if (!['start', 'shutdown', 'reboot', 'stop'].includes(action)) return res.status(400).json({ error: 'Ungültige Proxmox-Aktion.' });
+    try {
+      const target = getManagedProxmoxVmForServer(String(req.params.serverId || ''), req, { requireEdit: true });
+      const task = await requestProxmoxApi(target.connection, `/nodes/${encodeURIComponent(target.vm.node_name)}/qemu/${encodeURIComponent(target.vm.vm_id)}/status/${action}`, { method: 'POST' });
+      db.auditLog.write('infrastructure.vm_power', `action=${action} source=${target.mapping.source_name || target.mapping.workspace_name || 'unknown'} vm=${target.vm.name || target.vm.vm_id} vm_id=${target.vm.vm_id}`, req.ip, true, req.user?.username || null);
+      res.status(202).json({ success: true, action, task });
+    } catch (error) {
+      res.status(error.status || 502).json({ error: error.message || 'Proxmox-Aktion konnte nicht gestartet werden.' });
+    }
+  });
+
   // The server detail remains the operational source of truth. This small
   // lookup only adds deployment context and deliberately never exposes a
   // workspace's credentials or state file to the browser.
