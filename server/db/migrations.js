@@ -19,6 +19,14 @@ function applyMigrations(db) {
   // Rename the untouched legacy product default without overwriting a custom white-label name.
   try { db.exec("UPDATE app_settings SET value = 'Fleet' WHERE key = 'wl_app_name' AND value = 'Shipyard'"); } catch {}
   try { db.exec("ALTER TABLE update_history ADD COLUMN triggered_by TEXT"); } catch {}
+  // NetBox-style IPAM metadata. These additive migrations preserve all early
+  // Fleet subnet and reservation data.
+  try { db.exec("ALTER TABLE ipam_subnets ADD COLUMN status TEXT NOT NULL DEFAULT 'active'"); } catch {}
+  try { db.exec("ALTER TABLE ipam_subnets ADD COLUMN role TEXT DEFAULT ''"); } catch {}
+  try { db.exec("ALTER TABLE ipam_reservations ADD COLUMN status TEXT NOT NULL DEFAULT 'active'"); } catch {}
+  try { db.exec("ALTER TABLE ipam_reservations ADD COLUMN role TEXT DEFAULT ''"); } catch {}
+  try { db.exec("CREATE TABLE IF NOT EXISTS ipam_ip_ranges (id TEXT PRIMARY KEY, subnet_id TEXT NOT NULL, start_address TEXT NOT NULL, end_address TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'reserved', role TEXT DEFAULT '', description TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now')), FOREIGN KEY (subnet_id) REFERENCES ipam_subnets(id) ON DELETE CASCADE)"); } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_ipam_ranges_subnet ON ipam_ip_ranges(subnet_id)'); } catch {}
   try {
     db.exec(`
       CREATE TABLE IF NOT EXISTS server_alert_settings (

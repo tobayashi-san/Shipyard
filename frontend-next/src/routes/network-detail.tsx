@@ -1,83 +1,51 @@
 import { useState } from 'react';
 import { Link, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Network, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Box, Network, Plus, Trash2 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PageHeader } from '@/components/ui/page-header';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-interface NetworkDetail {
-  id: string; name: string; cidr: string; gateway?: string; dns_servers?: string[];
-  vlan_id?: number | null; bridge?: string; description?: string;
-  usable_address_count: number; free_address_count: number; reservation_count: number; next_free_address?: string | null;
-}
-interface Reservation { id: string; address: string; hostname?: string; server_name?: string; description?: string }
+interface Prefix { id: string; name: string; cidr: string; gateway?: string; dns_servers?: string[]; vlan_id?: number | null; bridge?: string; description?: string; status: string; role?: string; parent_id?: string | null; parent_cidr?: string | null; child_prefix_count: number; usable_address_count: number; used_address_count: number; free_address_count: number; reservation_count: number; range_count: number; next_free_address?: string | null }
+interface Reservation { id: string; address: string; hostname?: string; server_id?: string; server_name?: string; status: string; role?: string; description?: string }
+interface IpRange { id: string; start_address: string; end_address: string; status: string; role?: string; description?: string }
+interface Server { id: string; name: string; ip_address?: string }
+const statusLabel: Record<string, string> = { active: 'Aktiv', reserved: 'Reserviert', dhcp: 'DHCP', deprecated: 'Veraltet', container: 'Container' };
 
 export function NetworkDetailPage() {
-  const { id } = useParams({ strict: false }) as { id: string };
-  const queryClient = useQueryClient();
-  const [address, setAddress] = useState('');
-  const [rangeStart, setRangeStart] = useState('');
-  const [rangeEnd, setRangeEnd] = useState('');
-  const [description, setDescription] = useState('');
-  const detail = useQuery({ queryKey: ['ipam', 'network', id], queryFn: () => apiFetch<NetworkDetail>(`/ipam/subnets/${encodeURIComponent(id)}`) });
+  const { id } = useParams({ strict: false }) as { id: string }; const queryClient = useQueryClient();
+  const [address, setAddress] = useState(''); const [description, setDescription] = useState(''); const [serverId, setServerId] = useState(''); const [addressStatus, setAddressStatus] = useState('active'); const [addressRole, setAddressRole] = useState('');
+  const [rangeStart, setRangeStart] = useState(''); const [rangeEnd, setRangeEnd] = useState(''); const [rangeDescription, setRangeDescription] = useState('');
+  const detail = useQuery({ queryKey: ['ipam', 'network', id], queryFn: () => apiFetch<Prefix>(`/ipam/subnets/${encodeURIComponent(id)}`) });
   const reservations = useQuery({ queryKey: ['ipam', 'reservations', id], queryFn: () => apiFetch<Reservation[]>(`/ipam/subnets/${encodeURIComponent(id)}/reservations`) });
+  const ranges = useQuery({ queryKey: ['ipam', 'ranges', id], queryFn: () => apiFetch<IpRange[]>(`/ipam/subnets/${encodeURIComponent(id)}/ranges`) });
+  const children = useQuery({ queryKey: ['ipam', 'children', id], queryFn: () => apiFetch<Prefix[]>(`/ipam/subnets/${encodeURIComponent(id)}/children`) });
+  const servers = useQuery({ queryKey: ['servers'], queryFn: () => apiFetch<Server[]>('/servers') });
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ['ipam'] });
-
-  const reserve = useMutation({
-    mutationFn: () => apiFetch(`/ipam/subnets/${encodeURIComponent(id)}/reservations`, { method: 'POST', body: { address, description } }),
-    onSuccess: () => { setAddress(''); setDescription(''); showToast('IP-Adresse reserviert.', 'success'); refresh(); },
-    onError: (error: Error) => showToast(error.message, 'error'),
-  });
-  const reserveRange = useMutation({
-    mutationFn: () => apiFetch<{ count: number }>(`/ipam/subnets/${encodeURIComponent(id)}/reservations/range`, { method: 'POST', body: { start_address: rangeStart, end_address: rangeEnd, description } }),
-    onSuccess: result => { setRangeStart(''); setRangeEnd(''); setDescription(''); showToast(`${result.count} IP-Adressen reserviert.`, 'success'); refresh(); },
-    onError: (error: Error) => showToast(error.message, 'error'),
-  });
-  const remove = useMutation({
-    mutationFn: (reservationId: string) => apiFetch(`/ipam/reservations/${encodeURIComponent(reservationId)}`, { method: 'DELETE' }),
-    onSuccess: () => { showToast('Reservierung freigegeben.', 'success'); refresh(); },
-    onError: (error: Error) => showToast(error.message, 'error'),
-  });
-
-  const network = detail.data;
-  const rows = Array.isArray(reservations.data) ? reservations.data : [];
-  if (!network) return <div className="p-6 text-sm text-muted-foreground">Netzwerk wird geladen…</div>;
-
-  return <div className="space-y-6">
-    <PageHeader
-      back={<Button variant="ghost" size="icon" asChild><Link to="/networks" aria-label="Zurück zu Netzwerken"><ArrowLeft /></Link></Button>}
-      title={network.name}
-      description={`${network.cidr}${network.description ? ` · ${network.description}` : ''}`}
-      actions={<span className="font-mono text-sm text-muted-foreground">{network.gateway || 'ohne Gateway'}</span>}
-    />
-    <div className="grid gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-4">
-      <Metric label="Verwendbare IPs" value={network.usable_address_count} />
-      <Metric label="Frei" value={network.free_address_count} accent="text-emerald-600 dark:text-emerald-400" />
-      <Metric label="Reserviert" value={network.reservation_count} />
-      <Metric label="VLAN / Bridge" value={network.vlan_id ? `${network.vlan_id} · ${network.bridge || '—'}` : network.bridge || '—'} />
-    </div>
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <Card>
-        <CardHeader className="border-b"><CardTitle className="flex items-center gap-2 text-base"><Network className="h-4 w-4" />Reservierte IP-Adressen</CardTitle></CardHeader>
-        <CardContent className="p-0">
-          <div className="grid grid-cols-[150px_minmax(0,1fr)_auto] gap-3 border-b bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground"><span>Adresse</span><span>Beschreibung / Zuordnung</span><span /></div>
-          {rows.map(row => <div key={row.id} className="grid grid-cols-[150px_minmax(0,1fr)_auto] items-center gap-3 border-b px-4 py-3 text-sm last:border-0"><span className="font-mono">{row.address}</span><span className="min-w-0 truncate text-muted-foreground">{row.description || row.hostname || row.server_name || 'Reserviert'}</span><Button variant="ghost" size="icon" onClick={() => remove.mutate(row.id)} aria-label={`${row.address} freigeben`}><Trash2 className="h-4 w-4 text-destructive" /></Button></div>)}
-          {rows.length === 0 && <p className="p-8 text-sm text-muted-foreground">Noch keine IP-Adressen reserviert. Freie Adressen werden oben gezählt.</p>}
-        </CardContent>
-      </Card>
-      <div className="space-y-4">
-        <Card><CardHeader><CardTitle className="text-base">Einzelne IP reservieren</CardTitle></CardHeader><CardContent><form className="space-y-3" onSubmit={event => { event.preventDefault(); reserve.mutate(); }}><Input required value={address} onChange={event => setAddress(event.target.value)} placeholder="10.20.10.25" /><Input value={description} onChange={event => setDescription(event.target.value)} placeholder="Beschreibung, z. B. ERP" />{network.next_free_address && <button type="button" onClick={() => setAddress(network.next_free_address || '')} className="text-left text-xs text-brand hover:underline">Nächste freie Adresse übernehmen: <span className="font-mono">{network.next_free_address}</span></button>}<Button className="w-full" type="submit" disabled={reserve.isPending}><Plus />IP reservieren</Button></form></CardContent></Card>
-        <Card><CardHeader><CardTitle className="text-base">IP-Bereich reservieren</CardTitle></CardHeader><CardContent><form className="space-y-3" onSubmit={event => { event.preventDefault(); reserveRange.mutate(); }}><div className="grid grid-cols-2 gap-2"><Input required value={rangeStart} onChange={event => setRangeStart(event.target.value)} placeholder="Von" /><Input required value={rangeEnd} onChange={event => setRangeEnd(event.target.value)} placeholder="Bis" /></div><Label className="text-xs text-muted-foreground">Maximal 512 IPs pro Bereich. Bereits belegte IPs verhindern die Reservierung.</Label><Button className="w-full" type="submit" variant="secondary" disabled={reserveRange.isPending}><Plus />Bereich reservieren</Button></form></CardContent></Card>
-      </div>
-    </div>
+  const reserve = useMutation({ mutationFn: () => apiFetch(`/ipam/subnets/${encodeURIComponent(id)}/reservations`, { method: 'POST', body: { address, description, server_id: serverId || undefined, status: addressStatus, role: addressRole } }), onSuccess: () => { setAddress(''); setDescription(''); setServerId(''); showToast('IP-Adresse angelegt.', 'success'); refresh(); }, onError: (error: Error) => showToast(error.message, 'error') });
+  const reserveRange = useMutation({ mutationFn: () => apiFetch<{ count: number }>(`/ipam/subnets/${encodeURIComponent(id)}/reservations/range`, { method: 'POST', body: { start_address: rangeStart, end_address: rangeEnd, description: rangeDescription, status: 'reserved' } }), onSuccess: result => { setRangeStart(''); setRangeEnd(''); setRangeDescription(''); showToast(`IP-Bereich mit ${result.count} Adressen angelegt.`, 'success'); refresh(); }, onError: (error: Error) => showToast(error.message, 'error') });
+  const removeReservation = useMutation({ mutationFn: (reservationId: string) => apiFetch(`/ipam/reservations/${encodeURIComponent(reservationId)}`, { method: 'DELETE' }), onSuccess: () => { showToast('IP-Adresse freigegeben.', 'success'); refresh(); }, onError: (error: Error) => showToast(error.message, 'error') });
+  const removeRange = useMutation({ mutationFn: (rangeId: string) => apiFetch(`/ipam/ranges/${encodeURIComponent(rangeId)}`, { method: 'DELETE' }), onSuccess: () => { showToast('IP-Bereich freigegeben.', 'success'); refresh(); }, onError: (error: Error) => showToast(error.message, 'error') });
+  const network = detail.data; const addressRows = Array.isArray(reservations.data) ? reservations.data : []; const rangeRows = Array.isArray(ranges.data) ? ranges.data : []; const childRows = Array.isArray(children.data) ? children.data : []; const serverRows = Array.isArray(servers.data) ? servers.data : [];
+  if (!network) return <div className="p-6 text-sm text-muted-foreground">Prefix wird geladen…</div>;
+  return <div className="space-y-5"><PageHeader back={<Button variant="ghost" size="icon" asChild><Link to="/networks" aria-label="Zurück zu Prefixen"><ArrowLeft /></Link></Button>} title={network.cidr} description={<span>{network.name}{network.description ? ` · ${network.description}` : ''}</span>} actions={<Badge variant="secondary" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">{statusLabel[network.status] || network.status}</Badge>} />
+    {network.parent_id && <Link to="/networks/$id" params={{ id: network.parent_id }} className="inline-flex text-sm text-brand hover:underline">Übergeordnetes Prefix: {network.parent_cidr}</Link>}
+    <div className="grid gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-4"><Metric label="Verwendbare IPs" value={network.usable_address_count} /><Metric label="Frei" value={network.free_address_count} tone="text-emerald-600 dark:text-emerald-400" /><Metric label="IP-Adressen" value={network.reservation_count} /><Metric label="IP-Bereiche" value={network.range_count} /></div>
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]"><Card><CardHeader className="border-b"><CardTitle className="flex items-center gap-2 text-base"><Network className="h-4 w-4" />Prefix-Informationen</CardTitle></CardHeader><CardContent className="grid gap-x-8 gap-y-3 p-5 text-sm sm:grid-cols-2"><Info label="VLAN / Bridge" value={`${network.vlan_id ? `VLAN ${network.vlan_id}` : '—'} · ${network.bridge || '—'}`} /><Info label="Gateway" value={network.gateway || '—'} /><Info label="DNS" value={(network.dns_servers || []).join(', ') || '—'} /><Info label="Rolle" value={network.role || '—'} /></CardContent></Card><Card><CardHeader><CardTitle className="text-base">Freie Adresse</CardTitle></CardHeader><CardContent>{network.next_free_address ? <button type="button" onClick={() => setAddress(network.next_free_address || '')} className="font-mono text-sm text-brand hover:underline">{network.next_free_address} übernehmen</button> : <span className="text-sm text-muted-foreground">Keine freie Adresse gefunden.</span>}</CardContent></Card></div>
+    <Tabs defaultValue="addresses"><TabsList className="h-auto max-w-full justify-start overflow-x-auto rounded-none border-b bg-transparent p-0"><TabsTrigger value="addresses" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-brand">IP-Adressen <Badge variant="secondary">{addressRows.length}</Badge></TabsTrigger><TabsTrigger value="ranges" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-brand">IP-Bereiche <Badge variant="secondary">{rangeRows.length}</Badge></TabsTrigger><TabsTrigger value="children" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-brand">Unterprefixe <Badge variant="secondary">{childRows.length}</Badge></TabsTrigger></TabsList>
+      <TabsContent value="addresses"><div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]"><AddressTable rows={addressRows} onDelete={value => removeReservation.mutate(value)} /><Card><CardHeader><CardTitle className="text-base">IP-Adresse hinzufügen</CardTitle></CardHeader><CardContent><form className="space-y-3" onSubmit={event => { event.preventDefault(); reserve.mutate(); }}><Input required value={address} onChange={event => setAddress(event.target.value)} placeholder="10.20.10.25" /><select value={addressStatus} onChange={event => setAddressStatus(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="active">Aktiv</option><option value="reserved">Reserviert</option><option value="dhcp">DHCP</option><option value="deprecated">Veraltet</option></select><select value={addressRole} onChange={event => setAddressRole(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="">Keine Rolle</option><option value="gateway">Gateway</option><option value="vip">VIP</option><option value="secondary">Sekundär</option><option value="loopback">Loopback</option></select><select value={serverId} onChange={event => setServerId(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="">Nicht zugewiesen</option>{serverRows.map(server => <option key={server.id} value={server.id}>{server.name}{server.ip_address ? ` · ${server.ip_address}` : ''}</option>)}</select><Input value={description} onChange={event => setDescription(event.target.value)} placeholder="Beschreibung" /><Button className="w-full" type="submit" disabled={reserve.isPending}><Plus />IP-Adresse hinzufügen</Button></form></CardContent></Card></div></TabsContent>
+      <TabsContent value="ranges"><div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]"><RangeTable rows={rangeRows} onDelete={value => removeRange.mutate(value)} /><Card><CardHeader><CardTitle className="text-base">IP-Bereich reservieren</CardTitle></CardHeader><CardContent><form className="space-y-3" onSubmit={event => { event.preventDefault(); reserveRange.mutate(); }}><div className="grid grid-cols-2 gap-2"><Input required value={rangeStart} onChange={event => setRangeStart(event.target.value)} placeholder="Von" /><Input required value={rangeEnd} onChange={event => setRangeEnd(event.target.value)} placeholder="Bis" /></div><Input value={rangeDescription} onChange={event => setRangeDescription(event.target.value)} placeholder="z. B. DHCP-Pool" /><Label className="text-xs text-muted-foreground">Bereiche werden als eigene IPAM-Objekte geführt, nicht als künstliche Einzel-IP-Liste.</Label><Button className="w-full" type="submit" variant="secondary" disabled={reserveRange.isPending}><Plus />Bereich anlegen</Button></form></CardContent></Card></div></TabsContent>
+      <TabsContent value="children"><Card><CardContent className="p-0">{childRows.length === 0 ? <p className="p-8 text-sm text-muted-foreground">Keine direkten Unterprefixe.</p> : childRows.map(child => <Link key={child.id} to="/networks/$id" params={{ id: child.id }} className="flex items-center gap-3 border-b px-5 py-4 hover:bg-muted/40"><Box className="h-4 w-4 text-brand" /><div className="min-w-0 flex-1"><div className="font-mono font-medium">{child.cidr}</div><div className="text-sm text-muted-foreground">{child.name}</div></div><span className="text-sm text-muted-foreground">{child.free_address_count} frei</span></Link>)}</CardContent></Card></TabsContent>
+    </Tabs>
   </div>;
 }
-
-function Metric({ label, value, accent = '' }: { label: string; value: string | number; accent?: string }) {
-  return <div className="bg-card p-4"><div className="text-xs text-muted-foreground">{label}</div><div className={`mt-1 font-mono text-xl font-semibold ${accent}`}>{value}</div></div>;
-}
+function AddressTable({ rows, onDelete }: { rows: Reservation[]; onDelete: (id: string) => void }) { return <Card><CardContent className="overflow-x-auto p-0"><div className="min-w-[640px]"><div className="grid grid-cols-[150px_100px_110px_minmax(140px,1fr)_minmax(140px,1fr)_44px] gap-3 border-b bg-muted/30 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground"><span>IP-Adresse</span><span>Status</span><span>Rolle</span><span>Zugewiesen</span><span>Beschreibung</span><span /></div>{rows.map(row => <div key={row.id} className="grid grid-cols-[150px_100px_110px_minmax(140px,1fr)_minmax(140px,1fr)_44px] items-center gap-3 border-b px-4 py-3 text-sm last:border-0"><span className="font-mono">{row.address}</span><Badge variant="secondary" className="w-fit">{statusLabel[row.status] || row.status}</Badge><span className="text-muted-foreground">{row.role || '—'}</span><span className="truncate">{row.server_name || row.hostname || '—'}</span><span className="truncate text-muted-foreground">{row.description || '—'}</span><Button variant="ghost" size="icon" onClick={() => onDelete(row.id)} aria-label={`${row.address} freigeben`}><Trash2 className="h-4 w-4 text-destructive" /></Button></div>)}{rows.length === 0 && <p className="p-8 text-sm text-muted-foreground">Noch keine einzelnen IP-Adressen angelegt.</p>}</div></CardContent></Card>; }
+function RangeTable({ rows, onDelete }: { rows: IpRange[]; onDelete: (id: string) => void }) { return <Card><CardContent className="overflow-x-auto p-0"><div className="min-w-[540px]"><div className="grid grid-cols-[minmax(180px,1fr)_120px_minmax(160px,1fr)_44px] gap-3 border-b bg-muted/30 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground"><span>Bereich</span><span>Status</span><span>Beschreibung</span><span /></div>{rows.map(row => <div key={row.id} className="grid grid-cols-[minmax(180px,1fr)_120px_minmax(160px,1fr)_44px] items-center gap-3 border-b px-4 py-3 text-sm last:border-0"><span className="font-mono">{row.start_address} – {row.end_address}</span><Badge variant="secondary" className="w-fit">{statusLabel[row.status] || row.status}</Badge><span className="truncate text-muted-foreground">{row.description || '—'}</span><Button variant="ghost" size="icon" onClick={() => onDelete(row.id)} aria-label="Bereich freigeben"><Trash2 className="h-4 w-4 text-destructive" /></Button></div>)}{rows.length === 0 && <p className="p-8 text-sm text-muted-foreground">Noch keine IP-Bereiche angelegt.</p>}</div></CardContent></Card>; }
+function Metric({ label, value, tone = '' }: { label: string; value: string | number; tone?: string }) { return <div className="bg-card p-4"><div className="text-xs text-muted-foreground">{label}</div><div className={`mt-1 font-mono text-xl font-semibold ${tone}`}>{value}</div></div>; }
+function Info({ label, value }: { label: string; value: string }) { return <div><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1 break-words font-mono text-sm">{value}</div></div>; }

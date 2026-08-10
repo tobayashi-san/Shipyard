@@ -122,6 +122,8 @@ function applySchema(db) {
       vlan_id INTEGER,
       bridge TEXT DEFAULT '',
       description TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active',
+      role TEXT DEFAULT '',
       created_at TEXT DEFAULT (datetime('now')),
       UNIQUE(environment_id, cidr)
     );
@@ -132,14 +134,28 @@ function applySchema(db) {
       hostname TEXT DEFAULT '',
       server_id TEXT,
       mac_address TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active',
+      role TEXT DEFAULT '',
       description TEXT DEFAULT '',
       created_at TEXT DEFAULT (datetime('now')),
       UNIQUE(subnet_id, address),
       FOREIGN KEY (subnet_id) REFERENCES ipam_subnets(id) ON DELETE CASCADE,
       FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE SET NULL
     );
+    CREATE TABLE IF NOT EXISTS ipam_ip_ranges (
+      id TEXT PRIMARY KEY,
+      subnet_id TEXT NOT NULL,
+      start_address TEXT NOT NULL,
+      end_address TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'reserved',
+      role TEXT DEFAULT '',
+      description TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (subnet_id) REFERENCES ipam_subnets(id) ON DELETE CASCADE
+    );
     CREATE INDEX IF NOT EXISTS idx_ipam_subnets_environment ON ipam_subnets(environment_id);
     CREATE INDEX IF NOT EXISTS idx_ipam_reservations_subnet ON ipam_reservations(subnet_id);
+    CREATE INDEX IF NOT EXISTS idx_ipam_ranges_subnet ON ipam_ip_ranges(subnet_id);
   `);
 
   db.exec(`
