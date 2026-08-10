@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, RefreshCw, ShieldCheck } from 'lucide-react';
+import { ArrowRightLeft, KeyRound, RefreshCw, ShieldCheck } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useUi } from '@/lib/store';
 import type { ProxmoxConnection } from '@/features/infrastructure/ProxmoxConnectionDialog';
@@ -22,10 +21,6 @@ interface ConnectionConfig {
 export function DeploymentConnectionDialog({ workspaceId, open, onOpenChange }: { workspaceId: string; open: boolean; onOpenChange: (open: boolean) => void }) {
   const queryClient = useQueryClient();
   const environmentId = useUi(state => state.environmentId);
-  const [endpoint, setEndpoint] = useState('');
-  const [insecure, setInsecure] = useState(false);
-  const [apiToken, setApiToken] = useState('');
-  const [sshKey, setSshKey] = useState('');
   const [sourceId, setSourceId] = useState('');
   const configQuery = useQuery({
     queryKey: ['opentofu', 'workspace', workspaceId, 'proxmox-connection'],
@@ -38,16 +33,12 @@ export function DeploymentConnectionDialog({ workspaceId, open, onOpenChange }: 
 
   useEffect(() => {
     if (!open || !configQuery.data) return;
-    setEndpoint(configQuery.data.endpoint || '');
-    setInsecure(Boolean(configQuery.data.insecure));
-    setApiToken('');
-    setSshKey('');
     setSourceId(configQuery.data.source_id || '');
   }, [configQuery.data, open]);
 
   const saveMutation = useMutation({
     mutationFn: () => apiFetch(`/plugin/opentofu/workspaces/${encodeURIComponent(workspaceId)}/proxmox-connection`, {
-      method: 'PUT', body: sourceId ? { proxmox_connection_id: sourceId } : { detach_source: Boolean(configQuery.data?.source_id), endpoint, insecure, api_token: apiToken, ssh_public_key: sshKey },
+      method: 'PUT', body: { proxmox_connection_id: sourceId },
     }),
     onSuccess: () => {
       showToast('Proxmox-Verbindung gespeichert.', 'success');
@@ -56,23 +47,31 @@ export function DeploymentConnectionDialog({ workspaceId, open, onOpenChange }: 
     },
     onError: (error: Error) => showToast(error.message, 'error'),
   });
+  const promoteMutation = useMutation({
+    mutationFn: () => apiFetch(`/plugin/opentofu/workspaces/${encodeURIComponent(workspaceId)}/promote-proxmox-connection`, { method: 'POST' }),
+    onSuccess: () => {
+      showToast('Workspace-Verbindung wurde als zentrale Plattform übernommen.', 'success');
+      void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspace', workspaceId, 'proxmox-connection'] });
+      void queryClient.invalidateQueries({ queryKey: ['opentofu', 'proxmox-connections', environmentId] });
+      void queryClient.invalidateQueries({ queryKey: ['opentofu', 'infrastructure', environmentId] });
+    },
+    onError: (error: Error) => showToast(error.message, 'error'),
+  });
   const config = configQuery.data;
 
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-xl overflow-y-auto">
       <DialogHeader>
-        <DialogTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5" />Proxmox-Verbindung</DialogTitle>
-        <DialogDescription>Ordne das Deployment einer Infrastrukturquelle zu. Nur für ältere Deployments ist eine lokale Verbindung weiterhin möglich.</DialogDescription>
+        <DialogTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5" />Infrastrukturquelle</DialogTitle>
+        <DialogDescription>Deployments verwenden eine zentrale Plattform-Verbindung. Zugangsdaten werden ausschließlich unter Infrastruktur verwaltet.</DialogDescription>
       </DialogHeader>
       {configQuery.isLoading ? <div className="space-y-3 py-4"><div className="h-10 animate-pulse rounded-md bg-muted" /><div className="h-10 animate-pulse rounded-md bg-muted" /></div> : <form className="space-y-5" onSubmit={event => { event.preventDefault(); saveMutation.mutate(); }}>
         <div className="grid gap-4 sm:grid-cols-2"><Status label="API-Token" configured={config?.api_token_configured} /><Status label="Standard-SSH-Key" configured={config?.ssh_public_key_configured} /></div>
-        <div className="space-y-1.5"><Label htmlFor="deployment-source">Infrastrukturquelle</Label><select id="deployment-source" value={sourceId} onChange={event => setSourceId(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="">Eigene Verbindung (Legacy)</option>{sources.map(source => <option key={source.id} value={source.id}>{source.name} · {source.endpoint}</option>)}</select><p className="text-xs text-muted-foreground">Eine Plattform-Verbindung wird von mehreren Deployments wiederverwendet.</p></div>
-        {!sourceId && <><div className="space-y-1.5"><Label htmlFor="proxmox-endpoint">Proxmox API-Endpunkt</Label><Input id="proxmox-endpoint" required value={endpoint} onChange={event => setEndpoint(event.target.value)} placeholder="https://pve.example.com:8006/" inputMode="url" /><p className="text-xs text-muted-foreground">Wird für Templates, freie VM-IDs, Datastores, Bridges und den Gast-Agent verwendet.</p></div>
-        <div className="space-y-1.5"><Label htmlFor="proxmox-token">Proxmox API-Token</Label><Input id="proxmox-token" value={apiToken} onChange={event => setApiToken(event.target.value)} type="password" autoComplete="new-password" placeholder={config?.api_token_configured ? 'Gespeichert – nur zum Ändern eingeben' : 'root@pam!fleet=…'} /><p className="text-xs text-muted-foreground">Ein leeres Feld behält den bestehenden Token bei.</p></div>
-        <div className="space-y-1.5"><Label htmlFor="default-ssh-key">Standard SSH Public Key <span className="font-normal text-muted-foreground">(optional)</span></Label><textarea id="default-ssh-key" value={sshKey} onChange={event => setSshKey(event.target.value)} rows={3} className="flex w-full rounded-md border bg-background px-3 py-2 font-mono text-xs shadow-sm outline-none" placeholder={config?.ssh_public_key_configured ? 'Gespeichert – nur zum Ändern eingeben' : 'ssh-ed25519 AAAA…'} /><p className="text-xs text-muted-foreground">Wird bei neuen VMs per Cloud-Init für die ausgewählte Key-Variable verwendet.</p></div>
-        <label className="flex items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 p-3 text-sm"><input type="checkbox" checked={insecure} onChange={event => setInsecure(event.target.checked)} className="mt-0.5" /><span><span className="font-medium">TLS-Zertifikat nicht prüfen</span><span className="mt-0.5 block text-xs text-muted-foreground">Nur für Proxmox mit selbstsigniertem Zertifikat verwenden.</span></span></label></>}
-        {sourceId && <div className="rounded-md border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">Diese Konfiguration kommt aus der ausgewählten Plattform-Verbindung. Änderungen erfolgen zentral unter Infrastruktur.</div>}
-        <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Abbrechen</Button><Button type="submit" disabled={saveMutation.isPending}>{saveMutation.isPending ? <RefreshCw className="animate-spin" /> : <KeyRound />}Verbindung speichern</Button></DialogFooter>
+        <div className="space-y-1.5"><Label htmlFor="deployment-source">Proxmox-Plattform</Label><select id="deployment-source" value={sourceId} onChange={event => setSourceId(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm" disabled={sourcesQuery.isLoading || sources.length === 0}><option value="">{sourcesQuery.isLoading ? 'Wird geladen…' : 'Plattform auswählen…'}</option>{sources.map(source => <option key={source.id} value={source.id}>{source.name} · {source.endpoint}</option>)}</select><p className="text-xs text-muted-foreground">Änderungen an Token, TLS und Standard-SSH-Key erfolgen zentral unter Infrastruktur.</p></div>
+        {!config?.source_id && config?.api_token_configured && <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3"><div className="text-sm font-medium">Bestehende Workspace-Verbindung gefunden</div><p className="mt-1 text-xs text-muted-foreground">Übernimm sie einmalig als zentrale Plattform. Das Deployment wird danach direkt damit verknüpft.</p><Button type="button" size="sm" variant="outline" className="mt-3" onClick={() => promoteMutation.mutate()} disabled={promoteMutation.isPending}>{promoteMutation.isPending ? <RefreshCw className="animate-spin" /> : <ArrowRightLeft />}Jetzt zentral übernehmen</Button></div>}
+        {sourceId && <div className="rounded-md border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">Diese Konfiguration kommt aus der ausgewählten Plattform-Verbindung.</div>}
+        {sources.length === 0 && <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-muted-foreground">Es gibt noch keine Plattform-Verbindung in dieser Umgebung. Lege sie zuerst unter Infrastruktur an.</div>}
+        <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Abbrechen</Button><Button type="submit" disabled={saveMutation.isPending || !sourceId}>{saveMutation.isPending ? <RefreshCw className="animate-spin" /> : <KeyRound />}Plattform zuordnen</Button></DialogFooter>
       </form>}
     </DialogContent>
   </Dialog>;

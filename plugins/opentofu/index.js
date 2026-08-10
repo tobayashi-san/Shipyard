@@ -2186,6 +2186,7 @@ override.tf.json
     if (proxmoxConnectionId && !db.db.prepare('SELECT 1 FROM tofu_proxmox_connections WHERE id = ? AND environment_id = ?').get(proxmoxConnectionId, environmentId)) {
       return res.status(400).json({ error: 'Die gewählte Proxmox-Verbindung gehört nicht zu dieser Umgebung.' });
     }
+    if (scaffold?.provider === 'proxmox' && !proxmoxConnectionId) return res.status(400).json({ error: 'Wähle zuerst eine Proxmox-Plattform in der Infrastrukturansicht aus.' });
     const id = randomUUID();
     db.db.prepare('INSERT INTO tofu_workspaces (id, name, path, description, env_vars, environment_id, proxmox_connection_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(id, name.trim(), wPath.trim(), (description || '').trim(), JSON.stringify(sanitizeEnvVars(env_vars || {})), environmentId, proxmoxConnectionId);
@@ -2290,6 +2291,42 @@ override.tf.json
       api_token_configured: Boolean(String(env.TF_VAR_proxmox_api_token || '').trim()),
       ssh_public_key_configured: Boolean(String(env.TF_VAR_ssh_public_key || '').trim()),
     });
+  });
+
+  // One-way migration for old deployments that still contain their own
+  // Proxmox token. This removes the second normal configuration location
+  // without breaking existing installations during the upgrade.
+  router.post('/workspaces/:id/promote-proxmox-connection', (req, res) => {
+    if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Permission denied' });
+    const row = getWorkspaceRow(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Workspace not found' });
+    if (row.proxmox_connection_id) return res.status(409).json({ error: 'Dieses Deployment verwendet bereits eine Plattform-Verbindung.' });
+    let env = {};
+    try { env = JSON.parse(row.env_vars || '{}'); } catch {}
+    const endpoint = String(env.TF_VAR_proxmox_endpoint || '').trim();
+    const token = String(env.TF_VAR_proxmox_api_token || '').trim();
+    try { createProxmoxConnection(endpoint, token, String(env.TF_VAR_proxmox_insecure || '').toLowerCase() === 'true'); }
+    catch (error) { return res.status(400).json({ error: `Die bestehende Workspace-Verbindung kann nicht migriert werden: ${error.message}` }); }
+    const environmentId = String(row.environment_id || 'default');
+    const baseName = `${row.name} · Proxmox`;
+    let name = baseName.slice(0, 80);
+    let suffix = 2;
+    while (db.db.prepare('SELECT 1 FROM tofu_proxmox_connections WHERE environment_id = ? AND name = ?').get(environmentId, name)) name = `${baseName.slice(0, 74)} (${suffix++})`;
+    const id = randomUUID();
+    const insecure = String(env.TF_VAR_proxmox_insecure || '').toLowerCase() === 'true';
+    const sshKey = String(env.TF_VAR_ssh_public_key || '').trim();
+    const remainingEnv = { ...env };
+    delete remainingEnv.TF_VAR_proxmox_endpoint;
+    delete remainingEnv.TF_VAR_proxmox_api_token;
+    delete remainingEnv.TF_VAR_proxmox_insecure;
+    delete remainingEnv.TF_VAR_ssh_public_key;
+    const migrate = db.db.transaction(() => {
+      db.db.prepare('INSERT INTO tofu_proxmox_connections (id, environment_id, name, endpoint, api_token, insecure, ssh_public_key) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(id, environmentId, name, endpoint, cryptoUtil.encrypt(token), insecure ? 1 : 0, sshKey ? cryptoUtil.encrypt(sshKey) : '');
+      db.db.prepare('UPDATE tofu_workspaces SET proxmox_connection_id = ?, env_vars = ? WHERE id = ?').run(id, JSON.stringify(sanitizeEnvVars(remainingEnv)), row.id);
+    });
+    migrate();
+    res.status(201).json({ success: true, source: publicProxmoxConnection(db.db.prepare('SELECT * FROM tofu_proxmox_connections WHERE id = ?').get(id)) });
   });
 
   // ── Routes: Run history ───────────────────────────────────────────────────

@@ -146,7 +146,7 @@ export function DeploymentDetailPage() {
       actions={<>
         <Button type="button" variant="outline" onClick={refresh}><RefreshCw />{t('deploy.refresh')}</Button>
         <Button type="button" variant="outline" onClick={() => setSettingsDialogOpen(true)}><Pencil />Deployment bearbeiten</Button>
-        <Button type="button" variant="outline" onClick={() => setConnectionDialogOpen(true)}><Settings2 />Proxmox-Verbindung</Button>
+        <Button type="button" variant="outline" onClick={() => setConnectionDialogOpen(true)}><Settings2 />Infrastrukturquelle</Button>
         <Button asChild variant="ghost"><Link to="/plugins/$id" params={{ id: 'opentofu' }}><FileCode2 />{t('deploy.advanced')}</Link></Button>
       </>}
     />
