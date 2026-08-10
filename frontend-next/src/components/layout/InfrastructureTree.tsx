@@ -1,8 +1,8 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
-import { ChevronDown, ChevronRight, CircleDot, Database, Folder, FolderTree, Server } from 'lucide-react';
+import { ChevronDown, ChevronRight, CircleDot, Database, Folder, FolderTree, HardDrive, Server, ServerCog } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api, apiFetch } from '@/lib/api';
 import { asArray, cn } from '@/lib/utils';
 import { useUi } from '@/lib/store';
 import { buildGroupTree, normalizeServer, type GroupNode, type ServerGroup, type ServerRow } from '@/features/servers/server-list-utils';
@@ -25,6 +25,10 @@ function StatusDot({ status }: { status?: string }) {
 }
 
 interface TreeProps { compact?: boolean; onNavigate?: () => void; }
+interface ProxmoxNode { name?: string; status?: string }
+interface ProxmoxVm { name?: string; node_name?: string; vm_id?: number | string; status?: string }
+interface ProxmoxCluster { id?: string; endpoint?: string; nodes?: ProxmoxNode[]; vms?: ProxmoxVm[] }
+interface InfrastructureResponse { clusters?: ProxmoxCluster[] }
 
 export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
   const navigate = useNavigate();
@@ -40,6 +44,12 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
     queryKey: ['server-groups'],
     queryFn: () => api.getServerGroups() as Promise<Record<string, unknown>[]>,
     staleTime: 30_000,
+  });
+  const { data: inventory } = useQuery({
+    queryKey: ['opentofu', 'infrastructure', environmentId],
+    queryFn: () => apiFetch<InfrastructureResponse>(`/plugin/opentofu/infrastructure?environment_id=${encodeURIComponent(environmentId)}`),
+    staleTime: 30_000,
+    retry: false,
   });
 
   const servers = useMemo(() => asArray<Record<string, unknown>>(rawServers)
@@ -58,6 +68,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
   }, {}), [servers, groupsById]);
   const groupTree = useMemo(() => buildGroupTree(groups), [groups]);
   const ungrouped = byGroup.__ungrouped__ || [];
+  const clusters = useMemo(() => Array.isArray(inventory?.clusters) ? inventory.clusters : [], [inventory]);
 
   useEffect(() => {
     // Expand a selected resource automatically. It makes direct links and
@@ -113,6 +124,30 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
       {open && <div>{members.map(server => serverRow(server, depth + 1))}{node.children.map(child => groupNode(child, depth + 1))}</div>}
     </div>;
   };
+  const clusterNode = (cluster: ProxmoxCluster) => {
+    const clusterId = `proxmox:${cluster.id || cluster.endpoint || 'cluster'}`;
+    const open = !collapsed.has(clusterId);
+    const nodes = Array.isArray(cluster.nodes) ? cluster.nodes : [];
+    const vms = Array.isArray(cluster.vms) ? cluster.vms : [];
+    const clusterName = cluster.endpoint || 'Proxmox-Cluster';
+    return <div key={clusterId}>
+      <button type="button" onClick={() => toggle(clusterId)} className="group flex w-full min-w-0 items-center gap-1.5 rounded-sm px-2 py-1.5 text-left text-xs text-foreground hover:bg-accent/60">
+        {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+        <Database className="h-3.5 w-3.5 shrink-0 text-brand" /><span className="min-w-0 flex-1 truncate">{clusterName}</span><span className="text-[10px] text-muted-foreground">{vms.length}</span>
+      </button>
+      {open && <div>{nodes.map(node => {
+        const nodeId = `${clusterId}:node:${node.name || 'node'}`;
+        const nodeOpen = !collapsed.has(nodeId);
+        const members = vms.filter(vm => vm.node_name === node.name);
+        return <div key={nodeId}>
+          <button type="button" onClick={() => toggle(nodeId)} className="flex w-full min-w-0 items-center gap-1.5 rounded-sm py-1.5 pr-2 text-left text-xs text-muted-foreground hover:bg-accent/60" style={{ paddingLeft: '26px' }}>
+            {nodeOpen ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}<StatusDot status={node.status} /><ServerCog className="h-3.5 w-3.5 shrink-0" /><span className="min-w-0 flex-1 truncate">{node.name || 'Node'}</span><span className="text-[10px]">{members.length}</span>
+          </button>
+          {nodeOpen && members.map(vm => <Link key={`${nodeId}:vm:${vm.vm_id || vm.name}`} to="/infrastructure" onClick={onNavigate} title={`VM ${vm.vm_id || '—'} · ${vm.status || 'unknown'}`} className="group flex min-w-0 items-center gap-2 rounded-sm py-1.5 pr-2 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground" style={{ paddingLeft: '50px' }}><StatusDot status={vm.status} /><HardDrive className="h-3.5 w-3.5 shrink-0" /><span className="min-w-0 flex-1 truncate">{vm.name || `VM ${vm.vm_id || ''}`}</span><span className="font-mono text-[10px] opacity-0 transition-opacity group-hover:opacity-100">{vm.vm_id || '—'}</span></Link>)}
+        </div>;
+      })}</div>}
+    </div>;
+  };
 
   return <div className="space-y-1">
     <Link to="/" onClick={onNavigate} className={cn('flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs transition-colors', path === '/' ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground')}>
@@ -121,6 +156,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
     <div className="pt-1">
       <div className="flex items-center gap-2 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground"><FolderTree className="h-3.5 w-3.5" /> Ressourcen</div>
       <Link to="/infrastructure" onClick={onNavigate} className={cn('flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs transition-colors', path === '/infrastructure' ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground')}><Database className="h-3.5 w-3.5 text-brand" /><span className="truncate">Proxmox-Cluster</span></Link>
+      {clusters.map(cluster => clusterNode(cluster))}
       {groupTree.map(group => groupNode(group))}
       {ungrouped.length > 0 && <div>
         <button type="button" onClick={() => toggle('__ungrouped__')} className="flex w-full items-center gap-1.5 rounded-sm px-2 py-1.5 text-xs text-foreground hover:bg-accent/60">
