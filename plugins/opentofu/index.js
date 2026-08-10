@@ -1994,6 +1994,45 @@ override.tf.json
     res.json({ success: true });
   });
 
+  // Keep connection management in the native Fleet console without ever
+  // returning secrets to the browser. Empty secret fields on update preserve
+  // their stored value, which makes the form safe to reopen and save.
+  router.get('/workspaces/:id/proxmox-connection', (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    const env = workspace.env_vars || {};
+    res.json({
+      endpoint: String(env.TF_VAR_proxmox_endpoint || ''),
+      insecure: String(env.TF_VAR_proxmox_insecure || '').toLowerCase() === 'true',
+      api_token_configured: Boolean(String(env.TF_VAR_proxmox_api_token || '').trim()),
+      ssh_public_key_configured: Boolean(String(env.TF_VAR_ssh_public_key || '').trim()),
+    });
+  });
+
+  router.put('/workspaces/:id/proxmox-connection', (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    const body = req.body || {};
+    const endpoint = String(body.endpoint || '').trim();
+    if (endpoint && !/^https?:\/\//i.test(endpoint)) return res.status(400).json({ error: 'Der Proxmox-Endpunkt muss mit http:// oder https:// beginnen.' });
+    const env = { ...(workspace.env_vars || {}) };
+    if (endpoint) env.TF_VAR_proxmox_endpoint = endpoint;
+    else if (body.clear_endpoint === true) delete env.TF_VAR_proxmox_endpoint;
+    env.TF_VAR_proxmox_insecure = body.insecure === true ? 'true' : 'false';
+    if (typeof body.api_token === 'string' && body.api_token.trim()) env.TF_VAR_proxmox_api_token = body.api_token.trim();
+    else if (body.clear_api_token === true) delete env.TF_VAR_proxmox_api_token;
+    if (typeof body.ssh_public_key === 'string' && body.ssh_public_key.trim()) env.TF_VAR_ssh_public_key = body.ssh_public_key.trim();
+    else if (body.clear_ssh_public_key === true) delete env.TF_VAR_ssh_public_key;
+    db.db.prepare('UPDATE tofu_workspaces SET env_vars = ? WHERE id = ?').run(JSON.stringify(sanitizeEnvVars(env)), workspace.id);
+    res.json({
+      success: true,
+      endpoint: String(env.TF_VAR_proxmox_endpoint || ''),
+      insecure: env.TF_VAR_proxmox_insecure === 'true',
+      api_token_configured: Boolean(String(env.TF_VAR_proxmox_api_token || '').trim()),
+      ssh_public_key_configured: Boolean(String(env.TF_VAR_ssh_public_key || '').trim()),
+    });
+  });
+
   // ── Routes: Run history ───────────────────────────────────────────────────
 
   router.get('/workspaces/:id/runs', (req, res) => {

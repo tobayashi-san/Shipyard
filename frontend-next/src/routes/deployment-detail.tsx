@@ -13,6 +13,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import { VmFormDialog } from '@/features/deployments/VmFormDialog';
+import { DeploymentConnectionDialog } from '@/features/deployments/DeploymentConnectionDialog';
 
 interface Workspace { id: string; name: string; path?: string; description?: string }
 interface Run { id: string; action?: string; status?: string; started_at?: string; completed_at?: string }
@@ -65,6 +66,7 @@ export function DeploymentDetailPage() {
   const [vmDialogOpen, setVmDialogOpen] = useState(false);
   const [editingVm, setEditingVm] = useState<Vm | null>(null);
   const [vmToDelete, setVmToDelete] = useState<Vm | null>(null);
+  const [connectionDialogOpen, setConnectionDialogOpen] = useState(false);
   const [templateToDelete, setTemplateToDelete] = useState<VmTemplate | null>(null);
   const workspacesQuery = useQuery({ queryKey: ['opentofu', 'workspaces'], queryFn: () => apiFetch<Workspace[]>('/plugin/opentofu/workspaces') });
   const workspace = (Array.isArray(workspacesQuery.data) ? workspacesQuery.data : []).find(item => item.id === id);
@@ -121,6 +123,7 @@ export function DeploymentDetailPage() {
       back={<Button asChild size="icon" variant="ghost" aria-label={t('deploy.title')}><Link to="/deployments"><ArrowLeft /></Link></Button>}
       actions={<>
         <Button type="button" variant="outline" onClick={refresh}><RefreshCw />{t('deploy.refresh')}</Button>
+        <Button type="button" variant="outline" onClick={() => setConnectionDialogOpen(true)}><Settings2 />Proxmox-Verbindung</Button>
         <Button asChild variant="outline"><Link to="/plugins/$id" params={{ id: 'opentofu' }}><Settings2 />{t('deploy.advanced')}</Link></Button>
       </>}
     />
@@ -167,5 +170,6 @@ export function DeploymentDetailPage() {
     <ConfirmDialog open={Boolean(templateToDelete)} onOpenChange={open => !open && setTemplateToDelete(null)} title="VM-Vorlage löschen?" description={templateToDelete ? `Die Vorlage „${templateToDelete.name}“ wird gelöscht. Bereits definierte VMs bleiben unverändert.` : ''} confirmLabel="Vorlage löschen" cancelLabel="Abbrechen" variant="destructive" onConfirm={() => templateToDelete && deleteTemplateMutation.mutate(templateToDelete.id)} isPending={deleteTemplateMutation.isPending} />
     <ConfirmDialog open={Boolean(vmToDelete)} onOpenChange={open => !open && setVmToDelete(null)} title="VM-Definition entfernen?" description={vmToDelete ? `Die gewünschte Konfiguration für „${vmToDelete.name}“ wird entfernt. Der bestehende Proxmox-Server wird erst bei einem späteren, kontrollierten Apply geändert.` : ''} confirmLabel="Definition entfernen" cancelLabel="Abbrechen" variant="destructive" onConfirm={() => vmToDelete && deleteVmMutation.mutate(vmToDelete.id)} isPending={deleteVmMutation.isPending} />
     <VmFormDialog workspaceId={workspace.id} open={vmDialogOpen} onOpenChange={open => { setVmDialogOpen(open); if (!open) setEditingVm(null); }} initialVm={editingVm} />
+    <DeploymentConnectionDialog workspaceId={workspace.id} open={connectionDialogOpen} onOpenChange={setConnectionDialogOpen} />
   </div>;
 }
