@@ -480,6 +480,12 @@ router.delete('/:id', guardServerAccess, guard('canDeleteServers'), (req, res) =
   try {
     const server = req.server;
     db.servers.delete(req.params.id);
+    // OpenTofu and imported Proxmox inventory mappings are plugin-owned and
+    // deliberately have no database foreign key for backwards compatibility.
+    // Remove them with the host so an old resource never remains as a broken
+    // link in the infrastructure tree.
+    try { db.db.prepare('DELETE FROM tofu_managed_servers WHERE server_id = ?').run(req.params.id); } catch { /* plugin not installed */ }
+    try { db.db.prepare('DELETE FROM proxmox_inventory_servers WHERE server_id = ?').run(req.params.id); } catch { /* plugin not installed */ }
     db.auditLog.write('server.delete', `Server "${server.name}" (${server.ip_address}) deleted`, req.ip, true, req.user?.username);
     res.json({ message: 'Server deleted' });
   } catch (error) {

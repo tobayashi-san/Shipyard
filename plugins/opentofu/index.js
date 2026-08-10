@@ -509,6 +509,7 @@ function findReusableServer(allServers, trackedServerIds, desiredServer) {
 
 async function reconcileManagedServers({ db, workspace, desiredServers, logMeta = {} }) {
   ensureManagedServersTable(db);
+  removeOrphanedServerMappings(db);
   const mappings = db.db.prepare('SELECT * FROM tofu_managed_servers WHERE workspace_id = ?').all(workspace.id);
   const mappingsByKey = new Map(mappings.map(mapping => [mapping.resource_key, mapping]));
   const trackedMappings = db.db.prepare('SELECT * FROM tofu_managed_servers').all();
@@ -658,6 +659,28 @@ function ensureManagedServersTable(db) {
       UNIQUE(workspace_id, resource_key)
     )
   `).run();
+}
+
+// A Fleet host can be removed independently from an OpenTofu deployment or
+// from the imported Proxmox inventory. These tables deliberately have no
+// foreign keys so the plugin remains compatible with existing Fleet DBs. The
+// cleanup only removes mappings whose target host is already absent.
+function removeOrphanedServerMappings(db) {
+  let staleManaged = 0;
+  let staleInventory = 0;
+  try {
+    staleManaged = db.db.prepare(`
+      DELETE FROM tofu_managed_servers
+      WHERE NOT EXISTS (SELECT 1 FROM servers WHERE servers.id = tofu_managed_servers.server_id)
+    `).run().changes;
+  } catch { /* table is not available before plugin setup */ }
+  try {
+    staleInventory = db.db.prepare(`
+      DELETE FROM proxmox_inventory_servers
+      WHERE NOT EXISTS (SELECT 1 FROM servers WHERE servers.id = proxmox_inventory_servers.server_id)
+    `).run().changes;
+  } catch { /* table is not available before plugin setup */ }
+  return { staleManaged, staleInventory };
 }
 
 async function waitForManagedServers({
@@ -1281,6 +1304,7 @@ function register({ router, db, broadcast }) {
   `).run();
 
   ensureManagedServersTable(db);
+  removeOrphanedServerMappings(db);
 
   syncPathsFile();
 
@@ -1963,6 +1987,9 @@ override.tf.json
   // legacy deployment credentials as a compatibility fallback. This keeps
   // infrastructure independent from individual OpenTofu workspaces.
   async function loadProxmoxInfrastructure(environmentId = null) {
+    // Also clean during a live inventory refresh, so an already-running
+    // process stops exposing stale links without requiring a restart.
+    removeOrphanedServerMappings(db);
     const grouped = new Map();
     const warnings = [];
     for (const row of listProxmoxConnectionRows(environmentId)) {
@@ -2013,9 +2040,10 @@ override.tf.json
       if (sourceIds.length) {
         const placeholders = sourceIds.map(() => '?').join(', ');
         const adopted = db.db.prepare(`
-          SELECT server_id, connection_id, node_name, vm_id
-          FROM proxmox_inventory_servers
-          WHERE connection_id IN (${placeholders})
+          SELECT inventory.server_id, inventory.connection_id, inventory.node_name, inventory.vm_id
+          FROM proxmox_inventory_servers inventory
+          JOIN servers ON servers.id = inventory.server_id
+          WHERE inventory.connection_id IN (${placeholders})
         `).all(...sourceIds);
         for (const item of adopted) adoptedByVm.set(`${item.connection_id}:${item.node_name}:${item.vm_id}`, item.server_id);
       }

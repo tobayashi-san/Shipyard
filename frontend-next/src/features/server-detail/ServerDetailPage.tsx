@@ -204,11 +204,15 @@ export function ServerDetailPage() {
   const agentEnabled = !!(settings as Record<string, unknown>)?.agentEnabled;
   const timeFormat = useUi((s) => s.timeFormat);
   const hour12 = timeFormat === '12h';
+  // Do not start detail sub-queries until the primary host exists. Besides
+  // reducing requests, this keeps a stale browser URL from producing a wall
+  // of 404s while the normal not-found state is rendered.
+  const serverKnown = Boolean(qc.getQueryData(['server', id]));
   const openTofuAvailable = Array.isArray(plugins) && plugins.some(plugin => plugin.id === 'opentofu' && plugin.enabled && canSeePlugin(profile, plugin.id));
   const { data: deploymentData } = useQuery<ManagedDeploymentResponse>({
     queryKey: ['server', id, 'deployment-context'],
     queryFn: () => apiFetch(`/plugin/opentofu/managed-servers/${encodeURIComponent(id)}`),
-    enabled: Boolean(id && openTofuAvailable),
+    enabled: Boolean(id && serverKnown && openTofuAvailable),
     staleTime: 30_000,
   });
   const managedDeployments = Array.isArray(deploymentData?.resources) ? deploymentData.resources : [];
@@ -324,7 +328,7 @@ export function ServerDetailPage() {
   const { data: info, refetch: refetchInfo, isFetching: fetchingInfo, isError: infoFailed, error: infoError } = useQuery<ServerInfo>({
     queryKey: ['server', id, 'info'],
     queryFn: () => api.getServerInfo(id) as unknown as Promise<ServerInfo>,
-    enabled: !!id,
+    enabled: !!server,
   });
 
   // ── Stat card queries (lazy-ish but auto) ───────────────────
@@ -337,23 +341,23 @@ export function ServerDetailPage() {
   const { data: rawUpdates, isFetching: fetchingUpdates } = useQuery({
     queryKey: ['server', id, 'updates'],
     queryFn: () => api.getServerUpdates(id) as unknown as Promise<Record<string, unknown>[] | { updates: Record<string, unknown>[] }>,
-    enabled: !!id && hasCap(profile, 'canViewUpdates'),
+    enabled: !!server && hasCap(profile, 'canViewUpdates'),
     staleTime: 60_000,
   });
   const { data: history } = useQuery({
     queryKey: ['server', id, 'history'],
     queryFn: () => api.getServerHistory(id) as unknown as Promise<HistoryRow[]>,
-    enabled: !!id,
+    enabled: !!server,
   });
   const { data: notesData } = useQuery({
     queryKey: ['server', id, 'notes'],
     queryFn: () => api.getServerNotes(id),
-    enabled: !!id,
+    enabled: !!server,
   });
   const { data: customTasks } = useQuery({
     queryKey: ['server', id, 'customTasks'],
     queryFn: () => api.getCustomUpdateTasks(id) as unknown as Promise<CustomTask[]>,
-    enabled: !!id && hasCap(profile, 'canViewCustomUpdates'),
+    enabled: !!server && hasCap(profile, 'canViewCustomUpdates'),
   });
   // Older installations returned an object for an empty task list. Keep the
   // detail view usable while those instances are being upgraded.
@@ -361,13 +365,13 @@ export function ServerDetailPage() {
   const { data: agentStatus, refetch: refetchAgent } = useQuery({
     queryKey: ['server', id, 'agent'],
     queryFn: () => api.getAgentStatus(id) as unknown as Promise<AgentStatus>,
-    enabled: !!id && agentEnabled && profile?.role === 'admin',
+    enabled: !!server && agentEnabled && profile?.role === 'admin',
     staleTime: 30_000,
   });
   const { data: allAlerts } = useQuery({
     queryKey: ['alerts', 'open'],
     queryFn: () => api.getAlerts('open') as unknown as Promise<ResourceAlert[]>,
-    enabled: !!id,
+    enabled: !!server,
     staleTime: 30_000,
   });
   const serverAlerts = useMemo(() => {
@@ -377,7 +381,7 @@ export function ServerDetailPage() {
   const { data: alertSettings } = useQuery({
     queryKey: ['server', id, 'alertSettings'],
     queryFn: () => api.getServerAlertSettings(id) as unknown as Promise<AlertSettings>,
-    enabled: !!id,
+    enabled: !!server,
     staleTime: 30_000,
   });
 
@@ -405,7 +409,7 @@ export function ServerDetailPage() {
   // ── Image update cache ──────────────────────────────────────
   const [imageUpdates, setImageUpdates] = useState<Record<string, string>>({});
   useEffect(() => {
-    if (!id || !hasCap(profile, 'canViewDocker')) return;
+    if (!server || !hasCap(profile, 'canViewDocker')) return;
     api.getCachedImageUpdates(id).then((r: unknown) => {
       const res = r as { results?: { image: string; status: string }[] };
       if (res?.results?.length) {
