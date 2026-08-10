@@ -149,6 +149,37 @@ router.get('/subnets/:id/reservations', guard('canViewServers'), (req, res) => {
   res.json(rows);
 });
 
+// A prefix is operated as one address space. Return single IP reservations and
+// larger reservations together so clients do not have to switch between two
+// unrelated lists just to understand what is already allocated.
+router.get('/subnets/:id/allocations', guard('canViewServers'), (req, res) => {
+  const subnet = db.db.prepare('SELECT id FROM ipam_subnets WHERE id = ?').get(req.params.id);
+  if (!subnet) return res.status(404).json({ error: 'Netzwerk nicht gefunden.' });
+  const addresses = db.db.prepare(`
+    SELECT reservation.*, server.name AS server_name
+    FROM ipam_reservations reservation
+    LEFT JOIN servers server ON server.id = reservation.server_id
+    WHERE reservation.subnet_id = ?
+  `).all(subnet.id).map(row => ({
+    ...row,
+    kind: 'address',
+    start_address: row.address,
+    end_address: row.address,
+    address_count: 1,
+  }));
+  const ranges = getRanges(subnet.id).map(row => {
+    const start = ipv4(row.start_address); const end = ipv4(row.end_address);
+    return {
+      ...row,
+      kind: 'range',
+      address_count: start === null || end === null ? 0 : end - start + 1,
+    };
+  });
+  const rows = [...addresses, ...ranges];
+  rows.sort((left, right) => (ipv4(left.start_address) ?? 0) - (ipv4(right.start_address) ?? 0));
+  res.json(rows);
+});
+
 router.get('/subnets/:id/children', guard('canViewServers'), (req, res) => {
   const subnet = db.db.prepare('SELECT * FROM ipam_subnets WHERE id = ?').get(req.params.id);
   if (!subnet) return res.status(404).json({ error: 'Netzwerk nicht gefunden.' });
