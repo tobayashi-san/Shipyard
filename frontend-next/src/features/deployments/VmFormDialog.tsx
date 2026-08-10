@@ -1,0 +1,211 @@
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowDown, ArrowUp, Plus, RefreshCw, Server, X } from 'lucide-react';
+import { api, apiFetch } from '@/lib/api';
+import { showToast } from '@/lib/toast';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+
+interface CatalogItem { name?: string; id?: string; vm_id?: string | number; online?: boolean; active?: boolean }
+interface Catalog { node?: string; next_vm_id?: string | number; nodes?: CatalogItem[]; templates?: CatalogItem[]; datastores?: CatalogItem[]; bridges?: CatalogItem[] }
+interface VmTemplate { id: string; name: string; config: Partial<VmForm> & { post_deploy_playbooks?: string[] } }
+interface Playbook { filename?: string; name?: string; description?: string }
+
+interface VmForm {
+  name: string;
+  node_name: string;
+  vm_id: string;
+  clone_vm_id: string;
+  clone_retries: string;
+  disk_datastore: string;
+  disk_interface: string;
+  disk_size_gb: string;
+  disk_discard: string;
+  cpu_cores: string;
+  cpu_type: string;
+  memory_mb: string;
+  agent_enabled: boolean;
+  bridge: string;
+  vlan_id: string;
+  ipv4_mode: 'dhcp' | 'static';
+  ipv4_address: string;
+  ipv4_prefix: string;
+  ipv4_gateway: string;
+  username: string;
+  ssh_public_key_variable: string;
+  started: boolean;
+}
+
+const initialForm: VmForm = {
+  name: '', node_name: '', vm_id: '', clone_vm_id: '9000', clone_retries: '3',
+  disk_datastore: '', disk_interface: 'scsi0', disk_size_gb: '40', disk_discard: 'on',
+  cpu_cores: '2', cpu_type: 'host', memory_mb: '4096', agent_enabled: true,
+  bridge: 'vmbr0', vlan_id: '', ipv4_mode: 'dhcp', ipv4_address: '', ipv4_prefix: '24', ipv4_gateway: '',
+  username: 'ubuntu', ssh_public_key_variable: 'ssh_public_key', started: true,
+};
+
+function selectItems(catalog: Catalog | undefined, key: 'nodes' | 'templates' | 'datastores' | 'bridges') {
+  return Array.isArray(catalog?.[key]) ? catalog![key]! : [];
+}
+
+export function VmFormDialog({ workspaceId, open, onOpenChange }: { workspaceId: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const queryClient = useQueryClient();
+  const [form, setForm] = useState<VmForm>(initialForm);
+  const [postDeploy, setPostDeploy] = useState<string[]>([]);
+  const [templateId, setTemplateId] = useState('');
+  const [templateName, setTemplateName] = useState('');
+  const catalogQuery = useQuery({
+    queryKey: ['opentofu', 'workspace', workspaceId, 'catalog', form.node_name],
+    queryFn: () => apiFetch<Catalog>(`/plugin/opentofu/workspaces/${encodeURIComponent(workspaceId)}/proxmox-catalog${form.node_name ? `?node=${encodeURIComponent(form.node_name)}` : ''}`),
+    enabled: open,
+    staleTime: 30_000,
+  });
+  const templatesQuery = useQuery({ queryKey: ['opentofu', 'workspace', workspaceId, 'vm-templates'], queryFn: () => apiFetch<{ templates?: VmTemplate[] }>(`/plugin/opentofu/workspaces/${encodeURIComponent(workspaceId)}/proxmox-vm-templates`), enabled: open, staleTime: 30_000 });
+  const playbooksQuery = useQuery({ queryKey: ['playbooks'], queryFn: () => api.getPlaybooks() as Promise<Playbook[]>, enabled: open, staleTime: 60_000 });
+  const templates = Array.isArray(templatesQuery.data?.templates) ? templatesQuery.data!.templates! : [];
+  const playbooks = useMemo(() => Array.isArray(playbooksQuery.data) ? playbooksQuery.data.filter(item => item.filename) : [], [playbooksQuery.data]);
+
+  useEffect(() => {
+    if (!open) return;
+    setForm(initialForm);
+    setPostDeploy([]);
+    setTemplateId('');
+    setTemplateName('');
+  }, [open]);
+
+  useEffect(() => {
+    const catalog = catalogQuery.data;
+    if (!catalog || !open) return;
+    setForm(current => ({
+      ...current,
+      node_name: current.node_name || catalog.node || selectItems(catalog, 'nodes')[0]?.name || '',
+      vm_id: current.vm_id || String(catalog.next_vm_id || ''),
+      disk_datastore: current.disk_datastore || selectItems(catalog, 'datastores')[0]?.id || '',
+      bridge: current.bridge === 'vmbr0' ? (selectItems(catalog, 'bridges').find(item => item.name === 'vmbr0')?.name || selectItems(catalog, 'bridges')[0]?.name || current.bridge) : current.bridge,
+      clone_vm_id: current.clone_vm_id === '9000' && selectItems(catalog, 'templates')[0]?.vm_id ? String(selectItems(catalog, 'templates')[0].vm_id) : current.clone_vm_id,
+    }));
+  }, [catalogQuery.data, open]);
+
+  const payload = () => ({
+    ...form,
+    vm_id: form.vm_id.trim(), vlan_id: form.vlan_id.trim(),
+    ipv4_address: form.ipv4_mode === 'dhcp' ? 'dhcp' : form.ipv4_address.trim(),
+    ipv4_prefix: form.ipv4_mode === 'dhcp' ? null : form.ipv4_prefix.trim(),
+    ipv4_gateway: form.ipv4_mode === 'dhcp' ? '' : form.ipv4_gateway.trim(),
+    post_deploy_playbooks: postDeploy,
+  });
+  const saveMutation = useMutation({
+    mutationFn: () => apiFetch(`/plugin/opentofu/workspaces/${encodeURIComponent(workspaceId)}/proxmox-vms`, { method: 'POST', body: payload() }),
+    onSuccess: () => {
+      showToast('VM-Definition gespeichert. OpenTofu-Dateien wurden aktualisiert.', 'success');
+      void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspace', workspaceId] });
+      void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspaces'] });
+      onOpenChange(false);
+    },
+    onError: (error: Error) => showToast(error.message, 'error'),
+  });
+  const saveTemplateMutation = useMutation({
+    mutationFn: () => apiFetch(`/plugin/opentofu/workspaces/${encodeURIComponent(workspaceId)}/proxmox-vm-templates`, { method: 'POST', body: { name: templateName.trim(), config: payload() } }),
+    onSuccess: () => {
+      showToast('VM-Vorlage gespeichert.', 'success');
+      setTemplateName('');
+      void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspace', workspaceId, 'vm-templates'] });
+    },
+    onError: (error: Error) => showToast(error.message, 'error'),
+  });
+
+  const update = <K extends keyof VmForm>(key: K, value: VmForm[K]) => setForm(current => ({ ...current, [key]: value }));
+  const applyTemplate = (nextId: string) => {
+    setTemplateId(nextId);
+    const template = templates.find(item => item.id === nextId);
+    if (!template) return;
+    const config = template.config || {};
+    const address = String(config.ipv4_address || 'dhcp');
+    const [ip, prefix] = address.split('/', 2);
+    setForm(current => ({
+      ...current,
+      ...config,
+      name: current.name,
+      vm_id: current.vm_id,
+      ipv4_mode: address === 'dhcp' ? 'dhcp' : 'static',
+      ipv4_address: address === 'dhcp' ? '' : ip,
+      ipv4_prefix: address === 'dhcp' ? current.ipv4_prefix : prefix || String(config.ipv4_prefix || '24'),
+      ipv4_gateway: String(config.ipv4_gateway || ''),
+    }));
+    setPostDeploy(Array.isArray(config.post_deploy_playbooks) ? config.post_deploy_playbooks : []);
+    showToast(`Vorlage „${template.name}“ übernommen.`, 'success');
+  };
+  const togglePlaybook = (filename: string, checked: boolean) => setPostDeploy(current => checked ? [...current, filename] : current.filter(item => item !== filename));
+  const movePlaybook = (index: number, direction: -1 | 1) => setPostDeploy(current => {
+    const next = [...current]; const target = index + direction;
+    if (target < 0 || target >= next.length) return current;
+    [next[index], next[target]] = [next[target], next[index]];
+    return next;
+  });
+  const catalog = catalogQuery.data;
+
+  return <Dialog open={open} onOpenChange={onOpenChange}>
+    <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-4xl overflow-y-auto">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2"><Server className="h-5 w-5" />Proxmox-VM hinzufügen</DialogTitle>
+        <DialogDescription>Fleet generiert die benötigten OpenTofu-Dateien; sensible Proxmox-Werte bleiben als Workspace-Variablen gespeichert.</DialogDescription>
+      </DialogHeader>
+      <form className="space-y-6" onSubmit={event => { event.preventDefault(); saveMutation.mutate(); }}>
+        <section className="rounded-lg border bg-muted/20 p-4">
+          <div className="mb-3 flex items-center justify-between gap-3"><div><h3 className="text-sm font-semibold">VM-Vorlage</h3><p className="mt-0.5 text-xs text-muted-foreground">Standardwerte übernehmen; Name und Ziel-VM-ID bleiben individuell.</p></div></div>
+          <select value={templateId} onChange={event => applyTemplate(event.target.value)} className="h-9 w-full rounded-md border bg-background px-3 text-sm" aria-label="VM-Vorlage auswählen"><option value="">Keine Vorlage verwenden</option>{templates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select>
+          <div className="mt-3 flex flex-col gap-2 border-t pt-3 sm:flex-row"><Input value={templateName} onChange={event => setTemplateName(event.target.value)} placeholder="Aktuelle Eingaben als Vorlage speichern…" maxLength={63} /><Button type="button" variant="outline" disabled={!templateName.trim() || saveTemplateMutation.isPending} onClick={() => saveTemplateMutation.mutate()}>{saveTemplateMutation.isPending ? <RefreshCw className="animate-spin" /> : <Plus />}Vorlage speichern</Button></div>
+        </section>
+
+        <section className="space-y-3">
+          <h3 className="text-sm font-semibold">Identität & Vorlage</h3>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Field label="VM-Name"><Input required value={form.name} onChange={event => update('name', event.target.value)} placeholder="hr01-app-erpnext" pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,62}" /></Field>
+            <Field label="Proxmox-Node"><Select value={form.node_name} onChange={value => update('node_name', value)} options={selectItems(catalog, 'nodes').map(item => ({ value: item.name || '', label: `${item.name || ''}${item.online === false ? ' (offline)' : ''}` }))} /></Field>
+            <Field label="Ziel-VM-ID" hint="Nächste freie ID ist vorausgefüllt."><Input value={form.vm_id} onChange={event => update('vm_id', event.target.value)} inputMode="numeric" type="number" min="100" /></Field>
+            <Field label="Template"><Select value={form.clone_vm_id} onChange={value => update('clone_vm_id', value)} options={selectItems(catalog, 'templates').map(item => ({ value: String(item.vm_id || ''), label: `${item.name || 'Template'} (VM ${item.vm_id || '?'})` }))} /></Field>
+            <Field label="Clone-Versuche"><Input value={form.clone_retries} onChange={event => update('clone_retries', event.target.value)} type="number" min="0" max="10" /></Field>
+          </div>
+        </section>
+
+        <section className="space-y-3 border-t pt-5"><h3 className="text-sm font-semibold">Compute & Storage</h3><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Field label="Datastore"><Select value={form.disk_datastore} onChange={value => update('disk_datastore', value)} options={selectItems(catalog, 'datastores').map(item => ({ value: item.id || '', label: item.id || '' }))} /></Field>
+          <Field label="Disk-Grösse (GB)"><Input required value={form.disk_size_gb} onChange={event => update('disk_size_gb', event.target.value)} type="number" min="1" /></Field>
+          <Field label="Disk-Interface"><Input required value={form.disk_interface} onChange={event => update('disk_interface', event.target.value)} /></Field>
+          <Field label="CPU-Kerne"><Input required value={form.cpu_cores} onChange={event => update('cpu_cores', event.target.value)} type="number" min="1" /></Field>
+          <Field label="CPU-Typ"><Input required value={form.cpu_type} onChange={event => update('cpu_type', event.target.value)} /></Field>
+          <Field label="Arbeitsspeicher (MB)"><Input required value={form.memory_mb} onChange={event => update('memory_mb', event.target.value)} type="number" min="256" /></Field>
+        </div></section>
+
+        <section className="space-y-3 border-t pt-5"><h3 className="text-sm font-semibold">Netzwerk & Gastzugang</h3><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Field label="Bridge"><Select value={form.bridge} onChange={value => update('bridge', value)} options={selectItems(catalog, 'bridges').map(item => ({ value: item.name || '', label: `${item.name || ''}${item.active === false ? ' (inaktiv)' : ''}` }))} /></Field>
+          <Field label="VLAN-ID (optional)"><Input value={form.vlan_id} onChange={event => update('vlan_id', event.target.value)} type="number" min="1" max="4094" /></Field>
+          <Field label="IP-Konfiguration"><select value={form.ipv4_mode} onChange={event => update('ipv4_mode', event.target.value as 'dhcp' | 'static')} className="h-9 w-full rounded-md border bg-background px-3 text-sm"><option value="dhcp">DHCP</option><option value="static">Statisch</option></select></Field>
+          {form.ipv4_mode === 'static' && <><Field label="IPv4-Adresse"><Input required value={form.ipv4_address} onChange={event => update('ipv4_address', event.target.value)} placeholder="10.20.1.20" inputMode="decimal" /></Field><Field label="Präfix"><Input required value={form.ipv4_prefix} onChange={event => update('ipv4_prefix', event.target.value)} type="number" min="0" max="32" /></Field><Field label="Gateway (optional)"><Input value={form.ipv4_gateway} onChange={event => update('ipv4_gateway', event.target.value)} placeholder="10.20.1.1" inputMode="decimal" /></Field></>}
+          <Field label="Gastbenutzer"><Input required value={form.username} onChange={event => update('username', event.target.value)} /></Field>
+          <Field label="SSH-Key-Variable" hint="Leer lassen, um keinen Key per Cloud-Init zu setzen."><Input value={form.ssh_public_key_variable} onChange={event => update('ssh_public_key_variable', event.target.value)} /></Field>
+        </div></section>
+
+        <section className="space-y-3 border-t pt-5"><div><h3 className="text-sm font-semibold">Post-Deploy-Workflows</h3><p className="mt-0.5 text-xs text-muted-foreground">Nach dem erfolgreichen Apply führt Fleet die markierten Playbooks in dieser Reihenfolge aus.</p></div>
+          <div className="grid gap-4 lg:grid-cols-2"><div className="rounded-md border"><div className="border-b px-3 py-2 text-xs font-medium text-muted-foreground">Verfügbare Playbooks</div><div className="max-h-48 overflow-y-auto p-2">{playbooks.length ? playbooks.map(playbook => { const filename = playbook.filename!; return <label key={filename} className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 hover:bg-accent"><input type="checkbox" className="mt-0.5" checked={postDeploy.includes(filename)} onChange={event => togglePlaybook(filename, event.target.checked)} /><span className="min-w-0"><span className="block text-sm">{filename}</span>{playbook.description && <span className="block truncate text-xs text-muted-foreground">{playbook.description}</span>}</span></label>; }) : <p className="p-2 text-sm text-muted-foreground">Keine Playbooks verfügbar.</p>}</div></div>
+          <div className="rounded-md border"><div className="border-b px-3 py-2 text-xs font-medium text-muted-foreground">Ausführungsreihenfolge</div><div className="min-h-16 space-y-1 p-2">{postDeploy.length ? postDeploy.map((filename, index) => <div key={filename} className="flex items-center gap-2 rounded-md bg-muted/50 px-2 py-1.5"><span className="w-5 text-center text-xs font-mono text-muted-foreground">{index + 1}</span><span className="min-w-0 flex-1 truncate text-sm">{filename}</span><Button type="button" variant="ghost" size="icon" className="h-7 w-7" disabled={index === 0} onClick={() => movePlaybook(index, -1)} aria-label="Nach oben"><ArrowUp className="h-3.5 w-3.5" /></Button><Button type="button" variant="ghost" size="icon" className="h-7 w-7" disabled={index === postDeploy.length - 1} onClick={() => movePlaybook(index, 1)} aria-label="Nach unten"><ArrowDown className="h-3.5 w-3.5" /></Button><Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => togglePlaybook(filename, false)} aria-label="Entfernen"><X className="h-3.5 w-3.5" /></Button></div>) : <p className="p-2 text-sm text-muted-foreground">Keine Workflows ausgewählt.</p>}</div></div></div>
+        </section>
+
+        <div className="flex flex-wrap gap-5 border-t pt-5 text-sm"><label className="flex items-center gap-2"><input type="checkbox" checked={form.agent_enabled} onChange={event => update('agent_enabled', event.target.checked)} />QEMU Guest Agent aktivieren</label><label className="flex items-center gap-2"><input type="checkbox" checked={form.started} onChange={event => update('started', event.target.checked)} />VM nach dem Deploy starten</label></div>
+        {catalogQuery.isError && <p className="text-sm text-destructive">Proxmox-Inventar konnte nicht geladen werden. Die vorhandenen Formularwerte können dennoch verwendet werden.</p>}
+        <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Abbrechen</Button><Button type="submit" disabled={saveMutation.isPending}>{saveMutation.isPending ? <RefreshCw className="animate-spin" /> : <Plus />}VM-Definition speichern</Button></DialogFooter>
+      </form>
+    </DialogContent>
+  </Dialog>;
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  return <div className="min-w-0 space-y-1.5"><Label>{label}</Label>{children}{hint && <p className="text-xs text-muted-foreground">{hint}</p>}</div>;
+}
+
+function Select({ value, onChange, options }: { value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }> }) {
+  const allOptions = value && !options.some(option => option.value === value) ? [{ value, label: `${value} (aktuell)` }, ...options] : options;
+  return <select required value={value} onChange={event => onChange(event.target.value)} className="h-9 w-full rounded-md border bg-background px-3 text-sm"><option value="" disabled>{options.length ? 'Auswählen…' : 'Wird geladen…'}</option>{allOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>;
+}

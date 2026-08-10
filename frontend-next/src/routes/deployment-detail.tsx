@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ArrowRight, CheckCircle2, Clock3, Cpu, FileCode2, HardDrive, History, MemoryStick, Play, RefreshCw, Server, Settings2, Workflow } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle2, Clock3, Cpu, FileCode2, HardDrive, History, MemoryStick, Play, Plus, RefreshCw, Server, Settings2, Trash2, Workflow } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/ui/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
+import { VmFormDialog } from '@/features/deployments/VmFormDialog';
 
 interface Workspace { id: string; name: string; path?: string; description?: string }
 interface Run { id: string; action?: string; status?: string; started_at?: string; completed_at?: string }
@@ -28,6 +29,14 @@ interface Vm {
   post_deploy_playbooks?: string[];
 }
 interface VmsResponse { vms?: Vm[] }
+interface VmTemplateConfig {
+  cpu_cores?: string | number;
+  memory_mb?: string | number;
+  disk_size_gb?: string | number;
+  clone_vm_id?: string | number;
+}
+interface VmTemplate { id: string; name: string; config?: VmTemplateConfig }
+interface VmTemplatesResponse { templates?: VmTemplate[] }
 
 function formatDate(value?: string) {
   if (!value) return '—';
@@ -52,11 +61,15 @@ export function DeploymentDetailPage() {
   const id = params.id || '';
   const queryClient = useQueryClient();
   const [confirmApply, setConfirmApply] = useState(false);
+  const [vmDialogOpen, setVmDialogOpen] = useState(false);
+  const [templateToDelete, setTemplateToDelete] = useState<VmTemplate | null>(null);
   const workspacesQuery = useQuery({ queryKey: ['opentofu', 'workspaces'], queryFn: () => apiFetch<Workspace[]>('/plugin/opentofu/workspaces') });
   const workspace = (Array.isArray(workspacesQuery.data) ? workspacesQuery.data : []).find(item => item.id === id);
   const runsQuery = useQuery({ queryKey: ['opentofu', 'workspace', id, 'runs'], queryFn: () => apiFetch<RunsResponse>(`/plugin/opentofu/workspaces/${encodeURIComponent(id)}/runs?page_size=8`), enabled: Boolean(id), refetchInterval: query => query.state.data?.items?.some(run => run.status === 'running') ? 2_500 : false });
   const vmsQuery = useQuery({ queryKey: ['opentofu', 'workspace', id, 'vms'], queryFn: () => apiFetch<VmsResponse>(`/plugin/opentofu/workspaces/${encodeURIComponent(id)}/proxmox-vms`), enabled: Boolean(id) });
+  const templatesQuery = useQuery({ queryKey: ['opentofu', 'workspace', id, 'vm-templates'], queryFn: () => apiFetch<VmTemplatesResponse>(`/plugin/opentofu/workspaces/${encodeURIComponent(id)}/proxmox-vm-templates`), enabled: Boolean(id) });
   const vms = Array.isArray(vmsQuery.data?.vms) ? vmsQuery.data!.vms! : [];
+  const vmTemplates = Array.isArray(templatesQuery.data?.templates) ? templatesQuery.data!.templates! : [];
   const runs = Array.isArray(runsQuery.data?.items) ? runsQuery.data!.items! : [];
 
   const runMutation = useMutation({
@@ -73,6 +86,15 @@ export function DeploymentDetailPage() {
     void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspace', id] });
     void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspaces'] });
   };
+  const deleteTemplateMutation = useMutation({
+    mutationFn: (templateId: string) => apiFetch(`/plugin/opentofu/workspaces/${encodeURIComponent(id)}/proxmox-vm-templates/${encodeURIComponent(templateId)}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      showToast('VM-Vorlage gelöscht.', 'success');
+      setTemplateToDelete(null);
+      void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspace', id, 'vm-templates'] });
+    },
+    onError: (error: Error) => showToast(error.message, 'error'),
+  });
 
   if (workspacesQuery.isLoading) return <div className="space-y-4"><Skeleton className="h-10 w-72" /><Skeleton className="h-60 w-full" /></div>;
   if (!workspace) return <div className="space-y-4"><PageHeader title={t('deploy.title')} back={<Button asChild size="icon" variant="ghost"><Link to="/deployments"><ArrowLeft /></Link></Button>} /><Card><EmptyState icon={<Workflow className="h-5 w-5" />} title="Deployment nicht gefunden" description="Der Workspace wurde gelöscht oder ist für deine Rolle nicht freigegeben." action={<Button asChild variant="outline"><Link to="/deployments">{t('deploy.title')}</Link></Button>} /></Card></div>;
@@ -104,7 +126,7 @@ export function DeploymentDetailPage() {
 
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.85fr)]">
       <Card>
-        <CardHeader className="flex-row items-center justify-between border-b"><CardTitle className="flex items-center gap-2 text-base"><Server className="h-4 w-4" />Proxmox-VMs</CardTitle><StatusBadge tone="neutral">{vms.length}</StatusBadge></CardHeader>
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b"><CardTitle className="flex items-center gap-2 text-base"><Server className="h-4 w-4" />Proxmox-VMs</CardTitle><div className="flex items-center gap-2"><StatusBadge tone="neutral">{vms.length}</StatusBadge><Button type="button" size="sm" onClick={() => setVmDialogOpen(true)}><Plus />VM hinzufügen</Button></div></CardHeader>
         <CardContent className="p-0">
           {vmsQuery.isLoading ? <div className="space-y-3 p-4"><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /></div> : vms.length === 0 ? <EmptyState compact icon={<Server className="h-5 w-5" />} title="Keine VM-Definitionen" description="Füge die VM im erweiterten Workspace-Bereich hinzu." /> : <div className="overflow-x-auto"><table className="w-full min-w-[700px] text-sm"><thead className="border-b bg-muted/30 text-left text-xs text-muted-foreground"><tr><th className="px-4 py-3 font-medium">VM</th><th className="px-4 py-3 font-medium">Node</th><th className="px-4 py-3 font-medium">VM-ID</th><th className="px-4 py-3 font-medium">vCPU</th><th className="px-4 py-3 font-medium">RAM</th><th className="px-4 py-3 font-medium">Disk</th><th className="px-4 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y">{vms.map(vm => <tr key={vm.id} className="hover:bg-muted/20"><td className="px-4 py-3 font-medium">{vm.name}<div className="mt-0.5 text-xs text-muted-foreground">{vm.post_deploy_playbooks?.length ? `${vm.post_deploy_playbooks.length} Post-Deploy-Schritte` : 'Keine Post-Deploy-Schritte'}</div></td><td className="px-4 py-3 font-mono text-xs">{vm.node_name || '—'}</td><td className="px-4 py-3 font-mono text-xs">{vm.vm_id ?? 'Automatisch'}</td><td className="px-4 py-3 tabular-nums">{vm.cpu_cores || '—'}</td><td className="px-4 py-3 tabular-nums">{vm.memory_mb ? `${vm.memory_mb} MB` : '—'}</td><td className="px-4 py-3 tabular-nums">{vm.disk_size_gb ? `${vm.disk_size_gb} GB` : '—'}</td><td className="px-4 py-3"><StatusBadge tone={vm.started ? 'success' : 'muted'} dot>{vm.started ? 'Gestartet' : 'Aus'}</StatusBadge></td></tr>)}</tbody><tfoot className="border-t bg-muted/20 text-sm"><tr><td className="px-4 py-3 font-medium">Kapazität</td><td /><td /><td className="px-4 py-3 font-mono">{total(vms, 'cpu_cores')}</td><td className="px-4 py-3 font-mono">{total(vms, 'memory_mb')} MB</td><td className="px-4 py-3 font-mono">{total(vms, 'disk_size_gb')} GB</td><td /></tr></tfoot></table></div>}
         </CardContent>
@@ -116,6 +138,18 @@ export function DeploymentDetailPage() {
       </Card>
     </div>
 
+    <Card>
+      <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b">
+        <div><CardTitle className="text-base">VM-Vorlagen</CardTitle><p className="mt-1 text-sm text-muted-foreground">Wiederverwendbare Standardwerte für neue Proxmox-VMs in diesem Deployment.</p></div>
+        <Button type="button" size="sm" variant="outline" onClick={() => setVmDialogOpen(true)}><Plus />Vorlage anlegen</Button>
+      </CardHeader>
+      <CardContent className="p-0">
+        {templatesQuery.isLoading ? <div className="space-y-3 p-4"><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /></div> : vmTemplates.length === 0 ? <EmptyState compact icon={<Server className="h-5 w-5" />} title="Keine VM-Vorlagen" description="Konfiguriere eine VM im Formular und speichere ihre Werte als Vorlage." /> : <ul className="divide-y">{vmTemplates.map(template => <li key={template.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3"><div className="min-w-0 flex-1"><div className="font-medium">{template.name}</div><div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground"><span>{template.config?.cpu_cores || '—'} vCPU</span><span>{template.config?.memory_mb || '—'} MB RAM</span><span>{template.config?.disk_size_gb || '—'} GB Disk</span><span>{template.config?.clone_vm_id ? `Template ${template.config.clone_vm_id}` : 'Kein Clone-Template'}</span></div></div><Button type="button" size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setTemplateToDelete(template)} aria-label={`Vorlage ${template.name} löschen`}><Trash2 className="h-4 w-4" /></Button></li>)}</ul>}
+      </CardContent>
+    </Card>
+
     <ConfirmDialog open={confirmApply} onOpenChange={setConfirmApply} title="Änderungen anwenden?" description="OpenTofu wendet den zuletzt berechneten gewünschten Zustand auf die Proxmox-Umgebung an. Prüfe den Plan vorher." confirmLabel="Anwenden" cancelLabel="Abbrechen" variant="warning" onConfirm={() => runMutation.mutate('apply')} isPending={runMutation.isPending} />
+    <ConfirmDialog open={Boolean(templateToDelete)} onOpenChange={open => !open && setTemplateToDelete(null)} title="VM-Vorlage löschen?" description={templateToDelete ? `Die Vorlage „${templateToDelete.name}“ wird gelöscht. Bereits definierte VMs bleiben unverändert.` : ''} confirmLabel="Vorlage löschen" cancelLabel="Abbrechen" variant="destructive" onConfirm={() => templateToDelete && deleteTemplateMutation.mutate(templateToDelete.id)} isPending={deleteTemplateMutation.isPending} />
+    <VmFormDialog workspaceId={workspace.id} open={vmDialogOpen} onOpenChange={setVmDialogOpen} />
   </div>;
 }
