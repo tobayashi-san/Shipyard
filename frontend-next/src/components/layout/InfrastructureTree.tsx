@@ -27,7 +27,7 @@ function StatusDot({ status }: { status?: string }) {
 interface TreeProps { compact?: boolean; onNavigate?: () => void; }
 interface ProxmoxNode { name?: string; status?: string }
 interface ProxmoxVm { name?: string; node_name?: string; vm_id?: number | string; status?: string }
-interface ProxmoxCluster { id?: string; endpoint?: string; nodes?: ProxmoxNode[]; vms?: ProxmoxVm[] }
+interface ProxmoxCluster { id?: string; endpoint?: string; connections?: Array<{ name?: string }>; nodes?: ProxmoxNode[]; vms?: ProxmoxVm[] }
 interface InfrastructureResponse { clusters?: ProxmoxCluster[] }
 
 export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
@@ -129,7 +129,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
     const open = !collapsed.has(clusterId);
     const nodes = Array.isArray(cluster.nodes) ? cluster.nodes : [];
     const vms = Array.isArray(cluster.vms) ? cluster.vms : [];
-    const clusterName = cluster.endpoint || 'Proxmox-Cluster';
+    const clusterName = cluster.connections?.map(connection => connection.name).filter(Boolean).join(', ') || cluster.endpoint || 'Proxmox-Cluster';
     return <div key={clusterId}>
       <button type="button" onClick={() => toggle(clusterId)} className="group flex w-full min-w-0 items-center gap-1.5 rounded-sm px-2 py-1.5 text-left text-xs text-foreground hover:bg-accent/60">
         {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}

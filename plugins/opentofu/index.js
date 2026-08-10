@@ -6,6 +6,7 @@ const { randomUUID } = require('crypto');
 const log = require('../../server/utils/logger').child('plugins:opentofu');
 const ansibleRunner = require('../../server/services/ansible-runner');
 const { getPermissions, can, canAccessPlaybook, filterServers } = require('../../server/utils/permissions');
+const cryptoUtil = require('../../server/utils/crypto');
 
 let _gitSync = null;
 function getGitSync() {
@@ -1079,12 +1080,12 @@ async function _fetchGitHubReleases() {
   });
 }
 
-function readProxmoxConnection(envVars = {}) {
-  const endpoint = String(envVars.TF_VAR_proxmox_endpoint || envVars.PROXMOX_ENDPOINT || '').trim();
-  const apiToken = String(envVars.TF_VAR_proxmox_api_token || envVars.PROXMOX_API_TOKEN || '').trim();
-  const insecureRaw = String(envVars.TF_VAR_proxmox_insecure || envVars.PROXMOX_INSECURE || '').trim().toLowerCase();
+function createProxmoxConnection(endpointInput, apiTokenInput, insecureInput = false) {
+  const endpoint = String(endpointInput || '').trim();
+  const apiToken = String(apiTokenInput || '').trim();
+  const insecureRaw = String(insecureInput || '').trim().toLowerCase();
   if (!endpoint || !apiToken) {
-    throw new Error('Proxmox API ist nicht konfiguriert. Setze unter Variablen TF_VAR_proxmox_endpoint und TF_VAR_proxmox_api_token.');
+    throw new Error('Proxmox API-Endpunkt oder API-Token sind nicht konfiguriert.');
   }
   let base;
   try { base = new URL(endpoint); }
@@ -1095,8 +1096,16 @@ function readProxmoxConnection(envVars = {}) {
   return {
     base,
     apiToken,
-    insecure: ['1', 'true', 'yes', 'on'].includes(insecureRaw),
+    insecure: insecureInput === true || ['1', 'true', 'yes', 'on'].includes(insecureRaw),
   };
+}
+
+function readProxmoxConnection(envVars = {}) {
+  return createProxmoxConnection(
+    envVars.TF_VAR_proxmox_endpoint || envVars.PROXMOX_ENDPOINT,
+    envVars.TF_VAR_proxmox_api_token || envVars.PROXMOX_API_TOKEN,
+    envVars.TF_VAR_proxmox_insecure || envVars.PROXMOX_INSECURE,
+  );
 }
 
 function proxmoxApiUrl(connection, apiPath) {
@@ -1165,11 +1174,29 @@ function register({ router, db, broadcast }) {
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `).run();
+  db.db.prepare(`
+    CREATE TABLE IF NOT EXISTS tofu_proxmox_connections (
+      id             TEXT PRIMARY KEY,
+      environment_id TEXT NOT NULL DEFAULT 'default',
+      name           TEXT NOT NULL,
+      endpoint       TEXT NOT NULL,
+      api_token      TEXT NOT NULL,
+      insecure       INTEGER NOT NULL DEFAULT 0,
+      ssh_public_key TEXT NOT NULL DEFAULT '',
+      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(environment_id, name)
+    )
+  `).run();
   // Existing Fleet installations get the same default environment as legacy
   // servers. The guards keep this migration safe for fresh and old databases.
   try { db.db.prepare("CREATE TABLE IF NOT EXISTS environments (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TEXT DEFAULT (datetime('now'))) ").run(); } catch {}
   try { db.db.prepare("INSERT OR IGNORE INTO environments (id, name) VALUES ('default', 'Standardumgebung')").run(); } catch {}
   try { db.db.prepare("ALTER TABLE tofu_workspaces ADD COLUMN environment_id TEXT DEFAULT 'default'").run(); } catch {}
+  // A deployment may consume an environment-level Proxmox source. Keeping the
+  // relation on the workspace (instead of copying a token into it) makes one
+  // cluster usable by many deployments and keeps credentials in one place.
+  try { db.db.prepare('ALTER TABLE tofu_workspaces ADD COLUMN proxmox_connection_id TEXT').run(); } catch {}
   try { db.db.prepare("UPDATE tofu_workspaces SET environment_id = 'default' WHERE environment_id IS NULL OR environment_id = ''").run(); } catch {}
 
   db.db.prepare(`
@@ -1537,7 +1564,29 @@ override.tf.json
     if (!isAllowedPath(row.path)) return null;
     let envVars = {};
     try { envVars = JSON.parse(row.env_vars || '{}'); } catch {}
-    return { ...row, env_vars: sanitizeEnvVars(envVars) };
+    const workspace = { ...row, env_vars: sanitizeEnvVars(envVars) };
+    if (!workspace.proxmox_connection_id) return workspace;
+    const source = db.db.prepare('SELECT * FROM tofu_proxmox_connections WHERE id = ? AND environment_id = ?')
+      .get(workspace.proxmox_connection_id, workspace.environment_id || 'default');
+    if (!source) return workspace;
+    try {
+      const connection = readSavedProxmoxConnection(source);
+      const sshPublicKey = cryptoUtil.decrypt(String(source.ssh_public_key || ''));
+      return {
+        ...workspace,
+        proxmox_connection: publicProxmoxConnection(source),
+        env_vars: {
+          ...workspace.env_vars,
+          TF_VAR_proxmox_endpoint: connection.base.toString(),
+          TF_VAR_proxmox_api_token: connection.apiToken,
+          TF_VAR_proxmox_insecure: connection.insecure ? 'true' : 'false',
+          ...(sshPublicKey && !String(sshPublicKey).startsWith('enc:') ? { TF_VAR_ssh_public_key: sshPublicKey } : {}),
+        },
+      };
+    } catch (error) {
+      log.warn({ err: error, workspace: workspace.name }, 'Could not resolve Proxmox connection source');
+      return workspace;
+    }
   }
 
   function getProxmoxVms(workspaceId) {
@@ -1858,19 +1907,56 @@ override.tf.json
     return getWorkspaceRows(environmentId).map(workspace => ({ id: workspace.id, name: workspace.name, path: workspace.path }));
   }
 
-  // Build a read-only inventory from every configured Proxmox connection.
-  // Connections are currently stored per deployment, so identical endpoints
-  // are grouped here into one cluster view. No token ever leaves the server.
+  function listProxmoxConnectionRows(environmentId = null) {
+    return environmentId
+      ? db.db.prepare('SELECT * FROM tofu_proxmox_connections WHERE environment_id = ? ORDER BY name COLLATE NOCASE').all(environmentId)
+      : db.db.prepare('SELECT * FROM tofu_proxmox_connections ORDER BY name COLLATE NOCASE').all();
+  }
+
+  function publicProxmoxConnection(row) {
+    return {
+      id: row.id,
+      environment_id: row.environment_id,
+      name: row.name,
+      endpoint: row.endpoint,
+      insecure: Boolean(row.insecure),
+      api_token_configured: Boolean(row.api_token),
+      ssh_public_key_configured: Boolean(row.ssh_public_key),
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+  }
+
+  function readSavedProxmoxConnection(row) {
+    const token = cryptoUtil.decrypt(String(row?.api_token || ''));
+    if (!token || String(token).startsWith('enc:')) throw new Error(`Die Zugangsdaten für Proxmox-Verbindung „${row?.name || 'unbekannt'}“ können nicht gelesen werden.`);
+    return createProxmoxConnection(row.endpoint, token, Boolean(row.insecure));
+  }
+
+  // Build a read-only inventory from environment connections first, then use
+  // legacy deployment credentials as a compatibility fallback. This keeps
+  // infrastructure independent from individual OpenTofu workspaces.
   async function loadProxmoxInfrastructure(environmentId = null) {
     const grouped = new Map();
     const warnings = [];
+    for (const row of listProxmoxConnectionRows(environmentId)) {
+      try {
+        const connection = readSavedProxmoxConnection(row);
+        const key = `${connection.base.origin}${connection.base.pathname.replace(/\/+$/, '')}`;
+        const group = grouped.get(key) || { key, connection, workspaces: [], connections: [] };
+        group.connections.push({ id: row.id, name: row.name });
+        grouped.set(key, group);
+      } catch (error) {
+        warnings.push(error.message || 'Eine Proxmox-Verbindung ist unvollständig.');
+      }
+    }
     for (const row of getAllWorkspaces(environmentId)) {
       const workspace = getWorkspace(row.id);
       if (!workspace) continue;
       try {
         const connection = readProxmoxConnection(workspace.env_vars);
         const key = `${connection.base.origin}${connection.base.pathname.replace(/\/+$/, '')}`;
-        const group = grouped.get(key) || { key, connection, workspaces: [] };
+        const group = grouped.get(key) || { key, connection, workspaces: [], connections: [] };
         group.workspaces.push({ id: workspace.id, name: workspace.name });
         grouped.set(key, group);
       } catch {
@@ -1913,6 +1999,7 @@ override.tf.json
         id: group.key,
         endpoint: group.connection.base.host,
         status: nodes.some(node => node.status === 'online') ? 'online' : 'offline',
+        connections: group.connections,
         deployments: group.workspaces,
         nodes,
         vms,
@@ -2035,15 +2122,73 @@ override.tf.json
     res.json(withStatus);
   });
 
+  // Environment-level Proxmox sources. They are deliberately independent of
+  // a workspace so a cluster can be shown even when no OpenTofu deployment is
+  // attached to it yet.
+  router.get('/proxmox-connections', (req, res) => {
+    const environmentId = String(req.query.environment_id || '').trim();
+    if (environmentId && !db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found' });
+    res.json(listProxmoxConnectionRows(environmentId || null).map(publicProxmoxConnection));
+  });
+
+  router.post('/proxmox-connections', (req, res) => {
+    if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Permission denied' });
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const environmentId = String(body.environment_id || 'default').trim() || 'default';
+    const name = String(body.name || '').trim().slice(0, 80);
+    const endpoint = String(body.endpoint || '').trim();
+    const token = String(body.api_token || '').trim();
+    const sshPublicKey = String(body.ssh_public_key || '').trim();
+    if (!name) return res.status(400).json({ error: 'Connection name is required' });
+    if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found' });
+    try { createProxmoxConnection(endpoint, token, body.insecure === true); } catch (error) { return res.status(400).json({ error: error.message }); }
+    const id = randomUUID();
+    try {
+      db.db.prepare('INSERT INTO tofu_proxmox_connections (id, environment_id, name, endpoint, api_token, insecure, ssh_public_key) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(id, environmentId, name, endpoint, cryptoUtil.encrypt(token), body.insecure === true ? 1 : 0, sshPublicKey ? cryptoUtil.encrypt(sshPublicKey) : '');
+      res.status(201).json(publicProxmoxConnection(db.db.prepare('SELECT * FROM tofu_proxmox_connections WHERE id = ?').get(id)));
+    } catch (error) { res.status(409).json({ error: error.message || 'Connection already exists' }); }
+  });
+
+  router.put('/proxmox-connections/:id', (req, res) => {
+    if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Permission denied' });
+    const existing = db.db.prepare('SELECT * FROM tofu_proxmox_connections WHERE id = ?').get(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Connection not found' });
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const name = body.name === undefined ? existing.name : String(body.name || '').trim().slice(0, 80);
+    const endpoint = body.endpoint === undefined ? existing.endpoint : String(body.endpoint || '').trim();
+    const token = typeof body.api_token === 'string' && body.api_token.trim() ? body.api_token.trim() : null;
+    const insecure = body.insecure === undefined ? Boolean(existing.insecure) : body.insecure === true;
+    if (!name) return res.status(400).json({ error: 'Connection name is required' });
+    try { createProxmoxConnection(endpoint, token || readSavedProxmoxConnection(existing).apiToken, insecure); } catch (error) { return res.status(400).json({ error: error.message }); }
+    const sshKey = typeof body.ssh_public_key === 'string' && body.ssh_public_key.trim() ? cryptoUtil.encrypt(body.ssh_public_key.trim()) : existing.ssh_public_key;
+    db.db.prepare("UPDATE tofu_proxmox_connections SET name = ?, endpoint = ?, api_token = ?, insecure = ?, ssh_public_key = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(name, endpoint, token ? cryptoUtil.encrypt(token) : existing.api_token, insecure ? 1 : 0, sshKey, existing.id);
+    res.json(publicProxmoxConnection(db.db.prepare('SELECT * FROM tofu_proxmox_connections WHERE id = ?').get(existing.id)));
+  });
+
+  router.delete('/proxmox-connections/:id', (req, res) => {
+    if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Permission denied' });
+    const inUse = db.db.prepare('SELECT COUNT(*) AS count FROM tofu_workspaces WHERE proxmox_connection_id = ?').get(req.params.id);
+    if (Number(inUse?.count || 0) > 0) return res.status(409).json({ error: `Diese Plattform-Verbindung wird noch von ${inUse.count} Deployment(s) verwendet. Ordne sie zuerst um oder löse die Verknüpfung.` });
+    const result = db.db.prepare('DELETE FROM tofu_proxmox_connections WHERE id = ?').run(req.params.id);
+    if (!result.changes) return res.status(404).json({ error: 'Connection not found' });
+    res.json({ success: true });
+  });
+
   router.post('/workspaces', (req, res) => {
     const { name, path: wPath, description, env_vars, scaffold } = req.body;
     const environmentId = String(req.body?.environment_id || 'default').trim() || 'default';
+    const proxmoxConnectionId = String(req.body?.proxmox_connection_id || '').trim() || null;
     if (!name || !wPath) return res.status(400).json({ error: 'name and path are required' });
     if (!isAllowedPath(wPath)) return res.status(400).json({ error: WORKSPACE_PATH_ERROR });
     if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found' });
+    if (proxmoxConnectionId && !db.db.prepare('SELECT 1 FROM tofu_proxmox_connections WHERE id = ? AND environment_id = ?').get(proxmoxConnectionId, environmentId)) {
+      return res.status(400).json({ error: 'Die gewählte Proxmox-Verbindung gehört nicht zu dieser Umgebung.' });
+    }
     const id = randomUUID();
-    db.db.prepare('INSERT INTO tofu_workspaces (id, name, path, description, env_vars, environment_id) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(id, name.trim(), wPath.trim(), (description || '').trim(), JSON.stringify(env_vars || {}), environmentId);
+    db.db.prepare('INSERT INTO tofu_workspaces (id, name, path, description, env_vars, environment_id, proxmox_connection_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(id, name.trim(), wPath.trim(), (description || '').trim(), JSON.stringify(sanitizeEnvVars(env_vars || {})), environmentId, proxmoxConnectionId);
     syncPathsFile();
     if (scaffold) {
       try { scaffoldWorkspace(wPath.trim(), scaffold.provider || null); } catch (e) { /* path not mounted yet — files can be created later */ }
@@ -2104,6 +2249,8 @@ override.tf.json
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
     const env = workspace.env_vars || {};
     res.json({
+      source: workspace.proxmox_connection || null,
+      source_id: workspace.proxmox_connection_id || null,
       endpoint: String(env.TF_VAR_proxmox_endpoint || ''),
       insecure: String(env.TF_VAR_proxmox_insecure || '').toLowerCase() === 'true',
       api_token_configured: Boolean(String(env.TF_VAR_proxmox_api_token || '').trim()),
@@ -2115,6 +2262,16 @@ override.tf.json
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
     const body = req.body || {};
+    const sourceId = String(body.proxmox_connection_id || '').trim() || null;
+    if (sourceId) {
+      const source = db.db.prepare('SELECT * FROM tofu_proxmox_connections WHERE id = ? AND environment_id = ?').get(sourceId, workspace.environment_id || 'default');
+      if (!source) return res.status(400).json({ error: 'Die gewählte Proxmox-Verbindung gehört nicht zu dieser Umgebung.' });
+      db.db.prepare('UPDATE tofu_workspaces SET proxmox_connection_id = ? WHERE id = ?').run(sourceId, workspace.id);
+      return res.json({ success: true, source: publicProxmoxConnection(source), source_id: source.id, endpoint: source.endpoint, insecure: Boolean(source.insecure), api_token_configured: true, ssh_public_key_configured: Boolean(source.ssh_public_key) });
+    }
+    // An explicit detachment returns the deployment to its legacy, local
+    // connection fields without deleting its manually configured variables.
+    if (body.detach_source === true) db.db.prepare('UPDATE tofu_workspaces SET proxmox_connection_id = NULL WHERE id = ?').run(workspace.id);
     const endpoint = String(body.endpoint || '').trim();
     if (endpoint && !/^https?:\/\//i.test(endpoint)) return res.status(400).json({ error: 'Der Proxmox-Endpunkt muss mit http:// oder https:// beginnen.' });
     const env = { ...(workspace.env_vars || {}) };
@@ -2486,7 +2643,7 @@ override.tf.json
       const error = new Error('Server not found'); error.status = 404; throw error;
     }
     const mappings = db.db.prepare(`
-      SELECT mapping.workspace_id, mapping.resource_key, workspace.name AS workspace_name, workspace.env_vars
+      SELECT mapping.workspace_id, mapping.resource_key, workspace.name AS workspace_name
       FROM tofu_managed_servers mapping
       JOIN tofu_workspaces workspace ON workspace.id = mapping.workspace_id
       WHERE mapping.server_id = ? AND mapping.resource_key LIKE 'resource:proxmox_virtual_environment_vm.%'
@@ -2502,9 +2659,11 @@ override.tf.json
     if (!vm?.node_name || !vm.vm_id) {
       const error = new Error('Die Proxmox-VM-Definition ist unvollständig. Node und VM-ID müssen gesetzt sein.'); error.status = 409; throw error;
     }
-    let envVars = {};
-    try { envVars = JSON.parse(mapping.env_vars || '{}'); } catch { /* validated on API use */ }
-    return { mapping, vm, connection: readProxmoxConnection(envVars) };
+    const workspace = getWorkspace(mapping.workspace_id);
+    if (!workspace) {
+      const error = new Error('Das zugehörige Deployment ist nicht verfügbar.'); error.status = 404; throw error;
+    }
+    return { mapping, vm, connection: readProxmoxConnection(workspace.env_vars) };
   }
 
   router.get('/managed-servers/:serverId/snapshots', async (req, res) => {

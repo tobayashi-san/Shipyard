@@ -42,6 +42,9 @@ router.delete('/:id', (req, res) => {
     // Deployments are first-class environment resources as well. Keep them
     // visible after an environment is removed instead of orphaning them.
     if (hasTable('tofu_workspaces')) db.db.prepare("UPDATE tofu_workspaces SET environment_id = 'default' WHERE environment_id = ?").run(id);
+    // Platform connections are environment resources too. Preserve them with
+    // the deployments when an environment is consolidated into the default.
+    if (hasTable('tofu_proxmox_connections')) db.db.prepare("UPDATE tofu_proxmox_connections SET environment_id = 'default' WHERE environment_id = ?").run(id);
     return db.db.prepare('DELETE FROM environments WHERE id = ?').run(id);
   });
   const result = remove(req.params.id);
