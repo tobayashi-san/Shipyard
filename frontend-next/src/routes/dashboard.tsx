@@ -206,7 +206,7 @@ export function DashboardPage() {
     <div className="space-y-6">
       {/* Header */}
       <PageHeader
-        title={t('dash.title')}
+        title={t('dash.environmentOverview')}
         description={isLoading ? t('dash.loading') : t('dash.updatedAt', { time: formatCurrentTime(hour12) })}
         actions={
           <Button variant="secondary" size="sm" onClick={handleRefresh} disabled={isBusy}>

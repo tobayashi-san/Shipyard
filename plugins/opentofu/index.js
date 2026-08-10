@@ -5,7 +5,7 @@ const path = require('path');
 const { randomUUID } = require('crypto');
 const log = require('../../server/utils/logger').child('plugins:opentofu');
 const ansibleRunner = require('../../server/services/ansible-runner');
-const { getPermissions, can, canAccessPlaybook } = require('../../server/utils/permissions');
+const { getPermissions, can, canAccessPlaybook, filterServers } = require('../../server/utils/permissions');
 
 let _gitSync = null;
 function getGitSync() {
@@ -1107,14 +1107,20 @@ function proxmoxApiUrl(connection, apiPath) {
   return url;
 }
 
-function requestProxmoxApi(connection, apiPath) {
+function requestProxmoxApi(connection, apiPath, { method = 'GET', payload = null } = {}) {
   const url = proxmoxApiUrl(connection, apiPath);
+  const body = payload && typeof payload === 'object'
+    ? new URLSearchParams(Object.entries(payload)
+      .filter(([, value]) => value !== undefined && value !== null)
+      .map(([key, value]) => [key, String(value)])).toString()
+    : '';
   return new Promise((resolve, reject) => {
     const request = https.request(url, {
-      method: 'GET',
+      method,
       headers: {
         Accept: 'application/json',
         Authorization: `PVEAPIToken=${connection.apiToken}`,
+        ...(body ? { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) } : {}),
       },
       rejectUnauthorized: !connection.insecure,
     }, response => {
@@ -1139,6 +1145,7 @@ function requestProxmoxApi(connection, apiPath) {
     request.on('error', error => reject(new Error(error.code === 'DEPTH_ZERO_SELF_SIGNED_CERT'
       ? 'Das Proxmox-Zertifikat wird nicht vertraut. Setze TF_VAR_proxmox_insecure=true oder verwende ein gültiges Zertifikat.'
       : 'Die Proxmox-API ist nicht erreichbar.')));
+    if (body) request.write(body);
     request.end();
   });
 }
@@ -2314,6 +2321,107 @@ override.tf.json
       vms: getProxmoxVms(workspace.id),
       generated_files: ['fleet-proxmox-provider.tf', 'fleet-proxmox-variables.tf', 'fleet-proxmox-vms.tf'],
     });
+  });
+
+  function getManagedProxmoxVmForServer(serverId, req, { requireEdit = false } = {}) {
+    const permissions = getPermissions(req.user);
+    if (!can(permissions, requireEdit ? 'canEditServers' : 'canViewServers')) {
+      const error = new Error('Permission denied'); error.status = 403; throw error;
+    }
+    const accessible = filterServers(db.servers.getAll(), permissions).some(server => server.id === serverId);
+    if (!accessible) {
+      const error = new Error('Server not found'); error.status = 404; throw error;
+    }
+    const mappings = db.db.prepare(`
+      SELECT mapping.workspace_id, mapping.resource_key, workspace.name AS workspace_name, workspace.env_vars
+      FROM tofu_managed_servers mapping
+      JOIN tofu_workspaces workspace ON workspace.id = mapping.workspace_id
+      WHERE mapping.server_id = ? AND mapping.resource_key LIKE 'resource:proxmox_virtual_environment_vm.%'
+      ORDER BY workspace.name COLLATE NOCASE
+      LIMIT 1
+    `).all(serverId);
+    const mapping = mappings[0];
+    if (!mapping) {
+      const error = new Error('Für diesen Server ist keine Proxmox-VM-Bereitstellung vorhanden.'); error.status = 404; throw error;
+    }
+    const vmName = String(mapping.resource_key).replace(/^resource:proxmox_virtual_environment_vm\./, '');
+    const vm = getProxmoxVms(mapping.workspace_id).find(item => item.name === vmName);
+    if (!vm?.node_name || !vm.vm_id) {
+      const error = new Error('Die Proxmox-VM-Definition ist unvollständig. Node und VM-ID müssen gesetzt sein.'); error.status = 409; throw error;
+    }
+    let envVars = {};
+    try { envVars = JSON.parse(mapping.env_vars || '{}'); } catch { /* validated on API use */ }
+    return { mapping, vm, connection: readProxmoxConnection(envVars) };
+  }
+
+  router.get('/managed-servers/:serverId/snapshots', async (req, res) => {
+    try {
+      const target = getManagedProxmoxVmForServer(String(req.params.serverId || ''), req);
+      const snapshots = await requestProxmoxApi(target.connection, `/nodes/${encodeURIComponent(target.vm.node_name)}/qemu/${encodeURIComponent(target.vm.vm_id)}/snapshot`);
+      res.json({
+        workspace_id: target.mapping.workspace_id,
+        workspace_name: target.mapping.workspace_name,
+        node_name: target.vm.node_name,
+        vm_id: target.vm.vm_id,
+        snapshots: Array.isArray(snapshots) ? snapshots.filter(snapshot => snapshot?.name !== 'current') : [],
+      });
+    } catch (error) {
+      res.status(error.status || 502).json({ error: error.message || 'Snapshots konnten nicht geladen werden.' });
+    }
+  });
+
+  router.post('/managed-servers/:serverId/snapshots', async (req, res) => {
+    const name = String(req.body?.name || '').trim();
+    const description = String(req.body?.description || '').trim().slice(0, 512);
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(name)) {
+      return res.status(400).json({ error: 'Der Snapshot-Name darf 1–40 Zeichen (Buchstaben, Zahlen, Punkt, Unterstrich, Bindestrich) enthalten.' });
+    }
+    try {
+      const target = getManagedProxmoxVmForServer(String(req.params.serverId || ''), req, { requireEdit: true });
+      const upid = await requestProxmoxApi(target.connection, `/nodes/${encodeURIComponent(target.vm.node_name)}/qemu/${encodeURIComponent(target.vm.vm_id)}/snapshot`, {
+        method: 'POST',
+        payload: { snapname: name, description, vmstate: 1 },
+      });
+      db.auditLog.write('tofu.snapshot_create', `workspace=${target.mapping.workspace_name} vm=${target.vm.name} vm_id=${target.vm.vm_id} snapshot=${name}`, req.ip, true, req.user?.username || null);
+      res.status(202).json({ success: true, task: upid, name });
+    } catch (error) {
+      res.status(error.status || 502).json({ error: error.message || 'Snapshot konnte nicht erstellt werden.' });
+    }
+  });
+
+  // The server detail remains the operational source of truth. This small
+  // lookup only adds deployment context and deliberately never exposes a
+  // workspace's credentials or state file to the browser.
+  router.get('/managed-servers/:serverId', (req, res) => {
+    if (!can(getPermissions(req.user), 'canViewServers')) {
+      return res.status(403).json({ error: 'Permission denied' });
+    }
+    const serverId = String(req.params.serverId || '').trim();
+    if (!serverId) return res.status(400).json({ error: 'Server ID is required' });
+    const mappings = db.db.prepare(`
+      SELECT mapping.workspace_id, mapping.resource_key, workspace.name AS workspace_name
+      FROM tofu_managed_servers mapping
+      JOIN tofu_workspaces workspace ON workspace.id = mapping.workspace_id
+      WHERE mapping.server_id = ?
+      ORDER BY workspace.name COLLATE NOCASE
+    `).all(serverId);
+    const resources = mappings.map(mapping => {
+      const vmName = String(mapping.resource_key || '').replace(/^resource:proxmox_virtual_environment_vm\./, '');
+      const vm = getProxmoxVms(mapping.workspace_id).find(item => item.name === vmName);
+      return {
+        workspace_id: mapping.workspace_id,
+        workspace_name: mapping.workspace_name,
+        resource_key: mapping.resource_key,
+        vm: vm ? {
+          id: vm.id,
+          name: vm.name,
+          node_name: vm.node_name,
+          vm_id: vm.vm_id,
+          post_deploy_playbooks: vm.post_deploy_playbooks || [],
+        } : null,
+      };
+    });
+    res.json({ resources });
   });
 
   router.get('/workspaces/:id/deployment-summary', (req, res) => {

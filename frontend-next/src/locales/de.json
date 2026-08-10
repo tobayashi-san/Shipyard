@@ -126,6 +126,17 @@
     "tabUpdates": "Updates",
     "tabHistory": "Historie",
     "tabNotes": "Notizen",
+    "deployment": "Bereitstellung",
+    "managedByOpenTofu": "OpenTofu verwaltet diese Ressource",
+    "openDeployment": "Deployment öffnen",
+    "node": "Node",
+    "postDeploySteps": "{{count}} Post-Deploy-Schritt(e)",
+    "snapshots": "Snapshots",
+    "createSnapshot": "Snapshot erstellen",
+    "snapshotName": "Snapshot-Name",
+    "snapshotDescription": "Beschreibung (optional)",
+    "noSnapshots": "Noch keine Proxmox-Snapshots vorhanden.",
+    "snapshotCreateStarted": "Snapshot wird in Proxmox erstellt.",
     "systemInfo": "Systeminformationen",
     "testConn": "Verbindung testen",
     "runUpdate": "Update ausführen",
@@ -829,6 +840,7 @@
   },
   "dash": {
     "title": "Dashboard",
+    "environmentOverview": "Umgebungsübersicht",
     "loading": "Lade Dashboard…",
     "updatedAt": "Stand: {{time}}",
     "totalServers": "Server gesamt",
@@ -891,6 +903,7 @@
     "refreshPartial": "Aktualisierung abgeschlossen — {{failed}} von {{total}} Server(n) fehlgeschlagen"
   },
   "srv": {
+    "resourceTitle": "Ressourcen",
     "title": "Server",
     "searchServers": "Server suchen…",
     "filterTags": "Nach Tags filtern",

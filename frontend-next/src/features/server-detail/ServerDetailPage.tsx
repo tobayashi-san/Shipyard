@@ -9,11 +9,11 @@ import {
   Play, Square, CloudDownload, FileText, RotateCw, Plus, Trash2,
   ChevronDown, ChevronRight, Layers, Settings2, StickyNote, Eye, Bot,
   Download, Shield, Sliders, History, Code2,
-  AlertTriangle, Bell,
+  AlertTriangle, Bell, Camera, Workflow,
 } from 'lucide-react';
-import { api, ApiError } from '@/lib/api';
+import { api, apiFetch, ApiError } from '@/lib/api';
 import { ws } from '@/lib/ws';
-import { useProfile, useSettings, hasCap } from '@/lib/queries';
+import { canSeePlugin, usePlugins, useProfile, useSettings, hasCap } from '@/lib/queries';
 import { useUi } from '@/lib/store';
 import { showToast } from '@/lib/toast';
 import { actionLabel, statusLabel } from '@/lib/history-labels';
@@ -121,6 +121,30 @@ interface AlertSettings {
   thresholds: { cpu: number; ram: number; disk: number; storage: number };
 }
 
+interface ManagedDeployment {
+  workspace_id: string;
+  workspace_name: string;
+  resource_key: string;
+  vm?: {
+    id?: string;
+    name?: string;
+    node_name?: string;
+    vm_id?: number | string | null;
+    post_deploy_playbooks?: string[];
+  } | null;
+}
+
+interface ManagedDeploymentResponse { resources?: ManagedDeployment[]; }
+
+interface ProxmoxSnapshot {
+  name: string;
+  description?: string;
+  snaptime?: number;
+  vmstate?: number;
+}
+
+interface ProxmoxSnapshotResponse { snapshots?: ProxmoxSnapshot[]; }
+
 // ─── Helpers ──────────────────────────────────────────────────
 function parseArrayValue<T>(value: unknown): T[] {
   if (Array.isArray(value)) return value as T[];
@@ -169,12 +193,43 @@ export function ServerDetailPage() {
   const [confirmAgentInstall, setConfirmAgentInstall] = useState(false);
   const [confirmAgentRemove, setConfirmAgentRemove] = useState(false);
   const [confirmRestartContainer, setConfirmRestartContainer] = useState<string | null>(null);
+  const [snapshotDialogOpen, setSnapshotDialogOpen] = useState(false);
+  const [snapshotName, setSnapshotName] = useState('');
+  const [snapshotDescription, setSnapshotDescription] = useState('');
   const [actionRun, setActionRun] = useState<{ title: string; status: RunStatus; lines: OutputLine[]; historyId?: string } | null>(null);
   const { data: profile } = useProfile();
+  const { data: plugins } = usePlugins();
   const { data: settings } = useSettings();
   const agentEnabled = !!(settings as Record<string, unknown>)?.agentEnabled;
   const timeFormat = useUi((s) => s.timeFormat);
   const hour12 = timeFormat === '12h';
+  const openTofuAvailable = Array.isArray(plugins) && plugins.some(plugin => plugin.id === 'opentofu' && plugin.enabled && canSeePlugin(profile, plugin.id));
+  const { data: deploymentData } = useQuery<ManagedDeploymentResponse>({
+    queryKey: ['server', id, 'deployment-context'],
+    queryFn: () => apiFetch(`/plugin/opentofu/managed-servers/${encodeURIComponent(id)}`),
+    enabled: Boolean(id && openTofuAvailable),
+    staleTime: 30_000,
+  });
+  const managedDeployments = Array.isArray(deploymentData?.resources) ? deploymentData.resources : [];
+  const managedProxmoxDeployment = managedDeployments.find(deployment => deployment.vm?.node_name && deployment.vm?.vm_id != null);
+  const { data: snapshotData, isFetching: snapshotsLoading } = useQuery<ProxmoxSnapshotResponse>({
+    queryKey: ['server', id, 'proxmox-snapshots'],
+    queryFn: () => apiFetch(`/plugin/opentofu/managed-servers/${encodeURIComponent(id)}/snapshots`),
+    enabled: Boolean(id && managedProxmoxDeployment),
+    staleTime: 15_000,
+  });
+  const snapshots = Array.isArray(snapshotData?.snapshots) ? snapshotData.snapshots : [];
+  const createSnapshotMut = useMutation({
+    mutationFn: ({ name, description }: { name: string; description: string }) => apiFetch(`/plugin/opentofu/managed-servers/${encodeURIComponent(id)}/snapshots`, { method: 'POST', body: { name, description } }),
+    onSuccess: () => {
+      showToast(t('det.snapshotCreateStarted'), 'success');
+      setSnapshotDialogOpen(false);
+      setSnapshotName('');
+      setSnapshotDescription('');
+      void qc.invalidateQueries({ queryKey: ['server', id, 'proxmox-snapshots'] });
+    },
+    onError: (error: Error) => showToast(error.message, 'error'),
+  });
 
   // ── Action run helpers ───────────────────────────────────────
   const startActionRun = useCallback((title: string, historyId?: string) => {
@@ -858,6 +913,60 @@ export function ServerDetailPage() {
             <StatCard icon={<Boxes className="h-5 w-5" />} label={t('det.tabDocker')}
               value={server.status === 'offline' ? '—' : containers.length ? String(containers.length) : t('det.statusIdle')} variant={server.status === 'offline' ? 'muted' : containers.length ? undefined : 'muted'} compact />
           </div>
+
+          {managedDeployments.length > 0 && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 py-3">
+                <CardTitle className="flex items-center gap-2 text-sm"><Workflow className="h-4 w-4 text-brand" /> {t('det.deployment')}</CardTitle>
+                <span className="text-xs text-muted-foreground">{t('det.managedByOpenTofu')}</span>
+              </CardHeader>
+              <CardContent className="space-y-2 border-t px-4 py-3">
+                {managedDeployments.map((deployment) => (
+                  <div key={`${deployment.workspace_id}:${deployment.resource_key}`} className="flex flex-col justify-between gap-2 rounded-md border bg-muted/20 px-3 py-2.5 sm:flex-row sm:items-center">
+                    <div className="min-w-0">
+                      <div className="font-medium">{deployment.workspace_name}</div>
+                      <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs text-muted-foreground">
+                        {deployment.vm?.node_name && <span>{t('det.node')}: {deployment.vm.node_name}</span>}
+                        {deployment.vm?.vm_id != null && <span>VM-ID: {deployment.vm.vm_id}</span>}
+                        {deployment.vm?.post_deploy_playbooks?.length ? <span>{t('det.postDeploySteps', { count: deployment.vm.post_deploy_playbooks.length })}</span> : null}
+                      </div>
+                    </div>
+                    <Button variant="secondary" size="sm" asChild><Link to="/plugins/$id" params={{ id: 'opentofu' }}>{t('det.openDeployment')}</Link></Button>
+                  </div>
+                ))}
+                {managedProxmoxDeployment && (
+                  <div className="border-t pt-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-sm font-medium"><Camera className="h-4 w-4 text-muted-foreground" /> {t('det.snapshots')}</div>
+                      {hasCap(profile, 'canEditServers') && <Button variant="secondary" size="sm" onClick={() => { setSnapshotName(`fleet-${new Date().toISOString().slice(0, 10)}`); setSnapshotDescription(''); setSnapshotDialogOpen(true); }}><Camera className="h-3.5 w-3.5" /> {t('det.createSnapshot')}</Button>}
+                    </div>
+                    <div className="mt-2 divide-y rounded-md border bg-background">
+                      {snapshotsLoading ? <div className="px-3 py-2 text-xs text-muted-foreground">{t('common.loading')}</div> : snapshots.length === 0 ? <div className="px-3 py-2 text-xs text-muted-foreground">{t('det.noSnapshots')}</div> : snapshots.map(snapshot => (
+                        <div key={snapshot.name} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-3 py-2 text-xs">
+                          <span className="font-mono font-medium">{snapshot.name}</span>
+                          <span className="text-muted-foreground">{snapshot.description || (snapshot.snaptime ? new Date(snapshot.snaptime * 1000).toLocaleString(undefined, { hour12 }) : '—')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          <Dialog open={snapshotDialogOpen} onOpenChange={setSnapshotDialogOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader><DialogTitle>{t('det.createSnapshot')}</DialogTitle></DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-1.5"><Label htmlFor="snapshot-name">{t('det.snapshotName')}</Label><Input id="snapshot-name" value={snapshotName} onChange={event => setSnapshotName(event.target.value)} placeholder="fleet-before-update" autoFocus /></div>
+                <div className="space-y-1.5"><Label htmlFor="snapshot-description">{t('det.snapshotDescription')}</Label><Textarea id="snapshot-description" value={snapshotDescription} onChange={event => setSnapshotDescription(event.target.value)} rows={3} /></div>
+              </div>
+              <DialogFooter>
+                <Button variant="ghost" onClick={() => setSnapshotDialogOpen(false)}>{t('common.cancel')}</Button>
+                <Button onClick={() => createSnapshotMut.mutate({ name: snapshotName.trim(), description: snapshotDescription.trim() })} disabled={!snapshotName.trim() || createSnapshotMut.isPending}>{t('det.createSnapshot')}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {server.status === 'offline' && (
             <Card className="border-destructive/50">

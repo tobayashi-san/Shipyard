@@ -755,7 +755,7 @@ export function ServersPage() {
     <div className="space-y-6">
       {/* Header */}
       <PageHeader
-        title={t('srv.title')}
+        title={t('srv.resourceTitle')}
         description={`${t('srv.count', { total: servers.length, online: onlineCount, offline: offlineCount })}${activeTag ? ` · ${t('srv.filtered', { tag: activeTag })}` : ''}${search ? ` · ${t('srv.results', { count: filtered.length })}` : ''}`}
         actions={
           <>

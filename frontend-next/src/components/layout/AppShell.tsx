@@ -114,7 +114,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b bg-card">
-        <div className={cn('hidden h-full shrink-0 items-center border-r px-3 md:flex', collapsed ? 'w-16 justify-center px-2' : 'w-60')}>
+        <div className={cn('hidden h-full shrink-0 items-center border-r px-4 md:flex', collapsed ? 'w-16 justify-center px-2' : 'w-72')}>
           {!collapsed && <span className="truncate font-mono text-[13px] font-semibold tracking-[0.16em]">{(appName || 'Fleet').toUpperCase()}</span>}
           {collapsed && <span className="font-mono text-sm font-semibold tracking-[0.08em]">F</span>}
         </div>
@@ -175,7 +175,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             )}
           </div>
-          <div className="hidden md:block"><ActivityCenter placement="header" /></div>
           <div ref={profileMenuRef} className="relative">
             <button type="button" onClick={() => { setProfileOpen((open) => !open); setHelpOpen(false); setMobileNavOpen(false); }} aria-expanded={profileOpen} aria-label="Profilmenü" className="flex h-8 w-8 items-center justify-center rounded-full border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
               <User className="h-4 w-4" />
@@ -226,9 +225,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="flex min-h-0 flex-1">
       {mobileNavOpen && <button className="fixed inset-0 z-40 bg-black/50 md:hidden" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
       <Sidebar mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
-      <main className="min-w-0 flex-1 overflow-auto p-4 md:p-5 lg:p-6">{children}</main>
+      <main className="min-w-0 flex-1 overflow-auto bg-background p-4 md:p-5 lg:p-6">{children}</main>
       </div>
       <CommandPalette />
+      <ActivityCenter />
     </div>
   );
 }
