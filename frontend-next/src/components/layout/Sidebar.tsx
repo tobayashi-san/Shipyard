@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
-import { Boxes, FileCode2, Network, Puzzle, Settings2, Workflow, X } from 'lucide-react';
+import { Boxes, ClipboardList, FileCode2, Puzzle, Settings2, Workflow, X } from 'lucide-react';
 import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { canSeePlugin, hasCap, usePlugins, useProfile, type PluginInfo } from '@/lib/queries';
@@ -33,9 +33,11 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
   const plugins = Array.isArray(pluginData) ? pluginData : [];
   const canViewServers = hasCap(profile, 'canViewServers');
   const canViewPlaybooks = hasCap(profile, 'canViewPlaybooks');
+  const canViewSchedules = hasCap(profile, 'canViewSchedules');
   const canViewAudit = hasCap(profile, 'canViewAudit');
   const canManageConsole = profile?.role === 'admin';
   const opentofu = plugins.find(plugin => plugin.id === 'opentofu' && plugin.enabled && canSeePlugin(profile, plugin.id));
+  const canViewOperations = Boolean(opentofu) || canViewSchedules || canViewAudit;
   const otherPlugins = plugins.filter(plugin => plugin.enabled && plugin.id !== 'opentofu' && canSeePlugin(profile, plugin.id));
 
   useEffect(() => {
@@ -77,7 +79,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
       <section className="space-y-1">
         {!collapsed && <div className="section-label px-3 pb-1">Verwaltung</div>}
         {canViewServers && <NavItem to="/servers" label="Ressourcenliste" icon={Boxes} active={path === '/servers'} collapsed={collapsed} onNavigate={onMobileClose} />}
-        {canViewAudit && <NavItem to="/settings/$tab" params={{ tab: 'audit' }} label="Aufgaben & Audit-Log" icon={Network} active={path === '/settings/audit'} collapsed={collapsed} onNavigate={onMobileClose} />}
+        {canViewOperations && <NavItem to="/operations" label="Betrieb" icon={ClipboardList} active={path === '/operations'} collapsed={collapsed} onNavigate={onMobileClose} />}
         {canManageConsole && <NavItem to="/settings" label="Einstellungen" icon={Settings2} active={path === '/settings' || path.startsWith('/settings/')} collapsed={collapsed} onNavigate={onMobileClose} />}
       </section>
     </nav>

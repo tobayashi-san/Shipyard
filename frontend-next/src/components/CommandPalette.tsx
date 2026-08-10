@@ -5,7 +5,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   Search, LayoutDashboard, Server, FileCode2, Settings, User,
-  HelpCircle, Sun, Moon, LogOut, Puzzle, Workflow, Database,
+  HelpCircle, Sun, Moon, LogOut, Puzzle, Workflow, Database, ClipboardList,
 } from 'lucide-react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { api } from '@/lib/api';
@@ -45,7 +45,7 @@ export function CommandPalette() {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
-  // Lightweight g-prefix navigation: g s, g d, g p, g i
+  // Lightweight g-prefix navigation: g s, g d, g p, g i, g b
   useEffect(() => {
     let prefix = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -59,6 +59,7 @@ export function CommandPalette() {
         else if (e.key === 'p') navigate({ to: '/playbooks' });
         else if (e.key === 'i') navigate({ to: '/infrastructure' });
         else if (e.key === 'o') navigate({ to: '/deployments' });
+        else if (e.key === 'b') navigate({ to: '/operations' });
         else if (e.key === ',') navigate({ to: '/settings' });
         prefix = false;
         return;
@@ -130,6 +131,7 @@ export function CommandPalette() {
                   {openTofuAvailable && <PaletteItem icon={<Database className="h-4 w-4" />} label="Infrastruktur" shortcut="g i" onSelect={() => go('/infrastructure')} />}
                   {hasCap(profile, 'canViewServers') && <PaletteItem icon={<Server className="h-4 w-4" />} label={t('nav.servers')} shortcut="g s" onSelect={() => go('/servers')} />}
                   {openTofuAvailable && <PaletteItem icon={<Workflow className="h-4 w-4" />} label={t('deploy.title')} shortcut="g o" onSelect={() => go('/deployments')} />}
+                  <PaletteItem icon={<ClipboardList className="h-4 w-4" />} label="Betrieb" shortcut="g b" onSelect={() => go('/operations')} />
                   {hasCap(profile, 'canViewPlaybooks') && <PaletteItem icon={<FileCode2 className="h-4 w-4" />} label={t('nav.playbooks')} shortcut="g p" onSelect={() => go('/playbooks')} />}
                   <PaletteItem icon={<User className="h-4 w-4" />} label={t('profile.settings')} onSelect={() => go('/profile')} />
                   {profile?.role === 'admin' && <PaletteItem icon={<Settings className="h-4 w-4" />} label={t('nav.settings')} shortcut="g ," onSelect={() => go('/settings')} />}
