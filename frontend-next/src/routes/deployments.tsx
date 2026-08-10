@@ -153,7 +153,7 @@ export function DeploymentsPage() {
                 <div className="flex items-center justify-between gap-3"><span>{t('deploy.started')}</span><span className="font-mono tabular-nums">{summary ? `${summary.started_vm_count}/${summary.vm_count}` : '—'}</span></div>
                 {pending > 0 && <div className="flex items-center justify-between gap-3 text-amber-600 dark:text-amber-400"><span>{t('deploy.postDeploy')}</span><span className="font-mono tabular-nums">{pending} {t('deploy.pending')}</span></div>}
               </div>
-              <Button asChild variant="outline" className="mt-4 w-full"><Link to="/plugins/$id" params={{ id: 'opentofu' }}>{t('deploy.open')}<ArrowRight /></Link></Button>
+              <Button asChild variant="outline" className="mt-4 w-full"><Link to="/deployments/$id" params={{ id: workspace.id }}>{t('deploy.open')}<ArrowRight /></Link></Button>
             </CardContent>
           </Card>;
         })}

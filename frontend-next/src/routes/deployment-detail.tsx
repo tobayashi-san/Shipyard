@@ -1,0 +1,121 @@
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Link, useParams } from '@tanstack/react-router';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowLeft, ArrowRight, CheckCircle2, Clock3, Cpu, FileCode2, HardDrive, History, MemoryStick, Play, RefreshCw, Server, Settings2, Workflow } from 'lucide-react';
+import { apiFetch } from '@/lib/api';
+import { showToast } from '@/lib/toast';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageHeader } from '@/components/ui/page-header';
+import { Skeleton } from '@/components/ui/skeleton';
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
+
+interface Workspace { id: string; name: string; path?: string; description?: string }
+interface Run { id: string; action?: string; status?: string; started_at?: string; completed_at?: string }
+interface RunsResponse { items?: Run[] }
+interface Vm {
+  id: string;
+  name: string;
+  node_name?: string;
+  vm_id?: string | number;
+  started?: boolean;
+  cpu_cores?: number;
+  memory_mb?: number;
+  disk_size_gb?: number;
+  post_deploy_playbooks?: string[];
+}
+interface VmsResponse { vms?: Vm[] }
+
+function formatDate(value?: string) {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+
+function tone(status?: string): StatusTone {
+  if (status === 'success' || status === 'completed') return 'success';
+  if (status === 'failed' || status === 'error') return 'danger';
+  if (status === 'running' || status === 'queued') return 'info';
+  return 'muted';
+}
+
+function total(vms: Vm[], field: 'cpu_cores' | 'memory_mb' | 'disk_size_gb') {
+  return vms.reduce((sum, vm) => sum + (Number(vm[field]) || 0), 0);
+}
+
+export function DeploymentDetailPage() {
+  const { t } = useTranslation();
+  const params = useParams({ strict: false }) as { id?: string };
+  const id = params.id || '';
+  const queryClient = useQueryClient();
+  const [confirmApply, setConfirmApply] = useState(false);
+  const workspacesQuery = useQuery({ queryKey: ['opentofu', 'workspaces'], queryFn: () => apiFetch<Workspace[]>('/plugin/opentofu/workspaces') });
+  const workspace = (Array.isArray(workspacesQuery.data) ? workspacesQuery.data : []).find(item => item.id === id);
+  const runsQuery = useQuery({ queryKey: ['opentofu', 'workspace', id, 'runs'], queryFn: () => apiFetch<RunsResponse>(`/plugin/opentofu/workspaces/${encodeURIComponent(id)}/runs?page_size=8`), enabled: Boolean(id), refetchInterval: query => query.state.data?.items?.some(run => run.status === 'running') ? 2_500 : false });
+  const vmsQuery = useQuery({ queryKey: ['opentofu', 'workspace', id, 'vms'], queryFn: () => apiFetch<VmsResponse>(`/plugin/opentofu/workspaces/${encodeURIComponent(id)}/proxmox-vms`), enabled: Boolean(id) });
+  const vms = Array.isArray(vmsQuery.data?.vms) ? vmsQuery.data!.vms! : [];
+  const runs = Array.isArray(runsQuery.data?.items) ? runsQuery.data!.items! : [];
+
+  const runMutation = useMutation({
+    mutationFn: (action: 'init' | 'validate' | 'plan' | 'apply') => apiFetch<{ dbRunId?: string }>(`/plugin/opentofu/workspaces/${encodeURIComponent(id)}/run`, { method: 'POST', body: { action } }),
+    onSuccess: (_result, action) => {
+      showToast(`${action} wurde gestartet.`, 'success');
+      void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspace', id, 'runs'] });
+      void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspaces'] });
+    },
+    onError: (error: Error) => showToast(error.message, 'error'),
+  });
+
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspace', id] });
+    void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspaces'] });
+  };
+
+  if (workspacesQuery.isLoading) return <div className="space-y-4"><Skeleton className="h-10 w-72" /><Skeleton className="h-60 w-full" /></div>;
+  if (!workspace) return <div className="space-y-4"><PageHeader title={t('deploy.title')} back={<Button asChild size="icon" variant="ghost"><Link to="/deployments"><ArrowLeft /></Link></Button>} /><Card><EmptyState icon={<Workflow className="h-5 w-5" />} title="Deployment nicht gefunden" description="Der Workspace wurde gelöscht oder ist für deine Rolle nicht freigegeben." action={<Button asChild variant="outline"><Link to="/deployments">{t('deploy.title')}</Link></Button>} /></Card></div>;
+
+  return <div className="space-y-6">
+    <PageHeader
+      title={workspace.name}
+      description={workspace.description || workspace.path || t('deploy.description')}
+      back={<Button asChild size="icon" variant="ghost" aria-label={t('deploy.title')}><Link to="/deployments"><ArrowLeft /></Link></Button>}
+      actions={<>
+        <Button type="button" variant="outline" onClick={refresh}><RefreshCw />{t('deploy.refresh')}</Button>
+        <Button asChild variant="outline"><Link to="/plugins/$id" params={{ id: 'opentofu' }}><Settings2 />{t('deploy.advanced')}</Link></Button>
+      </>}
+    />
+
+    <Card>
+      <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b">
+        <div><CardTitle className="text-base">Bereitstellung</CardTitle><p className="mt-1 text-sm text-muted-foreground">Führe erst einen Plan aus und wende die Änderung danach kontrolliert an.</p></div>
+        {runMutation.isPending && <StatusBadge tone="info" dot>Wird gestartet</StatusBadge>}
+      </CardHeader>
+      <CardContent className="flex flex-wrap gap-2 p-4">
+        <Button type="button" variant="outline" onClick={() => runMutation.mutate('init')} disabled={runMutation.isPending}><FileCode2 />Initialisieren</Button>
+        <Button type="button" variant="outline" onClick={() => runMutation.mutate('validate')} disabled={runMutation.isPending}><CheckCircle2 />Prüfen</Button>
+        <Button type="button" variant="outline" onClick={() => runMutation.mutate('plan')} disabled={runMutation.isPending}><Play />Plan erstellen</Button>
+        <Button type="button" onClick={() => setConfirmApply(true)} disabled={runMutation.isPending}><ArrowRight />Änderungen anwenden</Button>
+        <Button asChild type="button" variant="ghost" className="ml-auto text-destructive hover:text-destructive"><Link to="/plugins/$id" params={{ id: 'opentofu' }}>Destroy geschützt ausführen</Link></Button>
+      </CardContent>
+    </Card>
+
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.85fr)]">
+      <Card>
+        <CardHeader className="flex-row items-center justify-between border-b"><CardTitle className="flex items-center gap-2 text-base"><Server className="h-4 w-4" />Proxmox-VMs</CardTitle><StatusBadge tone="neutral">{vms.length}</StatusBadge></CardHeader>
+        <CardContent className="p-0">
+          {vmsQuery.isLoading ? <div className="space-y-3 p-4"><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /></div> : vms.length === 0 ? <EmptyState compact icon={<Server className="h-5 w-5" />} title="Keine VM-Definitionen" description="Füge die VM im erweiterten Workspace-Bereich hinzu." /> : <div className="overflow-x-auto"><table className="w-full min-w-[700px] text-sm"><thead className="border-b bg-muted/30 text-left text-xs text-muted-foreground"><tr><th className="px-4 py-3 font-medium">VM</th><th className="px-4 py-3 font-medium">Node</th><th className="px-4 py-3 font-medium">VM-ID</th><th className="px-4 py-3 font-medium">vCPU</th><th className="px-4 py-3 font-medium">RAM</th><th className="px-4 py-3 font-medium">Disk</th><th className="px-4 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y">{vms.map(vm => <tr key={vm.id} className="hover:bg-muted/20"><td className="px-4 py-3 font-medium">{vm.name}<div className="mt-0.5 text-xs text-muted-foreground">{vm.post_deploy_playbooks?.length ? `${vm.post_deploy_playbooks.length} Post-Deploy-Schritte` : 'Keine Post-Deploy-Schritte'}</div></td><td className="px-4 py-3 font-mono text-xs">{vm.node_name || '—'}</td><td className="px-4 py-3 font-mono text-xs">{vm.vm_id ?? 'Automatisch'}</td><td className="px-4 py-3 tabular-nums">{vm.cpu_cores || '—'}</td><td className="px-4 py-3 tabular-nums">{vm.memory_mb ? `${vm.memory_mb} MB` : '—'}</td><td className="px-4 py-3 tabular-nums">{vm.disk_size_gb ? `${vm.disk_size_gb} GB` : '—'}</td><td className="px-4 py-3"><StatusBadge tone={vm.started ? 'success' : 'muted'} dot>{vm.started ? 'Gestartet' : 'Aus'}</StatusBadge></td></tr>)}</tbody><tfoot className="border-t bg-muted/20 text-sm"><tr><td className="px-4 py-3 font-medium">Kapazität</td><td /><td /><td className="px-4 py-3 font-mono">{total(vms, 'cpu_cores')}</td><td className="px-4 py-3 font-mono">{total(vms, 'memory_mb')} MB</td><td className="px-4 py-3 font-mono">{total(vms, 'disk_size_gb')} GB</td><td /></tr></tfoot></table></div>}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex-row items-center justify-between border-b"><CardTitle className="flex items-center gap-2 text-base"><History className="h-4 w-4" />Laufhistorie</CardTitle><Button type="button" size="icon" variant="ghost" onClick={refresh} aria-label={t('deploy.refresh')}><RefreshCw className="h-4 w-4" /></Button></CardHeader>
+        <CardContent className="p-0">{runsQuery.isLoading ? <div className="space-y-3 p-4"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div> : runs.length === 0 ? <EmptyState compact icon={<Clock3 className="h-5 w-5" />} title={t('deploy.noRun')} /> : <ul className="divide-y">{runs.map(run => <li key={run.id} className="flex items-center gap-3 px-4 py-3"><StatusBadge tone={tone(run.status)} dot>{run.status || '—'}</StatusBadge><div className="min-w-0 flex-1"><div className="font-mono text-sm font-medium">{run.action || 'tofu'}</div><div className="mt-0.5 truncate text-xs text-muted-foreground">{formatDate(run.completed_at || run.started_at)}</div></div></li>)}</ul>}</CardContent>
+      </Card>
+    </div>
+
+    <ConfirmDialog open={confirmApply} onOpenChange={setConfirmApply} title="Änderungen anwenden?" description="OpenTofu wendet den zuletzt berechneten gewünschten Zustand auf die Proxmox-Umgebung an. Prüfe den Plan vorher." confirmLabel="Anwenden" cancelLabel="Abbrechen" variant="warning" onConfirm={() => runMutation.mutate('apply')} isPending={runMutation.isPending} />
+  </div>;
+}
