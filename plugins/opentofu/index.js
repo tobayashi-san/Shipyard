@@ -1568,7 +1568,7 @@ override.tf.json
     }
   }
 
-  function pendingPostDeployJobs(workspace, syncedServers) {
+  function pendingPostDeployJobs(workspace, syncedServers, { onlyVmId = null, onlyPlaybook = null, force = false } = {}) {
     const syncedByResource = new Map((Array.isArray(syncedServers) ? syncedServers : [])
       .map(server => [server.resource_key, server])
       .filter(([resourceKey]) => Boolean(resourceKey)));
@@ -1578,16 +1578,17 @@ override.tf.json
     `).all(workspace.id).map(row => `${row.vm_id}\u0000${row.playbook}`));
 
     return getProxmoxVms(workspace.id).flatMap(vm => {
+      if (onlyVmId && vm.id !== onlyVmId) return [];
       const server = syncedByResource.get(`resource:proxmox_virtual_environment_vm.${vm.name}`);
       if (!server || !Array.isArray(vm.post_deploy_playbooks)) return [];
       return vm.post_deploy_playbooks
-        .filter(playbook => !completed.has(`${vm.id}\u0000${playbook}`))
+        .filter(playbook => (!onlyPlaybook || playbook === onlyPlaybook) && (force || !completed.has(`${vm.id}\u0000${playbook}`)))
         .map(playbook => ({ vm, server, playbook }));
     });
   }
 
-  async function runPostDeployPlaybooks({ workspace, syncedServers, logMeta, emitMeta }) {
-    const jobs = pendingPostDeployJobs(workspace, syncedServers);
+  async function runPostDeployPlaybooks({ workspace, syncedServers, logMeta, emitMeta, onlyVmId = null, onlyPlaybook = null, force = false }) {
+    const jobs = pendingPostDeployJobs(workspace, syncedServers, { onlyVmId, onlyPlaybook, force });
     if (!jobs.length) return { started: 0, succeeded: 0, failed: 0 };
 
     // Ensure that the selected Fleet playbooks reflect the configured Git
@@ -1609,7 +1610,13 @@ override.tf.json
 
     for (const job of jobs) {
       const target = serverById.get(mappingByResource.get(job.server.resource_key));
-      if (!target) continue;
+      if (!target) {
+        const output = `[Fleet] Zielserver für Post-Deploy-Playbook "${job.playbook}" ist noch nicht verfügbar.`;
+        saveResult.run(workspace.id, job.vm.id, job.playbook, 'failed', output, 'failed');
+        emitMeta(`${output}\n`);
+        result.failed++;
+        continue;
+      }
       result.started++;
       const historyId = db.updateHistory.create(target.id, `ansible:${job.playbook}`, logMeta.user || null);
       const scheduleHistoryId = db.scheduleHistory.create(null, `OpenTofu ${workspace.name}`, job.playbook, target.name);
@@ -1653,6 +1660,31 @@ override.tf.json
       }
     }
     return result;
+  }
+
+  function getPostDeployOverview(workspaceId) {
+    const statusByKey = new Map(db.db.prepare(`
+      SELECT vm_id, playbook, status, output, completed_at, updated_at
+      FROM tofu_proxmox_playbook_runs WHERE workspace_id = ?
+    `).all(workspaceId).map(row => [`${row.vm_id}\u0000${row.playbook}`, row]));
+    const entries = getProxmoxVms(workspaceId).flatMap(vm => (vm.post_deploy_playbooks || []).map((playbook, position) => {
+      const current = statusByKey.get(`${vm.id}\u0000${playbook}`);
+      return {
+        vm_id: vm.id,
+        vm_name: vm.name,
+        playbook,
+        position: position + 1,
+        status: current?.status || 'pending',
+        output: current?.output || '',
+        completed_at: current?.completed_at || null,
+        updated_at: current?.updated_at || null,
+      };
+    }));
+    const counts = entries.reduce((result, entry) => {
+      result[entry.status] = (result[entry.status] || 0) + 1;
+      return result;
+    }, { pending: 0, running: 0, success: 0, failed: 0 });
+    return { entries, counts };
   }
 
   function writeFleetProxmoxFiles(workspace) {
@@ -2282,6 +2314,56 @@ override.tf.json
       vms: getProxmoxVms(workspace.id),
       generated_files: ['fleet-proxmox-provider.tf', 'fleet-proxmox-variables.tf', 'fleet-proxmox-vms.tf'],
     });
+  });
+
+  router.get('/workspaces/:id/deployment-summary', (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    const vms = getProxmoxVms(workspace.id);
+    const postDeploy = getPostDeployOverview(workspace.id);
+    res.json({
+      vm_count: vms.length,
+      started_vm_count: vms.filter(vm => vm.started).length,
+      post_deploy: postDeploy,
+      resources: vms.map(vm => ({
+        id: vm.id, name: vm.name, node_name: vm.node_name, vm_id: vm.vm_id,
+        cpu_cores: vm.cpu_cores, memory_mb: vm.memory_mb, disk_size_gb: vm.disk_size_gb,
+      })),
+    });
+  });
+
+  router.post('/workspaces/:id/post-deploy/retry', (req, res) => {
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    const vmId = String(req.body?.vm_id || '').trim();
+    const playbook = String(req.body?.playbook || '').trim();
+    const vm = getProxmoxVms(workspace.id).find(item => item.id === vmId);
+    if (!vm || !vm.post_deploy_playbooks.includes(playbook)) return res.status(404).json({ error: 'Post-Deploy-Schritt nicht gefunden' });
+    try {
+      validatePostDeployPlaybookAccess([playbook], req);
+    } catch (error) {
+      return res.status(403).json({ error: error.message });
+    }
+    db.db.prepare(`
+      INSERT INTO tofu_proxmox_playbook_runs (workspace_id, vm_id, playbook, status, output, updated_at)
+      VALUES (?, ?, ?, 'running', '', datetime('now'))
+      ON CONFLICT(workspace_id, vm_id, playbook) DO UPDATE SET
+        status = 'running', output = '', completed_at = NULL, updated_at = datetime('now')
+    `).run(workspace.id, vm.id, playbook);
+    res.status(202).json({ accepted: true });
+
+    // This is intentionally decoupled from a full tofu apply: the VM has
+    // already been reconciled and Fleet can safely rerun just this bootstrap
+    // step against its managed server mapping.
+    setImmediate(() => runPostDeployPlaybooks({
+      workspace,
+      syncedServers: [{ resource_key: `resource:proxmox_virtual_environment_vm.${vm.name}` }],
+      logMeta: { ip: req.ip, user: req.user?.username },
+      emitMeta: () => {},
+      onlyVmId: vm.id,
+      onlyPlaybook: playbook,
+      force: true,
+    }).catch(error => log.error({ err: error, workspace: workspace.name, vm: vm.name, playbook }, 'Post-deploy retry failed')));
   });
 
   router.get('/workspaces/:id/proxmox-vm-templates', (req, res) => {

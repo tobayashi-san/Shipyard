@@ -274,6 +274,15 @@ const PLUGIN_STYLES = `
 .tofu-plugin .tp-run-workflow-title { display:flex; align-items:center; gap:7px; font-size:13px; font-weight:600; }
 .tofu-plugin .tp-run-workflow-hint { margin:3px 0 0 21px; color:var(--tp-fg-muted); font-size:12px; }
 .tofu-plugin .tp-run-actions { display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap; padding:12px 16px; border-bottom:1px solid var(--tp-border); }
+.tofu-plugin .tp-deployment-plan { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); border-bottom:1px solid var(--tp-border); background:color-mix(in srgb, var(--tp-bg2) 40%, var(--tp-card)); }
+.tofu-plugin .tp-deployment-plan-item { min-width:0; padding:10px 14px; border-right:1px solid var(--tp-border); }
+.tofu-plugin .tp-deployment-plan-item:last-child { border-right:0; }
+.tofu-plugin .tp-deployment-plan-label { display:block; color:var(--tp-fg-muted); font-size:10px; font-weight:650; letter-spacing:.07em; text-transform:uppercase; }
+.tofu-plugin .tp-deployment-plan-value { display:block; margin-top:3px; color:var(--tp-fg); font-size:17px; font-weight:650; }
+.tofu-plugin .tp-post-deploy-list { display:grid; gap:6px; }
+.tofu-plugin .tp-post-deploy-row { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:8px; align-items:center; padding:9px 12px; border:1px solid var(--tp-border); border-radius:var(--tp-radius); background:var(--tp-card); }
+.tofu-plugin .tp-post-deploy-title { min-width:0; font-size:12px; font-weight:600; }
+.tofu-plugin .tp-post-deploy-meta { margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--tp-fg-muted); font:11px var(--tp-mono); }
 .tofu-plugin .tp-run-action-group { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
 .tofu-plugin .tp-run-group-label { width:100%; color:var(--tp-fg-muted); font-size:10px; font-weight:650; letter-spacing:.08em; text-transform:uppercase; }
 .tofu-plugin .tp-run-action-group-danger { margin-left:auto; padding-left:12px; border-left:1px solid var(--tp-border); }
@@ -314,6 +323,9 @@ const PLUGIN_STYLES = `
   .tofu-plugin .tp-run-action-group-danger { margin-left:0; padding-left:0; border-left:0; }
   .tofu-plugin .tp-run-terminal-body { min-height:280px; }
   .tofu-plugin .tp-playbook-picker { grid-template-columns:1fr; }
+  .tofu-plugin .tp-deployment-plan { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  .tofu-plugin .tp-deployment-plan-item:nth-child(2) { border-right:0; }
+  .tofu-plugin .tp-deployment-plan-item:nth-child(-n+2) { border-bottom:1px solid var(--tp-border); }
 }
 @media (max-width: 520px) {
   .tofu-plugin .tp-run-actions { display:grid; grid-template-columns:1fr; gap:12px; }
@@ -488,6 +500,7 @@ async function handleWsMessage(msg) {
       : `\n✗  Failed (exit ${msg.exitCode ?? '?'}${msg.error ? ': '+msg.error : ''})\n`;
     appendTerminal(line, msg.success ? 'success' : 'error');
     refreshRunList();
+    if (msg.workspaceId === _selected) refreshDeploymentOverview({ id:msg.workspaceId });
     refreshDashboardCard(msg.workspaceId);
     if (msg.success && _refreshServersState) {
       try { await _refreshServersState({ renderCurrentView: false, reason: 'opentofu-run' }); } catch {}
@@ -1022,6 +1035,7 @@ async function loadRunsTab(el, ws) {
           <div class="tp-run-workflow-title">${icon('sitemap',14)} Sicherer Workflow</div>
           <p class="tp-run-workflow-hint">Initialisieren → prüfen → Änderungen ansehen → gezielt anwenden.</p>
         </div>
+        <div id="tofu-deployment-summary"><div class="tp-loading" style="min-height:68px;"><div class="tp-spinner"></div></div></div>
         <div class="tp-run-actions" aria-label="OpenTofu-Aktionen">
           <div class="tp-run-action-group">
             <span class="tp-run-group-label">Vorbereiten</span>
@@ -1059,6 +1073,10 @@ async function loadRunsTab(el, ws) {
         </div>
       </div>
     </div>
+    <div class="tp-card" style="margin-top:16px;">
+      <div class="tp-card-header"><div class="tp-card-title">${icon('checkDbl',14)} Post-Deploy-Status</div><div class="tp-card-actions">${btn('secondary sm icon', 'tofu-post-deploy-refresh', icon('rotate',12), 'title="Status aktualisieren"')}</div></div>
+      <div id="tofu-post-deploy-status"><div class="tp-loading" style="min-height:70px;"><div class="tp-spinner"></div></div></div>
+    </div>
   `;
 
   if (_runId) updateRunButtons(true);
@@ -1075,6 +1093,9 @@ async function loadRunsTab(el, ws) {
     if (body) body.innerHTML = '';
   });
   document.getElementById('tofu-btn-refresh-runs')?.addEventListener('click', () => refreshRunList());
+  document.getElementById('tofu-post-deploy-refresh')?.addEventListener('click', () => refreshDeploymentOverview(ws));
+
+  await refreshDeploymentOverview(ws);
 
   try {
     const response = await _pluginApi.request(`/workspaces/${ws.id}/runs?page=${_runsPage}&page_size=${_runsPageSize}`);
@@ -1084,6 +1105,60 @@ async function loadRunsTab(el, ws) {
     const listEl = document.getElementById('tofu-runs-list');
     if (listEl) { listEl.innerHTML = renderRunsTable(runs, pagination); bindRunsEvents(runs, pagination); }
   } catch {}
+}
+
+function postDeployBadge(status) {
+  const labels = { pending:'Ausstehend', running:'Läuft', success:'Erfolgreich', failed:'Fehlgeschlagen' };
+  const classes = { pending:'tp-badge-muted', running:'tp-badge-info', success:'tp-badge-success', failed:'tp-badge-danger' };
+  return `<span class="tp-badge ${classes[status] || 'tp-badge-muted'}">${esc(labels[status] || status)}</span>`;
+}
+
+function renderDeploymentOverview(summary) {
+  const post = summary?.post_deploy || { entries:[], counts:{} };
+  const counts = post.counts || {};
+  const summaryEl = document.getElementById('tofu-deployment-summary');
+  if (summaryEl) summaryEl.innerHTML = `<div class="tp-deployment-plan">
+    <div class="tp-deployment-plan-item"><span class="tp-deployment-plan-label">Definierte VMs</span><span class="tp-deployment-plan-value">${Number(summary?.vm_count || 0)}</span></div>
+    <div class="tp-deployment-plan-item"><span class="tp-deployment-plan-label">Starten nach Apply</span><span class="tp-deployment-plan-value">${Number(summary?.started_vm_count || 0)}</span></div>
+    <div class="tp-deployment-plan-item"><span class="tp-deployment-plan-label">Post-Deploy ausstehend</span><span class="tp-deployment-plan-value">${Number(counts.pending || 0) + Number(counts.running || 0)}</span></div>
+    <div class="tp-deployment-plan-item"><span class="tp-deployment-plan-label">Post-Deploy fehlerhaft</span><span class="tp-deployment-plan-value" style="color:${counts.failed ? 'var(--tp-danger)' : 'var(--tp-fg)'};">${Number(counts.failed || 0)}</span></div>
+  </div>`;
+  const target = document.getElementById('tofu-post-deploy-status');
+  if (!target) return;
+  if (!post.entries?.length) {
+    target.innerHTML = `<div class="tp-empty" style="padding:24px 20px;"><p>Für diesen Workspace sind keine Post-Deploy-Playbooks definiert.</p></div>`;
+    return;
+  }
+  target.innerHTML = `<div class="tp-post-deploy-list" style="padding:12px;">${post.entries.map(entry => `<div class="tp-post-deploy-row">
+    <div><div class="tp-post-deploy-title">${entry.position}. ${esc(entry.playbook)}</div><div class="tp-post-deploy-meta">${esc(entry.vm_name)}${entry.updated_at ? ` · ${esc(fmt(entry.updated_at))}` : ''}</div></div>
+    ${postDeployBadge(entry.status)}
+    <div style="display:flex;gap:5px;">${entry.output ? btn('secondary sm icon tofu-post-deploy-log', '', icon('eye',12), `data-vm="${esc(entry.vm_id)}" data-playbook="${esc(entry.playbook)}" title="Log anzeigen"`) : ''}${entry.status === 'failed' ? btn('secondary sm tofu-post-deploy-retry', '', icon('rotate',12)+' Wiederholen', `data-vm="${esc(entry.vm_id)}" data-playbook="${esc(entry.playbook)}"`) : ''}</div>
+  </div>`).join('')}</div>`;
+  target.querySelectorAll('.tofu-post-deploy-log').forEach(button => button.addEventListener('click', () => {
+    const entry = post.entries.find(item => item.vm_id === button.dataset.vm && item.playbook === button.dataset.playbook);
+    if (!entry) return;
+    showModal(`<h2>${icon('play',16)} ${esc(entry.playbook)}</h2><p class="tp-muted" style="font-size:12px;margin:-8px 0 12px;">${esc(entry.vm_name)} · ${postDeployBadge(entry.status)}</p><div class="tp-terminal" style="max-height:55vh;overflow:auto;"><div class="tp-terminal-body" style="white-space:pre-wrap;">${esc(entry.output || '(Keine Ausgabe)')}</div></div><div class="tp-form-actions">${btn('secondary', 'tofu-post-deploy-log-close', 'Schliessen')}</div>`, { maxWidth:'760px', onReady: () => document.getElementById('tofu-post-deploy-log-close').addEventListener('click', closeModal) });
+  }));
+  target.querySelectorAll('.tofu-post-deploy-retry').forEach(button => button.addEventListener('click', async () => {
+    const entry = post.entries.find(item => item.vm_id === button.dataset.vm && item.playbook === button.dataset.playbook);
+    if (!entry || !await _internalConfirm(`„${entry.playbook}“ auf ${entry.vm_name} erneut ausführen?`, { title:'Post-Deploy wiederholen', confirmText:'Wiederholen' })) return;
+    button.disabled = true;
+    try {
+      await _pluginApi.request(`/workspaces/${_selected}/post-deploy/retry`, { method:'POST', body:JSON.stringify({ vm_id:entry.vm_id, playbook:entry.playbook }) });
+      _showToast('Post-Deploy-Schritt wird erneut ausgeführt.', 'success');
+      setTimeout(() => refreshDeploymentOverview({ id:_selected }), 450);
+    } catch (error) { _showToast(error.message, 'error'); button.disabled = false; }
+  }));
+}
+
+async function refreshDeploymentOverview(ws) {
+  try {
+    const summary = await _pluginApi.request(`/workspaces/${ws.id}/deployment-summary`);
+    renderDeploymentOverview(summary);
+  } catch (error) {
+    const target = document.getElementById('tofu-post-deploy-status');
+    if (target) target.innerHTML = `<p style="padding:12px;color:var(--tp-danger);font-size:12px;">${esc(error.message)}</p>`;
+  }
 }
 
 function renderRunsTable(runs, pagination) {
@@ -1174,7 +1249,14 @@ async function executeAction(ws, action) {
     if (!destroyConfirmation) return;
   }
   if (action === 'apply') {
-    if (!await _internalConfirm(`Die geplanten Änderungen für „${ws.name}“ werden ausgeführt. Prüfe vorher die Vorschau.`,
+    let deploymentText = 'Die geplanten Änderungen';
+    try {
+      const summary = await _pluginApi.request(`/workspaces/${ws.id}/deployment-summary`);
+      const counts = summary?.post_deploy?.counts || {};
+      const pending = Number(counts.pending || 0) + Number(counts.running || 0);
+      deploymentText = `${Number(summary?.vm_count || 0)} VM-Definition(en), ${pending} ausstehende Post-Deploy-Schritt(e) und ${Number(counts.failed || 0)} fehlgeschlagene Schritt(e)`;
+    } catch {}
+    if (!await _internalConfirm(`${deploymentText} für „${ws.name}“ werden angewendet. Prüfe vorher die Vorschau.`,
       { title:'Änderungen anwenden', confirmText:'Anwenden', danger:false, confirmValue:ws.name, confirmLabel:'Workspace-Name zur Bestätigung' })) return;
   }
   const body = document.getElementById('tofu-terminal-body');
