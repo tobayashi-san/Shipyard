@@ -23,7 +23,8 @@ function getSshManager() {
   return _sshManager;
 }
 
-// Map of currently running processes: runId -> ChildProcess
+// Map of currently running processes: internal runId -> process context.
+// The persisted dbRunId is what the console exposes, so retain both IDs.
 const _running = new Map();
 
 // ── Tofu <-> Git workspace sync ────────────────────────────────────────────
@@ -2142,7 +2143,7 @@ override.tf.json
         data: `▶  ${binary} ${args.join(' ')}\n   cwd: ${workspace.path}\n\n` });
 
       const proc = spawn(binary, args, { cwd: workspace.path, env });
-      _running.set(runId, proc);
+      _running.set(runId, { proc, dbRunId, workspaceId: workspace.id });
 
       let output = '';
       const emitMeta = (message) => {
@@ -2236,9 +2237,11 @@ override.tf.json
   });
 
   router.post('/workspaces/:id/cancel/:runId', (req, res) => {
-    const proc = _running.get(req.params.runId);
-    if (!proc) return res.status(404).json({ error: 'No running process found' });
-    proc.kill('SIGTERM');
+    const workspace = getWorkspace(req.params.id);
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    const entry = [..._running.values()].find(item => item.dbRunId === req.params.runId && item.workspaceId === workspace.id);
+    if (!entry) return res.status(404).json({ error: 'No running process found for this workspace' });
+    entry.proc.kill('SIGTERM');
     res.json({ success: true });
   });
 

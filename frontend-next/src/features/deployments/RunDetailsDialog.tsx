@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { Check, Clipboard, FileOutput, RefreshCw } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Check, Clipboard, FileOutput, RefreshCw, Square } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
@@ -29,6 +29,7 @@ function formatDate(value?: string) {
 }
 
 export function RunDetailsDialog({ workspaceId, runId, open, onOpenChange }: { workspaceId: string; runId?: string | null; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const queryClient = useQueryClient();
   const runQuery = useQuery({
     queryKey: ['opentofu', 'workspace', workspaceId, 'run', runId],
     queryFn: () => apiFetch<RunDetails>(`/plugin/opentofu/workspaces/${encodeURIComponent(workspaceId)}/runs/${encodeURIComponent(runId || '')}`),
@@ -36,6 +37,15 @@ export function RunDetailsDialog({ workspaceId, runId, open, onOpenChange }: { w
     refetchInterval: query => ['running', 'queued'].includes(String(query.state.data?.status || '')) ? 2_000 : false,
   });
   const run = runQuery.data;
+  const cancelMutation = useMutation({
+    mutationFn: () => apiFetch(`/plugin/opentofu/workspaces/${encodeURIComponent(workspaceId)}/cancel/${encodeURIComponent(runId || '')}`, { method: 'POST' }),
+    onSuccess: () => {
+      showToast('Abbruch wurde angefordert. Der Lauf beendet sich kontrolliert.', 'success');
+      void runQuery.refetch();
+      void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspace', workspaceId, 'runs'] });
+    },
+    onError: (error: Error) => showToast(error.message, 'error'),
+  });
   const copyOutput = async () => {
     try {
       await navigator.clipboard.writeText(run?.output || '');
@@ -54,7 +64,7 @@ export function RunDetailsDialog({ workspaceId, runId, open, onOpenChange }: { w
       <div className="min-h-48 flex-1 overflow-auto rounded-md border bg-zinc-950 p-4 font-mono text-xs leading-5 text-zinc-100 dark:bg-zinc-950 dark:text-zinc-100">
         {runQuery.isLoading ? <div className="flex h-32 items-center justify-center gap-2 text-zinc-400"><RefreshCw className="h-4 w-4 animate-spin" />Lauf wird geladen…</div> : runQuery.isError ? <p className="text-red-300">Die Laufdetails konnten nicht geladen werden.</p> : <pre className="whitespace-pre-wrap break-words">{run?.output || (run?.status === 'running' ? 'Warte auf Ausgabe…' : 'Keine Ausgabe vorhanden.')}</pre>}
       </div>
-      <DialogFooter><Button type="button" variant="outline" onClick={() => void runQuery.refetch()} disabled={runQuery.isFetching}><RefreshCw className={runQuery.isFetching ? 'animate-spin' : undefined} />Aktualisieren</Button><Button type="button" variant="outline" onClick={() => void copyOutput()} disabled={!run?.output}><Clipboard />Ausgabe kopieren</Button><Button type="button" onClick={() => onOpenChange(false)}><Check />Schließen</Button></DialogFooter>
+      <DialogFooter>{run?.status === 'running' && <Button type="button" variant="destructive" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}><Square />Lauf abbrechen</Button>}<Button type="button" variant="outline" onClick={() => void runQuery.refetch()} disabled={runQuery.isFetching}><RefreshCw className={runQuery.isFetching ? 'animate-spin' : undefined} />Aktualisieren</Button><Button type="button" variant="outline" onClick={() => void copyOutput()} disabled={!run?.output}><Clipboard />Ausgabe kopieren</Button><Button type="button" onClick={() => onOpenChange(false)}><Check />Schließen</Button></DialogFooter>
     </DialogContent>
   </Dialog>;
 }
