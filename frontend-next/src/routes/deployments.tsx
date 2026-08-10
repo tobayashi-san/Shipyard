@@ -110,7 +110,6 @@ export function DeploymentsPage() {
       actions={<>
         <Button type="button" variant="outline" onClick={refresh} disabled={isRefreshing}><RefreshCw className={isRefreshing ? 'animate-spin' : undefined} />{t('deploy.refresh')}</Button>
         <Button type="button" onClick={() => setCreateOpen(true)}><FolderPlus />Deployment anlegen</Button>
-        <Button asChild><Link to="/plugins/$id" params={{ id: 'opentofu' }}><Workflow />{t('deploy.advanced')}</Link></Button>
       </>}
     />
 
@@ -161,7 +160,7 @@ export function DeploymentsPage() {
           </Card>;
         })}
       </div>
-      <p className="text-xs text-muted-foreground">{t('deploy.legacyHint')}</p>
+      <p className="text-xs text-muted-foreground">{t('deploy.legacyHint')} <Link to="/plugins/$id" params={{ id: 'opentofu' }} className="font-medium text-primary hover:underline">{t('deploy.advanced')}</Link></p>
     </>}
     <CreateDeploymentDialog open={createOpen} onOpenChange={setCreateOpen} />
   </div>;

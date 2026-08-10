@@ -1301,7 +1301,7 @@
   "deploy": {
     "title": "Deployments",
     "description": "OpenTofu deployments, VM resources, and provisioning status.",
-    "advanced": "Advanced workspace management",
+    "advanced": "Files & variables (expert view)",
     "refresh": "Refresh",
     "status": "OpenTofu status",
     "ready": "OpenTofu is ready",
@@ -1319,6 +1319,6 @@
     "noRun": "No runs yet",
     "postDeploy": "Post-deploy",
     "pending": "pending",
-    "legacyHint": "Full workspace management remains available while the integration is rolled out in stages."
+    "legacyHint": "Files, variables and state tools remain available in the expert view."
   }
 }
