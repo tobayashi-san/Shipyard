@@ -9,6 +9,7 @@ const { sendWebhook, sendEmail } = require('../services/notifier');
 const { adminOnly } = require('../middleware/auth');
 const { setSecret } = require('../utils/crypto');
 const { serverError } = require('../utils/http-error');
+const log = require('../utils/logger').child('system');
 const { rotateJwtSecret } = require('../utils/jwt-secret');
 
 const deployLimiter = rateLimit({
@@ -93,11 +94,15 @@ router.post('/key/import', adminOnly, (req, res) => {
 // POST /api/system/deploy - Deploy SSH key to a server
 router.post('/deploy', adminOnly, deployLimiter, async (req, res) => {
   try {
-    const { ip_address, ssh_user, password, ssh_port } = req.body;
+    const { ip_address, ssh_user, password, ssh_port, server_id: serverId } = req.body;
     if (!ip_address || !password) {
       return res.status(400).json({ error: 'ip_address and password are required' });
     }
-    const result = await sshManager.deployKey(ip_address, ssh_user || 'root', password, ssh_port || 22);
+    const port = Number(ssh_port || 22);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return res.status(400).json({ error: 'Invalid SSH port' });
+    const target = serverId ? db.servers.getById(String(serverId)) : db.servers.getAll().find(server => server.ip_address === ip_address);
+    if (serverId && !target) return res.status(404).json({ error: 'Server not found' });
+    const result = await sshManager.deployKey(ip_address, ssh_user || 'root', password, port, { serverId: target?.id || null });
     // If a server with this IP exists and has no fingerprint yet, persist what we just learned (TOFU).
     try {
       if (result?.fingerprint) {
@@ -111,7 +116,11 @@ router.post('/deploy', adminOnly, deployLimiter, async (req, res) => {
     res.json(result);
   } catch (error) {
     db.auditLog.write('ssh.deploy', `SSH key deploy failed for ${req.body?.ip_address}`, req.ip, false, req.user?.username);
-    serverError(res, error, 'deploy SSH key');
+    // A remote SSH connection failure is an expected operational outcome,
+    // not an internal Fleet crash. Keep implementation details in the log.
+    log.warn({ err: error, serverId: req.body?.server_id, ipAddress: req.body?.ip_address }, 'SSH key deployment failed');
+    if (!res.headersSent) res.status(502).json({ error: 'SSH-Schlüssel konnte nicht installiert werden. Prüfe IP-Adresse, SSH-Benutzer, Passwort und Erreichbarkeit.' });
+    else serverError(res, error, 'deploy SSH key');
   }
 });
 
