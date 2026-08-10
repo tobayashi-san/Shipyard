@@ -30,6 +30,7 @@ const adhocRouter = require('./routes/adhoc');
 const gitPlaybooksRouter = require('./routes/git-playbooks');
 const pluginsAdminRouter = require('./routes/plugins-admin');
 const agentAdminRouter = require('./routes/agent-admin');
+const ipamRouter = require('./routes/ipam');
 
 const PLUGIN_UI_CONTENT_TYPES = {
   '.css': 'text/css; charset=utf-8',
@@ -147,6 +148,7 @@ function createApp({ isHttps = false } = {}) {
   app.use('/api/reset', resetRouter);
   app.use('/api/dashboard', dashboardRouter);
   app.use('/api/environments', environmentsRouter);
+  app.use('/api/ipam', ipamRouter);
   app.use('/api/ansible', createAnsibleRouter({ broadcast: emit }));
   app.use('/api/servers/:id/custom-updates', customUpdatesRouter);
   app.use('/api/servers', createServerActionsRouter({ broadcast: emit }));

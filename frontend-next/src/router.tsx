@@ -15,6 +15,7 @@ const DeploymentsPage = lazy(() => import('@/routes/deployments').then(module =>
 const DeploymentDetailPage = lazy(() => import('@/routes/deployment-detail').then(module => ({ default: module.DeploymentDetailPage })));
 const InfrastructurePage = lazy(() => import('@/routes/infrastructure').then(module => ({ default: module.InfrastructurePage })));
 const OperationsPage = lazy(() => import('@/routes/operations').then(module => ({ default: module.OperationsPage })));
+const NetworksPage = lazy(() => import('@/routes/networks').then(module => ({ default: module.NetworksPage })));
 const PluginHostPage = lazy(() => import('@/routes/_legacy/plugins').then(module => ({ default: module.PluginHostPage })));
 const LazyPage = ({ children }: { children: ReactNode }) => <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Lade Konsole…</div>}>{children}</Suspense>;
 
@@ -57,6 +58,7 @@ const deploymentsRoute= createRoute({ getParentRoute: () => protectedLayout, pat
 const deploymentDetailRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/deployments/$id', component: () => <LazyPage><DeploymentDetailPage /></LazyPage> });
 const infrastructureRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/infrastructure', component: () => <LazyPage><InfrastructurePage /></LazyPage> });
 const operationsRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/operations', component: () => <LazyPage><OperationsPage /></LazyPage> });
+const networksRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/networks', component: () => <LazyPage><NetworksPage /></LazyPage> });
 // Settings is the single page that hosts: appearance, ssh, system, agent-manifest,
 // notifications, git, plugins, users-roles, audit, danger.
 // Tab is selected via the optional :tab path segment (default = appearance).
@@ -78,6 +80,7 @@ const routeTree = rootRoute.addChildren([
     deploymentDetailRoute,
     infrastructureRoute,
     operationsRoute,
+    networksRoute,
     settingsRoute,
     settingsTabRoute,
     pluginHostRoute,

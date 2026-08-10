@@ -109,6 +109,39 @@ function applySchema(db) {
     INSERT OR IGNORE INTO environments (id, name) VALUES ('default', 'Standardumgebung');
   `);
 
+  // IPAM is environment-scoped, so the same RFC1918 ranges can exist in
+  // isolated lab, staging and production environments without ambiguity.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ipam_subnets (
+      id TEXT PRIMARY KEY,
+      environment_id TEXT NOT NULL DEFAULT 'default',
+      name TEXT NOT NULL,
+      cidr TEXT NOT NULL,
+      gateway TEXT DEFAULT '',
+      dns_servers TEXT DEFAULT '[]',
+      vlan_id INTEGER,
+      bridge TEXT DEFAULT '',
+      description TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(environment_id, cidr)
+    );
+    CREATE TABLE IF NOT EXISTS ipam_reservations (
+      id TEXT PRIMARY KEY,
+      subnet_id TEXT NOT NULL,
+      address TEXT NOT NULL,
+      hostname TEXT DEFAULT '',
+      server_id TEXT,
+      mac_address TEXT DEFAULT '',
+      description TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(subnet_id, address),
+      FOREIGN KEY (subnet_id) REFERENCES ipam_subnets(id) ON DELETE CASCADE,
+      FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ipam_subnets_environment ON ipam_subnets(environment_id);
+    CREATE INDEX IF NOT EXISTS idx_ipam_reservations_subnet ON ipam_reservations(subnet_id);
+  `);
+
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_server_info_server_id      ON server_info(server_id);
     CREATE INDEX IF NOT EXISTS idx_update_history_server_id   ON update_history(server_id);

@@ -1,0 +1,40 @@
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Network, Plus, Server, Trash2 } from 'lucide-react';
+import { apiFetch } from '@/lib/api';
+import { useUi } from '@/lib/store';
+import { showToast } from '@/lib/toast';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { PageHeader } from '@/components/ui/page-header';
+
+interface Subnet { id: string; name: string; cidr: string; gateway?: string; dns_servers?: string[]; vlan_id?: number | null; bridge?: string; description?: string; reservation_count?: number }
+interface Reservation { id: string; address: string; hostname?: string; server_name?: string; description?: string }
+
+export function NetworksPage() {
+  const environmentId = useUi(state => state.environmentId);
+  const qc = useQueryClient();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [selected, setSelected] = useState<Subnet | null>(null);
+  const [reservationAddress, setReservationAddress] = useState('');
+  const subnetsQuery = useQuery({ queryKey: ['ipam', 'subnets', environmentId], queryFn: () => apiFetch<Subnet[]>(`/ipam/subnets?environment_id=${encodeURIComponent(environmentId)}`) });
+  const reservationsQuery = useQuery({ queryKey: ['ipam', 'reservations', selected?.id], queryFn: () => apiFetch<Reservation[]>(`/ipam/subnets/${encodeURIComponent(selected!.id)}/reservations`), enabled: Boolean(selected) });
+  const reserve = useMutation({ mutationFn: () => apiFetch(`/ipam/subnets/${encodeURIComponent(selected!.id)}/reservations`, { method: 'POST', body: { address: reservationAddress } }), onSuccess: () => { setReservationAddress(''); showToast('IP-Adresse reserviert.', 'success'); void qc.invalidateQueries({ queryKey: ['ipam'] }); }, onError: (error: Error) => showToast(error.message, 'error') });
+  const remove = useMutation({ mutationFn: (id: string) => apiFetch(`/ipam/reservations/${encodeURIComponent(id)}`, { method: 'DELETE' }), onSuccess: () => { showToast('Reservierung entfernt.', 'success'); void qc.invalidateQueries({ queryKey: ['ipam'] }); }, onError: (error: Error) => showToast(error.message, 'error') });
+  const subnets = Array.isArray(subnetsQuery.data) ? subnetsQuery.data : [];
+  return <div className="space-y-6"><PageHeader title="Netzwerke & IPAM" description="Subnetze, VLANs, Gateways und reservierte IP-Adressen pro Umgebung." actions={<Button onClick={() => setCreateOpen(true)}><Plus />Subnetz anlegen</Button>} />
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(330px,0.8fr)]"><Card><CardHeader className="border-b"><CardTitle className="flex items-center gap-2 text-base"><Network className="h-4 w-4" />Subnetze</CardTitle></CardHeader><CardContent className="p-0">{subnets.length === 0 ? <p className="p-6 text-sm text-muted-foreground">Noch keine Subnetze in dieser Umgebung. Lege zuerst das Netzwerk an, aus dem Fleet VM-Adressen vergeben soll.</p> : <div className="divide-y">{subnets.map(subnet => <button key={subnet.id} type="button" onClick={() => setSelected(subnet)} className="flex w-full items-center gap-4 px-4 py-3 text-left hover:bg-muted/40"><Network className="h-4 w-4 text-brand" /><div className="min-w-0 flex-1"><div className="font-medium">{subnet.name}</div><div className="mt-0.5 font-mono text-xs text-muted-foreground">{subnet.cidr}{subnet.gateway ? ` · GW ${subnet.gateway}` : ''}</div></div>{subnet.vlan_id ? <span className="rounded bg-muted px-2 py-1 text-xs">VLAN {subnet.vlan_id}</span> : null}<span className="text-xs text-muted-foreground">{subnet.reservation_count || 0} reserviert</span></button>)}</div>}</CardContent></Card>
+      <Card><CardHeader className="border-b"><CardTitle className="flex items-center gap-2 text-base"><Server className="h-4 w-4" />{selected ? `${selected.name} · IP-Adressen` : 'IP-Reservierungen'}</CardTitle></CardHeader><CardContent className="space-y-3 p-4">{!selected ? <p className="text-sm text-muted-foreground">Wähle ein Subnetz aus, um IP-Adressen zu reservieren.</p> : <><form className="flex gap-2" onSubmit={event => { event.preventDefault(); reserve.mutate(); }}><Input required value={reservationAddress} onChange={event => setReservationAddress(event.target.value)} placeholder="10.20.10.25" /><Button type="submit" disabled={reserve.isPending}><Plus />Reservieren</Button></form><div className="divide-y rounded-md border">{(Array.isArray(reservationsQuery.data) ? reservationsQuery.data : []).map(item => <div key={item.id} className="flex items-center gap-3 px-3 py-2"><span className="flex-1 font-mono text-sm">{item.address}</span><span className="text-xs text-muted-foreground">{item.hostname || item.server_name || '—'}</span><Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => remove.mutate(item.id)} aria-label={`${item.address} freigeben`}><Trash2 className="h-4 w-4" /></Button></div>)}{!reservationsQuery.isLoading && !(reservationsQuery.data || []).length && <p className="px-3 py-4 text-sm text-muted-foreground">Noch keine Reservierungen.</p>}</div></>}</CardContent></Card></div>
+    <CreateSubnetDialog open={createOpen} onOpenChange={setCreateOpen} environmentId={environmentId} />
+  </div>;
+}
+
+function CreateSubnetDialog({ open, onOpenChange, environmentId }: { open: boolean; onOpenChange: (open: boolean) => void; environmentId: string }) {
+  const qc = useQueryClient(); const [name, setName] = useState(''); const [cidr, setCidr] = useState(''); const [gateway, setGateway] = useState(''); const [vlan, setVlan] = useState(''); const [bridge, setBridge] = useState(''); const [dns, setDns] = useState('');
+  const create = useMutation({ mutationFn: () => apiFetch('/ipam/subnets', { method: 'POST', body: { environment_id: environmentId, name, cidr, gateway, vlan_id: vlan, bridge, dns_servers: dns.split(',').map(value => value.trim()).filter(Boolean) } }), onSuccess: () => { showToast('Subnetz angelegt.', 'success'); onOpenChange(false); setName(''); setCidr(''); setGateway(''); setVlan(''); setBridge(''); setDns(''); void qc.invalidateQueries({ queryKey: ['ipam', 'subnets', environmentId] }); }, onError: (error: Error) => showToast(error.message, 'error') });
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>Subnetz anlegen</DialogTitle><DialogDescription>Diese Werte stehen später für VM-Vorlagen und statische IP-Konfigurationen zur Verfügung.</DialogDescription></DialogHeader><form className="grid gap-4 sm:grid-cols-2" onSubmit={event => { event.preventDefault(); create.mutate(); }}><Field label="Name"><Input required value={name} onChange={event => setName(event.target.value)} placeholder="Produktion" /></Field><Field label="IPv4-CIDR"><Input required value={cidr} onChange={event => setCidr(event.target.value)} placeholder="10.20.10.0/24" /></Field><Field label="Gateway"><Input value={gateway} onChange={event => setGateway(event.target.value)} placeholder="10.20.10.1" /></Field><Field label="VLAN-ID"><Input value={vlan} onChange={event => setVlan(event.target.value)} inputMode="numeric" placeholder="2010" /></Field><Field label="Bridge"><Input value={bridge} onChange={event => setBridge(event.target.value)} placeholder="vmbr0" /></Field><Field label="DNS-Server"><Input value={dns} onChange={event => setDns(event.target.value)} placeholder="10.20.10.2, 1.1.1.1" /></Field><DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Abbrechen</Button><Button type="submit" disabled={create.isPending}>Subnetz anlegen</Button></DialogFooter></form></DialogContent></Dialog>;
+}
+function Field({ label, children }: { label: string; children: React.ReactNode }) { return <div className="space-y-1.5"><Label>{label}</Label>{children}</div>; }
