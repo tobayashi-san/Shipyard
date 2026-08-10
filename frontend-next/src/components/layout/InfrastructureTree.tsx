@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
-import { ChevronDown, ChevronRight, CircleDot, Database, Folder, FolderTree, HardDrive, Server, ServerCog, Settings2, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, CircleDot, Database, Folder, FolderTree, HardDrive, Server, ServerCog, Settings2, Trash2, UsersRound } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, apiFetch } from '@/lib/api';
 import { asArray, cn } from '@/lib/utils';
@@ -47,6 +47,8 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
   const [folderToManage, setFolderToManage] = useState<ServerGroup | null>(null);
   const [managedFolderName, setManagedFolderName] = useState('');
   const [managedFolderParentId, setManagedFolderParentId] = useState('');
+  const [managedServerIds, setManagedServerIds] = useState<Set<string>>(new Set());
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const { data: rawServers } = useQuery({
     queryKey: ['servers'],
     queryFn: () => api.getServers() as Promise<Record<string, unknown>[]>,
@@ -91,8 +93,12 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
       if (!folderToManage) return;
       await api.updateServerGroup(folderToManage.id, managedFolderName.trim(), folderToManage.color);
       if ((folderToManage.parent_id || '') !== managedFolderParentId) await api.setGroupParent(folderToManage.id, managedFolderParentId || null);
+      await Promise.all(servers.filter(server => (server.group_id || null) === folderToManage.id || managedServerIds.has(server.id)).map(server => {
+        const nextGroupId = managedServerIds.has(server.id) ? folderToManage.id : null;
+        return (server.group_id || null) === nextGroupId ? Promise.resolve() : api.setServerGroup(server.id, nextGroupId);
+      }));
     },
-    onSuccess: () => { showToast('Ordner gespeichert.', 'success'); setFolderToManage(null); void queryClient.invalidateQueries({ queryKey: ['server-groups'] }); },
+    onSuccess: () => { showToast('Ordner gespeichert.', 'success'); setFolderToManage(null); void queryClient.invalidateQueries({ queryKey: ['server-groups'] }); void queryClient.invalidateQueries({ queryKey: ['servers'] }); },
     onError: (error: Error) => showToast(error.message, 'error'),
   });
   const deleteFolder = useMutation({
@@ -130,9 +136,15 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
     onNavigate?.();
     void navigate({ to: '/servers/$id', params: { id: server.id } });
   };
+  const moveServerToFolder = (serverId: string, groupId: string) => {
+    void api.setServerGroup(serverId, groupId).then(() => {
+      showToast('Ressource in Ordner verschoben.', 'success');
+      void queryClient.invalidateQueries({ queryKey: ['servers'] });
+    }).catch((error: Error) => showToast(error.message, 'error'));
+  };
   const serverRow = (server: ServerRow, depth = 0) => {
     const active = path === `/servers/${server.id}`;
-    return <button key={server.id} type="button" onClick={() => selectServer(server)} title={server.ip_address || server.name}
+    return <button key={server.id} type="button" draggable={!compact} onDragStart={event => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', `server:${server.id}`); }} onClick={() => selectServer(server)} title={server.ip_address || server.name}
       className={cn('group flex w-full min-w-0 items-center gap-2 rounded-sm py-1.5 pr-2 text-left text-xs transition-colors', active ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground')}
       style={{ paddingLeft: `${12 + depth * 14}px` }}>
       <StatusDot status={server.status} /><Server className="h-3.5 w-3.5 shrink-0" />
@@ -144,9 +156,9 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
     const open = !collapsed.has(node.id);
     const members = byGroup[node.id] || [];
     const hasChildren = members.length > 0 || node.children.length > 0;
-    const openManager = () => { setFolderToManage(node); setManagedFolderName(node.name); setManagedFolderParentId(node.parent_id || ''); };
+    const openManager = () => { setFolderToManage(node); setManagedFolderName(node.name); setManagedFolderParentId(node.parent_id || ''); setManagedServerIds(new Set(members.map(server => server.id))); };
     return <div key={node.id}>
-      <div className="group flex min-w-0 items-center gap-1 pr-1" style={{ paddingLeft: `${8 + depth * 14}px` }}>
+      <div className={cn('group flex min-w-0 items-center gap-1 pr-1 transition-colors', dropTargetId === node.id && 'rounded-sm bg-brand/10 ring-1 ring-inset ring-brand/50')} onDragOver={event => { const value = event.dataTransfer.types.includes('text/plain'); if (value) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropTargetId(node.id); } }} onDragLeave={() => setDropTargetId(current => current === node.id ? null : current)} onDrop={event => { event.preventDefault(); setDropTargetId(null); const id = event.dataTransfer.getData('text/plain').replace(/^server:/, ''); if (id) moveServerToFolder(id, node.id); }} style={{ paddingLeft: `${8 + depth * 14}px` }}>
         <button type="button" onClick={() => hasChildren && toggle(node.id)} className={cn('flex min-w-0 flex-1 items-center gap-1.5 rounded-sm py-1.5 text-left text-xs text-foreground transition-colors hover:bg-accent/60', !hasChildren && 'cursor-default')}>
           {hasChildren ? (open ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />) : <span className="w-3.5" />}
           <Folder className="h-3.5 w-3.5 shrink-0" style={{ color: node.color || undefined }} />
@@ -176,7 +188,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
           <button type="button" onClick={() => toggle(nodeId)} className="flex w-full min-w-0 items-center gap-1.5 rounded-sm py-1.5 pr-2 text-left text-xs text-muted-foreground hover:bg-accent/60" style={{ paddingLeft: '26px' }}>
             {nodeOpen ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}<StatusDot status={node.status} /><ServerCog className="h-3.5 w-3.5 shrink-0" /><span className="min-w-0 flex-1 truncate">{node.name || 'Node'}</span><span className="text-[10px]">{members.length}</span>
           </button>
-          {nodeOpen && members.map(vm => vm.fleet_server_id ? <Link key={`${nodeId}:vm:${vm.vm_id || vm.name}`} to="/servers/$id" params={{ id: vm.fleet_server_id }} onClick={onNavigate} title={`Fleet-Host · VM ${vm.vm_id || '—'} · ${vm.status || 'unknown'}`} className="group flex min-w-0 items-center gap-2 rounded-sm py-1.5 pr-2 text-xs text-foreground transition-colors hover:bg-accent/60" style={{ paddingLeft: '50px' }}><StatusDot status={vm.status} /><HardDrive className="h-3.5 w-3.5 shrink-0 text-brand" /><span className="min-w-0 flex-1 truncate">{vm.name || `VM ${vm.vm_id || ''}`}</span><span className="rounded-sm bg-brand/10 px-1 font-mono text-[9px] text-brand">Fleet</span></Link> : <Link key={`${nodeId}:vm:${vm.vm_id || vm.name}`} to="/infrastructure" onClick={onNavigate} title={`VM ${vm.vm_id || '—'} · ${vm.status || 'unknown'}`} className="group flex min-w-0 items-center gap-2 rounded-sm py-1.5 pr-2 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground" style={{ paddingLeft: '50px' }}><StatusDot status={vm.status} /><HardDrive className="h-3.5 w-3.5 shrink-0" /><span className="min-w-0 flex-1 truncate">{vm.name || `VM ${vm.vm_id || ''}`}</span><span className="font-mono text-[10px] opacity-0 transition-opacity group-hover:opacity-100">{vm.vm_id || '—'}</span></Link>)}
+          {nodeOpen && members.map(vm => vm.fleet_server_id ? <Link key={`${nodeId}:vm:${vm.vm_id || vm.name}`} to="/servers/$id" params={{ id: vm.fleet_server_id }} draggable={!compact} onDragStart={event => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', `server:${vm.fleet_server_id}`); }} onClick={onNavigate} title={`Fleet-Host · VM ${vm.vm_id || '—'} · ${vm.status || 'unknown'}`} className="group flex min-w-0 items-center gap-2 rounded-sm py-1.5 pr-2 text-xs text-foreground transition-colors hover:bg-accent/60" style={{ paddingLeft: '50px' }}><StatusDot status={vm.status} /><HardDrive className="h-3.5 w-3.5 shrink-0 text-brand" /><span className="min-w-0 flex-1 truncate">{vm.name || `VM ${vm.vm_id || ''}`}</span><span className="rounded-sm bg-brand/10 px-1 font-mono text-[9px] text-brand">Fleet</span></Link> : <Link key={`${nodeId}:vm:${vm.vm_id || vm.name}`} to="/infrastructure" onClick={onNavigate} title={`VM ${vm.vm_id || '—'} · ${vm.status || 'unknown'}`} className="group flex min-w-0 items-center gap-2 rounded-sm py-1.5 pr-2 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground" style={{ paddingLeft: '50px' }}><StatusDot status={vm.status} /><HardDrive className="h-3.5 w-3.5 shrink-0" /><span className="min-w-0 flex-1 truncate">{vm.name || `VM ${vm.vm_id || ''}`}</span><span className="font-mono text-[10px] opacity-0 transition-opacity group-hover:opacity-100">{vm.vm_id || '—'}</span></Link>)}
         </div>;
       })}</div>}
     </div>;
@@ -201,16 +213,23 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
     </div>
     <Dialog open={folderOpen} onOpenChange={setFolderOpen}><DialogContent className="max-w-sm"><DialogHeader><DialogTitle>Ordner erstellen</DialogTitle><DialogDescription>Strukturiere VMs und Fleet-Hosts wie in einer vCenter-Baumansicht.</DialogDescription></DialogHeader><form className="space-y-4" onSubmit={event => { event.preventDefault(); createFolder.mutate(); }}><div className="space-y-1.5"><Label htmlFor="tree-folder-name">Name</Label><Input id="tree-folder-name" required autoFocus value={folderName} onChange={event => setFolderName(event.target.value)} placeholder="Produktion" /></div><div className="space-y-1.5"><Label htmlFor="tree-folder-parent">Übergeordneter Ordner</Label><select id="tree-folder-parent" value={folderParentId} onChange={event => setFolderParentId(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="">Stammordner</option>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></div><DialogFooter><Button type="button" variant="outline" onClick={() => setFolderOpen(false)}>Abbrechen</Button><Button type="submit" disabled={createFolder.isPending}>Ordner erstellen</Button></DialogFooter></form></DialogContent></Dialog>
     <Dialog open={Boolean(folderToManage)} onOpenChange={open => !open && setFolderToManage(null)}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-md">
         <DialogHeader><DialogTitle>Ordner verwalten</DialogTitle><DialogDescription>Ändere Name oder Position in der Infrastruktur-Baumansicht.</DialogDescription></DialogHeader>
         <form className="space-y-4" onSubmit={event => { event.preventDefault(); saveFolder.mutate(); }}>
           <div className="space-y-1.5"><Label htmlFor="manage-folder-name">Name</Label><Input id="manage-folder-name" required autoFocus value={managedFolderName} onChange={event => setManagedFolderName(event.target.value)} /></div>
           <div className="space-y-1.5"><Label htmlFor="manage-folder-parent">Übergeordneter Ordner</Label><select id="manage-folder-parent" value={managedFolderParentId} onChange={event => setManagedFolderParentId(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="">Stammordner</option>{groups.filter(group => !folderToManage || !getDescendantIds(groups, folderToManage.id).has(group.id)).map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></div>
+          <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+            <div className="flex items-center gap-2 text-sm font-medium"><UsersRound className="h-4 w-4 text-muted-foreground" />Ressourcen in diesem Ordner</div>
+            <p className="text-xs text-muted-foreground">Wähle Fleet-Hosts aus. Bereits übernommene Proxmox-VMs erscheinen hier als Fleet-Host.</p>
+            <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
+              {servers.length === 0 ? <p className="py-2 text-xs text-muted-foreground">Keine Fleet-Hosts in dieser Umgebung.</p> : servers.map(server => <label key={server.id} className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"><input type="checkbox" checked={managedServerIds.has(server.id)} onChange={() => setManagedServerIds(current => { const next = new Set(current); if (next.has(server.id)) next.delete(server.id); else next.add(server.id); return next; })} /><StatusDot status={server.status} /><span className="min-w-0 flex-1 truncate">{server.name}</span><span className="font-mono text-[10px] text-muted-foreground">{server.ip_address || '—'}</span></label>)}
+            </div>
+          </div>
           <p className="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-muted-foreground">Beim Löschen bleiben enthaltene Hosts erhalten und Unterordner werden in den Stamm verschoben.</p>
-          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
-            <Button type="button" variant="destructive" onClick={() => deleteFolder.mutate()} disabled={deleteFolder.isPending}><Trash2 />Ordner löschen</Button>
-            <div className="flex gap-2"><Button type="button" variant="outline" onClick={() => setFolderToManage(null)}>Abbrechen</Button><Button type="submit" disabled={saveFolder.isPending || !managedFolderName.trim()}>Speichern</Button></div>
-          </DialogFooter>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Button className="w-full" type="button" variant="destructive" onClick={() => deleteFolder.mutate()} disabled={deleteFolder.isPending}><Trash2 />Ordner löschen</Button>
+            <div className="grid grid-cols-2 gap-2"><Button className="w-full" type="button" variant="outline" onClick={() => setFolderToManage(null)}>Abbrechen</Button><Button className="w-full" type="submit" disabled={saveFolder.isPending || !managedFolderName.trim()}>Speichern</Button></div>
+          </div>
         </form>
       </DialogContent>
     </Dialog>

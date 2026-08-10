@@ -328,13 +328,25 @@ router.delete('/groups/:groupId', guard('canDeleteServers'), (req, res) => {
 
 // PUT /api/servers/groups/:groupId/parent
 router.put('/groups/:groupId/parent', guard('canEditServers'), (req, res) => {
-  db.serverGroups.setGroupParent(req.params.groupId, req.body.parent_id || null);
+  const groupId = String(req.params.groupId || '');
+  const parentId = req.body.parent_id ? String(req.body.parent_id) : null;
+  const groups = db.serverGroups.getAll();
+  if (!groups.some(group => group.id === groupId)) return res.status(404).json({ error: 'Ordner nicht gefunden.' });
+  if (parentId && !groups.some(group => group.id === parentId)) return res.status(400).json({ error: 'Übergeordneter Ordner nicht gefunden.' });
+  if (parentId === groupId) return res.status(400).json({ error: 'Ein Ordner kann nicht sein eigener Überordner sein.' });
+  const descendantIds = new Set([groupId]);
+  let changed = true;
+  while (changed) { changed = false; for (const group of groups) if (group.parent_id && descendantIds.has(group.parent_id) && !descendantIds.has(group.id)) { descendantIds.add(group.id); changed = true; } }
+  if (parentId && descendantIds.has(parentId)) return res.status(400).json({ error: 'Ein Ordner kann nicht in einen eigenen Unterordner verschoben werden.' });
+  db.serverGroups.setGroupParent(groupId, parentId);
   res.json({ success: true });
 });
 
 // PUT /api/servers/:id/group
 router.put('/:id/group', guardServerAccess, guard('canEditServers'), (req, res) => {
-  db.serverGroups.setServerGroup(req.params.id, req.body.group_id || null);
+  const groupId = req.body.group_id ? String(req.body.group_id) : null;
+  if (groupId && !db.serverGroups.getAll().some(group => group.id === groupId)) return res.status(400).json({ error: 'Zielordner nicht gefunden.' });
+  db.serverGroups.setServerGroup(req.params.id, groupId);
   res.json({ success: true });
 });
 
