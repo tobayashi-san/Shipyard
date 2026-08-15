@@ -31,6 +31,9 @@ const gitPlaybooksRouter = require('./routes/git-playbooks');
 const pluginsAdminRouter = require('./routes/plugins-admin');
 const agentAdminRouter = require('./routes/agent-admin');
 const ipamRouter = require('./routes/ipam');
+const maintenanceWindowsRouter = require('./routes/maintenance-windows');
+const alertsRouter = require('./routes/alerts');
+const { createOpenTofuRouter } = require('./routes/opentofu');
 
 const PLUGIN_UI_CONTENT_TYPES = {
   '.css': 'text/css; charset=utf-8',
@@ -78,6 +81,14 @@ function createApp({ isHttps = false } = {}) {
 
   app.use(cors({ origin: createCorsOriginValidator(allowedOrigins) }));
   app.use(express.json({ limit: '2mb' }));
+  app.use((req, res, next) => {
+    // All API payloads use named fields. Reject JSON scalar/array roots early
+    // so route handlers cannot accidentally process an unexpected shape.
+    if (req.is('application/json') && (req.body === null || Array.isArray(req.body))) {
+      return res.status(400).json({ error: 'JSON body must be an object' });
+    }
+    return next();
+  });
 
   app.use((req, res, next) => {
     const start = Date.now();
@@ -124,6 +135,14 @@ function createApp({ isHttps = false } = {}) {
 
   app.use('/api', apiLimiter);
 
+  // API responses routinely carry infrastructure metadata and authentication
+  // material.  Keep browsers and intermediary caches from storing them.
+  // Static frontend and plugin assets retain their existing cache behaviour.
+  app.use('/api', (req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
+
   app.get('/api/health', (req, res) => {
     try {
       db.db.prepare('SELECT 1').get();
@@ -149,6 +168,9 @@ function createApp({ isHttps = false } = {}) {
   app.use('/api/dashboard', dashboardRouter);
   app.use('/api/environments', environmentsRouter);
   app.use('/api/ipam', ipamRouter);
+  app.use('/api/maintenance-windows', maintenanceWindowsRouter);
+  app.use('/api/alerts', alertsRouter);
+  app.use('/api/opentofu', createOpenTofuRouter({ broadcast: emit }));
   app.use('/api/ansible', createAnsibleRouter({ broadcast: emit }));
   app.use('/api/servers/:id/custom-updates', customUpdatesRouter);
   app.use('/api/servers', createServerActionsRouter({ broadcast: emit }));
@@ -213,6 +235,17 @@ function createApp({ isHttps = false } = {}) {
 
   app.use((err, req, res, next) => {
     if (!err) return next();
+    // Body-parser errors are client input errors. Keep their responses
+    // intentionally generic, while preserving accurate HTTP semantics.
+    if (err.type === 'entity.parse.failed') {
+      return res.status(400).json({ error: 'Invalid JSON body' });
+    }
+    if (err.type === 'entity.too.large') {
+      return res.status(413).json({ error: 'Request body too large' });
+    }
+    if (err.type === 'encoding.unsupported') {
+      return res.status(415).json({ error: 'Unsupported request encoding' });
+    }
     return serverError(res, err, `${req.method} ${req.path}`);
   });
 

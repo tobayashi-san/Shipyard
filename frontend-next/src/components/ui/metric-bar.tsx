@@ -10,16 +10,16 @@ export function metricTone(pct: number | null | undefined, warningAt = 85, dange
 }
 
 const fillColor: Record<MetricThresholdTone, string> = {
-  success: 'bg-emerald-500',
-  warning: 'bg-amber-500',
-  danger: 'bg-red-500',
+  success: '[background:hsl(var(--success))]',
+  warning: '[background:hsl(var(--warning))]',
+  danger: '[background:hsl(var(--destructive))]',
   muted: 'bg-muted-foreground/30',
 };
 
 const textColor: Record<MetricThresholdTone, string> = {
   success: '',
-  warning: 'text-amber-600 dark:text-amber-500',
-  danger: 'text-red-600 dark:text-red-500',
+  warning: '[color:hsl(var(--warning))]',
+  danger: '[color:hsl(var(--destructive))]',
   muted: 'text-muted-foreground',
 };
 

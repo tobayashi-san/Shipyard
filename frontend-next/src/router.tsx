@@ -14,11 +14,13 @@ const ProfilePage = lazy(() => import('@/routes/profile').then(module => ({ defa
 const DeploymentsPage = lazy(() => import('@/routes/deployments').then(module => ({ default: module.DeploymentsPage })));
 const DeploymentDetailPage = lazy(() => import('@/routes/deployment-detail').then(module => ({ default: module.DeploymentDetailPage })));
 const InfrastructurePage = lazy(() => import('@/routes/infrastructure').then(module => ({ default: module.InfrastructurePage })));
+const InfrastructureDetailPage = lazy(() => import('@/routes/infrastructure-detail').then(module => ({ default: module.InfrastructureDetailPage })));
+const ProxmoxVmDetailPage = lazy(() => import('@/routes/proxmox-vm-detail').then(module => ({ default: module.ProxmoxVmDetailPage })));
 const OperationsPage = lazy(() => import('@/routes/operations').then(module => ({ default: module.OperationsPage })));
 const NetworksPage = lazy(() => import('@/routes/networks').then(module => ({ default: module.NetworksPage })));
 const NetworkDetailPage = lazy(() => import('@/routes/network-detail').then(module => ({ default: module.NetworkDetailPage })));
 const PluginHostPage = lazy(() => import('@/routes/_legacy/plugins').then(module => ({ default: module.PluginHostPage })));
-const LazyPage = ({ children }: { children: ReactNode }) => <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Lade Konsole…</div>}>{children}</Suspense>;
+const LazyPage = ({ children }: { children: ReactNode }) => <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading console…</div>}>{children}</Suspense>;
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
 
@@ -58,6 +60,9 @@ const profileRoute    = createRoute({ getParentRoute: () => protectedLayout, pat
 const deploymentsRoute= createRoute({ getParentRoute: () => protectedLayout, path: '/deployments',  component: () => <LazyPage><DeploymentsPage /></LazyPage> });
 const deploymentDetailRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/deployments/$id', component: () => <LazyPage><DeploymentDetailPage /></LazyPage> });
 const infrastructureRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/infrastructure', component: () => <LazyPage><InfrastructurePage /></LazyPage> });
+const infrastructureDetailRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/infrastructure/$clusterId', component: () => <LazyPage><InfrastructureDetailPage /></LazyPage> });
+const infrastructureNodeRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/infrastructure/$clusterId/nodes/$nodeName', component: () => <LazyPage><InfrastructureDetailPage /></LazyPage> });
+const infrastructureVmRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId', component: () => <LazyPage><ProxmoxVmDetailPage /></LazyPage> });
 const operationsRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/operations', component: () => <LazyPage><OperationsPage /></LazyPage> });
 const networksRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/networks', component: () => <LazyPage><NetworksPage /></LazyPage> });
 const networkDetailRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/networks/$id', component: () => <LazyPage><NetworkDetailPage /></LazyPage> });
@@ -81,6 +86,9 @@ const routeTree = rootRoute.addChildren([
     deploymentsRoute,
     deploymentDetailRoute,
     infrastructureRoute,
+    infrastructureDetailRoute,
+    infrastructureNodeRoute,
+    infrastructureVmRoute,
     operationsRoute,
     networksRoute,
     networkDetailRoute,

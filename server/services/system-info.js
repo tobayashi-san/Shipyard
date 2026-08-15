@@ -118,11 +118,23 @@ class SystemInfoService {
    */
   async getAvailableUpdates(server) {
     try {
-      const cmd = `if command -v apt-get >/dev/null 2>&1; then
-  apt-get update -qq 2>/dev/null
-  apt list --upgradable 2>/dev/null | grep "/"
+      const cmd = `run_privileged() {
+  if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo -n "$@"; fi
+}
+if [ "$(id -u)" -ne 0 ] && (! command -v sudo >/dev/null 2>&1 || ! sudo -n true 2>/dev/null); then
+  echo "A passwordless sudo permission is required to check system updates." >&2
+  exit 126
+fi
+if command -v apt-get >/dev/null 2>&1; then
+  # A failed metadata refresh must never be reported as "no updates".
+  # The caller keeps a known cache or reports the failed manual check instead.
+  # Package metadata lives in root-owned locations. Run the read-only check
+  # via non-interactive sudo for normal SSH users (for example Ubuntu's
+  # default ubuntu account), while root continues without sudo.
+  run_privileged apt-get update -qq 2>/dev/null || exit 1
+  run_privileged apt list --upgradable 2>/dev/null | grep "/"
   echo "---PHASED---"
-  apt-get -s upgrade 2>/dev/null | awk '/^Inst /{print $2}'
+  run_privileged apt-get -s upgrade 2>/dev/null | awk '/^Inst /{print $2}'
   echo "---WOULDUPGRADE---"
 elif command -v dnf >/dev/null 2>&1; then
   dnf check-update -q 2>/dev/null | awk 'NF>=3 && /^[a-zA-Z0-9]/{n=$1; sub(/\\.[^.]+$/,"",n); print n"/updates "$2}'
@@ -138,6 +150,9 @@ elif command -v zypper >/dev/null 2>&1; then
   echo "---PHASED---"
 fi`;
       const result = await sshManager.execCommand(server, cmd);
+      if (result.code !== 0) {
+        throw new Error(result.stderr?.trim() || `Package update check exited with code ${result.code}`);
+      }
 
       const [upgradableRaw = '', rest = ''] = result.stdout.split('---PHASED---');
       const [wouldUpgradeRaw = ''] = rest.split('---WOULDUPGRADE---');
@@ -164,7 +179,7 @@ fi`;
 
       return updates;
     } catch (error) {
-      return [];
+      throw new Error(`Failed to check available updates: ${error.message}`);
     }
   }
 

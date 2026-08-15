@@ -11,7 +11,7 @@ interface QueryErrorStateProps {
 }
 
 /** A consistent, non-destructive failure state for API-backed console panels. */
-export function QueryErrorState({ error, onRetry, title = 'Daten konnten nicht geladen werden', className, compact = false }: QueryErrorStateProps) {
+export function QueryErrorState({ error, onRetry, title = 'Data could not be loaded', className, compact = false }: QueryErrorStateProps) {
   const detail = error instanceof Error ? error.message : '';
   return (
     <div className={cn('flex flex-col items-center justify-center gap-2.5 text-center', compact ? 'px-4 py-7' : 'px-5 py-12', className)} role="status">
@@ -20,7 +20,7 @@ export function QueryErrorState({ error, onRetry, title = 'Daten konnten nicht g
         <p className="text-sm font-medium">{title}</p>
         {detail && <p className="mt-0.5 max-w-md text-xs text-muted-foreground">{detail}</p>}
       </div>
-      {onRetry && <Button variant="outline" size="sm" onClick={onRetry}><RefreshCw className="h-3.5 w-3.5" /> Erneut versuchen</Button>}
+      {onRetry && <Button variant="outline" size="sm" onClick={onRetry}><RefreshCw className="h-3.5 w-3.5" /> Try again</Button>}
     </div>
   );
 }

@@ -42,6 +42,8 @@ function validateThresholds(value) {
 }
 
 function guardAlertAccess(req, res, next) {
+  const permissions = getPermissions(req.user);
+  if (!can(permissions, 'canViewServers')) return res.status(403).json({ error: 'Permission denied' });
   const alert = db.resourceAlerts.getById(req.params.id);
   if (!alert) return res.status(404).json({ error: 'Alert not found' });
   const visible = new Set(visibleServerIds(req));

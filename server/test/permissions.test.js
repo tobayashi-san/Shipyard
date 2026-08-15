@@ -92,6 +92,17 @@ test('getPermissions() ignores full flag on custom roles', () => {
   assert.equal(perms.canDeleteServers, false);
 });
 
+test('legacy deployment umbrella migrates to explicit capabilities in memory', () => {
+  const role = db.roles.create('legacy-deployer', { canManageDeployments: true });
+  const perms = getPermissions({ role: role.id });
+  assert.equal(perms.canViewDeployments, true);
+  assert.equal(perms.canEditDeployments, true);
+  assert.equal(perms.canPlanDeployments, true);
+  assert.equal(perms.canApplyDeployments, true);
+  assert.equal(perms.canDestroyDeployments, true);
+  assert.equal(perms.canManageDeploymentPlatforms, true);
+});
+
 // ── filterServers() ───────────────────────────────────────────────────────────
 
 const sampleServers = [

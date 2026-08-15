@@ -50,26 +50,11 @@ mkdir -p /app/server/data/bin
 chown -R shipyard:shipyard /app/server/data /app/server/playbooks /app/plugins
 [ -d /workspaces ] && chown shipyard:shipyard /workspaces
 
-# Seed bundled plugins into the volume; update if the bundled version changed
-if [ -d /app/bundled-plugins ]; then
-  for plugin_dir in /app/bundled-plugins/*/; do
-    plugin_id=$(basename "$plugin_dir")
-    bundled_ver=$(grep '"version"' "$plugin_dir/manifest.json" 2>/dev/null | head -1 \
-                  | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
-    installed_ver=$(cat "/app/plugins/$plugin_id/.bundle-version" 2>/dev/null || echo "")
-
-    if [ ! -d "/app/plugins/$plugin_id" ]; then
-      echo "[plugins] Installing bundled plugin: $plugin_id ($bundled_ver)"
-      cp -r "$plugin_dir" "/app/plugins/$plugin_id"
-      echo "$bundled_ver" > "/app/plugins/$plugin_id/.bundle-version"
-      chown -R shipyard:shipyard "/app/plugins/$plugin_id"
-    elif [ -n "$bundled_ver" ] && [ "$bundled_ver" != "$installed_ver" ]; then
-      echo "[plugins] Updating bundled plugin: $plugin_id ($installed_ver -> $bundled_ver)"
-      cp -r "$plugin_dir/." "/app/plugins/$plugin_id/"
-      echo "$bundled_ver" > "/app/plugins/$plugin_id/.bundle-version"
-      chown -R shipyard:shipyard "/app/plugins/$plugin_id"
-    fi
-  done
+# OpenTofu became a built-in server feature. Remove only its obsolete bundled
+# plugin copy; workspaces and state live outside this directory and are retained.
+if [ -d /app/plugins/opentofu ]; then
+  echo "[migration] Removing obsolete OpenTofu plugin copy"
+  rm -rf /app/plugins/opentofu
 fi
 
 # System playbooks (agent deploy, internal polling) live exclusively in
@@ -103,7 +88,7 @@ if [ -d /app/bundled-playbooks ] && [ -d /app/server/playbooks ]; then
   fi
 fi
 
-# Fix ownership of OpenTofu workspace directories registered by the plugin
+# Fix ownership of registered OpenTofu workspace directories.
 TOFU_PATHS="/app/server/data/tofu-workspace-paths.txt"
 if [ -f "$TOFU_PATHS" ]; then
   while IFS= read -r wspath; do

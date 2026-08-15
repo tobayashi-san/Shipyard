@@ -23,6 +23,7 @@ const createServerActionsRouter = require('../routes/server-actions');
 const createAnsibleRouter = require('../routes/ansible');
 const scheduleHistoryRouter = require('../routes/schedule-history');
 const schedulesRouter = require('../routes/schedules');
+const ansibleVarsRouter = require('../routes/ansible-vars');
 const playbooksRouter = require('../routes/playbooks');
 const adhocRouter = require('../routes/adhoc');
 const usersRouter = require('../routes/users');
@@ -41,6 +42,7 @@ app.use('/api/servers', serversRouter);
 app.use('/api/ansible', createAnsibleRouter());
 app.use('/api/schedule-history', scheduleHistoryRouter);
 app.use('/api/schedules', schedulesRouter);
+app.use('/api/ansible-vars', ansibleVarsRouter);
 app.use('/api/playbooks', playbooksRouter);
 app.use('/api/adhoc', adhocRouter);
 app.use('/api/users', usersRouter);
@@ -53,7 +55,7 @@ after(() => {
 });
 
 function wipeDb() {
-  for (const table of ['users', 'servers', 'schedules', 'schedule_history', 'server_groups']) {
+  for (const table of ['users', 'servers', 'schedules', 'schedule_history', 'server_groups', 'ansible_vars']) {
     try { db.db.prepare(`DELETE FROM ${table}`).run(); } catch {}
   }
   try { db.db.prepare('DELETE FROM roles WHERE is_system = 0').run(); } catch {}
@@ -141,6 +143,43 @@ test('user email validation is bounded and rejects malformed values', async () =
   }
 });
 
+test('profile updates use the same email validation and normalization as user administration', async () => {
+  wipeDb();
+  await setupAdmin();
+  const adminToken = await login('admin', 'testpass12345');
+
+  const accepted = await request(app)
+    .put('/api/auth/profile')
+    .set('Authorization', `Bearer ${adminToken}`)
+    .send({ displayName: '  Admin   User ', email: ' Admin@Example.COM ' });
+  assert.equal(accepted.status, 200);
+  const user = db.users.getByUsername('admin');
+  assert.equal(user.display_name, 'Admin User');
+  assert.equal(user.email, 'admin@example.com');
+
+  const invalid = await request(app)
+    .put('/api/auth/profile')
+    .set('Authorization', `Bearer ${adminToken}`)
+    .send({ email: 'bad@' });
+  assert.equal(invalid.status, 400);
+
+  const nonString = await request(app)
+    .put('/api/auth/profile')
+    .set('Authorization', `Bearer ${adminToken}`)
+    .send({ displayName: { unexpected: true } });
+  assert.equal(nonString.status, 400);
+});
+
+test('authentication endpoints reject JSON null without an internal error', async () => {
+  wipeDb();
+  const setup = await request(app).post('/api/auth/setup').send(null);
+  assert.equal(setup.status, 400);
+
+  await setupAdmin();
+  const login = await request(app).post('/api/auth/login').send(null);
+  assert.equal(login.status, 400);
+});
+
 test('usernames preserve case but remain unique and loginable case-insensitively', async () => {
   wipeDb();
   await setupAdmin();
@@ -203,7 +242,7 @@ test('custom roles do not inherit omitted dangerous permissions', async () => {
   assert.equal(forbidden.status, 403);
 });
 
-test('schedule-history list allows restricted user to see multi-target entries they partially have access to', async () => {
+test('schedule-history hides multi-target output unless the user can access every target', async () => {
   wipeDb();
   await setupAdmin();
 
@@ -231,8 +270,8 @@ test('schedule-history list allows restricted user to see multi-target entries t
     .set('Authorization', `Bearer ${token}`);
   assert.equal(res.status, 200);
   assert.ok(Array.isArray(res.body));
-  // Should include the 'web-1,db-1' entry (because viewer can access web-1)
-  assert.ok(res.body.some(r => r.targets === 'web-1,db-1'));
+  // Mixed-target output can contain facts or errors from inaccessible hosts.
+  assert.ok(!res.body.some(r => r.targets === 'web-1,db-1'));
   // Should NOT include db-only entry
   assert.ok(!res.body.some(r => r.targets === 'db-1'));
   // Should NOT include entries for playbooks outside the allowlist
@@ -242,6 +281,94 @@ test('schedule-history list allows restricted user to see multi-target entries t
     .get(`/api/schedule-history/${otherPlaybookHistId}`)
     .set('Authorization', `Bearer ${token}`);
   assert.equal(detailForbidden.status, 403);
+});
+
+test('schedule-history target permissions cannot be satisfied by a same-named host in another environment', async () => {
+  wipeDb();
+  await setupAdmin();
+  db.db.prepare("INSERT OR IGNORE INTO environments (id, name) VALUES ('staging', 'Staging')").run();
+
+  const allowedDefault = db.servers.create({ name: 'allowed-default', hostname: 'allowed-default', ip_address: '10.0.0.20', environment_id: 'default', tags: [], services: [] });
+  db.servers.create({ name: 'shared-name', hostname: 'private-default', ip_address: '10.0.0.21', environment_id: 'default', tags: [], services: [] });
+  const allowedStaging = db.servers.create({ name: 'shared-name', hostname: 'allowed-staging', ip_address: '10.1.0.21', environment_id: 'staging', tags: [], services: [] });
+  const historyId = db.scheduleHistory.create(null, 'default run', 'deploy.yml', 'shared-name', { environmentId: 'default' });
+
+  const role = db.roles.create('cross-environment-name-viewer', {
+    servers: { servers: [allowedDefault.id, allowedStaging.id], groups: [] },
+    playbooks: ['deploy.yml'],
+    canViewSchedules: true,
+  });
+  const hash = await bcrypt.hash('viewerpass12345', 12);
+  db.users.create('crossenvviewer', '', hash, role.id);
+  const token = await login('crossenvviewer', 'viewerpass12345');
+
+  const list = await request(app)
+    .get('/api/schedule-history?environment_id=default')
+    .set('Authorization', `Bearer ${token}`);
+  assert.equal(list.status, 200);
+  assert.ok(!list.body.some(row => row.id === historyId));
+
+  const detail = await request(app)
+    .get(`/api/schedule-history/${historyId}`)
+    .set('Authorization', `Bearer ${token}`);
+  assert.equal(detail.status, 403);
+});
+
+test('Ansible secrets are encrypted at rest, masked by the API, and isolated by environment', async () => {
+  wipeDb();
+  await setupAdmin();
+  const token = await login('admin', 'testpass12345');
+  db.db.prepare("INSERT OR IGNORE INTO environments (id, name) VALUES ('staging', 'Staging')").run();
+
+  const created = await request(app)
+    .post('/api/ansible-vars')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ environment_id: 'default', key: 'api_token', value: 'super-secret', description: 'API token', is_secret: true });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.value, '');
+  assert.equal(created.body.value_set, true);
+  assert.equal(created.body.is_secret, true);
+
+  const raw = db.db.prepare('SELECT value FROM ansible_vars WHERE id = ?').get(created.body.id);
+  assert.match(raw.value, /^enc:/);
+  assert.equal(db.ansibleVars.toExtraVars('default').api_token, 'super-secret');
+
+  db.ansibleVars.create('stage_only', 'yes', '', { environmentId: 'staging' });
+  const listed = await request(app)
+    .get('/api/ansible-vars?environment_id=default')
+    .set('Authorization', `Bearer ${token}`);
+  assert.equal(listed.status, 200);
+  assert.deepEqual(listed.body.map(item => item.key), ['api_token']);
+  assert.equal(listed.body[0].value, '');
+});
+
+test('schedule creation rejects an implicit empty target and persists scoped run options', async () => {
+  wipeDb();
+  await setupAdmin();
+  const token = await login('admin', 'testpass12345');
+  db.servers.create({ name: 'web-1', hostname: 'web-1', ip_address: '10.0.0.10', tags: [], services: [] });
+
+  const empty = await request(app)
+    .post('/api/schedules')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ name: 'unsafe', playbook: 'deploy.yml', targets: '', cronExpression: '0 2 * * *' });
+  assert.equal(empty.status, 400);
+
+  const created = await request(app)
+    .post('/api/schedules')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ environment_id: 'default', name: 'safe', playbook: 'deploy.yml', targets: 'web-1', cronExpression: '0 2 * * *', extraVars: { release: 'stable' }, checkMode: true, forks: 2 });
+  assert.equal(created.status, 200);
+  const stored = db.schedules.getById(created.body.id);
+  assert.equal(stored.environment_id, 'default');
+  assert.deepEqual(stored.extra_vars, { release: 'stable' });
+  assert.equal(stored.check_mode, 1);
+  assert.equal(stored.forks, 2);
+  assert.match(db.db.prepare('SELECT extra_vars FROM schedules WHERE id = ?').get(created.body.id).extra_vars, /^enc:/);
+  const removed = await request(app)
+    .delete(`/api/schedules/${created.body.id}`)
+    .set('Authorization', `Bearer ${token}`);
+  assert.equal(removed.status, 200);
 });
 
 test('adhoc run is blocked for restricted user targeting inaccessible server', async () => {
@@ -614,6 +741,31 @@ test('admin can disable another user\'s 2FA from user management', async () => {
   assert.equal(after.totp_secret, '');
   assert.equal(after.totp_secret_pending, '');
   assert.equal(after.token_version, 1);
+});
+
+test('2FA intermediate tokens are invalidated when 2FA is disabled', async () => {
+  wipeDb();
+  await setupAdmin();
+  const created = db.users.create('mfauser', '', await bcrypt.hash('mfapass123456', 12), 'admin');
+  db.users.setTotp(created.id, 'JBSWY3DPEHPK3PXP', true);
+
+  const loginRes = await request(app)
+    .post('/api/auth/login')
+    .send({ username: 'mfauser', password: 'mfapass123456' });
+  assert.equal(loginRes.status, 200);
+  assert.equal(loginRes.body.requires2FA, true);
+
+  const adminToken = await login('admin', 'testpass12345');
+  const disabled = await request(app)
+    .put(`/api/users/${created.id}/totp-disable`)
+    .set('Authorization', `Bearer ${adminToken}`)
+    .send({});
+  assert.equal(disabled.status, 200);
+
+  const replay = await request(app)
+    .post('/api/auth/totp/login')
+    .send({ tempToken: loginRes.body.tempToken, code: '123456' });
+  assert.equal(replay.status, 401);
 });
 
 test('deploy-all key endpoint is admin-only and returns per-server results', async () => {

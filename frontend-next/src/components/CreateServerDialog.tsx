@@ -1,28 +1,45 @@
-import * as React from 'react';
-import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, ApiError } from '@/lib/api';
-import { asArray } from '@/lib/utils';
-import { showToast } from '@/lib/toast';
-import { useUi } from '@/lib/store';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import * as React from "react";
+import { useTranslation } from "react-i18next";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, ApiError } from "@/lib/api";
+import { asArray } from "@/lib/utils";
+import { showToast } from "@/lib/toast";
+import { useUi } from "@/lib/store";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { Plus, Trash2, KeyRound, Server, Wifi, Tag, Link2, HardDrive, Container } from 'lucide-react';
+} from "@/components/ui/dialog";
+import {
+  Plus,
+  Trash2,
+  KeyRound,
+  Server,
+  Wifi,
+  Tag,
+  Link2,
+  HardDrive,
+  Container,
+} from "lucide-react";
 
 type AnyObj = Record<string, unknown>;
 
-interface LinkEntry { name: string; url: string }
-interface MountEntry { name: string; path: string }
+interface LinkEntry {
+  name: string;
+  url: string;
+}
+interface MountEntry {
+  name: string;
+  path: string;
+}
 
 interface CreateServerDialogProps {
   editServer?: AnyObj | null;
+  initialValues?: AnyObj | null;
   trigger?: React.ReactNode;
   onSuccess?: (server: AnyObj) => void;
   /** Controlled mode: pass open + onOpenChange to drive the dialog externally */
@@ -30,12 +47,20 @@ interface CreateServerDialogProps {
   onOpenChange?: (v: boolean) => void;
 }
 
-/* ── Flache Abschnitt-Überschrift ─────────────────────────────── */
-function SectionHeading({ icon, title }: { icon: React.ReactNode; title: string }) {
+/* Flat section heading */
+function SectionHeading({
+  icon,
+  title,
+}: {
+  icon: React.ReactNode;
+  title: string;
+}) {
   return (
     <div className="flex items-center gap-2 border-b pb-2 pt-5">
       <span className="text-muted-foreground">{icon}</span>
-      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</span>
+      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </span>
     </div>
   );
 }
@@ -45,20 +70,25 @@ function FieldRow({
   label,
   hint,
   required,
+  htmlFor,
   children,
 }: {
   label: string;
   hint?: string;
   required?: boolean;
+  htmlFor?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="grid grid-cols-1 gap-1.5 py-3 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center sm:gap-4">
       <div>
-        <span className="text-sm font-medium text-foreground">
+        <label
+          htmlFor={htmlFor}
+          className="text-sm font-medium text-foreground"
+        >
           {label}
           {required && <span className="ml-0.5 text-destructive">*</span>}
-        </span>
+        </label>
         {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
       </div>
       <div className="flex min-w-0 items-center gap-2">{children}</div>
@@ -66,11 +96,21 @@ function FieldRow({
   );
 }
 
-export function CreateServerDialog({ editServer = null, trigger, onSuccess, open: openProp, onOpenChange: onOpenChangeProp }: CreateServerDialogProps) {
+export function CreateServerDialog({
+  editServer = null,
+  initialValues = null,
+  trigger,
+  onSuccess,
+  open: openProp,
+  onOpenChange: onOpenChangeProp,
+}: CreateServerDialogProps) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const activeEnvironmentId = useUi((s) => s.environmentId);
-  const { data: environmentsData } = useQuery({ queryKey: ['environments'], queryFn: () => api.getEnvironments() });
+  const { data: environmentsData } = useQuery({
+    queryKey: ["environments"],
+    queryFn: () => api.getEnvironments(),
+  });
   const environments = Array.isArray(environmentsData) ? environmentsData : [];
   const isEdit = !!editServer;
 
@@ -81,58 +121,71 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
     if (isControlled) onOpenChangeProp?.(v);
     else setOpenInternal(v);
   };
-  const [name, setName] = React.useState('');
-  const [ip, setIp] = React.useState('');
-  const [hostname, setHostname] = React.useState('');
-  const [sshUser, setSshUser] = React.useState('root');
-  const [sshPort, setSshPort] = React.useState('22');
-  const [services, setServices] = React.useState('');
-  const [tags, setTags] = React.useState('');
+  const [name, setName] = React.useState("");
+  const [ip, setIp] = React.useState("");
+  const [hostname, setHostname] = React.useState("");
+  const [sshUser, setSshUser] = React.useState("root");
+  const [sshPort, setSshPort] = React.useState("22");
+  const [services, setServices] = React.useState("");
+  const [tags, setTags] = React.useState("");
   const [links, setLinks] = React.useState<LinkEntry[]>([]);
   const [mounts, setMounts] = React.useState<MountEntry[]>([]);
-  const [sshPassword, setSshPassword] = React.useState('');
+  const [sshPassword, setSshPassword] = React.useState("");
   const [dockerEnabled, setDockerEnabled] = React.useState(false);
   const [environmentId, setEnvironmentId] = React.useState(activeEnvironmentId);
   const [error, setError] = React.useState<string | null>(null);
 
   const reset = React.useCallback(() => {
     if (editServer) {
-      setName((editServer.name as string) || '');
-      setIp((editServer.ip_address as string) || '');
-      setHostname((editServer.hostname as string) || '');
-      setSshUser((editServer.ssh_user as string) || 'root');
+      setName((editServer.name as string) || "");
+      setIp((editServer.ip_address as string) || "");
+      setHostname((editServer.hostname as string) || "");
+      setSshUser((editServer.ssh_user as string) || "root");
       setSshPort(String(editServer.ssh_port ?? 22));
-      setServices(asArray<string>(editServer.services).join(', '));
-      setTags(asArray<string>(editServer.tags).join(', '));
+      setServices(asArray<string>(editServer.services).join(", "));
+      setTags(asArray<string>(editServer.tags).join(", "));
       const ls = asArray<LinkEntry>(editServer.links);
       setLinks(ls.map((l) => ({ ...l })));
       const ms = asArray<MountEntry>(editServer.storage_mounts);
       setMounts(ms.map((m) => ({ ...m })));
-      setDockerEnabled(!!(editServer.docker_enabled));
-      setEnvironmentId((editServer.environment_id as string) || 'default');
+      setDockerEnabled(!!editServer.docker_enabled);
+      setEnvironmentId((editServer.environment_id as string) || "default");
     } else {
-      setName(''); setIp(''); setHostname(''); setSshUser('root'); setSshPort('22');
-      setServices(''); setTags('');
+      setName((initialValues?.name as string) || "");
+      setIp((initialValues?.ip_address as string) || "");
+      setHostname((initialValues?.hostname as string) || "");
+      setSshUser((initialValues?.ssh_user as string) || "root");
+      setSshPort(String(initialValues?.ssh_port ?? 22));
+      setServices("");
+      setTags(asArray<string>(initialValues?.tags).join(", "));
       setLinks([]);
       setMounts([]);
       setDockerEnabled(false);
-      setEnvironmentId(activeEnvironmentId);
+      setEnvironmentId((initialValues?.environment_id as string) || activeEnvironmentId);
     }
-    setSshPassword('');
+    setSshPassword("");
     setError(null);
-  }, [editServer, activeEnvironmentId]);
+  }, [editServer, initialValues, activeEnvironmentId]);
 
-  React.useEffect(() => { if (open) reset(); }, [open, reset]);
+  React.useEffect(() => {
+    if (open) reset();
+  }, [open, reset]);
 
   const setLink = (i: number, field: keyof LinkEntry, val: string) =>
-    setLinks((prev) => prev.map((l, j) => j === i ? { ...l, [field]: val } : l));
-  const removeLink = (i: number) => setLinks((prev) => prev.filter((_, j) => j !== i));
-  const addLink = () => setLinks((prev) => [...prev, { name: '', url: '' }]);
+    setLinks((prev) =>
+      prev.map((l, j) => (j === i ? { ...l, [field]: val } : l)),
+    );
+  const removeLink = (i: number) =>
+    setLinks((prev) => prev.filter((_, j) => j !== i));
+  const addLink = () => setLinks((prev) => [...prev, { name: "", url: "" }]);
 
   const setMount = (i: number, field: keyof MountEntry, val: string) =>
-    setMounts((prev) => prev.map((m, j) => j === i ? { ...m, [field]: val } : m));
-  const removeMount = (i: number) => setMounts((prev) => prev.filter((_, j) => j !== i));
-  const addMount = () => setMounts((prev) => [...prev, { name: '', path: '' }]);
+    setMounts((prev) =>
+      prev.map((m, j) => (j === i ? { ...m, [field]: val } : m)),
+    );
+  const removeMount = (i: number) =>
+    setMounts((prev) => prev.filter((_, j) => j !== i));
+  const addMount = () => setMounts((prev) => [...prev, { name: "", path: "" }]);
 
   const mutation = useMutation({
     mutationFn: async (): Promise<AnyObj> => {
@@ -140,10 +193,16 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
         name: name.trim(),
         ip_address: ip.trim(),
         hostname: hostname.trim() || ip.trim(),
-        ssh_user: sshUser.trim() || 'root',
+        ssh_user: sshUser.trim() || "root",
         ssh_port: Math.min(65535, Math.max(1, parseInt(sshPort) || 22)),
-        services: services.split(',').map((s) => s.trim()).filter(Boolean),
-        tags: tags.split(',').map((s) => s.trim()).filter(Boolean),
+        services: services
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+        tags: tags
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
         links: links.filter((l) => l.name || l.url),
         storage_mounts: mounts.filter((m) => m.path),
         environment_id: environmentId,
@@ -152,10 +211,14 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
 
       let savedServer: AnyObj;
       if (isEdit) {
-        savedServer = (await api.updateServer(editServer!.id as string | number, data)) as AnyObj ?? data;
-        showToast(t('add.saved', { name: data.name }), 'success');
+        savedServer =
+          ((await api.updateServer(
+            editServer!.id as string | number,
+            data,
+          )) as AnyObj) ?? data;
+        showToast(t("add.saved", { name: data.name }), "success");
       } else {
-        savedServer = (await api.createServer(data)) as AnyObj ?? data;
+        savedServer = ((await api.createServer(data)) as AnyObj) ?? data;
         if (sshPassword) {
           try {
             await api.deploySSHKey({
@@ -164,32 +227,41 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
               password: sshPassword,
               ssh_port: data.ssh_port,
             });
-            showToast(t('add.transferred'), 'success');
+            showToast(t("add.transferred"), "success");
           } catch (err) {
-            showToast(t('add.transferError', { msg: (err as Error).message }), 'warning');
+            showToast(
+              t("add.transferError", { msg: (err as Error).message }),
+              "warning",
+            );
           }
         }
-        showToast(t('add.added', { name: data.name }), 'success');
+        showToast(t("add.added", { name: data.name }), "success");
       }
       return savedServer;
     },
     onSuccess: (savedServer) => {
-      void qc.invalidateQueries({ queryKey: ['servers'] });
-      void qc.invalidateQueries({ queryKey: ['dashboard'] });
+      void qc.invalidateQueries({ queryKey: ["servers"] });
+      void qc.invalidateQueries({ queryKey: ["dashboard"] });
       setOpen(false);
       onSuccess?.(savedServer);
     },
-    onError: (err) => setError(err instanceof ApiError ? err.message : String(err)),
+    onError: (err) =>
+      setError(err instanceof ApiError ? err.message : String(err)),
   });
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { setOpen(v); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        setOpen(v);
+      }}
+    >
       {(!isControlled || trigger) && (
         <DialogTrigger asChild>
           {trigger ?? (
             <Button>
               <Plus className="h-4 w-4" />
-              {t('add.titleAdd')}
+              {t("add.titleAdd")}
             </Button>
           )}
         </DialogTrigger>
@@ -198,13 +270,17 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
       <DialogContent className="flex max-h-[90vh] flex-col gap-0 p-0 sm:max-w-2xl">
         {/* ── Header ──────────────────────────────────── */}
         <DialogHeader className="border-b px-4 py-4 sm:px-6">
-          <DialogTitle>{isEdit ? t('add.titleEdit') : t('add.titleAdd')}</DialogTitle>
+          <DialogTitle>
+            {isEdit ? t("add.titleEdit") : t("add.titleAdd")}
+          </DialogTitle>
           {isEdit && !!(editServer?.name || editServer?.ip_address) && (
             <p className="text-sm text-muted-foreground">
-              {String(editServer!.name ?? '')}
-              {editServer!.ip_address
-                ? <span className="ml-2 font-mono text-xs">{String(editServer!.ip_address)}</span>
-                : null}
+              {String(editServer!.name ?? "")}
+              {editServer!.ip_address ? (
+                <span className="ml-2 font-mono text-xs">
+                  {String(editServer!.ip_address)}
+                </span>
+              ) : null}
             </p>
           )}
         </DialogHeader>
@@ -215,26 +291,34 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
           onSubmit={(e) => {
             e.preventDefault();
             setError(null);
-            if (!name.trim() || !ip.trim()) { setError(t('common.error')); return; }
+            if (!name.trim() || !ip.trim()) {
+              setError(t("common.error"));
+              return;
+            }
             mutation.mutate();
           }}
           className="flex-1 overflow-y-auto px-4 pb-4 pt-5 sm:px-6"
         >
           {/* ── Basic Information ───────────────────────── */}
-          <SectionHeading icon={<Server className="h-3.5 w-3.5" />} title={t('add.sectionBasic')} />
+          <SectionHeading
+            icon={<Server className="h-3.5 w-3.5" />}
+            title={t("add.sectionBasic")}
+          />
 
-          <FieldRow label={t('add.name')} required>
+          <FieldRow label={t("add.name")} required htmlFor="server-name">
             <Input
+              id="server-name"
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={t('add.namePlaceholder')}
+              placeholder={t("add.namePlaceholder")}
               className="w-full"
             />
           </FieldRow>
 
-          <FieldRow label={t('add.ip')} required>
+          <FieldRow label={t("add.ip")} required htmlFor="server-ip-address">
             <Input
+              id="server-ip-address"
               placeholder="192.168.1.100"
               value={ip}
               onChange={(e) => setIp(e.target.value)}
@@ -242,8 +326,13 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
             />
           </FieldRow>
 
-          <FieldRow label={t('add.hostname')} hint={t('add.hostnameHint')}>
+          <FieldRow
+            label={t("add.hostname")}
+            hint={t("add.hostnameHint")}
+            htmlFor="server-hostname"
+          >
             <Input
+              id="server-hostname"
               placeholder="plex-server"
               value={hostname}
               onChange={(e) => setHostname(e.target.value)}
@@ -252,10 +341,14 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
           </FieldRow>
 
           {/* ── Connection ──────────────────────────────── */}
-          <SectionHeading icon={<Wifi className="h-3.5 w-3.5" />} title={t('add.sectionConnection')} />
+          <SectionHeading
+            icon={<Wifi className="h-3.5 w-3.5" />}
+            title={t("add.sectionConnection")}
+          />
 
-          <FieldRow label={t('add.sshUser')}>
+          <FieldRow label={t("add.sshUser")} htmlFor="server-ssh-user">
             <Input
+              id="server-ssh-user"
               placeholder="root"
               value={sshUser}
               onChange={(e) => setSshUser(e.target.value)}
@@ -263,8 +356,9 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
             />
           </FieldRow>
 
-          <FieldRow label={t('add.sshPort')}>
+          <FieldRow label={t("add.sshPort")} htmlFor="server-ssh-port">
             <Input
+              id="server-ssh-port"
               type="number"
               min={1}
               max={65535}
@@ -275,10 +369,18 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
           </FieldRow>
 
           {/* ── Metadata ────────────────────────────────── */}
-          <SectionHeading icon={<Tag className="h-3.5 w-3.5" />} title={t('add.sectionMeta')} />
+          <SectionHeading
+            icon={<Tag className="h-3.5 w-3.5" />}
+            title={t("add.sectionMeta")}
+          />
 
-          <FieldRow label={t('add.services')} hint={t('add.servicesHint')}>
+          <FieldRow
+            label={t("add.services")}
+            hint={t("add.servicesHint")}
+            htmlFor="server-services"
+          >
             <Input
+              id="server-services"
               placeholder="Plex, Docker, Nginx"
               value={services}
               onChange={(e) => setServices(e.target.value)}
@@ -286,17 +388,38 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
             />
           </FieldRow>
 
-          <FieldRow label={t('add.tags')} hint={t('add.tagsHint')}>
+          <FieldRow
+            label={t("add.tags")}
+            hint={t("add.tagsHint")}
+            htmlFor="server-tags"
+          >
             <Input
+              id="server-tags"
               placeholder="production, media"
               value={tags}
               onChange={(e) => setTags(e.target.value)}
               className="w-full"
             />
           </FieldRow>
-          <FieldRow label="Umgebung" hint="Legt fest, in welcher Console-Umgebung dieser Server erscheint.">
-            <select value={environmentId} onChange={(e) => setEnvironmentId(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-              {environments.map((environment) => <option key={String(environment.id)} value={String(environment.id)}>{String(environment.name)}</option>)}
+          <FieldRow
+            label="Environment"
+            hint="Controls which console environment this server appears in."
+            htmlFor="server-environment"
+          >
+            <select
+              id="server-environment"
+              value={environmentId}
+              onChange={(e) => setEnvironmentId(e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              {environments.map((environment) => (
+                <option
+                  key={String(environment.id)}
+                  value={String(environment.id)}
+                >
+                  {String(environment.name)}
+                </option>
+              ))}
             </select>
           </FieldRow>
 
@@ -305,7 +428,7 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
             <div className="flex items-center gap-2">
               <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {t('add.links')}
+                {t("add.links")}
               </span>
             </div>
             <button
@@ -314,27 +437,32 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               <Plus className="h-3 w-3" />
-              {t('add.linkAdd')}
+              {t("add.linkAdd")}
             </button>
           </div>
 
           {links.length === 0 ? (
-            <p className="py-3 text-sm text-muted-foreground">{t('add.linksEmpty')}</p>
+            <p className="py-3 text-sm text-muted-foreground">
+              {t("add.linksEmpty")}
+            </p>
           ) : (
             <div className="space-y-1.5 py-2">
               {links.map((link, i) => (
-                <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] sm:items-center">
+                <div
+                  key={i}
+                  className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] sm:items-center"
+                >
                   <Input
-                    placeholder={t('add.linkNamePlaceholder')}
+                    placeholder={t("add.linkNamePlaceholder")}
                     value={link.name}
-                    onChange={(e) => setLink(i, 'name', e.target.value)}
+                    onChange={(e) => setLink(i, "name", e.target.value)}
                     className="h-8 w-full text-sm"
                   />
                   <Input
                     type="url"
                     placeholder="https://..."
                     value={link.url}
-                    onChange={(e) => setLink(i, 'url', e.target.value)}
+                    onChange={(e) => setLink(i, "url", e.target.value)}
                     className="h-8 w-full text-sm"
                   />
                   <Button
@@ -356,7 +484,7 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
             <div className="flex items-center gap-2">
               <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {t('add.storageMounts')}
+                {t("add.storageMounts")}
               </span>
             </div>
             <button
@@ -365,26 +493,31 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               <Plus className="h-3 w-3" />
-              {t('add.storageMountAdd')}
+              {t("add.storageMountAdd")}
             </button>
           </div>
 
           {mounts.length === 0 ? (
-            <p className="py-3 text-sm text-muted-foreground">{t('add.mountsEmpty')}</p>
+            <p className="py-3 text-sm text-muted-foreground">
+              {t("add.mountsEmpty")}
+            </p>
           ) : (
             <div className="space-y-1.5 py-2">
               {mounts.map((m, i) => (
-                <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] sm:items-center">
+                <div
+                  key={i}
+                  className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] sm:items-center"
+                >
                   <Input
-                    placeholder={t('add.storageMountNamePlaceholder')}
+                    placeholder={t("add.storageMountNamePlaceholder")}
                     value={m.name}
-                    onChange={(e) => setMount(i, 'name', e.target.value)}
+                    onChange={(e) => setMount(i, "name", e.target.value)}
                     className="h-8 w-full text-sm"
                   />
                   <Input
                     placeholder="/mnt/media"
                     value={m.path}
-                    onChange={(e) => setMount(i, 'path', e.target.value)}
+                    onChange={(e) => setMount(i, "path", e.target.value)}
                     className="h-8 w-full text-sm"
                   />
                   <Button
@@ -404,16 +537,24 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
           {/* ── Docker (edit-only) ─────────────────────── */}
           {isEdit && (
             <>
-              <SectionHeading icon={<Container className="h-3.5 w-3.5" />} title={t('add.dockerSection')} />
-              <FieldRow label={t('add.dockerEnabled')} hint={t('add.dockerEnabledHint')}>
+              <SectionHeading
+                icon={<Container className="h-3.5 w-3.5" />}
+                title={t("add.dockerSection")}
+              />
+              <FieldRow
+                label={t("add.dockerEnabled")}
+                hint={t("add.dockerEnabledHint")}
+              >
                 <button
                   type="button"
                   role="switch"
                   aria-checked={dockerEnabled}
-                  onClick={() => setDockerEnabled(v => !v)}
-                  className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${dockerEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+                  onClick={() => setDockerEnabled((v) => !v)}
+                  className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${dockerEnabled ? "bg-primary" : "bg-muted-foreground/30"}`}
                 >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${dockerEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${dockerEnabled ? "translate-x-4" : "translate-x-0"}`}
+                  />
                 </button>
               </FieldRow>
             </>
@@ -422,11 +563,19 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
           {/* ── SSH Key (add-only) ──────────────────────── */}
           {!isEdit && (
             <>
-              <SectionHeading icon={<KeyRound className="h-3.5 w-3.5" />} title={t('add.sshKeySection')} />
-              <FieldRow label={t('add.sshPasswordPlaceholder')} hint={t('add.sshKeyHint')}>
+              <SectionHeading
+                icon={<KeyRound className="h-3.5 w-3.5" />}
+                title={t("add.sshKeySection")}
+              />
+              <FieldRow
+                label={t("add.sshPasswordPlaceholder")}
+                hint={t("add.sshKeyHint")}
+                htmlFor="server-ssh-password"
+              >
                 <Input
+                  id="server-ssh-password"
                   type="password"
-                  placeholder={t('add.sshPasswordPlaceholder')}
+                  placeholder={t("add.sshPasswordPlaceholder")}
                   value={sshPassword}
                   onChange={(e) => setSshPassword(e.target.value)}
                   autoComplete="off"
@@ -441,11 +590,23 @@ export function CreateServerDialog({ editServer = null, trigger, onSuccess, open
         <div className="flex flex-col gap-2 border-t bg-muted/30 px-4 py-3 sm:px-6">
           {error && <p className="text-sm text-destructive">{error}</p>}
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-              {t('common.cancel')}
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setOpen(false)}
+            >
+              {t("common.cancel")}
             </Button>
-            <Button type="submit" form="server-form" disabled={mutation.isPending}>
-              {mutation.isPending ? t('add.saving') : (isEdit ? t('common.save') : t('common.add'))}
+            <Button
+              type="submit"
+              form="server-form"
+              disabled={mutation.isPending}
+            >
+              {mutation.isPending
+                ? t("add.saving")
+                : isEdit
+                  ? t("common.save")
+                  : t("common.add")}
             </Button>
           </div>
         </div>

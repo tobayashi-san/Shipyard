@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { api } from '@/lib/api';
-import { useProfile, usePlugins, hasCap, canSeePlugin } from '@/lib/queries';
+import { canAccessDeployments, canAccessOperations, useProfile, usePlugins, hasCap, canSeePlugin } from '@/lib/queries';
 import { useUi } from '@/lib/store';
 import { setToken } from '@/lib/auth';
 import { asArray, cn } from '@/lib/utils';
@@ -22,6 +22,9 @@ export function CommandPalette() {
   const navigate = useNavigate();
   const { data: profile } = useProfile();
   const { data: plugins = [] } = usePlugins();
+  const availablePlugins = asArray<typeof plugins[number]>(plugins);
+  const openTofuAvailable = canAccessDeployments(profile);
+  const canViewOperations = canAccessOperations(profile);
   const setTheme = useUi(s => s.setTheme);
   const [open, setOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -54,13 +57,13 @@ export function CommandPalette() {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (prefix) {
-        if (e.key === 's') navigate({ to: '/servers' });
+        if (e.key === 's' && hasCap(profile, 'canViewServers')) navigate({ to: '/servers' });
         else if (e.key === 'd') navigate({ to: '/' });
-        else if (e.key === 'p') navigate({ to: '/playbooks' });
-        else if (e.key === 'i') navigate({ to: '/infrastructure' });
-        else if (e.key === 'o') navigate({ to: '/deployments' });
-        else if (e.key === 'b') navigate({ to: '/operations' });
-        else if (e.key === ',') navigate({ to: '/settings' });
+        else if (e.key === 'p' && hasCap(profile, 'canViewPlaybooks')) navigate({ to: '/playbooks' });
+        else if (e.key === 'i' && hasCap(profile, 'canViewServers')) navigate({ to: '/infrastructure' });
+        else if (e.key === 'o' && openTofuAvailable) navigate({ to: '/deployments' });
+        else if (e.key === 'b' && canViewOperations) navigate({ to: '/operations' });
+        else if (e.key === ',' && profile?.role === 'admin') navigate({ to: '/settings' });
         prefix = false;
         return;
       }
@@ -72,7 +75,7 @@ export function CommandPalette() {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [navigate]);
+  }, [canViewOperations, navigate, openTofuAvailable, profile]);
 
   // Fetch search data only when open
   const { data: servers = [] } = useQuery({
@@ -88,9 +91,8 @@ export function CommandPalette() {
     staleTime: 30_000,
   });
 
-  const openTofuAvailable = asArray<typeof plugins[number]>(plugins).some(p => p.id === 'opentofu' && p.enabled && canSeePlugin(profile, p.id));
   const sidebarPlugins = useMemo(
-    () => asArray<typeof plugins[number]>(plugins).filter(p => p.id !== 'opentofu' && p.enabled && p.sidebar && canSeePlugin(profile, p.id)),
+    () => asArray<typeof plugins[number]>(plugins).filter(p => p.enabled && p.sidebar && canSeePlugin(profile, p.id)),
     [plugins, profile]
   );
   const safeServers = asArray<ServerListItem>(servers);
@@ -103,10 +105,10 @@ export function CommandPalette() {
     <>
       <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
         <DialogPrimitive.Portal>
-          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-[1px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
           <DialogPrimitive.Content
             className={cn(
-              'fixed left-1/2 top-[12%] z-50 w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 overflow-hidden rounded-xl border bg-popover shadow-lg sm:top-[20%]',
+              'fixed left-1/2 top-[10%] z-50 w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 overflow-hidden rounded-[3px] border border-border-strong bg-popover shadow-2xl sm:top-[16%]',
               'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95'
             )}
           >
@@ -116,22 +118,22 @@ export function CommandPalette() {
                 <Search className="mr-2 h-4 w-4 shrink-0 text-muted-foreground transition-colors group-focus-within:text-foreground" />
                 <Command.Input
                   placeholder={t('cmd.placeholder')}
-                  className="flex h-12 w-full border-0 bg-transparent py-3 text-sm shadow-none outline-none placeholder:text-muted-foreground focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0"
+                  className="flex h-10 w-full border-0 bg-transparent py-2 text-[13px] shadow-none outline-none placeholder:text-muted-foreground focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0"
                   style={{ outline: 'none', boxShadow: 'none' }}
                 />
                 <span className="kbd ml-2">ESC</span>
               </div>
-              <Command.List className="max-h-[420px] overflow-y-auto p-2">
+              <Command.List className="max-h-[420px] overflow-y-auto p-1.5">
                 <Command.Empty className="py-8 text-center text-sm text-muted-foreground">
                   {t('cmd.empty')}
                 </Command.Empty>
 
                 <Command.Group heading={t('cmd.navigate')} className="text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
                   <PaletteItem icon={<LayoutDashboard className="h-4 w-4" />} label={t('nav.dashboard')} shortcut="g d" onSelect={() => go('/')} />
-                  {openTofuAvailable && <PaletteItem icon={<Database className="h-4 w-4" />} label="Infrastruktur" shortcut="g i" onSelect={() => go('/infrastructure')} />}
+                  {hasCap(profile, 'canViewServers') && <PaletteItem icon={<Database className="h-4 w-4" />} label="Infrastructure" shortcut="g i" onSelect={() => go('/infrastructure')} />}
                   {hasCap(profile, 'canViewServers') && <PaletteItem icon={<Server className="h-4 w-4" />} label={t('nav.servers')} shortcut="g s" onSelect={() => go('/servers')} />}
                   {openTofuAvailable && <PaletteItem icon={<Workflow className="h-4 w-4" />} label={t('deploy.title')} shortcut="g o" onSelect={() => go('/deployments')} />}
-                  <PaletteItem icon={<ClipboardList className="h-4 w-4" />} label="Betrieb" shortcut="g b" onSelect={() => go('/operations')} />
+                  {canViewOperations && <PaletteItem icon={<ClipboardList className="h-4 w-4" />} label="Operations" shortcut="g o" onSelect={() => go('/operations')} />}
                   {hasCap(profile, 'canViewPlaybooks') && <PaletteItem icon={<FileCode2 className="h-4 w-4" />} label={t('nav.playbooks')} shortcut="g p" onSelect={() => go('/playbooks')} />}
                   <PaletteItem icon={<User className="h-4 w-4" />} label={t('profile.settings')} onSelect={() => go('/profile')} />
                   {profile?.role === 'admin' && <PaletteItem icon={<Settings className="h-4 w-4" />} label={t('nav.settings')} shortcut="g ," onSelect={() => go('/settings')} />}
@@ -214,7 +216,7 @@ function PaletteItem({
       onSelect={onSelect}
       keywords={keywords}
       className={cn(
-        'flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-sm',
+        'flex min-h-8 cursor-pointer items-center gap-2.5 rounded-sm px-2 py-1.5 text-[13px]',
         'aria-selected:bg-accent aria-selected:text-accent-foreground'
       )}
     >
@@ -252,8 +254,8 @@ function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void
   return (
     <DialogPrimitive.Root open={open} onOpenChange={v => !v && onClose()}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border bg-popover p-5 shadow-lg data-[state=open]:animate-in data-[state=open]:zoom-in-95">
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-[1px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[3px] border border-border-strong bg-popover p-4 shadow-2xl data-[state=open]:animate-in data-[state=open]:zoom-in-95">
           <DialogPrimitive.Title className="text-base font-semibold mb-4">{t('cmd.shortcutsTitle')}</DialogPrimitive.Title>
           <div className="space-y-4">
             {groups.map(g => (

@@ -9,10 +9,13 @@ Shipyard release.
 2. Make the smallest coherent change and keep public API or schema changes
    explicit in the PR description.
 3. Run local checks before opening the PR:
-   - Backend changes: `cd server && npm test`
+   - Backend changes: `cd server && npm run typecheck && npm test`
    - One backend test file: `cd server && node --test test/<file>.test.js`
-   - Frontend changes: `cd frontend-next && npm run build`
-   - Cross-cutting changes: run backend tests and frontend build.
+   - Frontend changes: `cd frontend-next && npm run lint && npm run typecheck && npm test && npm run build`
+   - Browser workflows: install both backend and frontend dependencies, then run
+     `cd frontend-next && npm run test:e2e`.
+   - Cross-cutting changes: run `npm run check` from the repository root, followed
+     by the browser tests.
 4. Open a pull request into `main`.
 5. Merge only after the GitHub CI workflow is green.
 
@@ -23,13 +26,18 @@ reserved for urgent fixes and must still pass the same checks.
 
 The `CI` workflow runs on pull requests and pushes to `main`.
 
-- Backend tests install `server` dependencies with `npm ci` and run `npm test`.
-- Frontend build installs `frontend-next` dependencies with `npm ci` and runs
-  `npm run build`.
-- Docker build builds the production image with Buildx and does not push it.
+- Backend checks install `server` dependencies with `npm ci`, type-check the
+  guarded OpenTofu core modules, and run `npm test`.
+- Frontend checks install `frontend-next` dependencies with `npm ci`, then run the
+  build, type checker, linter, and unit tests.
+- Browser tests install the backend dependencies required by their local API
+  server, install Firefox, and run the Playwright suite.
+- Production dependencies are audited for both applications.
+- Docker validation builds and loads the production image without pushing it,
+  starts the container, verifies its HTTPS health endpoint, restarts it, and
+  verifies that it becomes healthy again.
 
-There is no repo-wide formatter or linter gate. Do not add one as part of a
-normal feature or fix unless the task is specifically to introduce that tool.
+There is no repo-wide formatter gate. Frontend ESLint is a required gate.
 
 ## Release Flow
 
@@ -40,8 +48,8 @@ Shipyard uses release candidates first.
 3. Enter a version without a leading `v`:
    - RC: `1.1.2-rc.1`
    - Stable: `1.1.2`
-4. The workflow validates the version, runs backend tests, builds the frontend,
-   and builds the Docker image without pushing.
+4. The workflow verifies that it was dispatched from `main`, validates the
+   version, runs backend, frontend, browser, audit, and Docker build gates.
 5. If all gates pass, the workflow updates all package versions, commits the
    version bump, creates an annotated tag, and creates a GitHub Release.
 6. The workflow starts `Build and Push Docker Image` for the new tag, which

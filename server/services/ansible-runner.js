@@ -15,6 +15,7 @@ class AnsibleRunner {
   constructor() {
     fs.mkdirSync(PLAYBOOKS_DIR, { recursive: true });
     fs.mkdirSync(DATA_DIR, { recursive: true });
+    this.activeProcesses = new Map();
   }
 
   /**
@@ -41,8 +42,9 @@ class AnsibleRunner {
   /**
    * Generate Ansible inventory from database
    */
-  generateInventory(keyPath) {
-    const servers = db.servers.getAll();
+  generateInventory(keyPath, environmentId = 'default') {
+    const servers = db.servers.getAll().filter(server =>
+      String(server.environment_id || 'default') === String(environmentId || 'default'));
     if (!keyPath) {
       const keyInfo = sshManager.getKeyInfo();
       keyPath = keyInfo?.privateKeyPath || sshManager.getPrivateKeyPath();
@@ -158,13 +160,51 @@ class AnsibleRunner {
 
   _spawnProcess(binary, args, onOutput, opts = {}) {
     return new Promise((resolve, reject) => {
-      const child = spawn(binary, args, { env: this._ansibleEnv, ...opts });
+      const { runId, ...spawnOptions } = opts;
+      const child = spawn(binary, args, { env: this._ansibleEnv, ...spawnOptions });
+      const state = runId ? (this.activeProcesses.get(String(runId)) || { cancelRequested: false }) : null;
+      if (runId) {
+        state.child = child;
+        this.activeProcesses.set(String(runId), state);
+        if (state.cancelRequested) child.kill('SIGTERM');
+      }
       let stdout = '', stderr = '';
       child.stdout.on('data', d => { const t = d.toString(); stdout += t; onOutput?.('stdout', t); });
       child.stderr.on('data', d => { const t = d.toString(); stderr += t; onOutput?.('stderr', t); });
-      child.on('close', code => resolve({ code, stdout, stderr, success: code === 0 }));
-      child.on('error', err => reject(new Error(`Failed to run ${binary}: ${err.message}. Is Ansible installed?`)));
+      child.on('close', (code, signal) => {
+        if (runId) this.activeProcesses.delete(String(runId));
+        resolve({ code, signal, stdout, stderr, success: code === 0, cancelled: signal === 'SIGTERM' || signal === 'SIGKILL' });
+      });
+      child.on('error', err => {
+        if (runId) this.activeProcesses.delete(String(runId));
+        reject(new Error(`Failed to run ${binary}: ${err.message}. Is Ansible installed?`));
+      });
     });
+  }
+
+  cancelRun(runId) {
+    const state = this.activeProcesses.get(String(runId));
+    if (!state) return false;
+    state.cancelRequested = true;
+    if (!state.child) return true;
+    state.child.kill('SIGTERM');
+    const timer = setTimeout(() => {
+      if (this.activeProcesses.get(String(runId)) === state) state.child?.kill('SIGKILL');
+    }, 5000);
+    timer.unref?.();
+    return true;
+  }
+
+  isRunActive(runId) {
+    return this.activeProcesses.has(String(runId));
+  }
+
+  prepareRun(runId) {
+    if (runId) this.activeProcesses.set(String(runId), { child: null, cancelRequested: false });
+  }
+
+  clearRun(runId) {
+    if (runId) this.activeProcesses.delete(String(runId));
   }
 
   _assertSafeTargetArgument(targets) {
@@ -179,12 +219,14 @@ class AnsibleRunner {
    * System playbooks (system/*) resolve from BUNDLED_PLAYBOOKS_DIR only.
    * User playbooks resolve from PLAYBOOKS_DIR first, then BUNDLED_PLAYBOOKS_DIR.
    */
-  async runPlaybook(playbookName, targets = 'all', extraVars = {}, onOutput = null) {
+  async runPlaybook(playbookName, targets = 'all', extraVars = {}, onOutput = null, options = {}) {
     this._assertSafeTargetArgument(targets);
     const { keyPath, cleanup } = this._resolveSshKey();
     let inventoryPath;
     try {
-      inventoryPath = this.generateInventory(keyPath);
+      const environmentId = options.environmentId || 'default';
+      if (options.runId && !this.activeProcesses.has(String(options.runId))) this.prepareRun(options.runId);
+      inventoryPath = this.generateInventory(keyPath, environmentId);
 
       let resolvedPlaybook;
       const isSystem = playbookName.startsWith('system/');
@@ -218,10 +260,30 @@ class AnsibleRunner {
       }
 
       const args = ['-i', inventoryPath, resolvedPlaybook, '--limit', targets, '-v'];
-      if (Object.keys(extraVars).length > 0) args.push('-e', JSON.stringify(extraVars));
+      const storedVars = db.ansibleVars.toExtraVars(environmentId);
+      const mergedVars = { ...storedVars, ...extraVars };
+      if (Object.keys(mergedVars).length > 0) args.push('-e', JSON.stringify(mergedVars));
+      if (options.checkMode) args.push('--check', '--diff');
+      const forks = Math.min(50, Math.max(1, Number.parseInt(options.forks, 10) || 5));
+      args.push('--forks', String(forks));
 
-      return await this._spawnProcess('ansible-playbook', args, onOutput,
-        { cwd: path.join(__dirname, '..') });
+      if (options.runId && this.activeProcesses.get(String(options.runId))?.cancelRequested) {
+        this.clearRun(options.runId);
+        return { code: null, signal: 'SIGTERM', stdout: '', stderr: '', success: false, cancelled: true };
+      }
+
+      const secretValues = db.ansibleVars.secretValues(environmentId);
+      const safeOutput = onOutput ? (type, data) => {
+        let redacted = String(data);
+        for (const secret of secretValues) redacted = redacted.split(secret).join('********');
+        onOutput(type, redacted);
+      } : null;
+      const result = await this._spawnProcess('ansible-playbook', args, safeOutput,
+        { cwd: path.join(__dirname, '..'), runId: options.runId });
+      for (const field of ['stdout', 'stderr']) {
+        for (const secret of secretValues) result[field] = String(result[field] || '').split(secret).join('********');
+      }
+      return result;
     } finally {
       cleanup();
       if (inventoryPath) try { fs.unlinkSync(inventoryPath); } catch {}

@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { _test } = require('../../plugins/opentofu');
+const { _test } = require('../features/opentofu');
 
 test('Proxmox VM blueprint normalizes the console form and renders safe HCL', () => {
   const vm = _test.normalizeProxmoxVm({
@@ -58,7 +58,7 @@ test('Proxmox catalog connection keeps API credentials server-side and preserves
   const url = _test.proxmoxApiUrl(connection, '/nodes/pve001/qemu?full=1');
   assert.equal(url.toString(), 'https://pve.example.test:8006/api2/json/nodes/pve001/qemu?full=1');
   assert.equal(connection.insecure, true);
-  assert.throws(() => _test.readProxmoxConnection({ TF_VAR_proxmox_endpoint: 'http://pve.example.test' }), /nicht konfiguriert/);
+  assert.throws(() => _test.readProxmoxConnection({ TF_VAR_proxmox_endpoint: 'http://pve.example.test' }), /not configured/);
 });
 
 test('Proxmox resource overview totals desired capacity and reads state resources', () => {
@@ -74,4 +74,24 @@ test('Proxmox resource overview totals desired capacity and reads state resource
   assert.deepEqual(overview.desired, { vm_count: 1, cpu_cores: 4, memory_mb: 8192, disk_gb: 80, nodes: [{ name: 'pve001', vm_count: 1, cpu_cores: 4, memory_mb: 8192, disk_gb: 80 }] });
   assert.equal(overview.actual.resources[0].vm_id, 101);
   assert.deepEqual(overview.actual.resources[0].ip_addresses, ['10.20.0.10']);
+});
+
+test('Proxmox resource overview links state VMs to adopted Fleet hosts', () => {
+  const vm = _test.normalizeProxmoxVm({ name: 'app-1', node_name: 'pve001', disk_datastore: 'fast', bridge: 'vmbr0' });
+  const overview = _test.buildProxmoxResourceOverview([vm], {
+    values: { root_module: { resources: [{
+      address: 'proxmox_virtual_environment_vm.app-1', type: 'proxmox_virtual_environment_vm', name: 'app-1',
+      values: { name: 'app-1', node_name: 'pve001', vm_id: 101, started: true },
+    }] } },
+  }, new Map([['pve001:101', { server_id: 'fleet-server-1', hostname: 'app-1' }]]));
+  assert.equal(overview.actual.resources[0].fleet_server_id, 'fleet-server-1');
+  assert.equal(overview.actual.resources[0].fleet_server_name, 'app-1');
+});
+
+test('Destroy confirmation is bound to the exact deployment name', () => {
+  assert.equal(_test.destroyConfirmationPhrase('production'), 'DESTROY production');
+  assert.equal(_test.hasValidDestroyConfirmation('DESTROY production', 'production'), true);
+  assert.equal(_test.hasValidDestroyConfirmation('destroy production', 'production'), false);
+  assert.equal(_test.hasValidDestroyConfirmation('DESTROY staging', 'production'), false);
+  assert.equal(_test.hasValidDestroyConfirmation('DESTROY production ', 'production'), false);
 });

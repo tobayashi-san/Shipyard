@@ -29,7 +29,7 @@ These are configured in the UI under **Settings**, or via the API (`PUT /api/sys
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| App Name | `Shipyard` | Shown in sidebar and login screen. |
+| App Name | `Fleet` | Shown in sidebar and login screen. |
 | Tagline | `Infrastructure` | Subtitle below the app name. |
 | Accent Color | `#3b82f6` | Primary UI color for buttons, links, and active states. |
 | Theme | `auto` | `auto` follows OS, or use `light` / `dark`. |

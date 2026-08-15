@@ -62,6 +62,22 @@ function applySchema(db) {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
+    -- A key is stored once; assignments describe where Fleet is allowed to
+    -- use it. target_type/target_id stay polymorphic so the core can point to
+    -- optional OpenTofu deployments and VM templates without a hard DB link.
+    CREATE TABLE IF NOT EXISTS ssh_key_assignments (
+      id TEXT PRIMARY KEY,
+      key_name TEXT NOT NULL DEFAULT 'fleet',
+      target_type TEXT NOT NULL,
+      target_id TEXT NOT NULL,
+      target_label TEXT NOT NULL DEFAULT '',
+      environment_id TEXT NOT NULL DEFAULT 'default',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(key_name, target_type, target_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ssh_key_assignments_environment ON ssh_key_assignments(environment_id, target_type);
+
     CREATE TABLE IF NOT EXISTS docker_containers (
       id TEXT PRIMARY KEY,
       server_id TEXT NOT NULL,
@@ -89,10 +105,14 @@ function applySchema(db) {
 
     CREATE TABLE IF NOT EXISTS schedules (
       id TEXT PRIMARY KEY,
+      environment_id TEXT NOT NULL DEFAULT 'default',
       name TEXT NOT NULL,
       playbook TEXT NOT NULL,
       targets TEXT DEFAULT 'all',
       cron_expression TEXT NOT NULL,
+      extra_vars TEXT NOT NULL DEFAULT '{}',
+      check_mode INTEGER NOT NULL DEFAULT 0,
+      forks INTEGER NOT NULL DEFAULT 5,
       enabled INTEGER DEFAULT 1,
       last_run TEXT,
       last_status TEXT,
@@ -106,7 +126,7 @@ function applySchema(db) {
       name TEXT NOT NULL UNIQUE,
       created_at TEXT DEFAULT (datetime('now'))
     );
-    INSERT OR IGNORE INTO environments (id, name) VALUES ('default', 'Standardumgebung');
+    INSERT OR IGNORE INTO environments (id, name) VALUES ('default', 'Default environment');
   `);
 
   // IPAM is environment-scoped, so the same RFC1918 ranges can exist in
@@ -159,6 +179,91 @@ function applySchema(db) {
     CREATE INDEX IF NOT EXISTS idx_ipam_subnets_environment ON ipam_subnets(environment_id);
     CREATE INDEX IF NOT EXISTS idx_ipam_reservations_subnet ON ipam_reservations(subnet_id);
     CREATE INDEX IF NOT EXISTS idx_ipam_ranges_subnet ON ipam_ip_ranges(subnet_id);
+
+    -- External inventory sources deliberately live separately from prefixes.
+    -- A source can contribute addresses to several prefixes, while its
+    -- credential remains encrypted and is never exposed through the API.
+    CREATE TABLE IF NOT EXISTS ipam_sync_sources (
+      id TEXT PRIMARY KEY,
+      environment_id TEXT NOT NULL DEFAULT 'default',
+      type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      endpoint TEXT NOT NULL,
+      api_token TEXT NOT NULL DEFAULT '',
+      site TEXT DEFAULT 'default',
+      path TEXT DEFAULT '',
+      insecure INTEGER NOT NULL DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      auto_sync INTEGER NOT NULL DEFAULT 1,
+      sync_interval_min INTEGER NOT NULL DEFAULT 15,
+      last_synced_at TEXT,
+      last_status TEXT DEFAULT '',
+      last_error TEXT DEFAULT '',
+      last_tested_at TEXT,
+      last_test_status TEXT DEFAULT '',
+      last_test_error TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_ipam_sync_sources_environment ON ipam_sync_sources(environment_id);
+
+    -- A unique address reservation cannot represent a collision without
+    -- losing one of the inventories. Keep the competing observation here so
+    -- operators can see and resolve it in the affected prefix.
+    CREATE TABLE IF NOT EXISTS ipam_sync_conflicts (
+      id TEXT PRIMARY KEY,
+      environment_id TEXT NOT NULL,
+      subnet_id TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      address TEXT NOT NULL,
+      hostname TEXT DEFAULT '',
+      mac_address TEXT DEFAULT '',
+      reason TEXT NOT NULL,
+      existing_reservation_id TEXT,
+      last_seen_at TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE,
+      FOREIGN KEY (subnet_id) REFERENCES ipam_subnets(id) ON DELETE CASCADE,
+      FOREIGN KEY (source_id) REFERENCES ipam_sync_sources(id) ON DELETE CASCADE
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_ipam_sync_conflicts_source_address ON ipam_sync_conflicts(source_id, address);
+    CREATE INDEX IF NOT EXISTS idx_ipam_sync_conflicts_subnet ON ipam_sync_conflicts(subnet_id);
+
+    -- Proxmox connections are not external IPAM sources, but their guest
+    -- agent inventory can report a competing address as well.  Keep those
+    -- observations separately so the foreign-key lifecycle of API sources
+    -- remains intact and every conflict still has an explicit provenance.
+    CREATE TABLE IF NOT EXISTS ipam_proxmox_sync_conflicts (
+      id TEXT PRIMARY KEY,
+      environment_id TEXT NOT NULL,
+      subnet_id TEXT NOT NULL,
+      connection_id TEXT NOT NULL,
+      address TEXT NOT NULL,
+      hostname TEXT DEFAULT '',
+      reason TEXT NOT NULL,
+      existing_reservation_id TEXT,
+      last_seen_at TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE,
+      FOREIGN KEY (subnet_id) REFERENCES ipam_subnets(id) ON DELETE CASCADE,
+      FOREIGN KEY (connection_id) REFERENCES tofu_proxmox_connections(id) ON DELETE CASCADE
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_ipam_proxmox_conflicts_connection_address ON ipam_proxmox_sync_conflicts(connection_id, subnet_id, address);
+    CREATE INDEX IF NOT EXISTS idx_ipam_proxmox_conflicts_subnet ON ipam_proxmox_sync_conflicts(subnet_id);
+
+    CREATE TABLE IF NOT EXISTS maintenance_windows (
+      id TEXT PRIMARY KEY,
+      environment_id TEXT NOT NULL DEFAULT 'default',
+      name TEXT NOT NULL,
+      starts_at TEXT NOT NULL,
+      ends_at TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      created_by TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_maintenance_windows_environment_time ON maintenance_windows(environment_id, starts_at, ends_at);
   `);
 
   db.exec(`
@@ -303,16 +408,23 @@ function applySchema(db) {
       created_at TEXT DEFAULT (datetime('now'))
     )
   `);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action);`);
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);`,
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action);`,
+  );
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS schedule_history (
       id TEXT PRIMARY KEY,
       schedule_id TEXT,
+      environment_id TEXT NOT NULL DEFAULT 'default',
       schedule_name TEXT NOT NULL,
       playbook TEXT NOT NULL,
       targets TEXT DEFAULT 'all',
+      triggered_by TEXT,
+      check_mode INTEGER NOT NULL DEFAULT 0,
       started_at TEXT DEFAULT (datetime('now')),
       completed_at TEXT,
       status TEXT DEFAULT 'running',
@@ -325,21 +437,26 @@ function applySchema(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS ansible_vars (
       id TEXT PRIMARY KEY,
-      key TEXT NOT NULL UNIQUE,
+      environment_id TEXT NOT NULL DEFAULT 'default',
+      key TEXT NOT NULL,
       value TEXT NOT NULL,
+      is_secret INTEGER NOT NULL DEFAULT 0,
       description TEXT DEFAULT '',
-      created_at TEXT DEFAULT (datetime('now'))
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(environment_id, key)
     );
   `);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS server_groups (
       id TEXT PRIMARY KEY,
+      environment_id TEXT NOT NULL DEFAULT 'default',
       name TEXT NOT NULL,
       color TEXT DEFAULT '#6366f1',
       parent_id TEXT,
       position INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now'))
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE
     );
   `);
 
@@ -358,7 +475,11 @@ function applySchema(db) {
       created_at TEXT DEFAULT (datetime('now'))
     );
   `);
-  try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_nocase ON users(username COLLATE NOCASE);`); } catch {}
+  try {
+    db.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_nocase ON users(username COLLATE NOCASE);`,
+    );
+  } catch {}
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS roles (

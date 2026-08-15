@@ -43,7 +43,10 @@ const PRIVATE_UI_DIRS = new Set([
 // not plugins and should neither produce startup warnings nor appear as a
 // broken plugin in the console.
 function isIgnoredPluginDirectory(name) {
-  return name.startsWith('.') || /(?:^|\.)bak(?:\.|$)/i.test(name) || /(?:^|[-_.])backup(?:[-_.]|$)/i.test(name);
+  // OpenTofu is a reserved core feature registered from server/routes/opentofu.js.
+  // Ignore an on-disk copy left behind by installations that predate the move
+  // from plugins/ to server/features/.
+  return name === 'opentofu' || name.startsWith('.') || /(?:^|\.)bak(?:\.|$)/i.test(name) || /(?:^|[-_.])backup(?:[-_.]|$)/i.test(name);
 }
 
 const _loaded = new Map(); // id -> { manifest, router }

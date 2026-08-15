@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from '@tanstack/react-router';
 import {
   Activity, CheckCircle2, CircleDashed, Clock, FileCode2, Hammer,
   Layers3, RefreshCw, Trash2, XCircle,
@@ -48,7 +49,7 @@ function compactLine(value: unknown) {
 function statusIcon(status: ActivityStatus) {
   if (status === 'success') return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;
   if (status === 'failed') return <XCircle className="h-4 w-4 text-destructive" />;
-  return <CircleDashed className="h-4 w-4 animate-spin text-brand" />;
+  return <CircleDashed className="h-4 w-4 animate-spin text-primary" />;
 }
 
 function kindIcon(kind: ActivityItem['kind']) {
@@ -205,7 +206,7 @@ export function ActivityCenter({ placement = 'floating' }: { placement?: 'floati
   return (
     <div ref={panelRef} className={cn('z-40 flex flex-col items-end', placement === 'header' ? 'relative' : 'fixed bottom-4 right-4')}>
       {open && (
-        <div className={cn('w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-xl', placement === 'header' ? 'absolute right-0 top-10' : 'mb-2')}>
+        <div className={cn('w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-[3px] border border-border-strong bg-popover text-popover-foreground shadow-xl', placement === 'header' ? 'fixed inset-x-3 top-12 md:absolute md:inset-x-auto md:right-0 md:top-9' : 'mb-2')}>
           <div className="flex items-center justify-between border-b px-3 py-2">
             <div>
               <div className="text-sm font-semibold">{t('activity.title')}</div>
@@ -232,10 +233,10 @@ export function ActivityCenter({ placement = 'floating' }: { placement?: 'floati
               </div>
             ) : (
               visibleItems.map(item => (
-                <div key={item.id} className="flex gap-3 border-b px-3 py-3 last:border-b-0">
+                <div key={item.id} className="flex gap-2.5 border-b px-3 py-2.5 last:border-b-0 hover:bg-muted/25">
                   <div className={cn(
-                    'mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md',
-                    item.status === 'running' ? 'bg-brand/10 text-brand' :
+                    'mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-sm',
+                    item.status === 'running' ? 'bg-primary/10 text-primary' :
                       item.status === 'success' ? 'bg-emerald-500/10 text-emerald-500' :
                         'bg-destructive/10 text-destructive'
                   )}>
@@ -260,6 +261,11 @@ export function ActivityCenter({ placement = 'floating' }: { placement?: 'floati
               ))
             )}
           </div>
+          <div className="border-t bg-muted/20 px-3 py-2">
+            <Link to="/operations" onClick={() => setOpen(false)} className="block rounded-sm px-1 py-1 text-xs font-medium text-primary hover:underline">
+              Open all tasks & events
+            </Link>
+          </div>
         </div>
       )}
 
@@ -273,7 +279,7 @@ export function ActivityCenter({ placement = 'floating' }: { placement?: 'floati
         <Activity className="h-4 w-4" />
         {placement === 'floating' && <span className="hidden sm:inline">{t('activity.trigger')}</span>}
         {runningCount > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-semibold text-white">
+          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
             {runningCount}
           </span>
         )}

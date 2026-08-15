@@ -12,71 +12,61 @@ export class ApiError extends Error {
   }
 }
 
-function currentLang(): 'de' | 'en' {
-  try {
-    const stored = localStorage.getItem('shipyard_lang');
-    if (stored === 'de' || stored === 'en') return stored;
-  } catch { /* ignore */ }
-  return navigator.language.toLowerCase().startsWith('en') ? 'en' : 'de';
-}
-
 function permissionDeniedMessage(path: string, method = 'GET'): string {
-  const de = currentLang() === 'de';
   const p = path.toLowerCase();
   const m = method.toUpperCase();
-  const msg = (german: string, english: string) => de ? german : english;
 
   if (p.startsWith('/roles') || p.startsWith('/users')) {
-    return msg('Deine Rolle darf Benutzer und Rollen nicht verwalten.', 'Your role is not allowed to manage users and roles.');
+    return 'Your role is not allowed to manage users and roles.';
   }
   if (p.startsWith('/system/key') || p.startsWith('/system/deploy')) {
-    return msg('Deine Rolle darf SSH-Schlüssel nicht verwalten.', 'Your role is not allowed to manage SSH keys.');
+    return 'Your role is not allowed to manage SSH keys.';
   }
   if (p.startsWith('/system/audit')) {
-    return msg('Deine Rolle darf das Audit-Log nicht ansehen.', 'Your role is not allowed to view the audit log.');
+    return 'Your role is not allowed to view the audit log.';
   }
   if (p.startsWith('/plugin/')) {
-    return msg('Deine Rolle darf dieses Plugin nicht öffnen.', 'Your role is not allowed to access this plugin.');
+    return 'Your role is not allowed to access this plugin.';
   }
   if (p.startsWith('/plugins')) {
-    return msg('Deine Rolle darf Plugins nicht verwalten.', 'Your role is not allowed to manage plugins.');
+    return 'Your role is not allowed to manage plugins.';
   }
   if (p.startsWith('/adhoc')) {
-    return msg('Deine Rolle darf keine Ad-hoc-Kommandos ausführen.', 'Your role is not allowed to run ad-hoc commands.');
+    return 'Your role is not allowed to run ad-hoc commands.';
   }
   if (p.startsWith('/ansible/run')) {
-    return msg('Deine Rolle darf dieses Playbook oder Ziel nicht ausführen.', 'Your role is not allowed to run this playbook or target.');
+    return 'Your role is not allowed to run this playbook or target.';
   }
   if (p.startsWith('/playbooks')) {
-    if (m === 'GET') return msg('Deine Rolle darf dieses Playbook nicht lesen.', 'Your role is not allowed to read this playbook.');
-    return msg('Deine Rolle darf Playbooks nicht ändern.', 'Your role is not allowed to modify playbooks.');
+    if (m === 'GET') return 'Your role is not allowed to read this playbook.';
+    return 'Your role is not allowed to modify playbooks.';
   }
   if (p.startsWith('/schedules') || p.startsWith('/schedule-history')) {
-    return msg('Deine Rolle darf diesen Zeitplan oder Verlauf nicht verwenden.', 'Your role is not allowed to access this schedule or history.');
+    return 'Your role is not allowed to access this schedule or history.';
   }
   if (p.startsWith('/ansible-vars')) {
-    return msg('Deine Rolle darf Variablen nicht verwalten.', 'Your role is not allowed to manage variables.');
+    return 'Your role is not allowed to manage variables.';
   }
   if (p.includes('/docker/compose')) {
-    return msg('Deine Rolle darf Docker-Compose auf diesem Server nicht verwalten.', 'Your role is not allowed to manage Docker Compose on this server.');
+    return 'Your role is not allowed to manage Docker Compose on this server.';
   }
   if (p.includes('/docker')) {
-    return msg('Deine Rolle darf Docker-Aktionen auf diesem Server nicht ausführen.', 'Your role is not allowed to perform Docker actions on this server.');
+    return 'Your role is not allowed to perform Docker actions on this server.';
   }
   if (p.includes('/custom-updates')) {
-    return msg('Deine Rolle darf Custom-Update-Tasks nicht verwenden.', 'Your role is not allowed to use custom update tasks.');
+    return 'Your role is not allowed to use custom update tasks.';
   }
   if (p.endsWith('/update') || p.endsWith('/update-all')) {
-    return msg('Deine Rolle darf Updates nicht starten.', 'Your role is not allowed to start updates.');
+    return 'Your role is not allowed to start updates.';
   }
   if (p.endsWith('/reboot')) {
-    return msg('Deine Rolle darf Server nicht neu starten.', 'Your role is not allowed to reboot servers.');
+    return 'Your role is not allowed to reboot servers.';
   }
   if (p.startsWith('/servers')) {
-    if (m === 'GET') return msg('Deine Rolle darf diesen Server nicht ansehen.', 'Your role is not allowed to view this server.');
-    return msg('Deine Rolle darf diesen Server nicht ändern.', 'Your role is not allowed to modify this server.');
+    if (m === 'GET') return 'Your role is not allowed to view this server.';
+    return 'Your role is not allowed to modify this server.';
   }
-  return msg('Deine Rolle erlaubt diese Aktion nicht.', 'Your role does not allow this action.');
+  return 'Your role does not allow this action.';
 }
 
 interface RequestOptions extends Omit<RequestInit, 'body'> {
@@ -163,8 +153,8 @@ export const api = {
     apiFetch('/auth/change', { method: 'POST', body: { currentPassword, newPassword } }),
   totpStatus:        () => apiFetch<{ enabled: boolean }>('/auth/totp/status'),
   totpSetup:         () => apiFetch<{ otpauthUrl: string; secret: string }>('/auth/totp/setup', { method: 'POST' }),
-  totpConfirm:       (code: string) => apiFetch('/auth/totp/confirm', { method: 'POST', body: { code } }),
-  totpDisable:       (password: string) => apiFetch('/auth/totp', { method: 'DELETE', body: { password } }),
+  totpConfirm:       (code: string) => apiFetch<{ success: boolean; token: string }>('/auth/totp/confirm', { method: 'POST', body: { code } }),
+  totpDisable:       (password: string) => apiFetch<{ success: boolean; token: string }>('/auth/totp', { method: 'DELETE', body: { password } }),
   totpLogin:         (tempToken: string, code: string) =>
     apiFetch<{ token: string }>('/auth/totp/login', { method: 'POST', body: { tempToken, code }, skipAuth: true }),
   getProfile:        () => apiFetch<AnyObj>('/auth/profile'),
@@ -183,70 +173,6 @@ export const api = {
 
   ...serversApi,
 
-  /* Server API lives in ./api/servers.ts. */
-  /*
-  getServers:        () => apiFetch<AnyObj[]>('/servers'),
-  getServer:         (id: string | number) => apiFetch<AnyObj>(`/servers/${id}`),
-  createServer:      (data: AnyObj) => apiFetch<AnyObj>('/servers', { method: 'POST', body: data }),
-  updateServer:      (id: string | number, data: AnyObj) => apiFetch(`/servers/${id}`, { method: 'PUT', body: data }),
-  deleteServer:      (id: string | number) => apiFetch(`/servers/${id}`, { method: 'DELETE' }),
-  testConnection:    (id: string | number) => apiFetch(`/servers/${id}/test`, { method: 'POST' }),
-  resetServerHostKey:(id: string | number) => apiFetch(`/servers/${id}/reset-host-key`, { method: 'POST' }),
-  autoGroupByTags:   () => apiFetch('/servers/auto-group-by-tags', { method: 'POST' }),
-  setServerGroup:    (serverId: string | number, groupId: string | number | null) =>
-    apiFetch(`/servers/${serverId}/group`, { method: 'PUT', body: { group_id: groupId } }),
-
-  // Server groups
-  getServerGroups:   () => apiFetch<AnyObj[]>('/servers/groups'),
-  createServerGroup: (name: string, color?: string, parentId?: string | number | null) =>
-    apiFetch('/servers/groups', { method: 'POST', body: { name, color, parent_id: parentId ?? null } }),
-  updateServerGroup: (id: string | number, name: string, color?: string) =>
-    apiFetch(`/servers/groups/${id}`, { method: 'PUT', body: { name, color } }),
-  deleteServerGroup: (id: string | number) => apiFetch(`/servers/groups/${id}`, { method: 'DELETE' }),
-  setGroupParent:    (groupId: string | number, parentId: string | number | null) =>
-    apiFetch(`/servers/groups/${groupId}/parent`, { method: 'PUT', body: { parent_id: parentId ?? null } }),
-
-  exportServers:     (format: 'json' | 'csv') => apiDownload(`/servers/export?format=${format}`, `servers.${format}`),
-  importServers:     (servers: AnyObj[]) => apiFetch('/servers/import', { method: 'POST', body: { servers } }),
-
-  // Server data
-  getServerInfo:     (id: string | number, force = false) => apiFetch<AnyObj>(`/servers/${id}/info${force ? '?force=1' : ''}`),
-  getServerServices: (id: string | number) => apiFetch<AnyObj>(`/servers/${id}/services`),
-  getServerUpdates:  (id: string | number, force = false) => apiFetch<AnyObj>(`/servers/${id}/updates${force ? '?force=1' : ''}`),
-  getServerHistory:  (id: string | number) => apiFetch<AnyObj[]>(`/servers/${id}/history`),
-  getServerNotes:    (id: string | number) => apiFetch<{ notes: string }>(`/servers/${id}/notes`),
-  saveServerNotes:   (id: string | number, notes: string) => apiFetch(`/servers/${id}/notes`, { method: 'PUT', body: { notes } }),
-  getServerAlertSettings: (id: string | number) => apiFetch<AnyObj>(`/servers/${id}/alert-settings`),
-  saveServerAlertSettings: (id: string | number, data: AnyObj) => apiFetch(`/servers/${id}/alert-settings`, { method: 'PUT', body: data }),
-  getServerDocker:   (id: string | number, force = false) => apiFetch<AnyObj>(`/servers/${id}/docker${force ? '?force=1' : ''}`),
-  restartContainer:  (id: string | number, container: string) => apiFetch(`/servers/${id}/docker/${container}/restart`, { method: 'POST' }),
-  getContainerLogs:  (id: string | number, container: string, tail = 200) =>
-    apiFetch<{ logs: string }>(`/servers/${id}/docker/${encodeURIComponent(container)}/logs?tail=${tail}`),
-  checkImageUpdates: (id: string | number) => apiFetch(`/servers/${id}/docker/image-updates`),
-  getCachedImageUpdates: (id: string | number) => apiFetch(`/servers/${id}/docker/image-updates/cached`),
-
-  // Custom updates
-  getCustomUpdateTasks:   (serverId: string | number) => apiFetch<AnyObj[]>(`/servers/${serverId}/custom-updates`),
-  createCustomUpdateTask: (serverId: string | number, data: AnyObj) => apiFetch(`/servers/${serverId}/custom-updates`, { method: 'POST', body: data }),
-  updateCustomUpdateTask: (serverId: string | number, taskId: string | number, data: AnyObj) =>
-    apiFetch(`/servers/${serverId}/custom-updates/${taskId}`, { method: 'PUT', body: data }),
-  deleteCustomUpdateTask: (serverId: string | number, taskId: string | number) =>
-    apiFetch(`/servers/${serverId}/custom-updates/${taskId}`, { method: 'DELETE' }),
-  runCustomUpdateTask:    (serverId: string | number, taskId: string | number) =>
-    apiFetch(`/servers/${serverId}/custom-updates/${taskId}/run`, { method: 'POST' }),
-  checkCustomUpdateTask:  (serverId: string | number, taskId: string | number) =>
-    apiFetch(`/servers/${serverId}/custom-updates/${taskId}/check`, { method: 'POST' }),
-
-  // Compose
-  getDockerCompose:  (id: string | number, p: string) => apiFetch<{ content: string }>(`/servers/${id}/docker/compose?path=${encodeURIComponent(p)}`),
-  writeDockerCompose:(id: string | number, p: string, content: string) =>
-    apiFetch(`/servers/${id}/docker/compose/write`, { method: 'POST', body: { path: p, content } }),
-  composeAction:     (id: string | number, p: string, action: string) =>
-    apiFetch(`/servers/${id}/docker/compose/action`, { method: 'POST', body: { path: p, action } }),
-  deleteComposeStack:(id: string | number, p: string) =>
-    apiFetch(`/servers/${id}/docker/compose/stack?path=${encodeURIComponent(p)}`, { method: 'DELETE' }),
-
-  */
 
   // SSH / System
   getSSHKey:         () => apiFetch<{ publicKey: string }>('/system/key'),
@@ -255,6 +181,10 @@ export const api = {
   generateSSHKey:    (name?: string) => apiFetch('/system/generate', { method: 'POST', body: { name } }),
   deploySSHKey:      (data: AnyObj) => apiFetch('/system/deploy', { method: 'POST', body: data }),
   deploySSHKeyAll:   (data: AnyObj) => apiFetch('/system/deploy-all', { method: 'POST', body: data }),
+  getSSHKeyAssignments: (environmentId = 'default') => apiFetch(`/system/key-assignments?environment_id=${encodeURIComponent(environmentId)}`),
+  getSSHKeyAssignmentTargets: (environmentId = 'default') => apiFetch(`/system/key-assignment-targets?environment_id=${encodeURIComponent(environmentId)}`),
+  saveSSHKeyAssignment: (data: AnyObj) => apiFetch('/system/key-assignments', { method: 'PUT', body: data }),
+  deleteSSHKeyAssignment: (id: string) => apiFetch(`/system/key-assignments/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   // App Settings
   getSettings:       () => apiFetch<AnyObj>('/system/settings'),
@@ -266,6 +196,11 @@ export const api = {
     return apiFetch<AnyObj>(`/system/audit?${q}`);
   },
   getAuditMeta:      () => apiFetch<AnyObj>('/system/audit/meta'),
+  exportAuditLog:    (params: Record<string, string | number | undefined> = {}) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') q.set(k, String(v));
+    return apiDownload(`/system/audit/export?${q}`, 'fleet-audit-log.csv');
+  },
   getPollingConfig:  () => apiFetch<AnyObj>('/system/polling-config'),
   savePollingConfig: (data: AnyObj) => apiFetch('/system/polling-config', { method: 'PUT', body: data }),
   testWebhook:       () => apiFetch('/system/webhook-test', { method: 'POST' }),
@@ -285,26 +220,30 @@ export const api = {
   runUpdate:         (serverId: string | number) => apiFetch(`/servers/${serverId}/update`, { method: 'POST' }),
   runUpdateAll:      () => apiFetch('/servers/update-all', { method: 'POST' }),
   runReboot:         (serverId: string | number) => apiFetch(`/servers/${serverId}/reboot`, { method: 'POST' }),
-  runPlaybook:       (playbook: string, targets: unknown, extraVars?: AnyObj) =>
-    apiFetch('/ansible/run', { method: 'POST', body: { playbook, targets, extraVars } }),
+  runPlaybook:       (playbook: string, targets: unknown, extraVars?: AnyObj, options: AnyObj = {}) =>
+    apiFetch('/ansible/run', { method: 'POST', body: { playbook, targets, extraVars, ...options } }),
+  previewPlaybookTargets: (targets: unknown, environmentId: string) =>
+    apiFetch<{ environment_id: string; count: number; targets: string[] }>('/ansible/preview-targets', { method: 'POST', body: { targets, environment_id: environmentId } }),
+  cancelPlaybookRun: (id: string | number) => apiFetch(`/ansible/runs/${id}/cancel`, { method: 'POST' }),
   runAdhoc:          (targets: unknown, module: string, args: string) =>
     apiFetch('/adhoc/run', { method: 'POST', body: { targets, module, args } }),
 
   // Schedules
-  getSchedules:      () => apiFetchArray<AnyObj>('/schedules'),
+  getSchedules:      (environmentId?: string) => apiFetchArray<AnyObj>(`/schedules${environmentId ? `?environment_id=${encodeURIComponent(environmentId)}` : ''}`),
   createSchedule:    (data: AnyObj) => apiFetch('/schedules', { method: 'POST', body: data }),
   updateSchedule:    (id: string | number, data: AnyObj) => apiFetch(`/schedules/${id}`, { method: 'PUT', body: data }),
   deleteSchedule:    (id: string | number) => apiFetch(`/schedules/${id}`, { method: 'DELETE' }),
   toggleSchedule:    (id: string | number) => apiFetch(`/schedules/${id}/toggle`, { method: 'POST' }),
-  getScheduleHistory:(limit = 100, scheduleId: string | number | null = null) => {
+  getScheduleHistory:(limit = 100, scheduleId: string | number | null = null, environmentId?: string) => {
     const q = new URLSearchParams({ limit: String(limit) });
     if (scheduleId) q.set('scheduleId', String(scheduleId));
+    if (environmentId) q.set('environment_id', environmentId);
     return apiFetchArray<AnyObj>(`/schedule-history?${q}`);
   },
   getScheduleHistoryEntry: (id: string | number) => apiFetch<AnyObj>(`/schedule-history/${id}`),
 
   // Ansible vars
-  getAnsibleVars:    () => apiFetchArray<AnyObj>('/ansible-vars'),
+  getAnsibleVars:    (environmentId?: string) => apiFetchArray<AnyObj>(`/ansible-vars${environmentId ? `?environment_id=${encodeURIComponent(environmentId)}` : ''}`),
   createAnsibleVar:  (data: AnyObj) => apiFetch('/ansible-vars', { method: 'POST', body: data }),
   updateAnsibleVar:  (id: string | number, data: AnyObj) => apiFetch(`/ansible-vars/${id}`, { method: 'PUT', body: data }),
   deleteAnsibleVar:  (id: string | number) => apiFetch(`/ansible-vars/${id}`, { method: 'DELETE' }),

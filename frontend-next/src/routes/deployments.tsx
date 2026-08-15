@@ -1,16 +1,34 @@
-import { useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { Link } from '@tanstack/react-router';
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Boxes, CheckCircle2, Clock3, Cpu, FolderPlus, HardDrive, Layers3, MemoryStick, RefreshCw, Server, TriangleAlert, Workflow } from 'lucide-react';
-import { apiFetch } from '@/lib/api';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { EmptyState } from '@/components/ui/empty-state';
-import { PageHeader } from '@/components/ui/page-header';
-import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
-import { CreateDeploymentDialog } from '@/features/deployments/CreateDeploymentDialog';
-import { useUi } from '@/lib/store';
+import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { Link } from "@tanstack/react-router";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import {
+  ArrowRight,
+  Boxes,
+  Database,
+  FolderPlus,
+  Layers3,
+  RefreshCw,
+  Server,
+  Trash2,
+  TriangleAlert,
+  Workflow,
+} from "lucide-react";
+import { apiFetch } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { CreateDeploymentDialog } from "@/features/deployments/CreateDeploymentDialog";
+import { useUi } from "@/lib/store";
+import { hasCap, useProfile } from "@/lib/queries";
 
 interface OpenTofuStatus {
   installed?: boolean;
@@ -30,13 +48,19 @@ interface Workspace {
   path?: string;
   description?: string;
   last_run?: Run | null;
+  proxmox_connection?: { id: string; name: string; endpoint: string } | null;
 }
 
 interface DeploymentSummary {
   vm_count: number;
   started_vm_count: number;
   post_deploy?: {
-    counts?: { success?: number; running?: number; failed?: number; pending?: number };
+    counts?: {
+      success?: number;
+      running?: number;
+      failed?: number;
+      pending?: number;
+    };
   };
   resources?: Array<{
     id: string;
@@ -50,120 +74,608 @@ interface DeploymentSummary {
 }
 
 function runTone(status?: string): StatusTone {
-  switch (String(status || '').toLowerCase()) {
-    case 'success': case 'completed': return 'success';
-    case 'failed': case 'error': return 'danger';
-    case 'running': case 'queued': return 'info';
-    default: return 'muted';
+  switch (String(status || "").toLowerCase()) {
+    case "success":
+    case "completed":
+      return "success";
+    case "failed":
+    case "error":
+      return "danger";
+    case "running":
+    case "queued":
+      return "info";
+    default:
+      return "muted";
   }
 }
 
 function formatDate(value?: string) {
   if (!value) return null;
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(date);
 }
 
-function capacityFor(resources: DeploymentSummary['resources'], key: 'cpu_cores' | 'memory_mb' | 'disk_size_gb') {
-  return (resources || []).reduce((total, resource) => total + (Number(resource[key]) || 0), 0);
+function DeploymentFact({
+  icon: Icon,
+  label,
+  value,
+  detail,
+}: {
+  icon: typeof Workflow;
+  label: string;
+  value: string | number;
+  detail: string;
+}) {
+  return (
+    <div className="console-object-info">
+      <div className="flex items-center gap-1.5">
+        <Icon className="h-3.5 w-3.5" />
+        {label}
+      </div>
+      <div className="font-mono">{value}</div>
+      <p>{detail}</p>
+    </div>
+  );
 }
 
-function Metric({ icon: Icon, label, value }: { icon: typeof Cpu; label: string; value: string | number }) {
-  return <div className="min-w-0 border-l first:border-l-0 px-3 first:pl-0 sm:px-4">
-    <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Icon className="h-3.5 w-3.5" />{label}</div>
-    <div className="mt-1 truncate font-mono text-lg font-semibold tabular-nums text-foreground">{value}</div>
-  </div>;
+function runLabel(run?: Run | null) {
+  if (!run) return "No runs yet";
+  const action =
+    {
+      init: "Initialization",
+      validate: "Validation",
+      plan: "Plan",
+      apply: "Apply",
+      destroy: "Destroy",
+    }[String(run.action || "").toLowerCase()] ||
+    run.action ||
+    "Run";
+  const status =
+    {
+      success: "successful",
+      completed: "successful",
+      failed: "failed",
+      error: "failed",
+      running: "running",
+      queued: "queued",
+    }[String(run.status || "").toLowerCase()] || run.status;
+  return status ? `${action} · ${status}` : action;
+}
+
+function postDeployOpen(summary?: DeploymentSummary) {
+  const counts = summary?.post_deploy?.counts;
+  return (
+    (counts?.pending || 0) + (counts?.running || 0) + (counts?.failed || 0)
+  );
 }
 
 export function DeploymentsPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const environmentId = useUi(state => state.environmentId);
+  const environmentId = useUi((state) => state.environmentId);
+  const profileQuery = useProfile();
+  const canEdit = hasCap(profileQuery.data, "canEditDeployments");
   const [createOpen, setCreateOpen] = useState(false);
+  const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [confirmWorkspaceRemoval, setConfirmWorkspaceRemoval] = useState(false);
   const statusQuery = useQuery({
-    queryKey: ['opentofu', 'status'],
-    queryFn: () => apiFetch<OpenTofuStatus>('/plugin/opentofu/status'),
+    queryKey: ["opentofu", "status"],
+    queryFn: () => apiFetch<OpenTofuStatus>("/opentofu/status"),
     staleTime: 30_000,
   });
   const workspaceQuery = useQuery({
-    queryKey: ['opentofu', 'workspaces', environmentId],
-    queryFn: () => apiFetch<Workspace[]>(`/plugin/opentofu/workspaces?environment_id=${encodeURIComponent(environmentId)}`),
+    queryKey: ["opentofu", "workspaces", environmentId],
+    queryFn: () =>
+      apiFetch<Workspace[]>(
+        `/opentofu/workspaces?environment_id=${encodeURIComponent(environmentId)}`,
+      ),
     staleTime: 15_000,
   });
-  const workspaces = Array.isArray(workspaceQuery.data) ? workspaceQuery.data : [];
+  const workspaces = Array.isArray(workspaceQuery.data)
+    ? workspaceQuery.data
+    : [];
+  const removeWorkspaces = useMutation({
+    mutationFn: async (workspaceIds: string[]) =>
+      Promise.all(
+        workspaceIds.map((workspaceId) =>
+          apiFetch(`/opentofu/workspaces/${encodeURIComponent(workspaceId)}`, {
+            method: "DELETE",
+          }),
+        ),
+      ),
+    onSuccess: (_result, workspaceIds) => {
+      setSelectedWorkspaceIds(new Set());
+      setConfirmWorkspaceRemoval(false);
+      void queryClient.invalidateQueries({
+        queryKey: ["opentofu", "workspaces", environmentId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["opentofu"] });
+    },
+  });
   const summaryQueries = useQueries({
-    queries: workspaces.map(workspace => ({
-      queryKey: ['opentofu', 'workspace', workspace.id, 'deployment-summary'],
-      queryFn: () => apiFetch<DeploymentSummary>(`/plugin/opentofu/workspaces/${encodeURIComponent(workspace.id)}/deployment-summary`),
+    queries: workspaces.map((workspace) => ({
+      queryKey: ["opentofu", "workspace", workspace.id, "deployment-summary"],
+      queryFn: () =>
+        apiFetch<DeploymentSummary>(
+          `/opentofu/workspaces/${encodeURIComponent(workspace.id)}/deployment-summary`,
+        ),
       staleTime: 15_000,
     })),
   });
-  const summaries = useMemo(() => new Map(workspaces.map((workspace, index) => [workspace.id, summaryQueries[index]?.data])), [summaryQueries, workspaces]);
-  const isRefreshing = statusQuery.isFetching || workspaceQuery.isFetching || summaryQueries.some(query => query.isFetching);
+  const summaries = useMemo(
+    () =>
+      new Map(
+        workspaces.map((workspace, index) => [
+          workspace.id,
+          summaryQueries[index]?.data,
+        ]),
+      ),
+    [summaryQueries, workspaces],
+  );
+  const isRefreshing =
+    statusQuery.isFetching ||
+    workspaceQuery.isFetching ||
+    summaryQueries.some((query) => query.isFetching);
+  const inventory = useMemo(() => {
+    const resources = workspaces.flatMap(
+      (workspace) => summaries.get(workspace.id)?.resources || [],
+    );
+    const postDeploy = workspaces.reduce(
+      (total, workspace) => total + postDeployOpen(summaries.get(workspace.id)),
+      0,
+    );
+    return {
+      deployments: workspaces.length,
+      platforms: new Set(
+        workspaces
+          .map((workspace) => workspace.proxmox_connection?.id)
+          .filter(Boolean),
+      ).size,
+      vms: resources.length,
+      started: workspaces.reduce(
+        (total, workspace) =>
+          total + (summaries.get(workspace.id)?.started_vm_count || 0),
+        0,
+      ),
+      postDeploy,
+    };
+  }, [summaries, workspaces]);
 
   const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: ['opentofu'] });
+    void queryClient.invalidateQueries({ queryKey: ["opentofu"] });
   };
+  const selectedWorkspaceCount = selectedWorkspaceIds.size;
+  const allWorkspacesSelected =
+    workspaces.length > 0 &&
+    workspaces.every((workspace) => selectedWorkspaceIds.has(workspace.id));
+  const someWorkspacesSelected = workspaces.some((workspace) =>
+    selectedWorkspaceIds.has(workspace.id),
+  );
+  const toggleWorkspace = (workspaceId: string) =>
+    setSelectedWorkspaceIds((current) => {
+      const next = new Set(current);
+      if (next.has(workspaceId)) next.delete(workspaceId);
+      else next.add(workspaceId);
+      return next;
+    });
+  const toggleAllWorkspaces = () =>
+    setSelectedWorkspaceIds(
+      allWorkspacesSelected
+        ? new Set()
+        : new Set(workspaces.map((workspace) => workspace.id)),
+    );
 
-  return <div className="space-y-6">
-    <PageHeader
-      title={t('deploy.title')}
-      description={t('deploy.description')}
-      actions={<>
-        <Button type="button" variant="outline" onClick={refresh} disabled={isRefreshing}><RefreshCw className={isRefreshing ? 'animate-spin' : undefined} />{t('deploy.refresh')}</Button>
-        <Button type="button" onClick={() => setCreateOpen(true)}><FolderPlus />Deployment anlegen</Button>
-      </>}
-    />
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        title={t("deploy.title")}
+        description={t("deploy.description")}
+        actions={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={refresh}
+              disabled={isRefreshing}
+            >
+              <RefreshCw
+                className={isRefreshing ? "animate-spin" : undefined}
+              />
+              {t("deploy.refresh")}
+            </Button>
+            <Button type="button" onClick={() => setCreateOpen(true)} disabled={!canEdit}>
+              <FolderPlus />
+              Create deployment
+            </Button>
+          </>
+        }
+      />
 
-    <Card className={statusQuery.data?.installed ? 'border-emerald-500/20' : 'border-amber-500/30'}>
-      <CardContent className="flex flex-wrap items-center gap-3 p-4">
-        {statusQuery.data?.installed ? <CheckCircle2 className="h-5 w-5 text-emerald-500" /> : <TriangleAlert className="h-5 w-5 text-amber-500" />}
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold">{t('deploy.status')}</div>
-          <div className="text-xs text-muted-foreground">{statusQuery.data?.installed ? `${t('deploy.ready')}${statusQuery.data.version ? ` · ${statusQuery.data.version}` : ''}` : t('deploy.unavailable')}</div>
+      {statusQuery.isError && (
+        <Card>
+          <EmptyState
+            compact
+            icon={<TriangleAlert className="h-5 w-5" />}
+            title="OpenTofu status could not be loaded"
+            description="Deployment availability is currently unknown. No data has been changed."
+            action={
+              <Button variant="outline" onClick={() => void statusQuery.refetch()}>
+                <RefreshCw />
+                Try again
+              </Button>
+            }
+          />
+        </Card>
+      )}
+
+      {statusQuery.isSuccess && !statusQuery.data.installed && (
+        <Card className="border-[hsl(var(--warning)/0.35)] bg-[hsl(var(--warning)/0.035)]">
+          <CardContent className="flex flex-wrap items-center gap-3 p-4">
+            <TriangleAlert className="h-5 w-5 [color:hsl(var(--warning))]" />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold">{t("deploy.status")}</div>
+              <div className="text-xs text-muted-foreground">
+                {t("deploy.unavailable")}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {workspaceQuery.isLoading ? (
+        <div className="space-y-1 rounded-md border p-4">
+          {[0, 1, 2, 3].map((item) => (
+            <div
+              key={item}
+              className="h-11 animate-pulse rounded bg-muted/40"
+            />
+          ))}
         </div>
-        {!statusQuery.data?.installed && <Button asChild size="sm" variant="outline"><Link to="/plugins/$id" params={{ id: 'opentofu' }}>{t('deploy.open')}<ArrowRight /></Link></Button>}
-      </CardContent>
-    </Card>
-
-    {workspaceQuery.isLoading ? <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">{[0, 1, 2].map(item => <Card key={item}><CardContent className="h-52 animate-pulse bg-muted/40" /></Card>)}</div> : workspaces.length === 0 ? <Card><EmptyState icon={<Layers3 className="h-5 w-5" />} title={t('deploy.noWorkspaces')} description={t('deploy.noWorkspacesHint')} action={<Button onClick={() => setCreateOpen(true)}><FolderPlus />Deployment anlegen</Button>} /></Card> : <>
-      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-        {workspaces.map(workspace => {
-          const summary = summaries.get(workspace.id);
-          const resources = summary?.resources || [];
-          const lastRun = workspace.last_run;
-          const postDeploy = summary?.post_deploy?.counts;
-          const pending = (postDeploy?.pending || 0) + (postDeploy?.running || 0) + (postDeploy?.failed || 0);
-          return <Card key={workspace.id} className="flex min-w-0 flex-col">
-            <CardHeader className="space-y-2 border-b pb-3">
-              <div className="flex min-w-0 items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <CardTitle className="truncate text-base">{workspace.name}</CardTitle>
-                  <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{workspace.path || '—'}</p>
+      ) : workspaceQuery.isError ? (
+        <Card>
+          <EmptyState
+            icon={<TriangleAlert className="h-5 w-5" />}
+            title="Deployments could not be loaded"
+            description="The deployment inventory is currently unavailable. Your existing deployments have not been changed."
+            action={
+              <Button variant="outline" onClick={() => void workspaceQuery.refetch()}>
+                <RefreshCw />
+                Try again
+              </Button>
+            }
+          />
+        </Card>
+      ) : workspaces.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon={<Layers3 className="h-5 w-5" />}
+            title={t("deploy.noWorkspaces")}
+            description={`${t("deploy.noWorkspacesHint")} Use the primary action in the top-right corner.`}
+          />
+        </Card>
+      ) : (
+        <>
+          <section
+            className="console-object-summary"
+            aria-label="Deployment inventory"
+          >
+            <div className="console-object-summary-main">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+                  <Boxes className="h-4 w-4 text-muted-foreground" />
+                  Deployment inventory
                 </div>
-                {lastRun ? <StatusBadge tone={runTone(lastRun.status)} dot>{lastRun.status || lastRun.action || '—'}</StatusBadge> : <StatusBadge tone="muted">{t('deploy.noRun')}</StatusBadge>}
+                <div className="console-object-info-grid grid-cols-1 sm:grid-cols-3">
+                  <DeploymentFact
+                    icon={Workflow}
+                    label="Deployments"
+                    value={inventory.deployments}
+                    detail={`${inventory.platforms} platform${inventory.platforms === 1 ? "" : "s"} connected`}
+                  />
+                  <DeploymentFact
+                    icon={Server}
+                    label={t("deploy.vms")}
+                    value={inventory.vms}
+                    detail={`${inventory.started} started`}
+                  />
+                  <DeploymentFact
+                    icon={TriangleAlert}
+                    label="Post-deployment"
+                    value={inventory.postDeploy}
+                    detail={
+                      inventory.postDeploy
+                        ? "Steps pending"
+                        : "No pending steps"
+                    }
+                  />
+                </div>
+            </div>
+          </section>
+          <Card>
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b bg-muted/15 py-3">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Workflow className="h-4 w-4" />
+                  Deployment inventory
+                </CardTitle>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  OpenTofu workspaces, managed VM capacity, and current run
+                  status.
+                </p>
               </div>
-              {workspace.description && <p className="line-clamp-2 text-sm text-muted-foreground">{workspace.description}</p>}
+              {selectedWorkspaceCount > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium tabular-nums">
+                    {selectedWorkspaceCount} selected
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setSelectedWorkspaceIds(new Set())}
+                  >
+                    Clear selection
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => setConfirmWorkspaceRemoval(true)}
+                  >
+                    <Trash2 />
+                    Remove
+                  </Button>
+                </div>
+              )}
             </CardHeader>
-            <CardContent className="flex flex-1 flex-col p-4 pt-4">
-              <div className="grid grid-cols-2 gap-y-4 sm:grid-cols-4">
-                <Metric icon={Server} label={t('deploy.vms')} value={summary?.vm_count ?? '—'} />
-                <Metric icon={Cpu} label={t('deploy.vcpu')} value={summary ? capacityFor(resources, 'cpu_cores') : '—'} />
-                <Metric icon={MemoryStick} label={t('deploy.memory')} value={summary ? `${capacityFor(resources, 'memory_mb')} MB` : '—'} />
-                <Metric icon={HardDrive} label={t('deploy.disk')} value={summary ? `${capacityFor(resources, 'disk_size_gb')} GB` : '—'} />
+            <CardContent className="p-0">
+              <div className="divide-y md:hidden">
+                {workspaces.map((workspace) => {
+                  const summary = summaries.get(workspace.id);
+                  const lastRun = workspace.last_run;
+                  const pending = postDeployOpen(summary);
+                  return (
+                    <div
+                      key={workspace.id}
+                      className="flex gap-3 p-3.5 transition-colors hover:bg-muted/30"
+                      data-selected={
+                        selectedWorkspaceIds.has(workspace.id) || undefined
+                      }
+                    >
+                      <input
+                        className="mt-1"
+                        type="checkbox"
+                        aria-label={`Select ${workspace.name}`}
+                        checked={selectedWorkspaceIds.has(workspace.id)}
+                        disabled={!canEdit}
+                        onChange={() => toggleWorkspace(workspace.id)}
+                      />
+                      <Link
+                        to="/deployments/$id"
+                        params={{ id: workspace.id }}
+                        className="min-w-0 flex-1"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate font-medium">
+                              {workspace.name}
+                            </div>
+                            <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                              {workspace.path || "—"}
+                            </div>
+                          </div>
+                          {lastRun ? (
+                            <StatusBadge tone={runTone(lastRun.status)} dot>
+                              {lastRun.status || lastRun.action || "—"}
+                            </StatusBadge>
+                          ) : (
+                            <StatusBadge tone="muted">
+                              {t("deploy.noRun")}
+                            </StatusBadge>
+                          )}
+                        </div>
+                        <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                          <div>
+                            <div className="text-muted-foreground">
+                              Platform
+                            </div>
+                            <div className="mt-0.5 truncate font-medium text-foreground">
+                              {workspace.proxmox_connection?.name ||
+                                "Not assigned"}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-muted-foreground">
+                              Provisioning
+                            </div>
+                            <div className="mt-0.5 font-mono text-foreground">
+                              {summary
+                                ? `${summary.started_vm_count}/${summary.vm_count} started`
+                                : "—"}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-muted-foreground">
+                              Last run
+                            </div>
+                            <div className="mt-0.5 truncate text-foreground">
+                              {runLabel(lastRun)}
+                            </div>
+                          </div>
+                        </div>
+                        {pending > 0 && (
+                          <div className="mt-3 text-xs [color:hsl(var(--warning))]">
+                            {pending} post-deployment step{pending === 1 ? "" : "s"}{" "}
+                            open
+                          </div>
+                        )}
+                      </Link>
+                    </div>
+                  );
+                })}
               </div>
-              <div className="mt-5 space-y-2 border-t pt-3 text-xs text-muted-foreground">
-                <div className="flex items-center justify-between gap-3"><span className="flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" />{t('deploy.lastRun')}</span><span className="truncate text-right font-mono">{formatDate(lastRun?.completed_at || lastRun?.started_at) || t('deploy.noRun')}</span></div>
-                <div className="flex items-center justify-between gap-3"><span>{t('deploy.started')}</span><span className="font-mono tabular-nums">{summary ? `${summary.started_vm_count}/${summary.vm_count}` : '—'}</span></div>
-                {pending > 0 && <div className="flex items-center justify-between gap-3 text-amber-600 dark:text-amber-400"><span>{t('deploy.postDeploy')}</span><span className="font-mono tabular-nums">{pending} {t('deploy.pending')}</span></div>}
+              <div className="table-scroll hidden md:block">
+                <table
+                  data-density="compact"
+                  className="w-full min-w-[980px] text-sm"
+                >
+                  <thead>
+                    <tr>
+                      <th className="w-11 px-3">
+                        <input
+                          type="checkbox"
+                          aria-label="Select all deployments"
+                          checked={allWorkspacesSelected}
+                          disabled={!canEdit}
+                          ref={(input) => {
+                            if (input)
+                              input.indeterminate =
+                                someWorkspacesSelected &&
+                                !allWorkspacesSelected;
+                          }}
+                          onChange={toggleAllWorkspaces}
+                        />
+                      </th>
+                      <th className="px-3">Deployment</th>
+                      <th className="px-3">Platform</th>
+                      <th className="px-3">Provisioning</th>
+                      <th className="px-3">Last run</th>
+                      <th className="px-3">Status</th>
+                      <th className="w-32 px-3 text-right">Open</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {workspaces.map((workspace) => {
+                      const summary = summaries.get(workspace.id);
+                      const lastRun = workspace.last_run;
+                      const pending = postDeployOpen(summary);
+                      return (
+                        <tr
+                          key={workspace.id}
+                          data-selected={
+                            selectedWorkspaceIds.has(workspace.id) || undefined
+                          }
+                        >
+                          <td className="px-3">
+                            <input
+                              type="checkbox"
+                              aria-label={`Select ${workspace.name}`}
+                              checked={selectedWorkspaceIds.has(workspace.id)}
+                              disabled={!canEdit}
+                              onChange={() => toggleWorkspace(workspace.id)}
+                            />
+                          </td>
+                          <td className="px-3">
+                            <div className="font-medium">{workspace.name}</div>
+                            <div className="mt-0.5 max-w-[22rem] truncate font-mono text-xs text-muted-foreground">
+                              {workspace.path || "—"}
+                            </div>
+                          </td>
+                          <td className="px-3">
+                            <div className="flex items-center gap-1.5 font-medium">
+                              <Database className="h-3.5 w-3.5 text-muted-foreground" />
+                              {workspace.proxmox_connection?.name ||
+                                "Not assigned"}
+                            </div>
+                            <div className="mt-0.5 max-w-[15rem] truncate font-mono text-xs text-muted-foreground">
+                              {workspace.proxmox_connection?.endpoint?.replace(
+                                /^https?:\/\//,
+                                "",
+                              ) || "Select a platform in the configuration"}
+                            </div>
+                          </td>
+                          <td className="px-3">
+                            <div className="font-mono text-xs tabular-nums">
+                              {summary
+                                ? `${summary.started_vm_count}/${summary.vm_count} started`
+                                : "—"}
+                            </div>
+                            {pending > 0 && (
+                              <div className="mt-0.5 text-xs [color:hsl(var(--warning))]">
+                                {pending} steps pending
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3">
+                            <div className="text-xs text-foreground">
+                              {runLabel(lastRun)}
+                            </div>
+                            <div className="mt-0.5 whitespace-nowrap text-xs text-muted-foreground">
+                              {formatDate(
+                                lastRun?.completed_at || lastRun?.started_at,
+                              ) || "—"}
+                            </div>
+                          </td>
+                          <td className="px-3">
+                            {lastRun ? (
+                              <StatusBadge tone={runTone(lastRun.status)} dot>
+                                {lastRun.status || lastRun.action || "—"}
+                              </StatusBadge>
+                            ) : (
+                              <StatusBadge tone="muted">
+                                {t("deploy.noRun")}
+                              </StatusBadge>
+                            )}
+                          </td>
+                          <td className="px-3 text-right">
+                            <Button asChild size="sm" variant="outline">
+                              <Link
+                                to="/deployments/$id"
+                                params={{ id: workspace.id }}
+                              >
+                                {t("deploy.open")}
+                                <ArrowRight />
+                              </Link>
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <Button asChild variant="outline" className="mt-4 w-full"><Link to="/deployments/$id" params={{ id: workspace.id }}>{t('deploy.open')}<ArrowRight /></Link></Button>
             </CardContent>
-          </Card>;
-        })}
-      </div>
-      <p className="text-xs text-muted-foreground">{t('deploy.legacyHint')} <Link to="/plugins/$id" params={{ id: 'opentofu' }} className="font-medium text-primary hover:underline">{t('deploy.advanced')}</Link></p>
-    </>}
-    <CreateDeploymentDialog environmentId={environmentId} open={createOpen} onOpenChange={setCreateOpen} />
-  </div>;
+          </Card>
+        </>
+      )}
+      <CreateDeploymentDialog
+        environmentId={environmentId}
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+      />
+      <ConfirmDialog
+        open={confirmWorkspaceRemoval}
+        onOpenChange={setConfirmWorkspaceRemoval}
+        title={
+          selectedWorkspaceCount === 1
+            ? "Remove deployment from Fleet"
+            : `Remove ${selectedWorkspaceCount} deployments from Fleet`
+        }
+        description="Only the Fleet registration and run history are removed. Workspace files and provisioned infrastructure remain unchanged."
+        confirmLabel="Remove from Fleet"
+        confirmTextValue={
+          selectedWorkspaceCount > 0
+            ? `REMOVE ${selectedWorkspaceCount}`
+            : undefined
+        }
+        confirmInputLabel="Confirmation"
+        confirmInputHelp={
+          <>
+            To confirm, enter{" "}
+            <span className="font-mono text-foreground">
+              REMOVE {selectedWorkspaceCount}
+            </span>.
+          </>
+        }
+        onConfirm={() => removeWorkspaces.mutate([...selectedWorkspaceIds])}
+        isPending={removeWorkspaces.isPending}
+      />
+    </div>
+  );
 }

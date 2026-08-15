@@ -45,7 +45,7 @@ function getConfig() {
     authToken: getSecret(db, 'git_auth_token') || '',
     autoPull:  db.settings.get('git_auto_pull') !== '0',
     autoPush:  db.settings.get('git_auto_push') !== '0',
-    userName:  g('git_user_name')  || 'Shipyard',
+    userName:  g('git_user_name')  || 'Fleet',
     userEmail: g('git_user_email') || 'shipyard@localhost',
     branch:    g('git_branch')     || 'main',
   };
@@ -489,7 +489,7 @@ async function setup({ repoUrl, authToken, autoPull: ap, autoPush: ap2, userName
   setSecret(db, 'git_auth_token', authToken || '');
   db.settings.set('git_auto_pull',  ap  !== false ? '1' : '0');
   db.settings.set('git_auto_push',  ap2 !== false ? '1' : '0');
-  db.settings.set('git_user_name',  userName  || 'Shipyard');
+  db.settings.set('git_user_name',  userName  || 'Fleet');
   db.settings.set('git_user_email', userEmail || 'shipyard@localhost');
   db.settings.set('git_branch',     targetBranch);
 

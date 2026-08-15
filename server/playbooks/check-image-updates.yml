@@ -14,51 +14,33 @@
       shell: |
         RUNTIME="{{ runtime_bin.stdout }}"
 
-        # Collect images from rootful containers
-        resolve_image() {
-          local name="$1" img tagged
-          img=$($RUNTIME inspect "$name" --format '{% raw %}{{.Config.Image}}{% endraw %}' 2>/dev/null || echo "")
-          if echo "$img" | grep -qP '^[a-f0-9]{12}$|^sha256:[a-f0-9]+$'; then
-            tagged=$($RUNTIME image inspect "$img" --format '{% raw %}{{range .RepoTags}}{{println .}}{{end}}{% endraw %}' 2>/dev/null | head -1)
-            [ -n "$tagged" ] && img="$tagged"
-          fi
-          echo "${img:-unknown}"
+        # Keep a result per container. Docker may retain a container's image
+        # only by ID after a compose update, while .Config.Image still has the
+        # registry name. Looking up the digest via the container image ID keeps
+        # both values available for a reliable comparison and UI mapping.
+        resolve_container() {
+          local name="$1" image image_id local_digest
+          image=$($RUNTIME inspect "$name" --format '{% raw %}{{.Config.Image}}{% endraw %}' 2>/dev/null || echo "")
+          image_id=$($RUNTIME inspect "$name" --format '{% raw %}{{.Image}}{% endraw %}' 2>/dev/null || echo "")
+          local_digest=$($RUNTIME image inspect "$image_id" \
+            --format '{% raw %}{{range .RepoDigests}}{{println .}}{{end}}{% endraw %}' 2>/dev/null \
+            | grep -oP '(?<=@)sha256:[a-f0-9]+' | head -1 || echo "")
+          printf '%s|%s|%s\n' "$name" "${image:-unknown}" "$local_digest"
         }
 
-        mapfile -t IMAGES < <(
+        mapfile -t CONTAINERS < <(
           $RUNTIME ps -a --format '{% raw %}{{.Names}}{% endraw %}' 2>/dev/null | while read -r name; do
-            resolve_image "$name"
-          done | sort -u
+            resolve_container "$name"
+          done
         )
-
-        # Also collect from rootless podman users
-        for sock in /run/user/*/podman/podman.sock; do
-          [ -e "$sock" ] || continue
-          UID_VAL=$(echo "$sock" | grep -oP '/run/user/\K[0-9]+')
-          USERNAME=$(getent passwd "$UID_VAL" | cut -d: -f1 2>/dev/null)
-          [ -z "$USERNAME" ] && continue
-          while read -r name; do
-            img=$(XDG_RUNTIME_DIR=/run/user/$UID_VAL runuser -u "$USERNAME" -- \
-              podman inspect "$name" --format '{% raw %}{{.Config.Image}}{% endraw %}' 2>/dev/null || echo "")
-            if echo "$img" | grep -qP '^[a-f0-9]{12}$|^sha256:[a-f0-9]+$'; then
-              tagged=$(XDG_RUNTIME_DIR=/run/user/$UID_VAL runuser -u "$USERNAME" -- \
-                podman image inspect "$img" --format '{% raw %}{{range .RepoTags}}{{println .}}{{end}}{% endraw %}' 2>/dev/null | head -1)
-              [ -n "$tagged" ] && img="$tagged"
-            fi
-            [ -n "$img" ] && echo "$img"
-          done < <(XDG_RUNTIME_DIR=/run/user/$UID_VAL runuser -u "$USERNAME" -- \
-            podman ps -a --format '{% raw %}{{.Names}}{% endraw %}' 2>/dev/null)
-        done | sort -u >> /tmp/_shipyard_extra_images_$$ 2>/dev/null || true
-
-        if [ -f /tmp/_shipyard_extra_images_$$ ]; then
-          mapfile -t EXTRA < /tmp/_shipyard_extra_images_$$
-          rm -f /tmp/_shipyard_extra_images_$$
-          IMAGES=("${IMAGES[@]}" "${EXTRA[@]}")
-        fi
 
         # Registry API check function (no pull, no skopeo needed)
         check_image() {
-          local IMAGE="$1"
+          local CONTAINER="$1" IMAGE="$2" LOCAL="$3"
+          # A stable marker makes the result independent of Ansible's selected
+          # stdout callback format. The server only accepts a result set after
+          # it has received the completion marker below.
+          emit() { printf '__SHIPYARD_IMAGE_UPDATE__%s|%s|%s\n' "$CONTAINER" "$IMAGE" "$1"; }
           [[ "$IMAGE" != *:* ]] && IMAGE="${IMAGE}:latest"
           local TAG="${IMAGE##*:}"
           local IMAGE_NOTAG="${IMAGE%:*}"
@@ -101,7 +83,7 @@
             TOKEN=$(curl -sf --connect-timeout 5 --max-time 10 \
               "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${REPO}:pull" \
               | grep -oP '"token"\s*:\s*"\K[^"]+' || echo "")
-            [ -z "$TOKEN" ] && echo "${IMAGE}|unknown" && return
+            [ -z "$TOKEN" ] && emit unknown && return
             REMOTE=$(curl -sf --connect-timeout 5 --max-time 10 \
               -H "Authorization: Bearer $TOKEN" \
               -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json" \
@@ -109,16 +91,16 @@
               "$URL" | extract_digest)
           else
             local RESP
-            RESP=$(curl -sf --connect-timeout 5 --max-time 10 \
+            RESP=$(curl -sS --connect-timeout 5 --max-time 10 \
               -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json" \
               -D - -o /dev/null \
-              "$URL" 2>/dev/null)
+              "$URL" 2>/dev/null || true)
             REMOTE=$(echo "$RESP" | extract_digest)
             if [ -z "$REMOTE" ]; then
               local WWW REALM SERVICE SCOPE
               WWW=$(echo "$RESP" | grep -i 'www-authenticate:')
               REALM=$(echo "$WWW" | grep -oP 'realm="\K[^"]+')
-              [ -z "$REALM" ] && echo "${IMAGE}|unknown" && return
+              [ -z "$REALM" ] && emit unknown && return
               SERVICE=$(echo "$WWW" | grep -oP 'service="\K[^"]+')
               SCOPE=$(echo "$WWW" | grep -oP 'scope="\K[^"]+')
               TOKEN=$(curl -sf --connect-timeout 5 --max-time 10 \
@@ -127,7 +109,7 @@
                   curl -sf --connect-timeout 5 --max-time 10 \
                 "${REALM}?service=${SERVICE}&scope=${SCOPE}" \
                 | grep -oP '"access_token"\s*:\s*"\K[^"]+' || echo "")
-              [ -z "$TOKEN" ] && echo "${IMAGE}|unknown" && return
+              [ -z "$TOKEN" ] && emit unknown && return
               REMOTE=$(curl -sf --connect-timeout 5 --max-time 10 \
                 -H "Authorization: Bearer $TOKEN" \
                 -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json" \
@@ -136,30 +118,28 @@
             fi
           fi
 
-          local LOCAL
-          LOCAL=$($RUNTIME image inspect "$IMAGE" \
-            --format '{% raw %}{{range .RepoDigests}}{{println .}}{{end}}{% endraw %}' 2>/dev/null \
-            | grep -oP '(?<=@)sha256:[a-f0-9]+' | head -1 || echo "")
-
-          [ -z "$LOCAL" ] && LOCAL="none"
+          [ -z "$LOCAL" ] && emit not_checkable && return
           [ -z "$REMOTE" ] && REMOTE="unknown"
 
-          if   [ "$LOCAL" = "none" ];     then echo "${IMAGE}|unknown"
-          elif [ "$REMOTE" = "unknown" ]; then echo "${IMAGE}|unknown"
-          elif [ "$LOCAL" = "$REMOTE" ];  then echo "${IMAGE}|up_to_date"
-          else                                 echo "${IMAGE}|update_available"
+          if   [ "$REMOTE" = "unknown" ]; then emit unknown
+          elif [ "$LOCAL" = "$REMOTE" ];  then emit up_to_date
+          else                                 emit update_available
           fi
         }
 
         # Run all checks in parallel
-        TMPDIR_RESULTS=$(mktemp -d)
-        for IMAGE in "${IMAGES[@]}"; do
-          [ -z "$IMAGE" ] && continue
-          (check_image "$IMAGE" > "$TMPDIR_RESULTS/$(echo "$IMAGE" | tr '/:' '__')") &
+        TMPDIR_RESULTS=$(mktemp -d) || exit 1
+        for SPEC in "${CONTAINERS[@]}"; do
+          [ -z "$SPEC" ] && continue
+          IFS='|' read -r CONTAINER IMAGE LOCAL <<< "$SPEC"
+          (check_image "$CONTAINER" "$IMAGE" "$LOCAL" > "$TMPDIR_RESULTS/$(echo "$CONTAINER" | tr -c 'A-Za-z0-9_.-' '_')") &
         done
         wait
         cat "$TMPDIR_RESULTS"/* 2>/dev/null | sort
         rm -rf "$TMPDIR_RESULTS"
+        # This is emitted by the check itself, not merely by a later Ansible
+        # task. A cache entry is valid only when it is present.
+        printf '__SHIPYARD_IMAGE_UPDATE_DONE__\n'
       args:
         executable: /bin/bash
       register: update_results

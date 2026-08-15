@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 
@@ -14,10 +14,10 @@ export default defineConfig({
   server: {
     port: 5174,
     proxy: {
-      '/api': 'http://localhost:3001',
-      '/plugins': 'http://localhost:3001',
+      '/api': process.env.VITE_API_TARGET || 'http://localhost:3001',
+      '/plugins': process.env.VITE_API_TARGET || 'http://localhost:3001',
       '/ws': {
-        target: 'ws://localhost:3001',
+        target: (process.env.VITE_API_TARGET || 'http://localhost:3001').replace(/^http/, 'ws'),
         ws: true,
       },
     },
@@ -35,5 +35,11 @@ export default defineConfig({
         },
       },
     },
+  },
+  test: {
+    // Playwright specs live outside src and are run exclusively through
+    // `npm run test:e2e`.  Without this exclusion Vitest tries to execute
+    // them as unit tests as well.
+    exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
   },
 });

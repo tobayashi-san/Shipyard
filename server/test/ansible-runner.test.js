@@ -66,6 +66,7 @@ test('runAdHoc appends --become when requested', async () => {
     ansibleRunner._resolveSshKey = originalResolve;
     ansibleRunner._spawnProcess = originalSpawn;
     ansibleRunner.generateInventory = originalGenerateInventory;
+    ansibleRunner.clearRun('run-test');
   }
 });
 
@@ -84,4 +85,76 @@ test('ansible environment uses longer ssh tolerance defaults', () => {
   assert.match(env.ANSIBLE_SSH_ARGS, /StrictHostKeyChecking=accept-new/);
   assert.match(env.ANSIBLE_SSH_ARGS, /ServerAliveInterval=30/);
   assert.match(env.ANSIBLE_SSH_ARGS, /ServerAliveCountMax=6/);
+});
+
+test('generateInventory includes only servers from the requested environment', () => {
+  db.db.prepare("INSERT OR IGNORE INTO environments (id, name) VALUES ('runner-staging', 'Runner staging')").run();
+  db.servers.create({ name: 'stage-only', hostname: 'stage-only', ip_address: '10.30.2.10', environment_id: 'runner-staging', tags: [], services: [] });
+  const inventoryPath = ansibleRunner.generateInventory('/tmp/test-key', 'runner-staging');
+  const content = fs.readFileSync(inventoryPath, 'utf8');
+  assert.match(content, /stage-only/);
+  assert.doesNotMatch(content, /ubuntu-server-01/);
+  fs.unlinkSync(inventoryPath);
+});
+
+test('runPlaybook merges environment variables and applies dry-run and fork options', async () => {
+  db.ansibleVars.create('global_value', 'from-store', '', { environmentId: 'default' });
+  db.ansibleVars.create('secret_value', 'do-not-log', '', { environmentId: 'default', isSecret: true });
+  const originalResolve = ansibleRunner._resolveSshKey;
+  const originalSpawn = ansibleRunner._spawnProcess;
+  const originalGenerateInventory = ansibleRunner.generateInventory;
+  let capturedArgs;
+  let streamedOutput = '';
+  ansibleRunner._resolveSshKey = () => ({ keyPath: '/tmp/test-key', cleanup: () => {} });
+  ansibleRunner.generateInventory = () => '/tmp/test-inventory.ini';
+  ansibleRunner._spawnProcess = async (_binary, args, onOutput) => {
+    capturedArgs = args;
+    onOutput('stdout', 'value=do-not-log');
+    return { success: true, stdout: 'value=do-not-log', stderr: '', code: 0 };
+  };
+  try {
+    const result = await ansibleRunner.runPlaybook('update.yml', 'ubuntu-server-01', { run_value: 'manual' }, (_type, data) => { streamedOutput += data; }, {
+      environmentId: 'default', checkMode: true, forks: 2, runId: 'run-test',
+    });
+    const varsIndex = capturedArgs.indexOf('-e');
+    assert.deepEqual(JSON.parse(capturedArgs[varsIndex + 1]), { global_value: 'from-store', secret_value: 'do-not-log', run_value: 'manual' });
+    assert.ok(capturedArgs.includes('--check'));
+    assert.ok(capturedArgs.includes('--diff'));
+    assert.deepEqual(capturedArgs.slice(-2), ['--forks', '2']);
+    assert.equal(streamedOutput, 'value=********');
+    assert.equal(result.stdout, 'value=********');
+  } finally {
+    ansibleRunner._resolveSshKey = originalResolve;
+    ansibleRunner._spawnProcess = originalSpawn;
+    ansibleRunner.generateInventory = originalGenerateInventory;
+    db.db.prepare("DELETE FROM ansible_vars WHERE key IN ('global_value', 'secret_value')").run();
+  }
+});
+
+test('a prepared playbook run can be cancelled before Ansible is spawned', async () => {
+  const originalResolve = ansibleRunner._resolveSshKey;
+  const originalSpawn = ansibleRunner._spawnProcess;
+  const originalGenerateInventory = ansibleRunner.generateInventory;
+  const runId = 'cancel-before-spawn';
+  let spawned = false;
+  ansibleRunner._resolveSshKey = () => ({ keyPath: '/tmp/test-key', cleanup: () => {} });
+  ansibleRunner.generateInventory = () => '/tmp/test-inventory.ini';
+  ansibleRunner._spawnProcess = async () => {
+    spawned = true;
+    return { success: true, stdout: '', stderr: '', code: 0 };
+  };
+
+  try {
+    ansibleRunner.prepareRun(runId);
+    assert.equal(ansibleRunner.cancelRun(runId), true);
+    const result = await ansibleRunner.runPlaybook('update.yml', 'ubuntu-server-01', {}, null, { runId });
+    assert.equal(result.cancelled, true);
+    assert.equal(spawned, false);
+    assert.equal(ansibleRunner.isRunActive(runId), false);
+  } finally {
+    ansibleRunner._resolveSshKey = originalResolve;
+    ansibleRunner._spawnProcess = originalSpawn;
+    ansibleRunner.generateInventory = originalGenerateInventory;
+    ansibleRunner.clearRun(runId);
+  }
 });

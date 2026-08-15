@@ -34,12 +34,14 @@
     --accent: 210 35% 94%;
     --accent-foreground: 222.2 47.4% 11.2%;
 
-    --destructive: 0 72% 51%;
+    /* Semantic text colours meet WCAG 2.2 AA (4.5:1) on every light canvas.
+       Hue is never the only signal; status components also retain labels/icons. */
+    --destructive: 0 72% 42%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 152 65% 38%;
-    --warning: 35 92% 50%;
-    --info: 217 91% 56%;
+    --success: 158 64% 28%;
+    --warning: 34 90% 30%;
+    --info: 210 82% 38%;
 
     --border: 214 28% 89%;
     --border-strong: 214 28% 82%;
@@ -89,8 +91,8 @@
     --accent: 0 0% 14.9%;
     --accent-foreground: 0 0% 98%;
 
-    --destructive: 0 65% 48%;
-    --destructive-foreground: 0 0% 100%;
+    --destructive: 0 72% 60%;
+    --destructive-foreground: 0 0% 8%;
 
     --success: 152 55% 48%;
     --warning: 35 92% 58%;
@@ -113,18 +115,210 @@
     --chart-5: 340 80% 68%;
   }
 
+  /* Console palettes. They only redefine semantic tokens, so every shadcn
+     component, table and dialog keeps the same visual language. */
+  :root[data-console-theme='cloud-light'] {
+    --surface-1: 210 25% 98%; --surface-2: 0 0% 100%; --surface-3: 0 0% 100%;
+    --background: 210 25% 98%; --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%; --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%; --popover-foreground: 222.2 84% 4.9%;
+    --primary: 211 86% 42%; --primary-foreground: 0 0% 100%;
+    --secondary: 210 25% 95%; --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 25% 95%; --muted-foreground: 215 16% 43%;
+    --accent: 210 35% 94%; --accent-foreground: 222.2 47.4% 11.2%;
+    --border: 214 28% 89%; --border-strong: 214 28% 82%; --input: 214 28% 89%; --ring: 211 86% 42%;
+  }
+
+  :root[data-console-theme='paper-light'] {
+    --surface-1: 40 20% 98%; --surface-2: 0 0% 100%; --surface-3: 38 25% 97%;
+    --background: 40 20% 98%; --foreground: 222 22% 12%;
+    --card: 0 0% 100%; --card-foreground: 222 22% 12%;
+    --popover: 0 0% 100%; --popover-foreground: 222 22% 12%;
+    --primary: 222 30% 18%; --primary-foreground: 0 0% 100%;
+    --secondary: 40 18% 94%; --secondary-foreground: 222 22% 12%;
+    --muted: 40 16% 94%; --muted-foreground: 218 12% 42%;
+    --accent: 214 27% 94%; --accent-foreground: 222 22% 12%;
+    --border: 218 19% 87%; --border-strong: 218 18% 77%; --input: 218 19% 87%; --ring: 222 30% 28%;
+  }
+
+  :root[data-console-theme='slate-light'] {
+    --surface-1: 215 29% 97%; --surface-2: 0 0% 100%; --surface-3: 215 32% 95%;
+    --background: 215 29% 97%; --foreground: 222 47% 11%;
+    --card: 0 0% 100%; --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%; --popover-foreground: 222 47% 11%;
+    --primary: 221 70% 38%; --primary-foreground: 0 0% 100%;
+    --secondary: 215 28% 93%; --secondary-foreground: 222 47% 11%;
+    --muted: 215 28% 93%; --muted-foreground: 215 18% 42%;
+    --accent: 213 38% 91%; --accent-foreground: 221 70% 25%;
+    --border: 216 25% 86%; --border-strong: 216 23% 76%; --input: 216 25% 86%; --ring: 221 70% 42%;
+  }
+
+  /* Split-complementary amber surfaces + blue actions: warmth without the
+     reduced legibility of an amber primary button. */
+  :root[data-console-theme='amber-light'] {
+    --surface-1: 42 40% 98%; --surface-2: 0 0% 100%; --surface-3: 42 38% 96%;
+    --background: 42 40% 98%; --foreground: 222 35% 12%; --card: 0 0% 100%; --card-foreground: 222 35% 12%;
+    --popover: 0 0% 100%; --popover-foreground: 222 35% 12%; --primary: 221 75% 43%; --primary-foreground: 0 0% 100%;
+    --secondary: 42 33% 93%; --secondary-foreground: 222 35% 12%; --muted: 42 30% 93%; --muted-foreground: 220 12% 42%;
+    --accent: 217 45% 94%; --accent-foreground: 221 75% 30%; --border: 35 22% 86%; --border-strong: 32 21% 75%; --input: 35 22% 86%; --ring: 221 75% 43%;
+    --destructive: 2 72% 45%; --success: 158 58% 33%; --warning: 32 85% 40%; --info: 221 75% 43%;
+    --chart-1: 221 75% 43%; --chart-2: 158 58% 33%; --chart-3: 32 85% 45%; --chart-4: 276 55% 48%; --chart-5: 2 72% 49%;
+  }
+
+  /* Analogous teal/green tones reduce visual noise while preserving a dark,
+     accessible primary for text on controls. */
+  :root[data-console-theme='mint-light'] {
+    --surface-1: 165 30% 98%; --surface-2: 0 0% 100%; --surface-3: 165 27% 96%;
+    --background: 165 30% 98%; --foreground: 180 26% 12%; --card: 0 0% 100%; --card-foreground: 180 26% 12%;
+    --popover: 0 0% 100%; --popover-foreground: 180 26% 12%; --primary: 174 87% 25%; --primary-foreground: 0 0% 100%;
+    --secondary: 165 24% 93%; --secondary-foreground: 180 26% 12%; --muted: 165 22% 93%; --muted-foreground: 180 11% 41%;
+    --accent: 171 35% 91%; --accent-foreground: 174 87% 21%; --border: 170 19% 85%; --border-strong: 170 18% 74%; --input: 170 19% 85%; --ring: 174 87% 29%;
+    --destructive: 2 72% 46%; --success: 160 64% 31%; --warning: 35 87% 40%; --info: 199 81% 38%;
+    --chart-1: 174 87% 29%; --chart-2: 160 64% 36%; --chart-3: 35 87% 45%; --chart-4: 220 70% 48%; --chart-5: 2 72% 50%;
+  }
+
+  /* Violet uses a cool complementary blue-gray surface, avoiding the pink
+     cast that often makes purple admin UIs feel decorative. */
+  :root[data-console-theme='orchid-light'] {
+    --surface-1: 250 28% 98%; --surface-2: 0 0% 100%; --surface-3: 250 25% 96%;
+    --background: 250 28% 98%; --foreground: 252 28% 12%; --card: 0 0% 100%; --card-foreground: 252 28% 12%;
+    --popover: 0 0% 100%; --popover-foreground: 252 28% 12%; --primary: 262 59% 44%; --primary-foreground: 0 0% 100%;
+    --secondary: 250 22% 93%; --secondary-foreground: 252 28% 12%; --muted: 250 21% 93%; --muted-foreground: 250 12% 42%;
+    --accent: 258 42% 93%; --accent-foreground: 262 59% 34%; --border: 249 19% 86%; --border-strong: 249 18% 75%; --input: 249 19% 86%; --ring: 262 59% 48%;
+    --destructive: 2 72% 46%; --success: 157 59% 32%; --warning: 35 87% 40%; --info: 218 78% 42%;
+    --chart-1: 262 59% 48%; --chart-2: 157 59% 38%; --chart-3: 35 87% 45%; --chart-4: 218 78% 47%; --chart-5: 2 72% 51%;
+  }
+
+  /* Deliberately higher surface contrast for dense data screens: a cool
+     blue-gray canvas, pure cards, and a slightly tinted table/header layer. */
+  :root[data-console-theme='glacier-light'] {
+    --surface-1: 210 38% 94%; --surface-2: 0 0% 100%; --surface-3: 210 32% 90%;
+    --background: 210 38% 94%; --foreground: 215 42% 12%; --card: 0 0% 100%; --card-foreground: 215 42% 12%;
+    --popover: 0 0% 100%; --popover-foreground: 215 42% 12%; --primary: 199 92% 28%; --primary-foreground: 0 0% 100%;
+    --secondary: 210 33% 88%; --secondary-foreground: 215 42% 12%; --muted: 210 28% 89%; --muted-foreground: 215 19% 36%;
+    --accent: 202 52% 88%; --accent-foreground: 199 92% 22%; --border: 210 28% 78%; --border-strong: 210 28% 65%; --input: 210 28% 78%; --ring: 199 92% 34%;
+    --destructive: 0 69% 42%; --success: 158 66% 29%; --warning: 35 88% 36%; --info: 199 92% 32%;
+    --chart-1: 199 92% 32%; --chart-2: 158 66% 34%; --chart-3: 35 88% 41%; --chart-4: 260 58% 47%; --chart-5: 0 69% 47%;
+  }
+
+  /* Achromatic surfaces plus a very dark navy action colour. This option is
+     intentionally utilitarian and works well on low-quality office panels. */
+  :root[data-console-theme='ink-light'] {
+    --surface-1: 220 14% 93%; --surface-2: 0 0% 100%; --surface-3: 220 12% 88%;
+    --background: 220 14% 93%; --foreground: 222 47% 9%; --card: 0 0% 100%; --card-foreground: 222 47% 9%;
+    --popover: 0 0% 100%; --popover-foreground: 222 47% 9%; --primary: 224 64% 16%; --primary-foreground: 0 0% 100%;
+    --secondary: 220 13% 86%; --secondary-foreground: 222 47% 9%; --muted: 220 12% 88%; --muted-foreground: 220 10% 32%;
+    --accent: 216 42% 88%; --accent-foreground: 224 64% 16%; --border: 220 13% 74%; --border-strong: 220 13% 59%; --input: 220 13% 74%; --ring: 224 64% 24%;
+    --destructive: 0 72% 42%; --success: 154 66% 27%; --warning: 34 91% 34%; --info: 220 76% 35%;
+    --chart-1: 220 76% 35%; --chart-2: 154 66% 32%; --chart-3: 34 91% 40%; --chart-4: 268 58% 43%; --chart-5: 0 72% 47%;
+  }
+
+  :root.dark[data-console-theme='midnight-dark'] {
+    --surface-1: 0 0% 3.9%; --surface-2: 0 0% 3.9%; --surface-3: 0 0% 9%;
+    --background: 0 0% 3.9%; --foreground: 0 0% 98%; --card: 0 0% 9%; --card-foreground: 0 0% 98%;
+    --popover: 0 0% 9%; --popover-foreground: 0 0% 98%; --primary: 211 86% 58%; --primary-foreground: 211 75% 10%;
+    --secondary: 0 0% 14.9%; --secondary-foreground: 0 0% 98%; --muted: 0 0% 14.9%; --muted-foreground: 0 0% 64%;
+    --accent: 0 0% 14.9%; --accent-foreground: 0 0% 98%; --border: 0 0% 14.9%; --border-strong: 0 0% 24%; --input: 0 0% 14.9%; --ring: 211 86% 58%;
+  }
+
+  :root.dark[data-console-theme='graphite-dark'] {
+    --surface-1: 220 10% 5%; --surface-2: 220 9% 7%; --surface-3: 220 9% 11%;
+    --background: 220 10% 5%; --foreground: 210 20% 96%; --card: 220 9% 9%; --card-foreground: 210 20% 96%;
+    --popover: 220 9% 10%; --popover-foreground: 210 20% 96%; --primary: 215 20% 92%; --primary-foreground: 220 10% 9%;
+    --secondary: 220 8% 15%; --secondary-foreground: 210 20% 96%; --muted: 220 8% 15%; --muted-foreground: 215 12% 64%;
+    --accent: 220 9% 17%; --accent-foreground: 210 20% 98%; --border: 220 8% 17%; --border-strong: 220 8% 28%; --input: 220 8% 16%; --ring: 210 75% 62%;
+  }
+
+  :root.dark[data-console-theme='navy-dark'] {
+    --surface-1: 222 55% 6%; --surface-2: 222 48% 8%; --surface-3: 220 42% 12%;
+    --background: 222 55% 6%; --foreground: 210 35% 96%; --card: 222 45% 9%; --card-foreground: 210 35% 96%;
+    --popover: 222 45% 10%; --popover-foreground: 210 35% 96%; --primary: 204 92% 61%; --primary-foreground: 222 55% 8%;
+    --secondary: 220 35% 15%; --secondary-foreground: 210 35% 96%; --muted: 220 35% 15%; --muted-foreground: 215 20% 67%;
+    --accent: 217 38% 17%; --accent-foreground: 210 35% 98%; --border: 220 35% 18%; --border-strong: 220 32% 29%; --input: 220 35% 17%; --ring: 204 92% 61%;
+  }
+
+  :root.dark[data-console-theme='forest-dark'] {
+    --surface-1: 155 28% 5%; --surface-2: 155 23% 7%; --surface-3: 155 20% 11%;
+    --background: 155 28% 5%; --foreground: 150 20% 96%; --card: 155 20% 9%; --card-foreground: 150 20% 96%;
+    --popover: 155 20% 10%; --popover-foreground: 150 20% 96%; --primary: 160 70% 45%; --primary-foreground: 160 35% 8%;
+    --secondary: 155 17% 15%; --secondary-foreground: 150 20% 96%; --muted: 155 17% 15%; --muted-foreground: 155 10% 66%;
+    --accent: 155 20% 18%; --accent-foreground: 150 20% 98%; --border: 155 17% 18%; --border-strong: 155 16% 28%; --input: 155 17% 17%; --ring: 160 70% 50%;
+    --destructive: 2 72% 59%; --success: 160 70% 48%; --warning: 38 92% 61%; --info: 198 86% 63%;
+    --chart-1: 160 70% 48%; --chart-2: 198 86% 63%; --chart-3: 38 92% 61%; --chart-4: 265 80% 72%; --chart-5: 2 72% 62%;
+  }
+
+  :root.dark[data-console-theme='plum-dark'] {
+    --surface-1: 270 20% 5%; --surface-2: 270 17% 7%; --surface-3: 270 15% 11%;
+    --background: 270 20% 5%; --foreground: 270 20% 97%; --card: 270 15% 9%; --card-foreground: 270 20% 97%;
+    --popover: 270 15% 10%; --popover-foreground: 270 20% 97%; --primary: 260 87% 76%; --primary-foreground: 266 35% 12%;
+    --secondary: 270 13% 15%; --secondary-foreground: 270 20% 97%; --muted: 270 13% 15%; --muted-foreground: 270 10% 67%;
+    --accent: 270 16% 18%; --accent-foreground: 270 20% 98%; --border: 270 13% 18%; --border-strong: 270 12% 28%; --input: 270 13% 17%; --ring: 260 87% 76%;
+    --destructive: 2 72% 60%; --success: 160 67% 48%; --warning: 38 92% 62%; --info: 205 90% 66%;
+    --chart-1: 260 87% 76%; --chart-2: 160 67% 48%; --chart-3: 38 92% 62%; --chart-4: 205 90% 66%; --chart-5: 2 72% 63%;
+  }
+
+  :root.dark[data-console-theme='copper-dark'] {
+    --surface-1: 25 18% 5%; --surface-2: 25 15% 7%; --surface-3: 25 13% 11%;
+    --background: 25 18% 5%; --foreground: 35 20% 96%; --card: 25 13% 9%; --card-foreground: 35 20% 96%;
+    --popover: 25 13% 10%; --popover-foreground: 35 20% 96%; --primary: 35 92% 58%; --primary-foreground: 25 32% 10%;
+    --secondary: 25 11% 15%; --secondary-foreground: 35 20% 96%; --muted: 25 11% 15%; --muted-foreground: 28 10% 66%;
+    --accent: 25 14% 18%; --accent-foreground: 35 20% 98%; --border: 25 11% 18%; --border-strong: 25 10% 28%; --input: 25 11% 17%; --ring: 35 92% 58%;
+    --destructive: 2 72% 60%; --success: 160 67% 47%; --warning: 43 95% 60%; --info: 202 89% 65%;
+    --chart-1: 35 92% 58%; --chart-2: 160 67% 47%; --chart-3: 202 89% 65%; --chart-4: 270 74% 73%; --chart-5: 2 72% 63%;
+  }
+
+  /* Near-black canvas with distinct graphite work surfaces. Cyan is reserved
+     for actions and selection, preserving recognition in very dense tables. */
+  :root.dark[data-console-theme='obsidian-dark'] {
+    --surface-1: 222 25% 3%; --surface-2: 222 20% 6%; --surface-3: 222 17% 12%;
+    --background: 222 25% 3%; --foreground: 210 40% 98%; --card: 222 20% 8%; --card-foreground: 210 40% 98%;
+    --popover: 222 20% 10%; --popover-foreground: 210 40% 98%; --primary: 188 91% 58%; --primary-foreground: 222 35% 8%;
+    --secondary: 222 16% 17%; --secondary-foreground: 210 40% 98%; --muted: 222 16% 15%; --muted-foreground: 215 18% 70%;
+    --accent: 192 45% 18%; --accent-foreground: 188 91% 88%; --border: 222 15% 24%; --border-strong: 222 14% 36%; --input: 222 15% 22%; --ring: 188 91% 58%;
+    --destructive: 0 82% 65%; --success: 156 72% 53%; --warning: 42 96% 64%; --info: 198 94% 67%;
+    --chart-1: 188 91% 58%; --chart-2: 156 72% 53%; --chart-3: 42 96% 64%; --chart-4: 270 82% 75%; --chart-5: 0 82% 65%;
+  }
+
+  /* Cobalt uses the same high luminance separation but with a blue primary
+     for people who prefer a familiar cloud-console hierarchy. */
+  :root.dark[data-console-theme='cobalt-dark'] {
+    --surface-1: 224 42% 4%; --surface-2: 224 35% 7%; --surface-3: 224 29% 14%;
+    --background: 224 42% 4%; --foreground: 215 45% 98%; --card: 224 33% 9%; --card-foreground: 215 45% 98%;
+    --popover: 224 33% 11%; --popover-foreground: 215 45% 98%; --primary: 217 91% 66%; --primary-foreground: 224 45% 9%;
+    --secondary: 224 25% 19%; --secondary-foreground: 215 45% 98%; --muted: 224 23% 17%; --muted-foreground: 218 20% 71%;
+    --accent: 218 48% 19%; --accent-foreground: 214 95% 90%; --border: 224 22% 27%; --border-strong: 224 20% 40%; --input: 224 22% 25%; --ring: 217 91% 66%;
+    --destructive: 0 83% 67%; --success: 156 70% 54%; --warning: 40 96% 65%; --info: 200 94% 69%;
+    --chart-1: 217 91% 66%; --chart-2: 156 70% 54%; --chart-3: 40 96% 65%; --chart-4: 272 85% 77%; --chart-5: 0 83% 67%;
+  }
+
+  /* Status hues are invariant across light presets. Stable semantics improve
+     recognition between themes and these values retain at least 4.5:1 text
+     contrast even on the darkest light-theme canvas (Ink). */
+  :root:not(.dark)[data-console-theme] {
+    --destructive: 0 72% 42%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 158 64% 28%;
+    --warning: 34 90% 30%;
+    --info: 210 82% 38%;
+  }
+
   * {
     @apply border-border;
     border-color: hsl(var(--border));
   }
 
   html {
+    color-scheme: light;
     font-family: 'Inter Variable', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-optical-sizing: auto;
+    font-synthesis: none;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
     scroll-behavior: smooth;
   }
+
+  html.dark { color-scheme: dark; }
 
   body {
     @apply bg-background text-foreground;
@@ -133,7 +327,37 @@
     font-size: 14px;
     line-height: 1.5;
     -webkit-tap-highlight-color: transparent;
+    background-image: linear-gradient(180deg, hsl(var(--surface-3) / 0.28), transparent 14rem);
   }
+
+  /* The product deliberately uses a small radius and a cool, structural
+     surface hierarchy. This keeps shared controls calm in dense admin work
+     while allowing the brand accent to remain reserved for action and state. */
+  :root { --radius: 0.25rem; }
+
+  /* Native controls otherwise fall back to browser-specific system fonts in
+     some engines. They deliberately inherit the same Inter metrics as the
+     surrounding console; technical content opts into JetBrains Mono itself. */
+  button, input, select, textarea {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: inherit;
+  }
+
+  /* Controls retain a compact console rhythm even on native select elements.
+     It makes forms, filter bars and dialogs read as one product rather than a
+     mix of browser defaults and component-library fields. */
+  select {
+    color: hsl(var(--foreground));
+    border-color: hsl(var(--input));
+  }
+  select:hover { border-color: hsl(var(--border-strong)); }
+  select, textarea {
+    border-radius: 0.125rem;
+    background-color: hsl(var(--background));
+    box-shadow: inset 0 1px 1px hsl(var(--foreground) / 0.025);
+  }
+  input::placeholder, textarea::placeholder { color: hsl(var(--muted-foreground) / 0.82); }
 
   /* All numbers tabular by default — critical for dashboards */
   body, input, select, textarea, button, table {
@@ -141,7 +365,16 @@
   }
 
   button, [role='button'] { -webkit-tap-highlight-color: transparent; }
-  input[type='checkbox'], input[type='radio'] { accent-color: hsl(var(--primary)); }
+  input[type='checkbox'], input[type='radio'] {
+    accent-color: hsl(var(--primary));
+  }
+
+  input[type='checkbox'] {
+    block-size: 1rem;
+    inline-size: 1rem;
+    cursor: pointer;
+    border-radius: 0.25rem;
+  }
   input[type='number'] { font-variant-numeric: tabular-nums; }
   :target { scroll-margin-top: 1rem; }
 
@@ -149,24 +382,22 @@
   code, kbd, samp, pre, .font-mono {
     font-family: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
     font-feature-settings: 'liga' 0, 'calt' 1;
+    font-variant-numeric: tabular-nums slashed-zero;
   }
 
-  /*
-   * Console controls are deliberately quiet when reached with Tab. The app
-   * exposes the current control through its own state (selected menu item,
-   * open popover, text caret, etc.), so the browser's additional blue frame
-   * is visual noise here. Forced-colors mode below keeps a system focus cue.
-   */
-  :focus,
+  /* Keyboard focus is a system state in an administrator console. Keep it
+     visible and consistent without allowing browser-specific glow effects. */
   :focus-visible {
-    outline: none !important;
-    box-shadow: none !important;
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 1px;
   }
 
   input:focus-visible,
   select:focus-visible,
   textarea:focus-visible {
-    border-color: hsl(var(--input)) !important;
+    outline: none;
+    border-color: hsl(var(--ring)) !important;
+    box-shadow: 0 0 0 2px hsl(var(--ring) / 0.14) !important;
   }
 
   /* Text selection must stay visible even when a white-label accent is very
@@ -180,6 +411,121 @@
     background-color: hsl(var(--ring));
     color: hsl(var(--primary-foreground));
   }
+
+  /* Data tables are built for scanning. Keep their default rows compact
+     instead of letting every screen turn a table into a stack of cards. */
+  table:not([data-density]) th,
+  table:not([data-density]) td {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+    line-height: 1.35;
+  }
+
+  /* A console table needs a distinct header and rows which can be followed
+     with the eye. The alternating tint is intentionally very subtle: it
+     separates records without turning the page into a zebra pattern. */
+  table:not([data-density]) thead,
+  table[data-density] thead {
+    /* A table header is a structural boundary, not merely muted text.  The
+       slightly denser surface works in every console palette and makes long
+       VMware-style inventories readable without adding visual card chrome. */
+    background-color: hsl(var(--muted) / 0.9) !important;
+    border-bottom: 1px solid hsl(var(--border-strong)) !important;
+    box-shadow: inset 0 -1px hsl(var(--border-strong) / 0.72);
+  }
+
+  table:not([data-density]) thead th,
+  table[data-density] thead th {
+    color: hsl(var(--muted-foreground));
+    font-size: 0.6875rem;
+    font-weight: 650;
+    letter-spacing: 0.045em;
+    text-transform: uppercase;
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+
+  table:not([data-density]) tbody > tr > td,
+  table[data-density] tbody > tr > td {
+    border-bottom: 1px solid hsl(var(--border-strong) / 0.72);
+    vertical-align: middle;
+  }
+
+  table:not([data-density]) tbody > tr:nth-child(even) > td,
+  table[data-density] tbody > tr:nth-child(even) > td {
+    background-color: hsl(var(--muted) / 0.24);
+  }
+
+  table:not([data-density]) tbody > tr:hover > td,
+  table[data-density] tbody > tr:hover > td {
+    background-color: hsl(var(--accent) / 0.8) !important;
+  }
+
+  /* Selected rows must stay distinct from hover and zebra states in every
+     console theme. Existing pages can opt in with data-selected without
+     reimplementing the same colour rules. */
+  table tbody > tr[data-selected='true'] > td,
+  table tbody > tr.is-selected > td {
+    /* Selection stays a single, quiet row surface.  Do not draw an inset
+       border in every cell: it makes compact inventories look fragmented. */
+    background-color: hsl(var(--primary) / 0.075) !important;
+    box-shadow: none;
+  }
+
+  /* Console tables are navigational inventory, not spreadsheets.  A small
+     first-column anchor and a neutral header make rows scannable at a glance
+     without wasting vertical room with card-like rows. */
+  table[data-density='compact'] > tbody > tr > td:first-child {
+    box-shadow: inset 0 0 0 transparent;
+  }
+  table[data-density='compact'] > tbody > tr:hover > td:first-child {
+    box-shadow: inset 2px 0 hsl(var(--primary) / 0.6);
+  }
+  table[data-density='compact'] > tbody > tr[data-selected='true'] > td:first-child,
+  table[data-density='compact'] > tbody > tr.is-selected > td:first-child {
+    box-shadow: inset 3px 0 hsl(var(--primary));
+  }
+
+  /* Shared inventory-table contract.  A lot of console views render data from
+     different domains (hosts, VMs, prefixes, jobs), but they must scan the
+     same way.  Do the density work here instead of letting page-local Tailwind
+     padding gradually turn individual tables back into card-sized rows.
+     colspan cells are deliberately excluded: they are section / empty states
+     and retain their intentional breathing room. */
+  table[data-density='compact'] {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  table[data-density='compact'] > thead > tr > th {
+    height: 2.35rem;
+    padding: 0.5rem 0.75rem !important;
+    line-height: 1.15;
+  }
+  table[data-density='compact'] > tbody > tr > td:not([colspan]) {
+    height: 2.5rem;
+    padding: 0.4375rem 0.75rem !important;
+    line-height: 1.3;
+  }
+  table[data-density='compact'] > tbody > tr > td:first-child:not([colspan]),
+  table[data-density='compact'] > thead > tr > th:first-child {
+    padding-left: 0.75rem !important;
+  }
+  table[data-density='compact'] > tbody > tr > td:last-child:not([colspan]),
+  table[data-density='compact'] > thead > tr > th:last-child {
+    padding-right: 0.75rem !important;
+  }
+  table[data-density='compact'] input[type='checkbox'] {
+    display: block;
+    margin-inline: auto;
+  }
+
+  /* Keep horizontal data tables discoverable on touch devices. */
+  .table-scroll {
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
 }
 
 /* ─── Markdown notes ────────────────────────────────────────── */
@@ -244,7 +590,8 @@
 .note-markdown table { width: 100%; margin: 1rem 0; border-collapse: collapse; font-size: 0.82rem; }
 .note-markdown th { background: hsl(var(--muted) / 0.55); color: hsl(var(--foreground)); font-weight: 600; }
 .note-markdown th,
-.note-markdown td { border: 1px solid hsl(var(--border)); padding: 0.45rem 0.6rem; text-align: left; }
+.note-markdown td { border: 1px solid hsl(var(--border)); padding: 0.45rem 0.6rem !important; text-align: left; }
+.note-markdown table thead { background: transparent !important; border-bottom: 0 !important; }
 
 /* ─── Scrollbars (subtle, themed) ──────────────────────────── */
 ::-webkit-scrollbar {
@@ -292,6 +639,396 @@
 
   .border-strong { border-color: hsl(var(--border-strong)); }
 
+  /* Shared console primitives used by page-level screens. */
+  .console-panel {
+    border: 1px solid hsl(var(--border-strong) / 0.8);
+    border-radius: 3px;
+    background: hsl(var(--card));
+    box-shadow: 0 1px 2px hsl(var(--foreground) / 0.035);
+  }
+  .console-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    padding: 0.375rem 0.625rem;
+    border-radius: 3px;
+    border: 1px solid hsl(var(--border-strong) / 0.8);
+    background: hsl(var(--card));
+  }
+  /* Primary object navigation: host, platform, node, VM and deployment
+     screens use the same restrained vCenter-like tab rail.  It scrolls on
+     narrow screens instead of wrapping into a second, ambiguous row. */
+  .console-tabs {
+    display: flex;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border: 0;
+    border-bottom: 1px solid hsl(var(--border));
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+    scrollbar-width: thin;
+  }
+  .console-tabs > [role='tab'] {
+    flex: 0 0 auto;
+    min-height: 2.5rem;
+    border-radius: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    padding: 0.55rem 0.8rem;
+    color: hsl(var(--muted-foreground));
+    box-shadow: none;
+  }
+  .console-tabs > [role='tab']:hover { color: hsl(var(--foreground)); }
+  .console-tabs > [role='tab'][data-state='active'] {
+    border-bottom-color: hsl(var(--primary));
+    background: transparent;
+    color: hsl(var(--foreground));
+    box-shadow: none;
+  }
+  .console-metrics {
+    display: grid;
+    overflow: hidden;
+    border: 1px solid hsl(var(--border));
+    border-radius: 3px;
+    background: hsl(var(--border));
+    gap: 1px;
+  }
+  .console-metric {
+    min-width: 0;
+    padding: 0.75rem 0.875rem;
+    background: hsl(var(--card));
+  }
+  .console-metric-label {
+    color: hsl(var(--muted-foreground));
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.035em;
+    text-transform: uppercase;
+  }
+  .console-metric-value {
+    margin-top: 0.2rem;
+    color: hsl(var(--foreground));
+    font-family: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 1.35rem;
+    font-weight: 650;
+    line-height: 1.25;
+  }
+  .console-section-title {
+    display: flex;
+    min-height: 2.75rem;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.875rem;
+    border-bottom: 1px solid hsl(var(--border));
+    color: hsl(var(--foreground));
+    font-size: 0.875rem;
+    font-weight: 650;
+  }
+  .console-action-strip {
+    display: flex;
+    min-height: 2.75rem;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.875rem;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    background: hsl(var(--muted) / 0.22);
+    padding: 0.5rem 0.875rem;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.8125rem;
+  }
+  .console-action-strip > span:not(.section-label) + span:not(.section-label) {
+    border-left: 1px solid hsl(var(--border));
+    padding-left: 0.875rem;
+  }
+  .console-object-summary {
+    overflow: hidden;
+    border: 1px solid hsl(var(--border-strong) / 0.8);
+    border-radius: 3px;
+    background: hsl(var(--card));
+    box-shadow: 0 1px 2px hsl(var(--foreground) / 0.035);
+  }
+  .console-object-summary-main,
+  .console-object-capacity {
+    padding: 0.875rem 1rem;
+  }
+  .console-object-capacity {
+    background: hsl(var(--muted) / 0.16);
+  }
+  .console-object-info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 0.75rem;
+    gap: 0 1rem;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .console-object-info {
+    min-width: 0;
+    min-height: 3.125rem;
+    padding: 0.45rem 0.5rem 0.45rem 0.625rem;
+    background: transparent;
+    border-bottom: 1px solid hsl(var(--border));
+    box-shadow: none;
+    transition: background-color 100ms ease;
+  }
+  .console-object-info:hover,
+  .console-object-info:focus-within {
+    background: hsl(var(--muted) / 0.35);
+  }
+  .console-object-info > div:first-child,
+  .console-object-info > dt,
+  .console-capacity-heading {
+    color: hsl(var(--muted-foreground));
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.035em;
+    line-height: 1.1;
+    text-transform: uppercase;
+  }
+  .console-object-info > div:last-child,
+  .console-object-info > dd {
+    overflow: hidden;
+    margin: 0.15rem 0 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    line-height: 1.3;
+    font-variant-numeric: tabular-nums;
+  }
+  .console-object-info > p {
+    overflow: hidden;
+    margin: 0.2rem 0 0;
+    color: hsl(var(--muted-foreground));
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.625rem;
+    line-height: 1.2;
+  }
+  .console-object-info [data-summary-tone='warning'] {
+    color: hsl(var(--warning));
+  }
+  /* Status is expressed through one precise, persistent signal rather than
+     broad coloured tiles. This keeps the inventory dense while an operator
+     can still scan healthy, warning and failed facts immediately. */
+  .console-object-info:has([data-summary-tone]) {
+    box-shadow: inset 2px 0 0 var(--summary-tone);
+  }
+  .console-object-info:has([data-summary-tone='success']) { --summary-tone: hsl(var(--success)); }
+  .console-object-info:has([data-summary-tone='info']) { --summary-tone: hsl(var(--info)); }
+  .console-object-info:has([data-summary-tone='warning']) { --summary-tone: hsl(var(--warning)); }
+  .console-object-info:has([data-summary-tone='danger']) { --summary-tone: hsl(var(--destructive)); }
+  .console-object-info [data-summary-tone='success'] { color: hsl(var(--success)); }
+  .console-object-info [data-summary-tone='info'] { color: hsl(var(--info)); }
+  .console-object-info [data-summary-tone='danger'] { color: hsl(var(--destructive)); }
+  .console-metric-value[data-metric-tone='success'] {
+    color: hsl(var(--success));
+  }
+  .console-capacity-line + .console-capacity-line { margin-top: 0.875rem; }
+  .console-capacity-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .console-capacity-track {
+    height: 0.45rem;
+    overflow: hidden;
+    margin-top: 0.4rem;
+    border-radius: 999px;
+    background: hsl(var(--muted));
+  }
+  .console-capacity-track > span {
+    display: block;
+    height: 100%;
+    min-width: 0.25rem;
+    border-radius: inherit;
+    background: hsl(var(--primary));
+  }
+  .console-capacity-track > span[data-capacity-tone='healthy'] { background: hsl(var(--success)); }
+  .console-capacity-track > span[data-capacity-tone='warning'] { background: hsl(var(--warning)); }
+  .console-capacity-track > span[data-capacity-tone='critical'] { background: hsl(var(--destructive)); }
+  .console-properties { padding: 0; }
+  .console-property {
+    display: grid;
+    grid-template-columns: minmax(8rem, 0.8fr) minmax(0, 1.2fr);
+    gap: 1rem;
+    min-height: 2.75rem;
+    align-items: center;
+    padding: 0.625rem 1rem;
+    border-bottom: 1px solid hsl(var(--border));
+    font-size: 0.8125rem;
+  }
+  .console-property:last-child { border-bottom: 0; }
+  .console-property > span,
+  .console-property > dt { color: hsl(var(--muted-foreground)); }
+  .console-property > b,
+  .console-property > dd {
+    overflow: hidden;
+    margin: 0;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+
+  /* Container logs use the same framed object-detail pattern as the rest of
+     the console. The darker transcript is deliberate: it preserves log
+     scanning without turning the whole Docker page into a terminal. */
+  .console-log-viewer {
+    margin: 0.875rem;
+    overflow: hidden;
+    border: 1px solid hsl(var(--border-strong) / 0.85);
+    border-radius: 3px;
+    background: hsl(var(--card));
+    box-shadow: 0 1px 2px hsl(var(--foreground) / 0.045);
+  }
+  .console-log-header {
+    display: flex;
+    min-height: 3.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.625rem 1rem;
+    padding: 0.625rem 0.75rem;
+    border-bottom: 1px solid hsl(var(--border));
+    background: hsl(var(--muted) / 0.22);
+  }
+  .console-log-title {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.625rem;
+  }
+  .console-log-icon {
+    display: inline-flex;
+    height: 1.75rem;
+    width: 1.75rem;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid hsl(var(--border));
+    border-radius: 3px;
+    background: hsl(var(--background));
+    color: hsl(var(--muted-foreground));
+  }
+  .console-log-title h3 {
+    margin: 0;
+    color: hsl(var(--foreground));
+    font-size: 0.8125rem;
+    font-weight: 650;
+    line-height: 1.2;
+  }
+  .console-log-meta {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.375rem;
+    margin-top: 0.2rem;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.6875rem;
+    line-height: 1.2;
+  }
+  .console-log-controls {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.125rem;
+  }
+  .console-log-controls > button { height: 1.75rem; width: 1.75rem; }
+  .console-log-tail-select {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin-right: 0.25rem;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.6875rem;
+    white-space: nowrap;
+  }
+  .console-log-tail-select select {
+    height: 1.75rem;
+    border: 1px solid hsl(var(--border));
+    border-radius: 3px;
+    background: hsl(var(--background));
+    padding: 0 1.25rem 0 0.45rem;
+    color: hsl(var(--foreground));
+    font-family: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.6875rem;
+  }
+  .console-log-output {
+    min-height: 17rem;
+    max-height: 30rem;
+    overflow: auto;
+    background: linear-gradient(180deg, #161b22 0%, #10151b 100%);
+    color: #d8e1eb;
+  }
+  .console-log-output pre {
+    min-width: max-content;
+    margin: 0;
+    padding: 0.875rem 1rem;
+    color: inherit;
+    font-family: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.75rem;
+    line-height: 1.55;
+    tab-size: 2;
+    white-space: pre;
+  }
+  .console-log-output pre:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: -2px; }
+  .console-log-empty {
+    display: flex;
+    min-height: 17rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 1rem;
+    color: #9aa8b6;
+    font-size: 0.8125rem;
+    text-align: center;
+  }
+  .console-log-error {
+    display: grid;
+    gap: 0.2rem;
+    padding: 0.875rem 1rem;
+    border-left: 3px solid hsl(var(--destructive));
+    background: hsl(var(--destructive) / 0.08);
+    color: hsl(var(--destructive));
+    font-size: 0.8125rem;
+  }
+  .console-log-error span { color: hsl(var(--muted-foreground)); font-family: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace; font-size: 0.6875rem; }
+
+  /* Source-card actions need a true minmax grid on phone widths. Utility-only
+     sizing can otherwise inherit a button's nowrap min-content width and push
+     the primary action outside a narrow modal. */
+  .ipam-source-actions {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .ipam-source-actions > * { min-width: 0; max-width: 100%; }
+
+  @media (min-width: 640px) {
+    .ipam-source-actions {
+      display: flex;
+      width: auto;
+      flex-wrap: wrap;
+    }
+  }
+
   /* Section labels — Vercel/Linear style */
   .section-label {
     @apply text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground;
@@ -311,14 +1048,42 @@
     animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
 
-  /* Compact density (data-density="compact") */
-  [data-density="compact"] td,
-  [data-density="compact"] th {
-    @apply py-1;
+  /* Compact density is defined once in the base table contract above. */
+  [data-density="cozy"] td,
+  [data-density="cozy"] th {
+    @apply py-2;
   }
   [data-density="comfortable"] td,
   [data-density="comfortable"] th {
     @apply py-3;
+  }
+
+  @media (max-width: 640px) {
+    .console-action-strip { gap: 0.5rem; }
+    .console-action-strip > span:not(.section-label) + span:not(.section-label) {
+      border-left: 0;
+      padding-left: 0;
+    }
+    .console-object-summary-main,
+    .console-object-capacity { padding: 0.875rem; }
+    .console-property { grid-template-columns: 1fr; gap: 0.2rem; }
+    .console-property > b,
+    .console-property > dd { text-align: left; }
+    .console-log-viewer { margin: 0.625rem; }
+    .console-log-header { align-items: flex-start; }
+    .console-log-controls { width: 100%; justify-content: flex-end; }
+    .console-log-tail-select { margin-right: auto; }
+    .console-log-output,
+    .console-log-empty { min-height: 14rem; }
+    .console-log-output { max-height: 24rem; }
+  }
+
+  /* On phone widths an object fact grid must stay readable instead of
+     compressing two unrelated facts into half-width tiles. */
+  @media (max-width: 460px) {
+    .console-object-info-grid,
+    .console-object-info-grid[class*='grid-cols-'] { grid-template-columns: 1fr; }
+    .console-object-info { min-height: 3.25rem; }
   }
 
   /* Subtle keyboard shortcut style */

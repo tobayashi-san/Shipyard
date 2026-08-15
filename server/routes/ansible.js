@@ -5,7 +5,7 @@ const db = require('../db');
 const ansibleRunner = require('../services/ansible-runner');
 const gitSync = require('../services/git-sync');
 const { notify } = require('../services/notifier');
-const { getPermissions, filterServers, can } = require('../utils/permissions');
+const { getPermissions, filterServers, can, canAccessEnvironment, canAccessPlaybook, canAccessTargets } = require('../utils/permissions');
 const { isValidPlaybook, validateTargets, parseTargetExpression, resolveTargets, validateKnownInventoryTargets } = require('../utils/validate');
 
 function createAnsibleRouter({ broadcast } = {}) {
@@ -22,10 +22,54 @@ function createAnsibleRouter({ broadcast } = {}) {
     message: { error: 'Too many playbook runs, please slow down (max 20/min).' },
   });
 
+  function environmentServers(req, res, environmentId) {
+    const perms = getPermissions(req.user);
+    if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) {
+      res.status(400).json({ error: 'Environment not found' });
+      return null;
+    }
+    if (!canAccessEnvironment(perms, environmentId)) {
+      res.status(403).json({ error: 'Environment access denied' });
+      return null;
+    }
+    return db.servers.getAll().filter(server =>
+      String(server.environment_id || 'default') === environmentId);
+  }
+
+  router.post('/preview-targets', (req, res) => {
+    const perms = getPermissions(req.user);
+    if (!can(perms, 'canRunPlaybooks')) return res.status(403).json({ error: 'Permission denied' });
+    const environmentId = String(req.body?.environment_id || 'default').trim() || 'default';
+    const servers = environmentServers(req, res, environmentId);
+    if (!servers) return;
+    const targets = String(req.body?.targets || '').trim();
+    const error = validateTargets(targets) || validateKnownInventoryTargets(targets, servers);
+    if (error) return res.status(400).json({ error });
+    if (!canAccessTargets(perms, targets, servers)) return res.status(403).json({ error: 'Target servers not permitted for your role' });
+    const names = resolveTargets(targets, servers).split(',').filter(Boolean);
+    res.json({ environment_id: environmentId, count: names.length, targets: names });
+  });
+
+  router.post('/runs/:id/cancel', (req, res) => {
+    const perms = getPermissions(req.user);
+    if (!can(perms, 'canRunPlaybooks')) return res.status(403).json({ error: 'Permission denied' });
+    const row = db.scheduleHistory.getById(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Run not found' });
+    const servers = environmentServers(req, res, row.environment_id || 'default');
+    if (!servers) return;
+    if (!canAccessPlaybook(perms, row.playbook) || !canAccessTargets(perms, row.targets, servers)) {
+      return res.status(403).json({ error: 'Run access denied' });
+    }
+    if (row.status !== 'running') return res.status(409).json({ error: 'Run is not active' });
+    if (!ansibleRunner.cancelRun(req.params.id)) return res.status(409).json({ error: 'Run is starting or no longer active' });
+    db.auditLog.write('ansible.cancel', `run=${req.params.id} playbook=${row.playbook}`, req.ip, true, req.user?.username);
+    res.status(202).json({ id: req.params.id, status: 'cancelling' });
+  });
+
   router.post('/run', runLimiter, async (req, res) => {
     const perms = getPermissions(req.user);
     if (!can(perms, 'canRunPlaybooks')) return res.status(403).json({ error: 'Permission denied' });
-    const { playbook, targets, extraVars } = req.body;
+    const { playbook, targets, extraVars, checkMode, forks } = req.body;
     if (!playbook) return res.status(400).json({ error: 'playbook is required' });
     if (!isValidPlaybook(playbook)) return res.status(400).json({ error: 'Invalid playbook filename' });
 
@@ -39,7 +83,9 @@ function createAnsibleRouter({ broadcast } = {}) {
     if (targetsErr) return res.status(400).json({ error: targetsErr });
     const normalizedTargets = typeof targets === 'string' ? targets.trim() : targets;
     if (!normalizedTargets) return res.status(400).json({ error: 'targets is required' });
-    const allServers = db.servers.getAll();
+    const environmentId = String(req.body?.environment_id || 'default').trim() || 'default';
+    const allServers = environmentServers(req, res, environmentId);
+    if (!allServers) return;
     const knownTargetsErr = validateKnownInventoryTargets(normalizedTargets, allServers);
     if (knownTargetsErr) return res.status(400).json({ error: knownTargetsErr });
 
@@ -61,37 +107,48 @@ function createAnsibleRouter({ broadcast } = {}) {
     if (extraVars && JSON.stringify(extraVars).length > 4096) {
       return res.status(400).json({ error: 'extraVars too large (max 4KB)' });
     }
+    if (checkMode !== undefined && typeof checkMode !== 'boolean') return res.status(400).json({ error: 'checkMode must be boolean' });
+    const normalizedForks = Math.min(50, Math.max(1, Number.parseInt(forks, 10) || 5));
 
     const historyId = db.updateHistory.create(normalizedTargets, `ansible:${playbook}`, req.user?.username || null);
     const resolvedTargets = resolveTargets(normalizedTargets, allServers);
-    const schedHistId = db.scheduleHistory.create(null, 'Quick Run', playbook, resolvedTargets);
+    const schedHistId = db.scheduleHistory.create(null, checkMode ? 'Dry run' : 'Manual run', playbook, resolvedTargets, {
+      environmentId,
+      triggeredBy: req.user?.username || null,
+      checkMode,
+    });
+    ansibleRunner.prepareRun(schedHistId);
+    const outputLines = [];
 
-    res.json({ historyId, status: 'started' });
-
-    await gitSync.autoPull();
+    res.json({ historyId, runId: schedHistId, status: 'started', targets: resolvedTargets.split(',').filter(Boolean), check_mode: Boolean(checkMode) });
 
     try {
+      await gitSync.autoPull();
       const result = await ansibleRunner.runPlaybook(
         playbook,
         normalizedTargets,
         extraVars || {},
         (type, data) => {
+          outputLines.push(data);
+          db.scheduleHistory.appendOutput(schedHistId, data);
           emit({ type: 'ansible_output', historyId, stream: type, data });
-        }
+        },
+        { environmentId, checkMode, forks: normalizedForks, runId: schedHistId }
       );
 
-      const status = result.success ? 'success' : 'failed';
-      const output = result.stdout + result.stderr;
+      const status = result.cancelled ? 'cancelled' : result.success ? 'success' : 'failed';
+      const output = outputLines.join('') || result.stdout + result.stderr;
       db.updateHistory.updateStatus(historyId, status, output);
       db.scheduleHistory.complete(schedHistId, status, output);
       db.auditLog.write('ansible.run', `playbook=${playbook} targets=${normalizedTargets} status=${status}`, req.ip, result.success, req.user?.username);
       for (const s of db.servers.getAll()) {
         if (resolvedTargets.split(',').includes(s.name)) db.updatesCache.delete(s.id);
       }
-      emit({ type: 'ansible_complete', historyId, success: result.success });
+      emit({ type: 'ansible_complete', historyId, success: result.success, status, runId: schedHistId });
     } catch (error) {
+      ansibleRunner.clearRun(schedHistId);
       db.updateHistory.updateStatus(historyId, 'failed', error.message);
-      db.scheduleHistory.complete(schedHistId, 'failed', error.message);
+      db.scheduleHistory.complete(schedHistId, 'failed', outputLines.join('') + (outputLines.length ? '\n' : '') + error.message);
       db.auditLog.write('ansible.run', `playbook=${playbook} targets=${normalizedTargets} error=${error.message}`, req.ip, false, req.user?.username);
       emit({ type: 'ansible_error', historyId, error: error.message });
       if (db.settings.get('notify_playbook_failed') !== '0') notify(`Playbook failed: ${playbook}`, error.message, false).catch(() => {});

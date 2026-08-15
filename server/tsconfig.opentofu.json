@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "skipLibCheck": true
+  },
+  "files": [
+    "features/opentofu/core-utils.js",
+    "features/opentofu/proxmox-client.js",
+    "features/opentofu/run-safety.js",
+    "features/opentofu/terraform-outputs.js",
+    "features/opentofu/workspace-files.js"
+  ]
+}

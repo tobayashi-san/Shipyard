@@ -1,10 +1,17 @@
 services:
   shipyard:
-    image: ghcr.io/tobayashi-san/shipyard:latest
+    # Pin a released version in production. `latest` remains convenient for
+    # small private installations and is the default when SHIPYARD_IMAGE is unset.
+    image: ${SHIPYARD_IMAGE:-ghcr.io/tobayashi-san/shipyard:latest}
     container_name: shipyard
     restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
     ports:
-      - "443:443"
+      # Safe default: reachable only from this Docker host or a local reverse
+      # proxy. Set SHIPYARD_BIND_ADDRESS to a private-LAN address deliberately.
+      - "${SHIPYARD_BIND_ADDRESS:-127.0.0.1}:${SHIPYARD_PORT:-443}:8443"
     volumes:
       - shipyard-data:/app/server/data
       - ./playbooks:/app/server/playbooks
@@ -20,19 +27,23 @@ services:
       - SHIPYARD_TIMEZONE=${SHIPYARD_TIMEZONE:-Europe/Zurich}
       - JWT_SECRET=${JWT_SECRET:?Create a .env file with JWT_SECRET — see README}
       - SHIPYARD_KEY_SECRET=${SHIPYARD_KEY_SECRET:?Create a .env file with SHIPYARD_KEY_SECRET — see README}
-      # - PORT=443
-      # - ALLOWED_ORIGINS=https://yourdomain.com
+      - CERT_SANS=${CERT_SANS:-}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
+      - TRUST_PROXY=${TRUST_PROXY:-0}
       # - SSL_CERT=/certs/shipyard.crt
       # - SSL_KEY=/certs/shipyard.key
-      # Extra SANs for the self-signed TLS certificate (required for agent push mode).
-      # Set this to your host's LAN IP so managed servers can verify the certificate.
-      # - CERT_SANS=IP:10.30.1.10,DNS:shipyard.example.com
+      # Configure CERT_SANS, ALLOWED_ORIGINS and TRUST_PROXY in .env when needed.
     healthcheck:
-      test: ["CMD", "node", "-e", "require('https').get({hostname:'localhost',path:'/api/health',rejectUnauthorized:false}, r => process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('https').get({hostname:'localhost',port:8443,path:'/api/health',rejectUnauthorized:false}, r => process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 15s
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
 
 volumes:
   shipyard-data:

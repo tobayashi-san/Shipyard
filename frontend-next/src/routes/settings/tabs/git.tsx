@@ -100,7 +100,7 @@ function GitSetup() {
         />
       </SettingsRow>
       <SettingsRow label={t('git.userName')} hint={t('git.userNameHint')}>
-        <Input value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="Shipyard Bot" className="max-w-xs" />
+        <Input value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="Fleet Bot" className="max-w-xs" />
       </SettingsRow>
       <SettingsRow label={t('git.userEmail')} hint={t('git.userEmailHint')}>
         <Input type="email" value={userEmail} onChange={(e) => setUserEmail(e.target.value)} placeholder="bot@example.com" className="max-w-sm" />

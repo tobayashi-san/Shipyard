@@ -22,6 +22,8 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
     const perms = getPermissions(req.user);
     if (!can(perms, 'canViewServers')) return res.status(403).json({ error: 'Permission denied' });
     const servers = filterServers(db.servers.getAll(), perms);
+    const canViewCustomUpdates = can(perms, 'canViewCustomUpdates');
+    const agentEnabled = db.settings.get('agent_enabled') === '1';
     const online = servers.filter(s => s.status === 'online').length;
     const offline = servers.filter(s => s.status === 'offline').length;
 
@@ -34,7 +36,7 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
       const containers = db.dockerContainers.getByServer(s.id);
       const imageUpdatesMeta = db.dockerImageUpdatesCache.getWithMeta(s.id);
       const imageUpdates = imageUpdatesMeta ? imageUpdatesMeta.results : null;
-      const agentCfg = db.agentConfig.getByServerId(s.id);
+      const agentCfg = agentEnabled ? db.agentConfig.getByServerId(s.id) : null;
 
       if (info?.reboot_required) rebootRequired++;
       totalUpdates += updates.filter(u => !u.phased).length;
@@ -61,6 +63,22 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
         }
       }
 
+      // A dashboard must be able to show why a custom desired state differs,
+      // but never expose executable commands through this aggregate endpoint.
+      // The task editor remains the only place that returns those fields.
+      const customUpdateTasks = canViewCustomUpdates
+        ? db.customUpdateTasks.getByServer(s.id).map(task => ({
+          id: task.id,
+          name: task.name,
+          type: task.type,
+          current_version: task.current_version,
+          last_version: task.last_version,
+          trigger_output: task.trigger_output,
+          has_update: !!task.has_update,
+          last_checked_at: task.last_checked_at,
+        }))
+        : undefined;
+
       return {
         id: s.id,
         name: s.name,
@@ -82,6 +100,7 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
         image_updates_count: imageUpdates === null ? null : imageUpdates.filter(r => r.status === 'update_available').length,
         image_updates_checked_at: imageUpdatesMeta?.updated_at || null,
         custom_updates_count: db.customUpdateTasks.countHasUpdate(s.id),
+        ...(customUpdateTasks ? { custom_update_tasks: customUpdateTasks } : {}),
         info_cached_at: info?.updated_at || null,
         agent_mode: agentMode,
         agent_state: agentState,
@@ -113,6 +132,7 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
     res.json({
       summary: { total: servers.length, online, offline, unknown: servers.length - online - offline, rebootRequired, totalUpdates },
       servers: serverStats,
+      agentEnabled,
       recentHistory,
     });
   } catch (e) {

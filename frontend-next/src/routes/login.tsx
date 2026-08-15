@@ -23,7 +23,7 @@ export function LoginPage() {
   });
 
   const isSetup = status ? !status.configured : false;
-  const appName = status?.appName || 'Shipyard';
+  const appName = status?.appName || 'Fleet';
   const appTagline = status?.appTagline || 'Infrastructure';
 
   // Apply branding from auth status (no settings query on login)
@@ -110,29 +110,29 @@ export function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-svh items-center justify-center bg-muted/40 p-4 sm:p-6">
-      <main className="mx-auto grid w-full max-w-4xl overflow-hidden rounded-xl border bg-card shadow-lg md:min-h-[500px] md:grid-cols-[0.8fr_1fr]">
-        <aside className="relative hidden min-h-0 flex-col justify-between overflow-hidden text-white md:flex">
+    <div className="flex min-h-svh items-center justify-center bg-[hsl(var(--surface-1))] p-4 sm:p-6">
+      <main className="mx-auto grid w-full max-w-4xl overflow-hidden rounded-[3px] border border-border-strong bg-card shadow-xl md:min-h-[500px] md:grid-cols-[0.8fr_1fr]">
+        <aside className="relative flex h-48 min-h-0 flex-col justify-between overflow-hidden text-white md:h-auto">
           <img src="/login-infrastructure.webp" alt="" className="absolute inset-0 h-full w-full object-cover" />
-          <div className="absolute inset-0 bg-slate-950/45" />
-          <div className="relative p-7">
+          <div className="absolute inset-0 bg-slate-950/55 md:bg-slate-950/45" />
+          <div className="relative p-5 md:p-7">
           <div>
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/25 bg-slate-950/35 backdrop-blur-sm">
-                <Anchor className="h-5 w-5" />
+              <div className="flex h-9 w-9 items-center justify-center rounded-sm border border-white/25 bg-slate-950/35 backdrop-blur-sm md:h-10 md:w-10">
+                <Anchor className="h-4 w-4 md:h-5 md:w-5" />
               </div>
               <div>
-                <div className="text-lg font-semibold tracking-tight">{appName}</div>
-                <div className="text-sm text-white/75">{appTagline}</div>
+                <div className="text-base font-semibold tracking-tight md:text-lg">{appName}</div>
+                <div className="text-xs text-white/75 md:text-sm">{appTagline}</div>
               </div>
             </div>
-            <div className="mt-12 max-w-xs">
-              <h1 className="text-2xl font-semibold leading-tight tracking-tight">{t('login.consoleTitle')}</h1>
-              <p className="mt-3 text-sm leading-6 text-white/80">{t('login.consoleDescription')}</p>
+            <div className="mt-6 max-w-xs md:mt-12">
+              <h1 className="text-xl font-semibold leading-tight tracking-tight md:text-2xl">{t('login.consoleTitle')}</h1>
+              <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-white/80 md:mt-3 md:text-sm md:leading-6">{t('login.consoleDescription')}</p>
             </div>
           </div>
           </div>
-          <div className="relative m-7 space-y-3 border-t border-white/20 pt-5 text-sm">
+          <div className="relative m-7 hidden space-y-3 border-t border-white/20 pt-5 text-sm md:block">
             <div className="flex gap-3">
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
               <div><p className="font-medium">{t('login.featureSecure')}</p><p className="mt-0.5 text-xs leading-5 text-white/75">{t('login.featureSecureDesc')}</p></div>
@@ -144,13 +144,9 @@ export function LoginPage() {
           </div>
         </aside>
 
-        <section className="flex min-h-[calc(100svh-2rem)] flex-col px-5 py-6 sm:px-10 sm:py-10 md:min-h-0 md:px-9 md:py-8">
-          <div className="flex items-center gap-3 md:hidden">
-            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-[#0f6cbd] text-white"><Anchor className="h-4 w-4" /></div>
-            <div><p className="font-semibold">{appName}</p><p className="text-xs text-muted-foreground">{appTagline}</p></div>
-          </div>
-          <div className="my-auto w-full max-w-sm md:mx-auto">
-            <div className="mb-6 mt-12 md:mt-0">
+        <section className="flex min-h-0 flex-col px-5 py-7 sm:px-10 sm:py-10 md:min-h-0 md:px-9 md:py-8">
+          <div className="w-full max-w-sm md:mx-auto md:my-auto">
+            <div className="mb-6">
               <h2 className="text-2xl font-semibold tracking-tight">{tempToken ? t('login.totpTitle') : isSetup ? t('login.setup') : t('login.accessHeading', { appName })}</h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">{tempToken ? t('login.totpHint') : isSetup ? t('login.hint') : t('login.accessDescription')}</p>
             </div>
@@ -170,8 +166,8 @@ export function LoginPage() {
                     <Input id="password2" type="password" autoComplete="new-password" value={password2} onChange={(e) => setPassword2(e.target.value)} className="h-10" />
                   </div>
                 )}
-                {error && <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</p>}
-                <Button type="submit" disabled={submitting} className="h-10 w-full bg-[#0f6cbd] text-white hover:bg-[#005a9e]">
+                {error && <p role="alert" className="rounded-sm border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</p>}
+                <Button type="submit" disabled={submitting} className="h-10 w-full">
                   {isSetup ? <Lock className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
                   {isSetup ? t('login.setPassword') : t('login.loginBtn')}
                 </Button>
@@ -198,7 +194,7 @@ export function LoginPage() {
                   />
                 </div>
                 {error && <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</p>}
-                <Button type="submit" disabled={submitting} className="h-10 w-full bg-[#0f6cbd] text-white hover:bg-[#005a9e]">{t('login.totpBtn')}</Button>
+                <Button type="submit" disabled={submitting} className="h-10 w-full">{t('login.totpBtn')}</Button>
                 <Button type="button" variant="ghost" className="w-full" onClick={() => {
                   window.sessionStorage.removeItem(MFA_TOKEN_KEY);
                   window.history.replaceState(null, '', window.location.pathname);

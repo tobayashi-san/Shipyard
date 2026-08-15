@@ -1,15 +1,32 @@
-import { useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Key, Copy, Download, Upload, Send, CheckCircle2, XCircle } from 'lucide-react';
-import { api } from '@/lib/api';
-import { showToast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Skeleton } from '@/components/ui/skeleton';
-import { StatusBadge } from '@/components/ui/status-badge';
-import { SettingsRow, SettingsSection } from '../_row';
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  Key,
+  Copy,
+  Download,
+  Upload,
+  Send,
+  CheckCircle2,
+  XCircle,
+  Link2,
+  Trash2,
+} from "lucide-react";
+import { api } from "@/lib/api";
+import { useUi } from "@/lib/store";
+import { showToast } from "@/lib/toast";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { SettingsRow, SettingsSection } from "../_row";
 
 interface SSHKey {
   publicKey: string;
@@ -17,25 +34,44 @@ interface SSHKey {
   name?: string;
 }
 
+interface KeyAssignment {
+  id: string;
+  target_type: "server" | "deployment" | "vm_template";
+  target_id: string;
+  target_label: string;
+}
+interface KeyAssignmentTargets {
+  servers: Array<{ id: string; label: string }>;
+  deployments: Array<{ id: string; label: string }>;
+  vm_templates: Array<{ id: string; label: string }>;
+}
+
 export function SshTab() {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const environmentId = useUi((state) => state.environmentId);
 
   const { data, isLoading, isError } = useQuery<SSHKey | null>({
-    queryKey: ['ssh-key'],
+    queryKey: ["ssh-key"],
     queryFn: async () => {
-      try { return (await api.getSSHKey()) as SSHKey; }
-      catch { return null; }
+      try {
+        return (await api.getSSHKey()) as SSHKey;
+      } catch {
+        return null;
+      }
     },
   });
 
-  const refresh = () => qc.invalidateQueries({ queryKey: ['ssh-key'] });
+  const refresh = () => qc.invalidateQueries({ queryKey: ["ssh-key"] });
 
   return (
     <div className="space-y-4">
-      <SettingsSection icon={<Key className="h-4 w-4" />} title={t('set.sshTitle')}>
+      <SettingsSection
+        icon={<Key className="h-4 w-4" />}
+        title={t("set.sshTitle")}
+      >
         {isLoading ? (
-          <SettingsRow label={t('set.sshStatus')} noBorder>
+          <SettingsRow label={t("set.sshStatus")} noBorder>
             <Skeleton className="h-4 w-32" />
           </SettingsRow>
         ) : data && data.publicKey ? (
@@ -45,223 +81,497 @@ export function SshTab() {
         )}
       </SettingsSection>
 
-      <SettingsSection icon={<Send className="h-4 w-4" />} title={t('set.sshDistribute')}>
+      <SettingsSection
+        icon={<Link2 className="h-4 w-4" />}
+        title="Key assignments"
+      >
+        <KeyAssignments environmentId={environmentId} />
+      </SettingsSection>
+
+      <SettingsSection
+        icon={<Send className="h-4 w-4" />}
+        title={t("set.sshDistribute")}
+      >
         <DeployForm />
       </SettingsSection>
     </div>
   );
 }
 
-function SshKeyView({ ssh, onChanged }: { ssh: SSHKey; onChanged: () => void }) {
+function KeyAssignments({ environmentId }: { environmentId: string }) {
+  const qc = useQueryClient();
+  const [type, setType] = useState<KeyAssignment["target_type"]>("server");
+  const [loadTargets, setLoadTargets] = useState(false);
+  const assignments = useQuery<KeyAssignment[]>({
+    queryKey: ["ssh-key-assignments", environmentId],
+    queryFn: () =>
+      api.getSSHKeyAssignments(environmentId) as Promise<KeyAssignment[]>,
+  });
+  const targets = useQuery<KeyAssignmentTargets>({
+    queryKey: ["ssh-key-assignment-targets", environmentId],
+    queryFn: () =>
+      api.getSSHKeyAssignmentTargets(
+        environmentId,
+      ) as Promise<KeyAssignmentTargets>,
+    enabled: loadTargets,
+  });
+  const choices =
+    targets.data?.[
+      type === "server"
+        ? "servers"
+        : type === "deployment"
+          ? "deployments"
+          : "vm_templates"
+    ] || [];
+  const [targetId, setTargetId] = useState("");
+  const refresh = () => {
+    void qc.invalidateQueries({
+      queryKey: ["ssh-key-assignments", environmentId],
+    });
+  };
+  const save = useMutation({
+    mutationFn: () =>
+      api.saveSSHKeyAssignment({
+        environment_id: environmentId,
+        target_type: type,
+        target_id: targetId,
+      }),
+    onSuccess: () => {
+      setTargetId("");
+      refresh();
+      showToast("Key assignment saved.", "success");
+    },
+    onError: (error: Error) => showToast(error.message, "error"),
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => api.deleteSSHKeyAssignment(id),
+    onSuccess: refresh,
+    onError: (error: Error) => showToast(error.message, "error"),
+  });
+  const labels: Record<KeyAssignment["target_type"], string> = {
+    server: "Fleet-Host",
+    deployment: "Deployment",
+    vm_template: "VM template",
+  };
+
+  return (
+    <div className="space-y-3 py-3.5">
+      <p className="text-sm text-muted-foreground">
+        Define which resources should use the central Fleet key. Private keys
+        are not duplicated.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-[150px_minmax(0,1fr)_auto]">
+        <select
+          value={type}
+          onChange={(event) => {
+            setType(event.target.value as KeyAssignment["target_type"]);
+            setTargetId("");
+          }}
+          className="h-9 rounded-sm border border-input bg-background px-2.5 text-[13px]"
+          aria-label="Zieltyp"
+        >
+          <option value="server">Fleet-Host</option>
+          <option value="deployment">Deployment</option>
+          <option value="vm_template">VM template</option>
+        </select>
+        <select
+          value={targetId}
+          onFocus={() => setLoadTargets(true)}
+          onChange={(event) => setTargetId(event.target.value)}
+          className="h-9 min-w-0 rounded-sm border border-input bg-background px-2.5 text-[13px]"
+          aria-label="Select target"
+        >
+          <option value="">
+            {!loadTargets || targets.isLoading
+              ? "Ziele laden…"
+              : choices.length
+                ? "Select target"
+                : "No targets available"}
+          </option>
+          {choices.map((choice) => (
+            <option key={choice.id} value={choice.id}>
+              {choice.label}
+            </option>
+          ))}
+        </select>
+        <Button
+          type="button"
+          size="sm"
+          className="h-9 px-3"
+          onClick={() => save.mutate()}
+          disabled={!targetId || save.isPending}
+        >
+          Zuordnen
+        </Button>
+      </div>
+      {assignments.isLoading ? (
+        <Skeleton className="h-12 w-full" />
+      ) : assignments.data?.length ? (
+        <div className="divide-y rounded-md border">
+          {assignments.data.map((assignment) => (
+            <div
+              className="flex items-center gap-3 px-3 py-2"
+              key={assignment.id}
+            >
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                {assignment.target_label}
+              </span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {labels[assignment.target_type]}
+              </span>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 text-destructive hover:text-destructive"
+                onClick={() => remove.mutate(assignment.id)}
+                disabled={remove.isPending}
+                aria-label={`${assignment.target_label} entfernen`}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
+          No resources assigned yet.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SshKeyView({
+  ssh,
+  onChanged,
+}: {
+  ssh: SSHKey;
+  onChanged: () => void;
+}) {
   const { t } = useTranslation();
   const escapedKey = ssh.publicKey.replace(/'/g, "'\\''");
   const installCmd = `mkdir -p ~/.ssh && echo '${escapedKey}' >> ~/.ssh/authorized_keys && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys`;
   const [exportOpen, setExportOpen] = useState(false);
-  const [importContent, setImportContent] = useState<string | null>(null);
+  const [importFile, setImportFile] = useState<File | null>(null);
 
   const copy = (text: string, msg: string) => {
-    navigator.clipboard.writeText(text).then(() => showToast(msg, 'success'));
+    navigator.clipboard.writeText(text).then(() => showToast(msg, "success"));
   };
 
   const onPickImport = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '*';
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "*";
     input.onchange = () => {
       const file = input.files?.[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (e) => setImportContent(String(e.target?.result || ''));
-      reader.readAsText(file);
+      setImportFile(file);
     };
     input.click();
   };
 
   return (
     <>
-      <SettingsRow label={t('set.sshName')}>
-        <span className="font-mono text-sm">{ssh.name || 'shipyard'}</span>
+      <SettingsRow label={t("set.sshName")}>
+        <span className="font-mono text-sm">{ssh.name || "shipyard"}</span>
       </SettingsRow>
-      <SettingsRow label={t('set.sshType')}>
+      <SettingsRow label={t("set.sshType")}>
         <span className="font-mono text-sm">ED25519</span>
       </SettingsRow>
-      <SettingsRow label={t('set.sshStatus')}>
+      <SettingsRow label={t("set.sshStatus")}>
         {ssh.exists !== false ? (
-          <StatusBadge tone="success"><CheckCircle2 className="h-3 w-3" /> {t('set.sshActive')}</StatusBadge>
+          <StatusBadge tone="success">
+            <CheckCircle2 className="h-3 w-3" /> {t("set.sshActive")}
+          </StatusBadge>
         ) : (
-          <StatusBadge tone="muted"><XCircle className="h-3 w-3" /> {t('set.sshNotFound')}</StatusBadge>
+          <StatusBadge tone="muted">
+            <XCircle className="h-3 w-3" /> {t("set.sshNotFound")}
+          </StatusBadge>
         )}
       </SettingsRow>
 
-      <SettingsRow label={t('set.sshPublicKey')} align="start">
+      <SettingsRow label={t("set.sshPublicKey")} align="start">
         <div className="w-full min-w-0 rounded-md border bg-muted/40 p-3">
-          <div className="font-mono text-xs leading-relaxed break-all">{ssh.publicKey}</div>
+          <div className="font-mono text-xs leading-relaxed break-all">
+            {ssh.publicKey}
+          </div>
           <Button
-            variant="secondary" size="sm"
+            variant="secondary"
+            size="sm"
             className="mt-2"
-            onClick={() => copy(ssh.publicKey, t('set.keyCopied'))}
+            onClick={() => copy(ssh.publicKey, t("set.keyCopied"))}
           >
-            <Copy className="h-3.5 w-3.5" /> {t('common.copy')}
+            <Copy className="h-3.5 w-3.5" /> {t("common.copy")}
           </Button>
         </div>
       </SettingsRow>
 
-      <SettingsRow label={t('set.sshManualAdd')} hint={t('set.sshManualHint')} align="start">
+      <SettingsRow
+        label={t("set.sshManualAdd")}
+        hint={t("set.sshManualHint")}
+        align="start"
+      >
         <div className="w-full min-w-0 rounded-md border bg-muted/40 p-3">
-          <div className="font-mono text-xs leading-relaxed break-all">{installCmd}</div>
+          <div className="font-mono text-xs leading-relaxed break-all">
+            {installCmd}
+          </div>
           <Button
-            variant="secondary" size="sm"
+            variant="secondary"
+            size="sm"
             className="mt-2"
-            onClick={() => copy(installCmd, t('set.cmdCopied'))}
+            onClick={() => copy(installCmd, t("set.cmdCopied"))}
           >
-            <Copy className="h-3.5 w-3.5" /> {t('common.copy')}
+            <Copy className="h-3.5 w-3.5" /> {t("common.copy")}
           </Button>
         </div>
       </SettingsRow>
 
-      <SettingsRow label={t('set.manageKey')} hint={t('set.manageKeyHint')} noBorder>
-        <Button variant="secondary" size="sm" onClick={() => setExportOpen(true)}>
-          <Download className="h-4 w-4" /> {t('set.exportKeyTitle')}
+      <SettingsRow
+        label={t("set.manageKey")}
+        hint={t("set.manageKeyHint")}
+        noBorder
+      >
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setExportOpen(true)}
+        >
+          <Download className="h-4 w-4" /> {t("set.exportKeyTitle")}
         </Button>
         <Button variant="secondary" size="sm" onClick={onPickImport}>
-          <Upload className="h-4 w-4" /> {t('set.importKeyTitle')}
+          <Upload className="h-4 w-4" /> {t("set.importKeyTitle")}
         </Button>
       </SettingsRow>
 
       <ExportKeyDialog open={exportOpen} onOpenChange={setExportOpen} />
       <ImportKeyDialog
-        content={importContent}
-        onClose={() => setImportContent(null)}
-        onImported={() => { setImportContent(null); onChanged(); }}
+        file={importFile}
+        onClose={() => setImportFile(null)}
+        onImported={() => {
+          setImportFile(null);
+          onChanged();
+        }}
       />
     </>
   );
 }
 
-function SshKeyMissing({ isError, onChanged }: { isError?: boolean; onChanged: () => void }) {
+function SshKeyMissing({
+  isError,
+  onChanged,
+}: {
+  isError?: boolean;
+  onChanged: () => void;
+}) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
-  const [importContent, setImportContent] = useState<string | null>(null);
+  const [importFile, setImportFile] = useState<File | null>(null);
 
   const generate = async () => {
     setBusy(true);
     try {
-      await api.generateSSHKey('shipyard');
-      showToast(t('set.sshGenerated'), 'success');
+      await api.generateSSHKey("shipyard");
+      showToast(t("set.sshGenerated"), "success");
       onChanged();
     } catch (err) {
-      showToast(t('common.errorPrefix', { msg: (err as Error).message }), 'error');
-    } finally { setBusy(false); }
+      showToast(
+        t("common.errorPrefix", { msg: (err as Error).message }),
+        "error",
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   const onPickImport = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
+    const input = document.createElement("input");
+    input.type = "file";
     input.onchange = () => {
       const file = input.files?.[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (e) => setImportContent(String(e.target?.result || ''));
-      reader.readAsText(file);
+      setImportFile(file);
     };
     input.click();
   };
 
   return (
     <>
-      <SettingsRow label={t('set.sshStatus')} noBorder>
+      <SettingsRow label={t("set.sshStatus")} noBorder>
         <span className="text-sm text-muted-foreground">
-          {isError ? t('common.error') : t('set.sshNone')}
+          {isError ? t("common.error") : t("set.sshNone")}
         </span>
         <Button size="sm" onClick={generate} disabled={busy}>
-          <Key className="h-4 w-4" /> {t('set.sshGenerate')}
+          <Key className="h-4 w-4" /> {t("set.sshGenerate")}
         </Button>
         <Button variant="secondary" size="sm" onClick={onPickImport}>
-          <Upload className="h-4 w-4" /> {t('set.importKeyTitle')}
+          <Upload className="h-4 w-4" /> {t("set.importKeyTitle")}
         </Button>
       </SettingsRow>
       <ImportKeyDialog
-        content={importContent}
-        onClose={() => setImportContent(null)}
-        onImported={() => { setImportContent(null); onChanged(); }}
+        file={importFile}
+        onClose={() => setImportFile(null)}
+        onImported={() => {
+          setImportFile(null);
+          onChanged();
+        }}
       />
     </>
   );
 }
 
-function ExportKeyDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+function ExportKeyDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
   const { t } = useTranslation();
-  const [pass, setPass] = useState('');
-  const [pass2, setPass2] = useState('');
+  const [pass, setPass] = useState("");
+  const [pass2, setPass2] = useState("");
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    if (pass !== pass2) { showToast(t('set.exportKeyMismatch'), 'error'); return; }
+    if (pass !== pass2) {
+      showToast(t("set.exportKeyMismatch"), "error");
+      return;
+    }
     setBusy(true);
     try {
-      const res = await api.exportSSHKey(pass) as { privateKey: string };
-      const blob = new Blob([res.privateKey], { type: 'text/plain' });
-      const a = document.createElement('a');
+      const res = (await api.exportSSHKey(pass)) as { privateKey: string };
+      const blob = new Blob([res.privateKey], { type: "text/plain" });
+      const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = 'shipyard_id_ed25519';
+      a.download = "shipyard_id_ed25519";
       a.click();
       URL.revokeObjectURL(a.href);
       onOpenChange(false);
-      setPass(''); setPass2('');
+      setPass("");
+      setPass2("");
     } catch (err) {
-      showToast(t('common.errorPrefix', { msg: (err as Error).message }), 'error');
-    } finally { setBusy(false); }
+      showToast(
+        t("common.errorPrefix", { msg: (err as Error).message }),
+        "error",
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>{t('set.exportKeyTitle')}</DialogTitle></DialogHeader>
-        <p className="text-sm text-muted-foreground">{t('set.exportKeyHint')}</p>
-        <Input type="password" value={pass} onChange={(e) => setPass(e.target.value)} placeholder={t('set.exportKeyPlaceholder')} autoComplete="new-password" />
-        <Input type="password" value={pass2} onChange={(e) => setPass2(e.target.value)} placeholder={t('set.exportKeyConfirm')} autoComplete="new-password"
-          onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }} />
+        <DialogHeader>
+          <DialogTitle>{t("set.exportKeyTitle")}</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          {t("set.exportKeyHint")}
+        </p>
+        <Input
+          type="password"
+          value={pass}
+          onChange={(e) => setPass(e.target.value)}
+          placeholder={t("set.exportKeyPlaceholder")}
+          autoComplete="new-password"
+        />
+        <Input
+          type="password"
+          value={pass2}
+          onChange={(e) => setPass2(e.target.value)}
+          placeholder={t("set.exportKeyConfirm")}
+          autoComplete="new-password"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void submit();
+          }}
+        />
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
-          <Button onClick={submit} disabled={busy}><Download className="h-4 w-4" /> {t('set.exportKeyBtn')}</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+            {t("common.cancel")}
+          </Button>
+          <Button onClick={submit} disabled={busy}>
+            <Download className="h-4 w-4" /> {t("set.exportKeyBtn")}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-function ImportKeyDialog({ content, onClose, onImported }: {
-  content: string | null;
+function ImportKeyDialog({
+  file,
+  onClose,
+  onImported,
+}: {
+  file: File | null;
   onClose: () => void;
   onImported: () => void;
 }) {
   const { t } = useTranslation();
-  const [pass, setPass] = useState('');
+  const [pass, setPass] = useState("");
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    if (!content) return;
+    if (!file) return;
     setBusy(true);
     try {
-      await api.importSSHKey(content, pass || '');
-      showToast(t('set.importKeySuccess'), 'success');
-      setPass('');
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => resolve()),
+      );
+      const content = await file.text();
+      await api.importSSHKey(content, pass || "");
+      showToast(t("set.importKeySuccess"), "success");
+      setPass("");
       onImported();
     } catch (err) {
-      showToast((err as Error).message, 'error');
-    } finally { setBusy(false); }
+      showToast((err as Error).message, "error");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
-    <Dialog open={content !== null} onOpenChange={(v) => { if (!v) { setPass(''); onClose(); } }}>
+    <Dialog
+      open={file !== null}
+      onOpenChange={(v) => {
+        if (!v) {
+          setPass("");
+          onClose();
+        }
+      }}
+    >
       <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>{t('set.importKeyTitle')}</DialogTitle></DialogHeader>
-        <p className="text-sm text-muted-foreground">{t('set.importKeyHint')}</p>
-        <Input type="password" value={pass} onChange={(e) => setPass(e.target.value)} placeholder={t('set.importKeyPlaceholder')} autoComplete="current-password"
-          onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }} />
+        <DialogHeader>
+          <DialogTitle>{t("set.importKeyTitle")}</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          {t("set.importKeyHint")}
+        </p>
+        {file && (
+          <p
+            className="truncate text-xs text-muted-foreground"
+            title={file.name}
+          >
+            {file.name}
+          </p>
+        )}
+        <Input
+          type="password"
+          value={pass}
+          onChange={(e) => setPass(e.target.value)}
+          placeholder={t("set.importKeyPlaceholder")}
+          autoComplete="current-password"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void submit();
+          }}
+        />
         <DialogFooter>
-          <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
-          <Button onClick={submit} disabled={busy}><Upload className="h-4 w-4" /> {t('set.importKeyBtn')}</Button>
+          <Button variant="secondary" onClick={onClose}>
+            {t("common.cancel")}
+          </Button>
+          <Button onClick={submit} disabled={busy}>
+            <Upload className="h-4 w-4" /> {t("set.importKeyBtn")}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -270,12 +580,12 @@ function ImportKeyDialog({ content, onClose, onImported }: {
 
 function DeployForm() {
   const { t } = useTranslation();
-  const [ip, setIp]       = useState('');
-  const [user, setUser]   = useState('root');
-  const [port, setPort]   = useState('22');
-  const [pw, setPw]       = useState('');
-  const [busyOne, setBusyOne]   = useState(false);
-  const [busyAll, setBusyAll]   = useState(false);
+  const [ip, setIp] = useState("");
+  const [user, setUser] = useState("root");
+  const [port, setPort] = useState("22");
+  const [pw, setPw] = useState("");
+  const [busyOne, setBusyOne] = useState(false);
+  const [busyAll, setBusyAll] = useState(false);
   const [confirmAll, setConfirmAll] = useState(false);
 
   const deployOne = async () => {
@@ -283,75 +593,121 @@ function DeployForm() {
     try {
       await api.deploySSHKey({
         ip_address: ip,
-        ssh_user: user || 'root',
+        ssh_user: user || "root",
         ssh_port: parseInt(port, 10) || 22,
         password: pw,
       });
-      showToast(t('set.sshDistributed'), 'success');
-      setPw('');
+      showToast(t("set.sshDistributed"), "success");
+      setPw("");
     } catch (err) {
-      showToast(t('common.errorPrefix', { msg: (err as Error).message }), 'error');
-    } finally { setBusyOne(false); }
+      showToast(
+        t("common.errorPrefix", { msg: (err as Error).message }),
+        "error",
+      );
+    } finally {
+      setBusyOne(false);
+    }
   };
 
   const deployAll = async () => {
     setBusyAll(true);
     try {
-      const result = (await api.deploySSHKeyAll({ password: pw })) as { succeeded: number; failed: number };
+      const result = (await api.deploySSHKeyAll({ password: pw })) as {
+        succeeded: number;
+        failed: number;
+      };
       showToast(
-        t('set.sshDistributedAllResult', { succeeded: result.succeeded, failed: result.failed }),
-        result.failed ? 'warning' : 'success'
+        t("set.sshDistributedAllResult", {
+          succeeded: result.succeeded,
+          failed: result.failed,
+        }),
+        result.failed ? "warning" : "success",
       );
-      setPw('');
+      setPw("");
     } catch (err) {
-      showToast(t('common.errorPrefix', { msg: (err as Error).message }), 'error');
-    } finally { setBusyAll(false); setConfirmAll(false); }
+      showToast(
+        t("common.errorPrefix", { msg: (err as Error).message }),
+        "error",
+      );
+    } finally {
+      setBusyAll(false);
+      setConfirmAll(false);
+    }
   };
 
   return (
     <>
-      <SettingsRow label={t('set.sshTarget')} hint={t('set.sshTargetHint')}>
+      <SettingsRow label={t("set.sshTarget")} hint={t("set.sshTargetHint")}>
         <div className="grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-[1fr_90px_70px]">
-          <Input value={ip}   onChange={(e) => setIp(e.target.value)}   placeholder="192.168.1.100" />
-          <Input value={user} onChange={(e) => setUser(e.target.value)} placeholder="root" />
-          <Input value={port} onChange={(e) => setPort(e.target.value)} type="number" placeholder="22" />
+          <Input
+            value={ip}
+            onChange={(e) => setIp(e.target.value)}
+            placeholder="192.168.1.100"
+          />
+          <Input
+            value={user}
+            onChange={(e) => setUser(e.target.value)}
+            placeholder="root"
+          />
+          <Input
+            value={port}
+            onChange={(e) => setPort(e.target.value)}
+            type="number"
+            placeholder="22"
+          />
         </div>
       </SettingsRow>
 
-      <SettingsRow label={t('set.sshPassword')} hint={t('set.sshPasswordHint')}>
+      <SettingsRow label={t("set.sshPassword")} hint={t("set.sshPasswordHint")}>
         <Input
           value={pw}
           type="password"
           onChange={(e) => setPw(e.target.value)}
-          placeholder={t('set.serverPasswordPlaceholder')}
+          placeholder={t("set.serverPasswordPlaceholder")}
           autoComplete="new-password"
           className="max-w-md"
         />
       </SettingsRow>
 
-      <SettingsRow label={null} hint={t('set.sshDistributeAllHint')} noBorder>
+      <SettingsRow label={null} hint={t("set.sshDistributeAllHint")} noBorder>
         <Button size="sm" onClick={deployOne} disabled={busyOne || !ip}>
-          <Key className="h-4 w-4" /> {busyOne ? t('set.deploying') : t('set.sshDistributeBtn')}
+          <Key className="h-4 w-4" />{" "}
+          {busyOne ? t("set.deploying") : t("set.sshDistributeBtn")}
         </Button>
         <Button
-          variant="secondary" size="sm"
+          variant="secondary"
+          size="sm"
           onClick={() => {
-            if (!pw) { showToast(t('set.passwordRequired'), 'error'); return; }
+            if (!pw) {
+              showToast(t("set.passwordRequired"), "error");
+              return;
+            }
             setConfirmAll(true);
           }}
           disabled={busyAll}
         >
-          <Key className="h-4 w-4" /> {busyAll ? t('set.deploying') : t('set.sshDistributeAllBtn')}
+          <Key className="h-4 w-4" />{" "}
+          {busyAll ? t("set.deploying") : t("set.sshDistributeAllBtn")}
         </Button>
       </SettingsRow>
 
       <Dialog open={confirmAll} onOpenChange={setConfirmAll}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>{t('set.sshDistributeAllBtn')}</DialogTitle></DialogHeader>
-          <p className="text-sm">{t('set.sshDeployAllConfirm')}</p>
+          <DialogHeader>
+            <DialogTitle>{t("set.sshDistributeAllBtn")}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm">{t("set.sshDeployAllConfirm")}</p>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setConfirmAll(false)}>{t('common.cancel')}</Button>
-            <Button variant="destructive" onClick={deployAll} disabled={busyAll}>{t('set.sshDistributeAllBtn')}</Button>
+            <Button variant="secondary" onClick={() => setConfirmAll(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={deployAll}
+              disabled={busyAll}
+            >
+              {t("set.sshDistributeAllBtn")}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

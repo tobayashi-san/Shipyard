@@ -36,36 +36,38 @@
       changed_when: false
       failed_when: false
 
-    # Rootless Podman: each user has their own container namespace.
-    # Find users by their active Podman sockets under /run/user/<uid>/podman/.
-    - name: Find rootless podman user IDs
-      shell: "find /run/user -maxdepth 2 -name 'podman.sock' 2>/dev/null | sed 's|/run/user/||;s|/podman.*||'"
-      register: rootless_uids
+    # Rootless Docker and Podman use per-user sockets below /run/user/<uid>.
+    - name: Find rootless container runtime sockets
+      shell: |
+        find /run/user -maxdepth 3 -type s \( -path '*/docker.sock' -o -path '*/podman.sock' \) 2>/dev/null \
+          | sed -nE 's|^/run/user/([0-9]+)/(docker|podman)/.*$|\1|\2|p; s|^/run/user/([0-9]+)/(docker|podman)\.sock$|\1|\2|p' \
+          | sort -u
+      register: rootless_runtimes
       changed_when: false
       failed_when: false
-      when: "'podman' in (runtime_bin.stdout | default(''))"
 
     - name: Get rootless containers per user
       shell: |
-        UID_VAL="{{ item }}"
+        UID_VAL="{{ item.split('|')[0] }}"
+        RUNTIME="{{ item.split('|')[1] }}"
         USERNAME=$(getent passwd "$UID_VAL" | cut -d: -f1)
         XDG_RUNTIME_DIR=/run/user/$UID_VAL runuser -u "$USERNAME" -- \
           bash -c 'resolve_image() {
             local name="$1" img tagged
-            img=$(podman inspect "$name" --format "{{.Config.Image}}" 2>/dev/null || echo "")
+            img=$('"$RUNTIME"' inspect "$name" --format "{% raw %}{{.Config.Image}}{% endraw %}" 2>/dev/null || echo "")
             if echo "$img" | grep -qP "^[a-f0-9]{12}$|^sha256:[a-f0-9]+$"; then
-              tagged=$(podman image inspect "$img" --format "{{range .RepoTags}}{{println .}}{{end}}" 2>/dev/null | head -1)
+              tagged=$('"$RUNTIME"' image inspect "$img" --format "{% raw %}{{range .RepoTags}}{{println .}}{{end}}{% endraw %}" 2>/dev/null | head -1)
               [ -n "$tagged" ] && img="$tagged"
             fi
             echo "${img:-unknown}"
           }
-          podman ps -a --format "{{.Names}}|{{.State}}|{{.Status}}|{{.CreatedAt}}|{{.Label \"com.docker.compose.project\"}}|{{.Label \"com.docker.compose.project.working_dir\"}}" | while IFS="|" read -r name state status created proj dir; do
+          '"$RUNTIME"' ps -a --format "{% raw %}{{.Names}}|{{.State}}|{{.Status}}|{{.CreatedAt}}|{{.Label \"com.docker.compose.project\"}}|{{.Label \"com.docker.compose.project.working_dir\"}}{% endraw %}" | while IFS="|" read -r name state status created proj dir; do
             img=$(resolve_image "$name")
             printf "%s|%s|%s|%s|%s|%s|%s\n" "$name" "$img" "$state" "$status" "$created" "$proj" "$dir"
           done'
       args:
         executable: /bin/bash
-      loop: "{{ rootless_uids.stdout_lines | default([]) }}"
+      loop: "{{ rootless_runtimes.stdout_lines | default([]) }}"
       register: rootless_ps
       changed_when: false
       failed_when: false

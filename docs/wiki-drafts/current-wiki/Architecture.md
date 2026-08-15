@@ -175,5 +175,4 @@ WebSocket messages broadcast from server to permitted clients:
 | `ansible_output` / `ansible_complete` | Playbook execution |
 | `compose_output` | Docker Compose action |
 | `bulk_update_output` / `bulk_update_complete` | Multi-server update |
-| `tofu_output` / `tofu_done` | OpenTofu plan/apply plugin events |
-
+| `tofu_output` / `tofu_done` | OpenTofu plan/apply events |

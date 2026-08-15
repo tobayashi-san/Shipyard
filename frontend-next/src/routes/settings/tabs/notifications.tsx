@@ -193,9 +193,10 @@ function NotificationToggles({ wl }: { wl: WhiteLabel }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
 
-  const items: { key: 'notifPlaybookFailed' | 'notifUpdateFailed'; label: string; hint: string }[] = [
+  const items: { key: 'notifPlaybookFailed' | 'notifUpdateFailed' | 'notifResourceAlerts'; label: string; hint: string }[] = [
     { key: 'notifPlaybookFailed', label: t('set.notifyPlaybookFailure'), hint: t('set.notifyPlaybookFailureHint') },
     { key: 'notifUpdateFailed',   label: t('set.notifyUpdateFailure'),   hint: t('set.notifyUpdateFailureHint') },
+    { key: 'notifResourceAlerts', label: t('set.notifyResourceAlerts'),  hint: t('set.notifyResourceAlertsHint') },
   ];
 
   const save = useMutation({

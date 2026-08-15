@@ -142,6 +142,28 @@ test('allows Font Awesome stylesheet and font CDN in CSP for plugin UIs', async 
   assert.doesNotMatch(csp, /script-src[^;]*cdnjs\.cloudflare\.com/);
 });
 
+test('marks API responses as non-cacheable without changing static plugin asset caching', async () => {
+  const { app } = createApp();
+  const apiRes = await request(app).get('/api/health');
+  assert.equal(apiRes.headers['cache-control'], 'no-store');
+});
+
+test('rejects JSON root values that are not objects before route handlers run', async () => {
+  const { app } = createApp();
+  const nullRes = await request(app)
+    .post('/api/auth/login')
+    .set('Content-Type', 'application/json')
+    .send('null');
+  assert.equal(nullRes.status, 400);
+  assert.deepEqual(nullRes.body, { error: 'Invalid JSON body' });
+
+  const arrayRes = await request(app)
+    .post('/api/auth/login')
+    .send([]);
+  assert.equal(arrayRes.status, 400);
+  assert.deepEqual(arrayRes.body, { error: 'JSON body must be an object' });
+});
+
 test('returns sanitized JSON when an enabled plugin API route throws', async () => {
   writePlugin('throwing_plugin', {
     'ui.js': 'export function mount() {}\n',

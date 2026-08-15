@@ -1,66 +1,1342 @@
-import { useMemo } from 'react';
-import { Link } from '@tanstack/react-router';
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, CheckCircle2, CircleDashed, ClipboardList, Clock3, ExternalLink, RefreshCw, ShieldCheck, TriangleAlert, Workflow, XCircle } from 'lucide-react';
-import { api, apiFetch } from '@/lib/api';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { EmptyState } from '@/components/ui/empty-state';
-import { PageHeader } from '@/components/ui/page-header';
-import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
-import { hasCap, useProfile } from '@/lib/queries';
-import { useUi } from '@/lib/store';
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "@tanstack/react-router";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import {
+  CalendarClock,
+  CheckCircle2,
+  CircleDashed,
+  ClipboardList,
+  ExternalLink,
+  Info,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
+  TriangleAlert,
+  Workflow,
+} from "lucide-react";
+import { api, apiFetch } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  canAccessDeployments,
+  hasCap,
+  usePlugins,
+  useProfile,
+} from "@/lib/queries";
+import { useUi } from "@/lib/store";
 
-interface Workspace { id: string; name: string }
-interface DeploymentRun { id: string; action?: string; status?: string; started_at?: string; completed_at?: string }
-interface RunsResponse { items?: DeploymentRun[] }
-interface ScheduleRun { id?: number | string; schedule_name?: string; playbook?: string; targets?: string; status?: string; started_at?: string; completed_at?: string }
-interface AuditRow { action?: string; user?: string; detail?: string; success?: boolean | 0 | 1; created_at?: string }
+interface Workspace {
+  id: string;
+  name: string;
+}
+interface DeploymentRun {
+  id: string;
+  action?: string;
+  status?: string;
+  started_at?: string;
+  completed_at?: string;
+}
+interface RunsResponse {
+  items?: DeploymentRun[];
+}
+interface ScheduleRun {
+  id?: number | string;
+  schedule_name?: string;
+  playbook?: string;
+  targets?: string;
+  status?: string;
+  started_at?: string;
+  completed_at?: string;
+}
+interface AuditRow {
+  action?: string;
+  user?: string;
+  detail?: string;
+  success?: boolean | 0 | 1;
+  created_at?: string;
+}
+interface OperationRow {
+  id: string;
+  source: "Deployment" | "Workflow" | "Audit";
+  name: string;
+  target: string;
+  initiator: string;
+  status: string;
+  statusTone: StatusTone;
+  time?: string;
+  href?: "/deployments/$id" | "/playbooks" | "/settings/$tab";
+  params?: Record<string, string>;
+}
+interface MaintenanceWindow {
+  id: string;
+  environment_id: string;
+  name: string;
+  starts_at: string;
+  ends_at: string;
+  description?: string;
+  state?: "scheduled" | "active" | "completed";
+}
 
 function tone(status?: string): StatusTone {
-  switch (String(status || '').toLowerCase()) {
-    case 'success': case 'completed': return 'success';
-    case 'failed': case 'error': return 'danger';
-    case 'running': case 'queued': return 'info';
-    default: return 'muted';
+  switch (String(status || "").toLowerCase()) {
+    case "success":
+    case "completed":
+      return "success";
+    case "failed":
+    case "error":
+      return "danger";
+    case "running":
+    case "queued":
+      return "info";
+    default:
+      return "muted";
   }
 }
 
 function readableTime(value?: string) {
-  if (!value) return '—';
+  if (!value) return "—";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(date);
 }
-
-function Metric({ icon: Icon, label, value, toneClass }: { icon: typeof Activity; label: string; value: string | number; toneClass?: string }) {
-  return <Card><CardContent className="flex items-center gap-3 p-4"><Icon className={toneClass || 'text-muted-foreground'} /><div><div className="text-2xl font-semibold tabular-nums">{value}</div><div className="text-xs text-muted-foreground">{label}</div></div></CardContent></Card>;
+function dateTimeInput(value?: string) {
+  const date = value ? new Date(value) : new Date();
+  date.setSeconds(0, 0);
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+function maintenanceTone(state?: string): StatusTone {
+  return state === "active"
+    ? "warning"
+    : state === "scheduled"
+      ? "info"
+      : "muted";
+}
+function maintenanceLabel(state?: string) {
+  return state === "active"
+    ? "Active"
+    : state === "scheduled"
+      ? "Scheduled"
+      : "Completed";
+}
+function operationSourceLabel(source: OperationRow["source"]) {
+  return source === "Deployment"
+    ? "Deployment"
+    : source === "Workflow"
+      ? "Playbook workflow"
+      : "Audit event";
+}
+function operationStatusLabel(status: string) {
+  const normalized = status.toLowerCase();
+  if (
+    normalized === "success" ||
+    normalized === "completed" ||
+    normalized === "erfolgreich"
+  )
+    return "Successful";
+  if (
+    normalized === "failed" ||
+    normalized === "error" ||
+    normalized === "fehlgeschlagen"
+  )
+    return "Failed";
+  if (normalized === "running") return "Running";
+  if (normalized === "queued") return "Queued";
+  return status || "Unknown";
 }
 
 export function OperationsPage() {
   const queryClient = useQueryClient();
-  const environmentId = useUi(state => state.environmentId);
+  const environmentId = useUi((state) => state.environmentId);
   const { data: profile } = useProfile();
-  const canViewSchedules = hasCap(profile, 'canViewSchedules');
-  const isAdmin = profile?.role === 'admin';
-  const workspaceQuery = useQuery({ queryKey: ['opentofu', 'workspaces', environmentId], queryFn: () => apiFetch<Workspace[]>(`/plugin/opentofu/workspaces?environment_id=${encodeURIComponent(environmentId)}`), staleTime: 15_000 });
-  const workspaces = Array.isArray(workspaceQuery.data) ? workspaceQuery.data : [];
-  const deploymentRunQueries = useQueries({ queries: workspaces.map(workspace => ({ queryKey: ['opentofu', 'workspace', workspace.id, 'runs', 'operations'], queryFn: () => apiFetch<RunsResponse>(`/plugin/opentofu/workspaces/${encodeURIComponent(workspace.id)}/runs?page_size=5`), staleTime: 10_000 })) });
-  const scheduleQuery = useQuery({ queryKey: ['schedule-history', 'operations'], queryFn: () => api.getScheduleHistory(12) as unknown as Promise<ScheduleRun[]>, enabled: canViewSchedules, staleTime: 15_000 });
-  const auditQuery = useQuery({ queryKey: ['audit-log', 'operations'], queryFn: () => api.getAuditLog({ limit: 12 }) as unknown as Promise<AuditRow[]>, enabled: isAdmin, staleTime: 15_000 });
-  const deploymentRuns = useMemo(() => workspaces.flatMap((workspace, index) => (Array.isArray(deploymentRunQueries[index]?.data?.items) ? deploymentRunQueries[index].data!.items! : []).map(run => ({ ...run, workspace }))).sort((left, right) => String(right.completed_at || right.started_at || '').localeCompare(String(left.completed_at || left.started_at || ''))).slice(0, 12), [deploymentRunQueries, workspaces]);
-  const scheduleRuns = Array.isArray(scheduleQuery.data) ? scheduleQuery.data : [];
+  const { data: plugins } = usePlugins();
+  const canViewDeployments = canAccessDeployments(profile);
+  const canViewSchedules = hasCap(profile, "canViewSchedules");
+  const canViewAudit = hasCap(profile, "canViewAudit");
+  const canViewMaintenance = hasCap(profile, "canViewMaintenance");
+  const canManageMaintenance = hasCap(profile, "canEditMaintenance");
+  const [taskScope, setTaskScope] = useState<"all" | "active" | "failed">(
+    "all",
+  );
+  const [selectedOperationId, setSelectedOperationId] = useState<string | null>(
+    null,
+  );
+  const [maintenanceDialog, setMaintenanceDialog] = useState<
+    MaintenanceWindow | "new" | null
+  >(null);
+  const [windowToDelete, setWindowToDelete] =
+    useState<MaintenanceWindow | null>(null);
+  const workspaceQuery = useQuery({
+    queryKey: ["opentofu", "workspaces", environmentId],
+    queryFn: () =>
+      apiFetch<Workspace[]>(
+        `/opentofu/workspaces?environment_id=${encodeURIComponent(environmentId)}`,
+      ),
+    enabled: canViewDeployments,
+    staleTime: 15_000,
+  });
+  const workspaces = Array.isArray(workspaceQuery.data)
+    ? workspaceQuery.data
+    : [];
+  const deploymentRunQueries = useQueries({
+    queries: workspaces.map((workspace) => ({
+      queryKey: ["opentofu", "workspace", workspace.id, "runs", "operations"],
+      queryFn: () =>
+        apiFetch<RunsResponse>(
+          `/opentofu/workspaces/${encodeURIComponent(workspace.id)}/runs?page_size=5`,
+        ),
+      staleTime: 10_000,
+    })),
+  });
+  const scheduleQuery = useQuery({
+    queryKey: ["schedule-history", "operations"],
+    queryFn: () =>
+      api.getScheduleHistory(12) as unknown as Promise<ScheduleRun[]>,
+    enabled: canViewSchedules,
+    staleTime: 15_000,
+  });
+  const auditQuery = useQuery({
+    queryKey: ["audit-log", "operations"],
+    queryFn: () =>
+      api.getAuditLog({ limit: 12 }) as unknown as Promise<AuditRow[]>,
+    enabled: canViewAudit,
+    staleTime: 15_000,
+  });
+  const maintenanceQuery = useQuery({
+    queryKey: ["maintenance-windows", environmentId],
+    queryFn: () =>
+      apiFetch<MaintenanceWindow[]>(
+        `/maintenance-windows?environment_id=${encodeURIComponent(environmentId)}`,
+      ),
+    enabled: canViewMaintenance,
+    staleTime: 15_000,
+  });
+  const deploymentRuns = useMemo(
+    () =>
+      workspaces
+        .flatMap((workspace, index) =>
+          (Array.isArray(deploymentRunQueries[index]?.data?.items)
+            ? deploymentRunQueries[index].data!.items!
+            : []
+          ).map((run) => ({ ...run, workspace })),
+        )
+        .sort((left, right) =>
+          String(right.completed_at || right.started_at || "").localeCompare(
+            String(left.completed_at || left.started_at || ""),
+          ),
+        )
+        .slice(0, 12),
+    [deploymentRunQueries, workspaces],
+  );
+  const scheduleRuns = Array.isArray(scheduleQuery.data)
+    ? scheduleQuery.data
+    : [];
   const auditRows = Array.isArray(auditQuery.data) ? auditQuery.data : [];
-  const running = deploymentRuns.filter(run => ['running', 'queued'].includes(String(run.status).toLowerCase())).length;
-  const failed = deploymentRuns.filter(run => ['failed', 'error'].includes(String(run.status).toLowerCase())).length + scheduleRuns.filter(run => String(run.status).toLowerCase() === 'failed').length;
-  const refresh = () => { void queryClient.invalidateQueries({ queryKey: ['opentofu'] }); void queryClient.invalidateQueries({ queryKey: ['schedule-history'] }); void queryClient.invalidateQueries({ queryKey: ['audit-log'] }); };
-  const isRefreshing = workspaceQuery.isFetching || deploymentRunQueries.some(query => query.isFetching) || scheduleQuery.isFetching || auditQuery.isFetching;
-  return <div className="space-y-6">
-    <PageHeader title="Betrieb" description="Zentrale Übersicht über Deployment-Läufe, geplante Aufgaben und sicherheitsrelevante Ereignisse." actions={<Button variant="outline" onClick={refresh} disabled={isRefreshing}><RefreshCw className={isRefreshing ? 'animate-spin' : undefined} />Aktualisieren</Button>} />
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Metric icon={Workflow} label="Deployments in dieser Umgebung" value={workspaces.length} /><Metric icon={CircleDashed} label="Läufe aktiv" value={running} toneClass={running ? 'text-blue-600 dark:text-blue-400' : undefined} /><Metric icon={failed ? TriangleAlert : CheckCircle2} label="Fehlgeschlagene Aufgaben" value={failed} toneClass={failed ? 'text-destructive' : 'text-emerald-600 dark:text-emerald-400'} /><Metric icon={ClipboardList} label="Geplante Ausführungen" value={scheduleRuns.length} /></div>
-    <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.3fr)_minmax(330px,0.7fr)]">
-      <Card><CardHeader className="flex-row items-center justify-between border-b py-4"><CardTitle className="flex items-center gap-2 text-base"><Workflow className="h-4 w-4" />Deployment-Läufe</CardTitle><Button asChild size="sm" variant="ghost"><Link to="/deployments">Alle Deployments<ExternalLink /></Link></Button></CardHeader><CardContent className="p-0">{workspaceQuery.isLoading ? <div className="p-5 text-sm text-muted-foreground">Lade Deployments…</div> : deploymentRuns.length === 0 ? <EmptyState compact icon={<Workflow className="h-5 w-5" />} title="Noch keine Deployment-Läufe" description="Plane oder führe einen Lauf in einem Deployment aus." action={<Button asChild size="sm" variant="outline"><Link to="/deployments">Deployments öffnen</Link></Button>} /> : <div className="divide-y">{deploymentRuns.map(run => <Link key={run.id} to="/deployments/$id" params={{ id: run.workspace.id }} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/60"><StatusBadge tone={tone(run.status)} dot>{run.status || 'unbekannt'}</StatusBadge><div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{run.workspace.name} <span className="font-normal text-muted-foreground">· {run.action || 'OpenTofu'}</span></div><div className="mt-0.5 text-xs text-muted-foreground">{readableTime(run.completed_at || run.started_at)}</div></div><ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /></Link>)}</div>}</CardContent></Card>
-      <Card><CardHeader className="flex-row items-center justify-between border-b py-4"><CardTitle className="flex items-center gap-2 text-base"><Clock3 className="h-4 w-4" />Geplante Aufgaben</CardTitle><Button asChild size="sm" variant="ghost"><Link to="/playbooks">Workflows<ExternalLink /></Link></Button></CardHeader><CardContent className="p-0">{!canViewSchedules ? <EmptyState compact icon={<ShieldCheck className="h-5 w-5" />} title="Keine Berechtigung für Zeitpläne" description="Deine Rolle darf keine geplanten Ausführungen einsehen." /> : scheduleQuery.isLoading ? <div className="p-5 text-sm text-muted-foreground">Lade Aufgaben…</div> : scheduleRuns.length === 0 ? <EmptyState compact icon={<Clock3 className="h-5 w-5" />} title="Noch keine geplanten Ausführungen" description="Zeitpläne werden in Playbook-Workflows verwaltet." /> : <div className="divide-y">{scheduleRuns.map((run, index) => <div key={`${run.id || index}-${run.started_at || ''}`} className="flex items-center gap-3 px-4 py-3"><StatusBadge tone={tone(run.status)} dot>{run.status || 'unbekannt'}</StatusBadge><div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{run.schedule_name || run.playbook || 'Geplante Aufgabe'}</div><div className="mt-0.5 truncate text-xs text-muted-foreground">{run.targets || '—'} · {readableTime(run.completed_at || run.started_at)}</div></div></div>)}</div>}</CardContent></Card>
+  const maintenanceWindows = Array.isArray(maintenanceQuery.data)
+    ? maintenanceQuery.data
+    : [];
+  const activeMaintenance = maintenanceWindows.find(
+    (window) => window.state === "active",
+  );
+  const nextMaintenance = maintenanceWindows
+    .filter((window) => window.state === "scheduled")
+    .sort((left, right) =>
+      String(left.starts_at).localeCompare(String(right.starts_at)),
+    )[0];
+  const running = deploymentRuns.filter((run) =>
+    ["running", "queued"].includes(String(run.status).toLowerCase()),
+  ).length;
+  const failed =
+    deploymentRuns.filter((run) =>
+      ["failed", "error"].includes(String(run.status).toLowerCase()),
+    ).length +
+    scheduleRuns.filter((run) => String(run.status).toLowerCase() === "failed")
+      .length;
+  const operationRows = useMemo<OperationRow[]>(
+    () =>
+      [
+        ...deploymentRuns.map((run) => ({
+          id: `deployment-${run.id}`,
+          source: "Deployment" as const,
+          name: run.action || "OpenTofu run",
+          target: run.workspace.name,
+          initiator: "OpenTofu",
+          status: run.status || "unknown",
+          statusTone: tone(run.status),
+          time: run.completed_at || run.started_at,
+          href: "/deployments/$id" as const,
+          params: { id: run.workspace.id },
+        })),
+        ...scheduleRuns.map((run, index) => ({
+          id: `workflow-${run.id || index}-${run.started_at || ""}`,
+          source: "Workflow" as const,
+          name: run.schedule_name || run.playbook || "Scheduled task",
+          target: run.targets || "Defined hosts",
+          initiator: "Scheduler",
+          status: run.status || "unknown",
+          statusTone: tone(run.status),
+          time: run.completed_at || run.started_at,
+          href: "/playbooks" as const,
+        })),
+        ...(canViewAudit
+          ? auditRows.map((row, index) => {
+              const failed = row.success === false || row.success === 0;
+              const succeeded = row.success === true || row.success === 1;
+              return {
+                id: `audit-${row.created_at || ""}-${index}`,
+                source: "Audit" as const,
+                name: row.action || "Audit event",
+                target: row.detail || "Fleet console",
+                initiator: row.user || "System",
+                status: failed
+                  ? "failed"
+                  : succeeded
+                    ? "successful"
+                    : "recorded",
+                statusTone: failed
+                  ? ("danger" as const)
+                  : succeeded
+                    ? ("success" as const)
+                    : ("muted" as const),
+                time: row.created_at,
+                href: "/settings/$tab" as const,
+                params: { tab: "audit" },
+              };
+            })
+          : []),
+      ]
+        .sort((left, right) => {
+          const priority = (row: OperationRow) =>
+            ["running", "queued"].includes(row.status.toLowerCase()) ? 0 : 1;
+          return (
+            priority(left) - priority(right) ||
+            String(right.time || "").localeCompare(String(left.time || ""))
+          );
+        })
+        .slice(0, 30),
+    [auditRows, canViewAudit, deploymentRuns, scheduleRuns],
+  );
+  const activeOperationCount = operationRows.filter((row) =>
+    ["running", "queued"].includes(row.status.toLowerCase()),
+  ).length;
+  const failedOperationCount = operationRows.filter(
+    (row) => row.statusTone === "danger",
+  ).length;
+  const visibleOperationRows =
+    taskScope === "active"
+      ? operationRows.filter((row) =>
+          ["running", "queued"].includes(row.status.toLowerCase()),
+        )
+      : taskScope === "failed"
+        ? operationRows.filter((row) => row.statusTone === "danger")
+        : operationRows;
+  const selectedOperation =
+    visibleOperationRows.find((row) => row.id === selectedOperationId) ||
+    visibleOperationRows[0] ||
+    null;
+  useEffect(() => {
+    if (
+      selectedOperationId &&
+      !visibleOperationRows.some((row) => row.id === selectedOperationId)
+    )
+      setSelectedOperationId(null);
+  }, [selectedOperationId, visibleOperationRows]);
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ["opentofu"] });
+    void queryClient.invalidateQueries({ queryKey: ["schedule-history"] });
+    void queryClient.invalidateQueries({ queryKey: ["audit-log"] });
+    void queryClient.invalidateQueries({ queryKey: ["maintenance-windows"] });
+  };
+  const isRefreshing =
+    workspaceQuery.isFetching ||
+    deploymentRunQueries.some((query) => query.isFetching) ||
+    scheduleQuery.isFetching ||
+    auditQuery.isFetching ||
+    maintenanceQuery.isFetching;
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        title="Operations"
+        description="Cross-feature run history, failures, audits, and maintenance windows for the selected environment."
+        actions={
+          <Button variant="outline" onClick={refresh} disabled={isRefreshing}>
+            <RefreshCw className={isRefreshing ? "animate-spin" : undefined} />
+            Refresh
+          </Button>
+        }
+      />
+      <OperationsContext
+        active={activeMaintenance}
+        next={nextMaintenance}
+        activeOperations={activeOperationCount || running}
+        failedOperations={failedOperationCount || failed}
+        onShowFailures={() => {
+          setTaskScope("failed");
+          setSelectedOperationId(null);
+          document
+            .getElementById("operation-tasks")
+            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }}
+      />
+      <div className="flex flex-col gap-5">
+        <Card id="operation-tasks">
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b bg-muted/15 py-3">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ClipboardList className="h-4 w-4" />
+                Recent tasks
+              </CardTitle>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Running tasks appear first. Select a task to review its context.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {canViewDeployments && (
+                <Button asChild size="sm" variant="outline">
+                  <Link to="/deployments">
+                    Deployment
+                    <ExternalLink />
+                  </Link>
+                </Button>
+              )}
+              {canViewSchedules && (
+                <Button asChild size="sm" variant="ghost">
+                  <Link to="/playbooks">
+                    Workflows
+                    <ExternalLink />
+                  </Link>
+                </Button>
+              )}
+              {canViewAudit && (
+                <Button asChild size="sm" variant="ghost">
+                  <Link to="/settings/$tab" params={{ tab: "audit" }}>
+                    Audit
+                    <ExternalLink />
+                  </Link>
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {(canViewDeployments && workspaceQuery.isLoading) ||
+            (canViewSchedules && scheduleQuery.isLoading) ||
+            (canViewAudit && auditQuery.isLoading) ? (
+              <div className="p-5 text-sm text-muted-foreground">
+                Loading tasks…
+              </div>
+            ) : operationRows.length === 0 ? (
+              <EmptyState
+                compact
+                icon={<ClipboardList className="h-5 w-5" />}
+                title="No tasks or events yet"
+                description="OpenTofu runs, playbook workflows, and changes appear here automatically."
+                action={
+                  canViewDeployments ? (
+                    <Button asChild size="sm" variant="outline">
+                      <Link to="/deployments">Open deployments</Link>
+                    </Button>
+                  ) : canViewSchedules ? (
+                    <Button asChild size="sm" variant="outline">
+                      <Link to="/playbooks">Open workflows</Link>
+                    </Button>
+                  ) : undefined
+                }
+              />
+            ) : (
+              <>
+                <div className="flex items-center gap-1 border-b bg-muted/10 px-3 py-2">
+                  <TaskScopeButton
+                    active={taskScope === "all"}
+                    onClick={() => setTaskScope("all")}
+                  >
+                    All <span>{operationRows.length}</span>
+                  </TaskScopeButton>
+                  <TaskScopeButton
+                    active={taskScope === "active"}
+                    onClick={() => setTaskScope("active")}
+                  >
+                    Active <span>{activeOperationCount}</span>
+                  </TaskScopeButton>
+                  <TaskScopeButton
+                    active={taskScope === "failed"}
+                    onClick={() => setTaskScope("failed")}
+                  >
+                    Failed <span>{failedOperationCount}</span>
+                  </TaskScopeButton>
+                </div>
+                {visibleOperationRows.length ? (
+                  <div className="grid xl:grid-cols-[minmax(30rem,1.2fr)_minmax(22rem,.8fr)]">
+                    <OperationList
+                      rows={visibleOperationRows}
+                      selectedId={selectedOperation?.id}
+                      onSelect={setSelectedOperationId}
+                    />
+                    <OperationDetail row={selectedOperation} />
+                  </div>
+                ) : (
+                  <div className="p-6 text-center text-sm text-muted-foreground">
+                    There are no entries for this view.
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+        {canViewMaintenance && (
+          <MaintenanceWindowsCard
+            windows={maintenanceWindows}
+            loading={maintenanceQuery.isLoading}
+            canManage={canManageMaintenance}
+            onCreate={() => setMaintenanceDialog("new")}
+            onEdit={setMaintenanceDialog}
+            onDelete={setWindowToDelete}
+          />
+        )}
+      </div>
+      <MaintenanceWindowDialog
+        key={
+          maintenanceDialog === "new"
+            ? "new"
+            : maintenanceDialog?.id || "closed"
+        }
+        window={maintenanceDialog}
+        environmentId={environmentId}
+        onClose={() => setMaintenanceDialog(null)}
+      />
+      <ConfirmDialog
+        open={Boolean(windowToDelete)}
+        onOpenChange={(open) => !open && setWindowToDelete(null)}
+        title="Delete maintenance window?"
+        description={
+          windowToDelete
+            ? `The maintenance window “${windowToDelete.name}” will be permanently removed.`
+            : ""
+        }
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="destructive"
+        onConfirm={async () => {
+          if (!windowToDelete) return;
+          await apiFetch(
+            `/maintenance-windows/${encodeURIComponent(windowToDelete.id)}`,
+            { method: "DELETE" },
+          );
+          await queryClient.invalidateQueries({
+            queryKey: ["maintenance-windows", environmentId],
+          });
+          setWindowToDelete(null);
+        }}
+      />
     </div>
-    <Card><CardHeader className="flex-row items-center justify-between border-b py-4"><CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4" />Audit-Log</CardTitle>{isAdmin && <Button asChild size="sm" variant="ghost"><Link to="/settings/$tab" params={{ tab: 'audit' }}>Vollständiges Audit-Log<ExternalLink /></Link></Button>}</CardHeader><CardContent className="p-0">{!isAdmin ? <EmptyState compact icon={<ShieldCheck className="h-5 w-5" />} title="Audit-Log ist geschützt" description="Das vollständige Audit-Log steht Administratoren zur Verfügung." /> : auditQuery.isLoading ? <div className="p-5 text-sm text-muted-foreground">Lade Audit-Log…</div> : auditRows.length === 0 ? <EmptyState compact icon={<ClipboardList className="h-5 w-5" />} title="Noch keine Audit-Ereignisse" description="Neue Änderungen und Aktionen erscheinen hier." /> : <div className="divide-y">{auditRows.map((row, index) => <div key={`${row.created_at || ''}-${row.action || ''}-${index}`} className="flex items-start gap-3 px-4 py-3">{row.success ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" /> : <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />}<div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><code className="text-xs font-medium">{row.action || '—'}</code>{row.user && <span className="text-xs text-muted-foreground">{row.user}</span>}</div><div className="mt-1 break-words text-sm text-muted-foreground">{row.detail || '—'}</div></div><span className="shrink-0 text-xs text-muted-foreground">{readableTime(row.created_at)}</span></div>)}</div>}</CardContent></Card>
-  </div>;
+  );
+}
+
+function OperationsContext({
+  active,
+  next,
+  activeOperations,
+  failedOperations,
+  onShowFailures,
+}: {
+  active?: MaintenanceWindow;
+  next?: MaintenanceWindow;
+  activeOperations: number;
+  failedOperations: number;
+  onShowFailures: () => void;
+}) {
+  const maintenance = active || next;
+  const maintenanceState = active
+    ? "Active"
+    : next
+      ? "Scheduled"
+      : "None scheduled";
+  return (
+    <section
+      className={`console-object-summary overflow-hidden ${active ? "border-amber-500/35" : ""}`}
+    >
+      <div className="grid xl:grid-cols-[minmax(0,1.25fr)_minmax(22rem,.75fr)]">
+        <div className="console-object-summary-main">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+            <ClipboardList className="h-4 w-4 text-brand" />
+            Operating status
+          </div>
+          <div className="console-object-info-grid grid-cols-3">
+            <OperationFact
+              icon={CircleDashed}
+              label="Active tasks"
+              value={activeOperations}
+              detail={activeOperations ? "Running or waiting" : "No open tasks"}
+              tone={activeOperations ? "info" : undefined}
+            />
+            <OperationFact
+              icon={failedOperations ? TriangleAlert : CheckCircle2}
+              label="Failures"
+              value={failedOperations}
+              detail={failedOperations ? "Show failures" : "No known failures"}
+              tone={failedOperations ? "danger" : "success"}
+              onClick={failedOperations ? onShowFailures : undefined}
+            />
+            <OperationFact
+              icon={CalendarClock}
+              label="Maintenance window"
+              value={maintenanceState}
+              detail={
+                active
+                  ? "Review planned changes"
+                  : next
+                    ? "Next scheduled work"
+                    : "No maintenance scheduled"
+              }
+              tone={active ? "warning" : next ? "info" : undefined}
+            />
+          </div>
+        </div>
+        <div className="console-object-capacity">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-sm font-semibold">
+              {active
+                ? "Active maintenance window"
+                : next
+                  ? "Next maintenance window"
+                  : "Maintenance planning"}
+            </span>
+            {active && (
+              <StatusBadge tone="warning" dot>
+                Active
+              </StatusBadge>
+            )}
+          </div>
+          {maintenance ? (
+            <>
+              <div className="mt-3 truncate text-sm font-semibold">
+                {maintenance.name}
+              </div>
+              <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                {readableTime(maintenance.starts_at)} –{" "}
+                {readableTime(maintenance.ends_at)}
+                {maintenance.description ? ` · ${maintenance.description}` : ""}
+              </div>
+            </>
+          ) : (
+            <div className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              Schedule maintenance before platform changes, restarts, or planned
+              deployments.
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function OperationFact({
+  icon: Icon,
+  label,
+  value,
+  detail,
+  tone,
+  onClick,
+}: {
+  icon: typeof Workflow;
+  label: string;
+  value: string | number;
+  detail: string;
+  tone?: "info" | "warning" | "danger" | "success";
+  onClick?: () => void;
+}) {
+  const toneClass =
+    tone === "danger"
+      ? "text-destructive"
+      : tone === "success"
+        ? "[color:hsl(var(--success))]"
+        : tone === "warning"
+          ? "[color:hsl(var(--warning))]"
+          : tone === "info"
+            ? "[color:hsl(var(--info))]"
+            : "text-muted-foreground";
+  const content = (
+    <>
+      <div className="flex items-center gap-1.5">
+        <Icon className={`h-3.5 w-3.5 ${toneClass}`} />
+        {label}
+      </div>
+      <div className={toneClass}>{value}</div>
+      <p>{detail}</p>
+    </>
+  );
+  return onClick ? (
+    <button
+      type="button"
+      onClick={onClick}
+      className="console-object-info text-left transition-colors hover:bg-accent/60 focus-visible:bg-accent/60"
+      aria-label={`${label}: ${detail}`}
+    >
+      {content}
+    </button>
+  ) : (
+    <div className="console-object-info">{content}</div>
+  );
+}
+
+function MaintenanceWindowsCard({
+  windows,
+  loading,
+  canManage,
+  onCreate,
+  onEdit,
+  onDelete,
+}: {
+  windows: MaintenanceWindow[];
+  loading: boolean;
+  canManage: boolean;
+  onCreate: () => void;
+  onEdit: (window: MaintenanceWindow) => void;
+  onDelete: (window: MaintenanceWindow) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const selectedWindows = windows.filter((window) => selected.has(window.id));
+  const allSelected =
+    windows.length > 0 && selectedWindows.length === windows.length;
+  const someSelected = selectedWindows.length > 0 && !allSelected;
+  const toggle = (id: string) =>
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const deleteSelected = async () => {
+    setDeleting(true);
+    try {
+      await Promise.all(
+        selectedWindows.map((window) =>
+          apiFetch(`/maintenance-windows/${encodeURIComponent(window.id)}`, {
+            method: "DELETE",
+          }),
+        ),
+      );
+      await queryClient.invalidateQueries({
+        queryKey: ["maintenance-windows"],
+      });
+      setSelected(new Set());
+      setConfirmBulkDelete(false);
+    } finally {
+      setDeleting(false);
+    }
+  };
+  return (
+    <Card>
+      <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b bg-muted/15 py-3">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <CalendarClock className="h-4 w-4" />
+            Maintenance windows
+          </CardTitle>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Scheduled work is documented per environment and remains traceable
+            in the audit log.
+          </p>
+        </div>
+        {canManage && (
+          <Button size="sm" onClick={onCreate}>
+            <Plus />
+            Add maintenance window
+          </Button>
+        )}
+      </CardHeader>
+      {canManage && selectedWindows.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border-b bg-primary/[0.04] px-4 py-2 text-sm">
+          <span className="font-medium tabular-nums">
+            {selectedWindows.length} selected
+          </span>
+          <Button
+            size="sm"
+            variant="destructive"
+            className="ml-auto"
+            onClick={() => setConfirmBulkDelete(true)}
+          >
+            <Trash2 />
+            Delete
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setSelected(new Set())}
+          >
+            Clear selection
+          </Button>
+        </div>
+      )}
+      <CardContent className="p-0">
+        {loading ? (
+          <div className="p-4 text-sm text-muted-foreground">
+            Loading maintenance windows…
+          </div>
+        ) : windows.length === 0 ? (
+          <EmptyState
+            compact
+            icon={<CalendarClock className="h-5 w-5" />}
+            title="No maintenance windows scheduled"
+            description="Create a time window before performing scheduled changes or restarts."
+          />
+        ) : (
+          <>
+            <div className="divide-y md:hidden">
+              {windows.map((window) => (
+                <div
+                  key={window.id}
+                  className="flex gap-3 p-3.5"
+                  data-selected={selected.has(window.id) || undefined}
+                >
+                  {canManage && (
+                    <input
+                      className="mt-1"
+                      type="checkbox"
+                      aria-label={`Select ${window.name}`}
+                      checked={selected.has(window.id)}
+                      onChange={() => toggle(window.id)}
+                    />
+                  )}
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">
+                          {window.name}
+                        </div>
+                        {window.description && (
+                          <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                            {window.description}
+                          </div>
+                        )}
+                      </div>
+                      <StatusBadge tone={maintenanceTone(window.state)} dot>
+                        {maintenanceLabel(window.state)}
+                      </StatusBadge>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {readableTime(window.starts_at)} –{" "}
+                      {readableTime(window.ends_at)}
+                    </div>
+                    {canManage && (
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => onEdit(window)}
+                        >
+                          <Pencil />
+                          Edit
+                        </Button>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => onDelete(window)}
+                          aria-label={`Delete ${window.name}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="table-scroll hidden md:block">
+              <table
+                data-density="compact"
+                className="w-full min-w-[720px] text-sm"
+              >
+                <thead>
+                  <tr>
+                    {canManage && (
+                      <th className="w-11 px-3">
+                        <input
+                          type="checkbox"
+                          aria-label="Select all maintenance windows"
+                          checked={allSelected}
+                          ref={(input) => {
+                            if (input) input.indeterminate = someSelected;
+                          }}
+                          onChange={() =>
+                            setSelected(
+                              allSelected
+                                ? new Set()
+                                : new Set(windows.map((window) => window.id)),
+                            )
+                          }
+                        />
+                      </th>
+                    )}
+                    <th className="px-3">Maintenance window</th>
+                    <th className="px-3">Time range</th>
+                    <th className="px-3">Status</th>
+                    <th className="w-24 px-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {windows.map((window) => (
+                    <tr
+                      key={window.id}
+                      data-selected={selected.has(window.id) || undefined}
+                    >
+                      {canManage && (
+                        <td className="px-3">
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${window.name}`}
+                            checked={selected.has(window.id)}
+                            onChange={() => toggle(window.id)}
+                          />
+                        </td>
+                      )}
+                      <td className="px-3">
+                        <div className="font-medium">{window.name}</div>
+                        {window.description && (
+                          <div className="mt-0.5 max-w-xl truncate text-xs text-muted-foreground">
+                            {window.description}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 whitespace-nowrap text-xs text-muted-foreground">
+                        {readableTime(window.starts_at)} –{" "}
+                        {readableTime(window.ends_at)}
+                      </td>
+                      <td className="px-3">
+                        <StatusBadge tone={maintenanceTone(window.state)} dot>
+                          {maintenanceLabel(window.state)}
+                        </StatusBadge>
+                      </td>
+                      <td className="px-3 text-right">
+                        {canManage ? (
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => onEdit(window)}
+                              aria-label={`Edit ${window.name}`}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => onDelete(window)}
+                              aria-label={`Delete ${window.name}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </CardContent>
+      <ConfirmDialog
+        open={confirmBulkDelete}
+        onOpenChange={setConfirmBulkDelete}
+        title="Delete selected maintenance windows?"
+        description={
+          <>
+            You are removing <strong>{selectedWindows.length}</strong>{" "}
+            maintenance windows. This action cannot be undone.
+          </>
+        }
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="destructive"
+        onConfirm={deleteSelected}
+        isPending={deleting}
+      />
+    </Card>
+  );
+}
+
+function TaskScopeButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex h-7 items-center gap-1 rounded px-2.5 text-xs font-medium transition-colors ${active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MaintenanceWindowDialog({
+  window,
+  environmentId,
+  onClose,
+}: {
+  window: MaintenanceWindow | "new" | null;
+  environmentId: string;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const initial = window && window !== "new" ? window : null;
+  const [name, setName] = useState(initial?.name || "");
+  const [startsAt, setStartsAt] = useState(dateTimeInput(initial?.starts_at));
+  const [endsAt, setEndsAt] = useState(
+    dateTimeInput(
+      initial?.ends_at || new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    ),
+  );
+  const [description, setDescription] = useState(initial?.description || "");
+  const hasValidRange = Boolean(
+    startsAt &&
+      endsAt &&
+      new Date(endsAt).getTime() > new Date(startsAt).getTime(),
+  );
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(
+        `/maintenance-windows${initial ? `/${encodeURIComponent(initial.id)}` : ""}`,
+        {
+          method: initial ? "PUT" : "POST",
+          body: {
+            environment_id: environmentId,
+            name,
+            starts_at: new Date(startsAt).toISOString(),
+            ends_at: new Date(endsAt).toISOString(),
+            description,
+          },
+        },
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["maintenance-windows", environmentId],
+      });
+      onClose();
+    },
+  });
+  if (!window) return null;
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            {initial ? "Edit maintenance window" : "Schedule maintenance window"}
+          </DialogTitle>
+          <DialogDescription>
+            During this period, teams can clearly identify scheduled work and
+            its impact.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="min-w-0 space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (hasValidRange) saveMutation.mutate();
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="maintenance-name">Name</Label>
+            <Input
+              id="maintenance-name"
+              required
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="e.g. Proxmox maintenance"
+            />
+          </div>
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+            <div className="min-w-0 space-y-1.5">
+              <Label htmlFor="maintenance-start">Start</Label>
+              <Input
+                id="maintenance-start"
+                required
+                type="datetime-local"
+                value={startsAt}
+                onChange={(event) => setStartsAt(event.target.value)}
+              />
+            </div>
+            <div className="min-w-0 space-y-1.5">
+              <Label htmlFor="maintenance-end">End</Label>
+              <Input
+                id="maintenance-end"
+                required
+                type="datetime-local"
+                value={endsAt}
+                onChange={(event) => setEndsAt(event.target.value)}
+              />
+            </div>
+          </div>
+          {!hasValidRange && (
+            <p className="text-sm text-destructive">
+              The end must be after the start.
+            </p>
+          )}
+          <div className="min-w-0 space-y-1.5">
+            <Label htmlFor="maintenance-description">
+              Description{" "}
+              <span className="font-normal text-muted-foreground">
+                (optional)
+              </span>
+            </Label>
+            <textarea
+              id="maintenance-description"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              rows={3}
+              className="flex min-h-20 min-w-0 w-full rounded-sm border border-input bg-background px-2.5 py-1.5 text-[13px] leading-5 shadow-[inset_0_1px_1px_hsl(var(--foreground)/0.025)]"
+              placeholder="Affected platforms, reason, and expected impact"
+            />
+          </div>
+          {saveMutation.error && (
+            <p className="text-sm text-destructive">
+              {(saveMutation.error as Error).message}
+            </p>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={saveMutation.isPending || !hasValidRange}
+            >
+              {saveMutation.isPending ? (
+                <RefreshCw className="animate-spin" />
+              ) : (
+                <CalendarClock />
+              )}
+              {initial ? "Save" : "Schedule maintenance window"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function OperationLink({
+  row,
+  children,
+}: {
+  row: OperationRow;
+  children: React.ReactNode;
+}) {
+  if (!row.href) return <>{children}</>;
+  if (row.href === "/deployments/$id")
+    return (
+      <Link
+        to={row.href}
+        params={row.params as { id: string }}
+        className="hover:text-primary hover:underline"
+      >
+        {children}
+      </Link>
+    );
+  if (row.href === "/settings/$tab")
+    return (
+      <Link
+        to={row.href}
+        params={row.params as { tab: string }}
+        className="hover:text-primary hover:underline"
+      >
+        {children}
+      </Link>
+    );
+  return (
+    <Link to={row.href} className="hover:text-primary hover:underline">
+      {children}
+    </Link>
+  );
+}
+
+function OperationDetail({ row }: { row: OperationRow | null }) {
+  if (!row) return null;
+  return (
+    <aside className="border-t bg-muted/[0.12] p-4 xl:border-l xl:border-t-0">
+      <div className="flex items-center gap-2 text-sm font-semibold">
+        <Info className="h-4 w-4 text-brand" />
+        Task details
+      </div>
+      <div className="mt-3 rounded-md border bg-card p-4">
+        <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+          Selected task
+        </p>
+        <h3 className="mt-1 break-words text-lg font-semibold leading-snug">
+          {row.name}
+        </h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {operationSourceLabel(row.source)} · {row.initiator}
+        </p>
+      </div>
+      <div className="console-properties mt-3 overflow-hidden rounded-md border bg-card">
+        <div className="console-property">
+          <span>Status</span>
+          <b>
+            <StatusBadge tone={row.statusTone} dot>
+              {operationStatusLabel(row.status)}
+            </StatusBadge>
+          </b>
+        </div>
+        <div className="console-property">
+          <span>Type</span>
+          <b>{operationSourceLabel(row.source)}</b>
+        </div>
+        <div className="console-property items-start">
+          <span className="pt-0.5">Target</span>
+          <b
+            className="!overflow-visible !whitespace-normal !break-words text-right leading-relaxed"
+            title={row.target}
+          >
+            {row.target}
+          </b>
+        </div>
+        <div className="console-property items-start">
+          <span className="pt-0.5">Triggered by</span>
+          <b className="!overflow-visible !whitespace-normal !break-words text-right leading-relaxed">
+            {row.initiator}
+          </b>
+        </div>
+        <div className="console-property">
+          <span>Time</span>
+          <b className="whitespace-normal text-right">
+            {readableTime(row.time)}
+          </b>
+        </div>
+      </div>
+      {row.href && (
+        <Button asChild className="mt-3 w-full" size="sm" variant="outline">
+          <OperationLink row={row}>
+            Open details
+            <ExternalLink />
+          </OperationLink>
+        </Button>
+      )}
+    </aside>
+  );
+}
+
+function OperationList({
+  rows,
+  selectedId,
+  onSelect,
+}: {
+  rows: OperationRow[];
+  selectedId?: string;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <>
+      <div className="divide-y md:hidden">
+        {rows.map((row) => (
+          <button
+            type="button"
+            key={row.id}
+            onClick={() => onSelect(row.id)}
+            className={`block w-full space-y-2 px-4 py-3 text-left ${selectedId === row.id ? "bg-primary/[0.07]" : "hover:bg-muted/45"}`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="truncate font-medium">{row.name}</div>
+                <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {operationSourceLabel(row.source)} · {row.initiator}
+                </div>
+              </div>
+              <StatusBadge tone={row.statusTone} dot>
+                {operationStatusLabel(row.status)}
+              </StatusBadge>
+            </div>
+            <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+              <span className="truncate">{row.target}</span>
+              <span className="shrink-0">{readableTime(row.time)}</span>
+            </div>
+          </button>
+        ))}
+      </div>
+      <div className="table-scroll hidden md:block">
+        <table data-density="compact" className="w-full min-w-[760px] text-sm">
+          <thead>
+            <tr>
+              <th className="w-40">Time</th>
+              <th>Task</th>
+              <th>Target</th>
+              <th className="w-32">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr
+                key={row.id}
+                onClick={() => onSelect(row.id)}
+                className={`cursor-pointer ${selectedId === row.id ? "bg-primary/[0.07] shadow-[inset_3px_0_0_hsl(var(--primary))]" : "hover:bg-muted/45"}`}
+                aria-selected={selectedId === row.id}
+              >
+                <td className="whitespace-nowrap font-mono text-xs text-muted-foreground">
+                  {readableTime(row.time)}
+                </td>
+                <td>
+                  <div className="font-medium">{row.name}</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    {operationSourceLabel(row.source)} · {row.initiator}
+                  </div>
+                </td>
+                <td className="max-w-[18rem]">
+                  <div className="truncate text-muted-foreground">
+                    {row.target}
+                  </div>
+                </td>
+                <td>
+                  <StatusBadge tone={row.statusTone} dot>
+                    {operationStatusLabel(row.status)}
+                  </StatusBadge>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
 }

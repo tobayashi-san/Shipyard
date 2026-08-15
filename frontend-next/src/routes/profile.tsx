@@ -6,6 +6,8 @@ import { api } from '@/lib/api';
 import { setToken } from '@/lib/auth';
 import { showToast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/ui/page-header';
+import { StatusBadge } from '@/components/ui/status-badge';
 
 /* ── Section wrapper ──────────────────────────────────────────────────── */
 function Section({ icon: Icon, title, children, className }: {
@@ -15,9 +17,9 @@ function Section({ icon: Icon, title, children, className }: {
   className?: string;
 }) {
   return (
-    <div className={cn('rounded-lg border bg-card', className)}>
+    <div className={cn('rounded-[3px] border border-border-strong/80 bg-card shadow-[0_1px_2px_hsl(var(--foreground)/0.04)]', className)}>
       <div className="flex items-center gap-3 border-b px-4 py-3">
-        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
+        <div className="flex h-7 w-7 items-center justify-center rounded-sm border border-primary/15 bg-primary/10 text-primary">
           <Icon className="h-4 w-4" />
         </div>
         <span className="text-sm font-semibold">{title}</span>
@@ -108,11 +110,9 @@ export function ProfilePage() {
   });
 
   const confirmTotp = useMutation({
-    mutationFn: async (): Promise<Record<string, unknown>> => {
-      await api.totpConfirm(totpCode.replace(/\s/g, ''));
-      return {};
-    },
-    onSuccess: () => {
+    mutationFn: () => api.totpConfirm(totpCode.replace(/\s/g, '')),
+    onSuccess: (result) => {
+      setToken(result.token);
       showToast(t('auth.2faEnabled'), 'success');
       setSetupData(null);
       setTotpCode('');
@@ -122,12 +122,12 @@ export function ProfilePage() {
   });
 
   const disableTotp = useMutation({
-    mutationFn: async (): Promise<Record<string, unknown>> => {
+    mutationFn: async () => {
       if (!disablePw) throw new Error(t('profile.passwordRequired'));
-      await api.totpDisable(disablePw);
-      return {};
+      return api.totpDisable(disablePw);
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
+      setToken(result.token);
       showToast(t('auth.2faDisabled'), 'success');
       setShowDisable(false);
       setDisablePw('');
@@ -141,17 +141,12 @@ export function ProfilePage() {
   const qrSrc = setupData?.qrDataUrl || setupData?.otpauthUrl || '';
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="mx-auto max-w-3xl space-y-5">
       {/* Page header */}
-      <div className="flex items-center gap-4">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground text-lg">
-          <User className="h-5 w-5" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-semibold">
-            {(profile?.displayName as string) || username}
-          </h1>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <PageHeader
+        eyebrow={t('profile.account')}
+        title={(profile?.displayName as string) || username}
+        description={<span className="flex flex-wrap items-center gap-2">
             {(profile?.displayName as string) && (
               <span className="font-mono text-xs">@{username}</span>
             )}
@@ -160,13 +155,11 @@ export function ProfilePage() {
               <span className="opacity-50">{t('profile.noEmail')}</span>
             )}
             {isAdmin && (
-              <span className="rounded bg-primary px-1.5 py-px text-[9px] font-semibold uppercase text-primary-foreground">
-                {t('profile.adminBadge')}
-              </span>
+              <StatusBadge tone="info">{t('profile.adminBadge')}</StatusBadge>
             )}
-          </div>
-        </div>
-      </div>
+        </span>}
+        badge={<div className="flex h-8 w-8 items-center justify-center rounded-sm border border-primary/20 bg-primary/10 text-primary"><User className="h-4 w-4" /></div>}
+      />
 
       {/* ── Account ──────────────────────────────────────────────────── */}
       <Section icon={User} title={t('profile.account')}>
@@ -174,7 +167,7 @@ export function ProfilePage() {
           <div className="flex items-center gap-4">
             <label className="w-24 flex-shrink-0 text-sm text-muted-foreground">{t('profile.displayName')}</label>
             <input
-              className="flex-1 rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              className="flex-1 h-8 rounded-sm border border-input bg-background px-2.5 text-[13px] focus:outline-none focus:ring-2 focus:ring-ring"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder={username}
@@ -184,7 +177,7 @@ export function ProfilePage() {
             <label className="w-24 flex-shrink-0 text-sm text-muted-foreground">{t('profile.username')}</label>
             <div className="flex flex-1 items-center gap-2">
               <input
-                className="flex-1 rounded-md border bg-background px-3 py-2 text-sm opacity-55 cursor-default"
+                className="flex-1 h-8 rounded-sm border border-input bg-background px-2.5 text-[13px] opacity-55 cursor-default"
                 value={username}
                 readOnly
                 tabIndex={-1}
@@ -195,7 +188,7 @@ export function ProfilePage() {
           <div className="flex items-center gap-4">
             <label className="w-24 flex-shrink-0 text-sm text-muted-foreground">{t('profile.email')}</label>
             <input
-              className="flex-1 rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              className="flex-1 h-8 rounded-sm border border-input bg-background px-2.5 text-[13px] focus:outline-none focus:ring-2 focus:ring-ring"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -231,7 +224,7 @@ export function ProfilePage() {
           <div className="space-y-3">
             <div className="relative">
               <input
-                className="w-full rounded-md border bg-background px-3 py-2 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                className="h-8 w-full rounded-sm border border-input bg-background px-2.5 pr-9 text-[13px] focus:outline-none focus:ring-2 focus:ring-ring"
                 type={showCurPw ? 'text' : 'password'}
                 placeholder={t('profile.currentPassword')}
                 value={curPw}
@@ -249,7 +242,7 @@ export function ProfilePage() {
             </div>
             <div className="relative">
               <input
-                className="w-full rounded-md border bg-background px-3 py-2 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                className="h-8 w-full rounded-sm border border-input bg-background px-2.5 pr-9 text-[13px] focus:outline-none focus:ring-2 focus:ring-ring"
                 type={showNewPw ? 'text' : 'password'}
                 placeholder={t('profile.newPassword')}
                 value={newPw}
@@ -266,7 +259,7 @@ export function ProfilePage() {
               </button>
             </div>
             <input
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-full h-8 rounded-sm border border-input bg-background px-2.5 text-[13px] focus:outline-none focus:ring-2 focus:ring-ring"
               type="password"
               placeholder={t('profile.confirmPassword')}
               value={confirmPw}
@@ -315,7 +308,7 @@ export function ProfilePage() {
               <div className="space-y-3 rounded-md border bg-muted/30 p-4">
                 <p className="text-sm text-muted-foreground">{t('profile.twoFactorDisableHint')}</p>
                 <input
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="w-full h-8 rounded-sm border border-input bg-background px-2.5 text-[13px] focus:outline-none focus:ring-2 focus:ring-ring"
                   type="password"
                   placeholder={t('profile.currentPassword')}
                   value={disablePw}

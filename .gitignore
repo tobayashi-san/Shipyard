@@ -6,6 +6,9 @@ server/node_modules/
 # Build output
 frontend/dist/
 frontend-next/dist/
+frontend-next/playwright-report/
+frontend-next/test-results/
+test-results/
 
 # Runtime data — never commit
 server/data/

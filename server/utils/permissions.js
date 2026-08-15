@@ -47,6 +47,20 @@ const USER_DEFAULTS = {
   // Notes
   canViewNotes:  true,
   canEditNotes:  true,
+  // Operations
+  canViewMaintenance: true,
+  canEditMaintenance: true,
+  // Deployments / OpenTofu
+  // `canManageDeployments` is retained as a migration-only umbrella for
+  // roles created before the deployment permissions were split. Runtime
+  // routes enforce the granular capabilities below.
+  canManageDeployments:          true,
+  canViewDeployments:            true,
+  canEditDeployments:            true,
+  canPlanDeployments:            true,
+  canApplyDeployments:           true,
+  canDestroyDeployments:         true,
+  canManageDeploymentPlatforms:  true,
   // Misc
   canViewAudit: true,
 };
@@ -72,6 +86,26 @@ function getPermissions(user) {
     const { full, ...clean } = p;
     if (role.is_system && full) return FULL;
     const defaults = role.is_system ? USER_DEFAULTS : DENY_DEFAULTS;
+    // Existing installations expressed deployment access through the former
+    // OpenTofu plugin assignment. Preserve that access once while exposing a
+    // first-class capability from now on.
+    if (clean.canManageDeployments === undefined && (clean.plugins === 'all' || (Array.isArray(clean.plugins) && clean.plugins.includes('opentofu')))) {
+      clean.canManageDeployments = true;
+    }
+    // Migrate legacy roles in memory without silently widening newer roles.
+    // Saving the role in Settings persists the explicit capability set.
+    if (clean.canManageDeployments === true) {
+      for (const capability of [
+        'canViewDeployments',
+        'canEditDeployments',
+        'canPlanDeployments',
+        'canApplyDeployments',
+        'canDestroyDeployments',
+        'canManageDeploymentPlatforms',
+      ]) {
+        if (clean[capability] === undefined) clean[capability] = true;
+      }
+    }
     return { ...defaults, ...clean };
   } catch {
     return { ...DENY_DEFAULTS }; // Fail Closed!
@@ -115,6 +149,56 @@ function canAccessPlugin(permissions, pluginId) {
   if (permissions.full) return true;
   if (permissions.plugins === 'all') return true;
   return Array.isArray(permissions.plugins) && permissions.plugins.includes(pluginId);
+}
+
+/**
+ * Folder access follows the same explicit assignment model as servers.  A
+ * group assignment intentionally does not imply access to unrelated sibling
+ * folders.  This keeps restricted operators from moving a host into a folder
+ * which they are not allowed to administer.
+ */
+function canAccessServerGroup(permissions, group) {
+  if (!permissions || !group) return false;
+  if (permissions.full || permissions.servers === 'all') return true;
+  const groups = permissions.servers?.groups;
+  return Array.isArray(groups) && groups.includes(group.id);
+}
+
+/**
+ * Environment-scoped resources (IPAM, maintenance, deployments) must not
+ * become a side door around a restricted operator's server/folder scope.
+ * An administrator and a role with the complete server inventory may access
+ * every environment. A restricted role may only access environments which
+ * contain at least one explicitly assigned server or server group.
+ */
+function canAccessEnvironment(permissions, environmentId) {
+  if (!permissions || !environmentId) return false;
+  if (permissions.full || permissions.servers === 'all') return true;
+  const scope = permissions.servers;
+  if (!scope || typeof scope !== 'object') return false;
+  const serverIds = Array.isArray(scope.servers) ? scope.servers : [];
+  const groupIds = Array.isArray(scope.groups) ? scope.groups : [];
+  if (!serverIds.length && !groupIds.length) return false;
+
+  if (serverIds.length) {
+    const placeholders = serverIds.map(() => '?').join(',');
+    const match = db.db.prepare(`SELECT 1 FROM servers WHERE environment_id = ? AND id IN (${placeholders}) LIMIT 1`).get(environmentId, ...serverIds);
+    if (match) return true;
+  }
+  if (groupIds.length) {
+    const placeholders = groupIds.map(() => '?').join(',');
+    return Boolean(db.db.prepare(`SELECT 1 FROM server_groups WHERE environment_id = ? AND id IN (${placeholders}) LIMIT 1`).get(environmentId, ...groupIds));
+  }
+  return false;
+}
+
+function guardServerGroupAccess(req, res, next) {
+  const group = db.db.prepare('SELECT * FROM server_groups WHERE id = ?').get(req.params.groupId);
+  if (!group) return res.status(404).json({ error: 'Ordner nicht gefunden.' });
+  const permissions = getPermissions(req.user);
+  if (!canAccessServerGroup(permissions, group)) return res.status(403).json({ error: 'Ordnerzugriff verweigert.' });
+  req.serverGroup = group;
+  next();
 }
 
 function canAccessTargets(permissions, targets, servers) {
@@ -162,8 +246,11 @@ module.exports = {
   filterPlugins,
   canAccessPlaybook,
   canAccessPlugin,
+  canAccessServerGroup,
+  canAccessEnvironment,
   canAccessTargets,
   can,
   guardServerAccess,
+  guardServerGroupAccess,
   ALLOWED_PERMISSION_KEYS,
 };

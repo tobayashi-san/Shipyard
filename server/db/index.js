@@ -67,6 +67,34 @@ applySchema(db);
 applyMigrations(db);
 seedDb({ db, uuidv4, log });
 
+function readScheduleRow(row) {
+  if (!row) return row;
+  const decrypted = cryptoUtil.decrypt(row.extra_vars || '{}');
+  if (typeof row.extra_vars === 'string' && !row.extra_vars.startsWith('enc:')) {
+    const encrypted = cryptoUtil.encrypt(row.extra_vars || '{}');
+    if (encrypted !== row.extra_vars) db.prepare('UPDATE schedules SET extra_vars = ? WHERE id = ?').run(encrypted, row.id);
+  }
+  return { ...row, extra_vars: parseJsonObject(decrypted) };
+}
+
+function readAnsibleVarRow(row, revealSecret = false) {
+  if (!row) return row;
+  let value = cryptoUtil.decrypt(row.value);
+  if (typeof row.value === 'string' && !row.value.startsWith('enc:')) {
+    const encrypted = cryptoUtil.encrypt(row.value);
+    if (encrypted !== row.value) {
+      db.prepare('UPDATE ansible_vars SET value = ? WHERE id = ?').run(encrypted, row.id);
+    }
+  }
+  if (row.is_secret && !revealSecret) value = '';
+  return {
+    ...row,
+    value: value ?? '',
+    is_secret: Boolean(row.is_secret),
+    value_set: Boolean(row.value),
+  };
+}
+
 // Server CRUD
 const serverQueries = {
   getAll: db.prepare('SELECT * FROM servers ORDER BY name'),
@@ -340,11 +368,22 @@ module.exports = {
 
   // ── Schedules ──────────────────────────────────────────
   schedules: {
-    getAll: () => db.prepare('SELECT * FROM schedules ORDER BY created_at DESC').all(),
-    getById: (id) => db.prepare('SELECT * FROM schedules WHERE id = ?').get(id),
-    create: (name, playbook, targets, cronExpression) => {
+    getAll: (environmentId = null) => {
+      const rows = environmentId
+        ? db.prepare('SELECT * FROM schedules WHERE environment_id = ? ORDER BY created_at DESC').all(environmentId)
+        : db.prepare('SELECT * FROM schedules ORDER BY created_at DESC').all();
+      return rows.map(readScheduleRow);
+    },
+    getById: (id) => readScheduleRow(db.prepare('SELECT * FROM schedules WHERE id = ?').get(id)),
+    create: (name, playbook, targets, cronExpression, options = {}) => {
       const id = uuidv4();
-      db.prepare('INSERT INTO schedules (id, name, playbook, targets, cron_expression) VALUES (?, ?, ?, ?, ?)').run(id, name, playbook, targets || 'all', cronExpression);
+      const environmentId = options.environmentId || 'default';
+      const normalizedTargets = typeof targets === 'string' ? targets.trim() : '';
+      if (!normalizedTargets) throw new Error('Schedule targets are required');
+      const extraVars = cryptoUtil.encrypt(JSON.stringify(options.extraVars || {}));
+      const forks = Math.min(50, Math.max(1, Number.parseInt(options.forks, 10) || 5));
+      db.prepare('INSERT INTO schedules (id, environment_id, name, playbook, targets, cron_expression, extra_vars, check_mode, forks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(id, environmentId, name, playbook, normalizedTargets, cronExpression, extraVars, options.checkMode ? 1 : 0, forks);
       return id;
     },
     update: (id, fields) => {
@@ -353,6 +392,10 @@ module.exports = {
         playbook:       'playbook',
         targets:        'targets',
         cronExpression: 'cron_expression',
+        environmentId:  'environment_id',
+        extraVars:       'extra_vars',
+        checkMode:       'check_mode',
+        forks:           'forks',
         enabled:        'enabled',
       };
       const sets = [];
@@ -360,7 +403,10 @@ module.exports = {
       for (const [k, v] of Object.entries(fields)) {
         if (!fieldMap[k]) throw new Error(`Invalid field: ${k}`);
         sets.push(`${fieldMap[k]} = ?`);
-        vals.push(v);
+        if (k === 'extraVars') vals.push(cryptoUtil.encrypt(JSON.stringify(v || {})));
+        else if (k === 'checkMode') vals.push(v ? 1 : 0);
+        else if (k === 'forks') vals.push(Math.min(50, Math.max(1, Number.parseInt(v, 10) || 5)));
+        else vals.push(v);
       }
       vals.push(id);
       db.prepare(`UPDATE schedules SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
@@ -652,10 +698,12 @@ module.exports = {
   },
 
   serverGroups: {
-    getAll: () => db.prepare('SELECT * FROM server_groups ORDER BY position, name').all(),
-    create: (name, color, parentId) => {
+    getAll: (environmentId = null) => environmentId
+      ? db.prepare('SELECT * FROM server_groups WHERE environment_id = ? ORDER BY position, name').all(environmentId)
+      : db.prepare('SELECT * FROM server_groups ORDER BY environment_id, position, name').all(),
+    create: (name, color, parentId, environmentId = 'default') => {
       const id = uuidv4();
-      db.prepare('INSERT INTO server_groups (id, name, color, parent_id) VALUES (?, ?, ?, ?)').run(id, name, color || '#6366f1', parentId || null);
+      db.prepare('INSERT INTO server_groups (id, environment_id, name, color, parent_id) VALUES (?, ?, ?, ?, ?)').run(id, environmentId || 'default', name, color || '#6366f1', parentId || null);
       return db.prepare('SELECT * FROM server_groups WHERE id = ?').get(id);
     },
     update: (id, name, color) => db.prepare('UPDATE server_groups SET name = ?, color = ? WHERE id = ?').run(name, color || '#6366f1', id),
@@ -689,16 +737,21 @@ module.exports = {
   },
 
   scheduleHistory: {
-    getAll: (limit = 100, scheduleId = null) => {
-      if (scheduleId) return db.prepare('SELECT id,schedule_id,schedule_name,playbook,targets,started_at,completed_at,status FROM schedule_history WHERE schedule_id = ? ORDER BY started_at DESC LIMIT ?').all(scheduleId, limit);
-      return db.prepare('SELECT id,schedule_id,schedule_name,playbook,targets,started_at,completed_at,status FROM schedule_history ORDER BY started_at DESC LIMIT ?').all(limit);
+    getAll: (limit = 100, scheduleId = null, environmentId = null) => {
+      const columns = 'id,schedule_id,environment_id,schedule_name,playbook,targets,triggered_by,check_mode,started_at,completed_at,status';
+      if (scheduleId && environmentId) return db.prepare(`SELECT ${columns} FROM schedule_history WHERE schedule_id = ? AND environment_id = ? ORDER BY started_at DESC LIMIT ?`).all(scheduleId, environmentId, limit);
+      if (scheduleId) return db.prepare(`SELECT ${columns} FROM schedule_history WHERE schedule_id = ? ORDER BY started_at DESC LIMIT ?`).all(scheduleId, limit);
+      if (environmentId) return db.prepare(`SELECT ${columns} FROM schedule_history WHERE environment_id = ? ORDER BY started_at DESC LIMIT ?`).all(environmentId, limit);
+      return db.prepare(`SELECT ${columns} FROM schedule_history ORDER BY started_at DESC LIMIT ?`).all(limit);
     },
     getById: (id) => db.prepare('SELECT * FROM schedule_history WHERE id = ?').get(id),
-    create: (scheduleId, scheduleName, playbook, targets) => {
+    create: (scheduleId, scheduleName, playbook, targets, options = {}) => {
       const id = uuidv4();
-      db.prepare('INSERT INTO schedule_history (id, schedule_id, schedule_name, playbook, targets) VALUES (?, ?, ?, ?, ?)').run(id, scheduleId || null, scheduleName, playbook, targets || 'all');
+      db.prepare('INSERT INTO schedule_history (id, schedule_id, environment_id, schedule_name, playbook, targets, triggered_by, check_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(id, scheduleId || null, options.environmentId || 'default', scheduleName, playbook, targets || 'all', options.triggeredBy || null, options.checkMode ? 1 : 0);
       return id;
     },
+    appendOutput: (id, output) => db.prepare("UPDATE schedule_history SET output = output || ? WHERE id = ? AND status = 'running'").run(String(output || ''), id),
     complete: (id, status, output) => {
       db.prepare("UPDATE schedule_history SET status = ?, output = ?, completed_at = datetime('now') WHERE id = ?").run(status, output || '', id);
     },
@@ -722,21 +775,34 @@ module.exports = {
   },
 
   ansibleVars: {
-    getAll: () => db.prepare('SELECT * FROM ansible_vars ORDER BY key').all(),
-    create: (key, value, description) => {
-      const id = uuidv4();
-      db.prepare('INSERT INTO ansible_vars (id, key, value, description) VALUES (?, ?, ?, ?)').run(id, key, value, description || '');
-      return db.prepare('SELECT * FROM ansible_vars WHERE id = ?').get(id);
+    getAll: (environmentId = null, options = {}) => {
+      const rows = environmentId
+        ? db.prepare('SELECT * FROM ansible_vars WHERE environment_id = ? ORDER BY key').all(environmentId)
+        : db.prepare('SELECT * FROM ansible_vars ORDER BY environment_id, key').all();
+      return rows.map(row => readAnsibleVarRow(row, options.revealSecrets === true));
     },
-    update: (id, key, value, description) => {
-      db.prepare('UPDATE ansible_vars SET key = ?, value = ?, description = ? WHERE id = ?').run(key, value, description || '', id);
-      return db.prepare('SELECT * FROM ansible_vars WHERE id = ?').get(id);
+    getById: (id, options = {}) => readAnsibleVarRow(db.prepare('SELECT * FROM ansible_vars WHERE id = ?').get(id), options.revealSecrets === true),
+    create: (key, value, description, options = {}) => {
+      const id = uuidv4();
+      db.prepare('INSERT INTO ansible_vars (id, environment_id, key, value, is_secret, description) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(id, options.environmentId || 'default', key, cryptoUtil.encrypt(String(value)), options.isSecret ? 1 : 0, description || '');
+      return readAnsibleVarRow(db.prepare('SELECT * FROM ansible_vars WHERE id = ?').get(id), false);
+    },
+    update: (id, key, value, description, options = {}) => {
+      const existing = db.prepare('SELECT * FROM ansible_vars WHERE id = ?').get(id);
+      if (!existing) return null;
+      const storedValue = options.keepValue ? existing.value : cryptoUtil.encrypt(String(value));
+      const isSecret = options.isSecret === undefined ? existing.is_secret : (options.isSecret ? 1 : 0);
+      db.prepare('UPDATE ansible_vars SET key = ?, value = ?, is_secret = ?, description = ? WHERE id = ?').run(key, storedValue, isSecret, description || '', id);
+      return readAnsibleVarRow(db.prepare('SELECT * FROM ansible_vars WHERE id = ?').get(id), false);
     },
     delete: (id) => db.prepare('DELETE FROM ansible_vars WHERE id = ?').run(id),
-    toExtraVars: () => {
-      const rows = db.prepare('SELECT key, value FROM ansible_vars').all();
-      return Object.fromEntries(rows.map(r => [r.key, r.value]));
+    toExtraVars: (environmentId = 'default') => {
+      const rows = db.prepare('SELECT key, value FROM ansible_vars WHERE environment_id = ?').all(environmentId);
+      return Object.fromEntries(rows.map(row => [row.key, cryptoUtil.decrypt(row.value)]));
     },
+    secretValues: (environmentId = 'default') => db.prepare('SELECT value FROM ansible_vars WHERE environment_id = ? AND is_secret = 1').all(environmentId)
+      .map(row => cryptoUtil.decrypt(row.value)).filter(value => typeof value === 'string' && value.length > 0),
   },
 
   dockerImageUpdatesCache: {

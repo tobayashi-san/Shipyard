@@ -1,0 +1,7 @@
+---
+- name: Browser test
+  hosts: all
+  gather_facts: false
+  tasks:
+    - ansible.builtin.debug:
+        msg: browser-test

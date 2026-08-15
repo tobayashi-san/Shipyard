@@ -42,7 +42,7 @@ export function OnboardingPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [branding, setBranding] = useState<Branding>({
-    appName: 'Shipyard',
+    appName: 'Fleet',
     appTagline: 'Infrastructure',
     accentColor: '#3b82f6',
     showIcon: true,
@@ -65,7 +65,7 @@ export function OnboardingPage() {
 
   const Logo = (
     <div className="mb-4 flex items-center gap-3">
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+      <div className="flex h-10 w-10 items-center justify-center rounded-sm border border-primary/20 bg-primary/10 text-primary">
         <Anchor className="h-6 w-6" />
       </div>
       <div>
@@ -102,9 +102,9 @@ export function OnboardingPage() {
   );
 
   return (
-    <div className="grid min-h-screen place-items-center bg-muted/40 p-4">
-      <Card className="w-full max-w-lg">
-        <CardContent className="p-6">
+    <div className="grid min-h-screen place-items-center bg-[hsl(var(--surface-1))] p-4">
+      <Card className="w-full max-w-lg border-border-strong">
+        <CardContent className="p-5 sm:p-6">
           {Logo}
           <Stepper current={step} />
           {step === 0 && <WelcomeStep onNext={() => setStep(1)} NavRow={NavRow} />}
@@ -228,7 +228,7 @@ function AppearanceStep({
   NavRow: NavRowComponent;
 }) {
   const { t } = useTranslation();
-  const [name, setName] = useState(branding.appName === 'Shipyard' ? '' : branding.appName);
+  const [name, setName] = useState(branding.appName === 'Fleet' ? '' : branding.appName);
   const [tagline, setTagline] = useState(branding.appTagline === 'Infrastructure' ? '' : branding.appTagline);
   const [accent, setAccent] = useState(branding.accentColor);
   const [theme, setTheme] = useState<Theme>('auto');
@@ -245,7 +245,7 @@ function AppearanceStep({
         showIcon: branding.showIcon,
         theme,
       });
-      setBranding({ ...branding, appName: name || 'Shipyard', appTagline: tagline || 'Infrastructure', accentColor: accent });
+      setBranding({ ...branding, appName: name || 'Fleet', appTagline: tagline || 'Infrastructure', accentColor: accent });
     } catch { /* non-critical */ }
     setBusy(false);
     onNext();
@@ -259,7 +259,7 @@ function AppearanceStep({
       <div className="mt-4 space-y-3">
         <div className="space-y-1.5">
           <Label htmlFor="ob-name">{t('set.appName')}</Label>
-          <Input id="ob-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Shipyard" />
+          <Input id="ob-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Fleet" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="ob-tag">{t('set.tagline')}</Label>
@@ -285,13 +285,13 @@ function AppearanceStep({
 
         <div className="space-y-1.5">
           <Label>{t('set.theme')}</Label>
-          <div className="inline-flex rounded-md border p-1">
+          <div className="inline-flex rounded-sm border border-border-strong p-0.5">
             {THEMES.map((th) => (
               <button
                 key={th}
                 type="button"
                 onClick={() => setTheme(th)}
-                className={`rounded px-3 py-1 text-xs capitalize ${theme === th ? 'bg-accent text-accent-foreground' : 'text-muted-foreground'}`}
+                className={`rounded-sm px-3 py-1 text-xs capitalize ${theme === th ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-muted/50'}`}
               >
                 {t(`set.${th}` as 'set.light' | 'set.auto' | 'set.dark')}
               </button>
@@ -345,7 +345,7 @@ function SshStep({ onNext, onPrev, onSkip, NavRow }: { onNext: () => void; onPre
       <div className="mt-4">
         {state === 'checking' && <div className="text-sm text-muted-foreground">{t('ob.checkingKey')}</div>}
         {state === 'exists' && (
-          <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm">
+          <div className="rounded-sm border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm">
             <div className="flex items-center gap-2 font-medium text-emerald-600">
               <Check className="h-4 w-4" /> {t('ob.keyExists')}
             </div>
@@ -353,7 +353,7 @@ function SshStep({ onNext, onPrev, onSkip, NavRow }: { onNext: () => void; onPre
           </div>
         )}
         {state === 'missing' && (
-          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
+          <div className="rounded-sm border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
             {t('ob.noKey')}
           </div>
         )}

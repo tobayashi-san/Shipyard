@@ -1,31 +1,20 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
-import de from '../locales/de.json';
 import en from '../locales/en.json';
 
-const STORAGE_KEY = 'shipyard_lang';
-
-function detectLanguage(): 'de' | 'en' {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved === 'de' || saved === 'en') return saved;
-  } catch { /* ignore */ }
-  const nav = (typeof navigator !== 'undefined' ? navigator.language : 'de').toLowerCase();
-  return nav.startsWith('en') ? 'en' : 'de';
-}
+// Earlier releases stored a per-browser language preference. English is now
+// the product language, so a legacy German preference must not leak into API
+// messages or reappear in a later session.
+try { localStorage.removeItem('shipyard_lang'); } catch { /* storage unavailable */ }
 
 void i18n
   .use(initReactI18next)
   .init({
-    resources: { de: { translation: de }, en: { translation: en } },
-    lng: detectLanguage(),
-    fallbackLng: 'de',
+    resources: { en: { translation: en } },
+    lng: 'en',
+    fallbackLng: 'en',
+    supportedLngs: ['en'],
     interpolation: { escapeValue: false },
   });
-
-export function setLanguage(lang: 'de' | 'en'): void {
-  void i18n.changeLanguage(lang);
-  try { localStorage.setItem(STORAGE_KEY, lang); } catch { /* ignore */ }
-}
 
 export default i18n;

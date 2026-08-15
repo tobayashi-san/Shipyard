@@ -177,7 +177,7 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
         aria-modal="true"
         aria-label={t('term.dialogLabel', { name: serverName || hostname || 'server' })}
         className={cn(
-          'flex h-[calc(100dvh-8rem)] max-h-[48rem] w-full max-w-[1100px] flex-col overflow-hidden rounded-lg border shadow-xl',
+          'flex h-[calc(100dvh-8rem)] max-h-[48rem] w-full max-w-[1100px] flex-col overflow-hidden rounded-[3px] border shadow-xl',
           isDark ? 'border-[#30363d] bg-[#0d1117]' : 'border-border-strong bg-card'
         )}
         onClick={(e) => e.stopPropagation()}
@@ -211,7 +211,7 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
         </div>
 
         {/* Terminal container */}
-        <div className={cn('flex-1 overflow-hidden', isDark ? 'bg-[#0d1117]' : 'bg-white')}>
+        <div className={cn('flex-1 min-w-0 overflow-hidden p-3 sm:p-4', isDark ? 'bg-[#0d1117]' : 'bg-white')}>
           <div ref={containerRef} className="h-full w-full" />
         </div>
       </div>

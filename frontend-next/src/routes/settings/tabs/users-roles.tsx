@@ -551,6 +551,14 @@ const VAR_CAPS: CapDef[] = [
   { key: 'canDeleteVars', label: 'Delete' },
 ];
 const OTHER_CAPS: CapDef[] = [
+  { key: 'canViewDeployments', label: 'Deployments ansehen' },
+  { key: 'canEditDeployments', label: 'Edit deployment definitions' },
+  { key: 'canPlanDeployments', label: 'Create deployment plans' },
+  { key: 'canApplyDeployments', label: 'Apply deployment plans' },
+  { key: 'canDestroyDeployments', label: 'Destroy deployment resources' },
+  { key: 'canManageDeploymentPlatforms', label: 'Manage deployment platforms and secrets' },
+  { key: 'canViewMaintenance', label: 'View maintenance windows' },
+  { key: 'canEditMaintenance', label: 'Plan / edit maintenance windows' },
   { key: 'canViewAudit', label: 'View audit log' },
 ];
 
@@ -575,6 +583,11 @@ const DANGEROUS_CAPS = new Set([
   'canAddVars',
   'canEditVars',
   'canDeleteVars',
+  'canEditDeployments',
+  'canPlanDeployments',
+  'canApplyDeployments',
+  'canDestroyDeployments',
+  'canManageDeploymentPlatforms',
   'canViewAudit',
 ]);
 
@@ -586,7 +599,7 @@ const ROLE_PRESETS: RolePreset[] = [
     serversMode: 'all',
     pbMode: 'all',
     plMode: 'restricted',
-    caps: ['canViewServers', 'canViewDocker', 'canViewUpdates', 'canViewCustomUpdates', 'canViewPlaybooks', 'canViewSchedules', 'canViewVars', 'canViewNotes'],
+    caps: ['canViewServers', 'canViewDocker', 'canViewUpdates', 'canViewCustomUpdates', 'canViewPlaybooks', 'canViewSchedules', 'canViewVars', 'canViewNotes', 'canViewMaintenance'],
   },
   {
     id: 'operator',
@@ -595,7 +608,7 @@ const ROLE_PRESETS: RolePreset[] = [
     serversMode: 'all',
     pbMode: 'all',
     plMode: 'restricted',
-    caps: ['canViewServers', 'canViewDocker', 'canViewUpdates', 'canRunUpdates', 'canViewPlaybooks', 'canRunPlaybooks', 'canViewSchedules', 'canViewVars', 'canViewNotes', 'canEditNotes'],
+    caps: ['canViewServers', 'canViewDocker', 'canViewUpdates', 'canRunUpdates', 'canViewPlaybooks', 'canRunPlaybooks', 'canViewSchedules', 'canViewVars', 'canViewNotes', 'canEditNotes', 'canViewMaintenance'],
   },
   {
     id: 'maintainer',
@@ -623,7 +636,10 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
   const isEdit = !!role;
 
   const serversQ = useQuery<ServerRow[]>({ queryKey: ['servers'], queryFn: () => api.getServers() as unknown as Promise<ServerRow[]> });
-  const groupsQ = useQuery<GroupRow[]>({ queryKey: ['serverGroups'], queryFn: () => api.getServerGroups() as unknown as Promise<GroupRow[]> });
+  // Keep the folder inventory on the same invalidation family as the
+  // infrastructure tree and resource list. This dialog deliberately reads
+  // all folders, while environment-specific views use a second key segment.
+  const groupsQ = useQuery<GroupRow[]>({ queryKey: ['server-groups', 'all'], queryFn: () => api.getServerGroups() as unknown as Promise<GroupRow[]> });
   const pluginsQ = useQuery<PluginRow[]>({ queryKey: ['plugins'], queryFn: () => api.getPlugins() as unknown as Promise<PluginRow[]> });
   const playbooksQ = useQuery<PlaybookRow[]>({ queryKey: ['playbooks'], queryFn: () => api.getPlaybooks() as unknown as Promise<PlaybookRow[]> });
 
@@ -652,7 +668,9 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
     const out: Record<string, boolean> = {};
     [...SERVER_CAPS, ...DOCKER_CAPS, ...UPDATE_CAPS, ...PLAYBOOK_CAPS,
       ...SCHEDULE_CAPS, ...VAR_CAPS, ...OTHER_CAPS].forEach(c => {
-      out[c.key] = (p as Record<string, unknown>)[c.key] === true;
+      const legacyDeployment = (p as Record<string, unknown>).canManageDeployments === true
+        && ['canViewDeployments', 'canEditDeployments', 'canPlanDeployments', 'canApplyDeployments', 'canDestroyDeployments', 'canManageDeploymentPlatforms'].includes(c.key);
+      out[c.key] = (p as Record<string, unknown>)[c.key] === true || legacyDeployment;
     });
     return out;
   });

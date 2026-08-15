@@ -4,19 +4,19 @@ import { cn } from '@/lib/utils';
 export type StatusTone = 'success' | 'warning' | 'danger' | 'info' | 'muted' | 'neutral';
 
 const toneStyles: Record<StatusTone, string> = {
-  success: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
-  warning: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20',
-  danger:  'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20',
-  info:    'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
+  success: '[background:hsl(var(--success)/0.12)] [border-color:hsl(var(--success)/0.26)] [color:hsl(var(--success))]',
+  warning: '[background:hsl(var(--warning)/0.13)] [border-color:hsl(var(--warning)/0.28)] [color:hsl(var(--warning))]',
+  danger:  '[background:hsl(var(--destructive)/0.12)] [border-color:hsl(var(--destructive)/0.28)] [color:hsl(var(--destructive))]',
+  info:    '[background:hsl(var(--info)/0.12)] [border-color:hsl(var(--info)/0.28)] [color:hsl(var(--info))]',
   muted:   'bg-muted text-muted-foreground border-border',
   neutral: 'bg-secondary text-secondary-foreground border-border',
 };
 
 const dotColor: Record<StatusTone, string> = {
-  success: 'bg-emerald-500',
-  warning: 'bg-amber-500',
-  danger:  'bg-rose-500',
-  info:    'bg-blue-500',
+  success: '[background:hsl(var(--success))]',
+  warning: '[background:hsl(var(--warning))]',
+  danger:  '[background:hsl(var(--destructive))]',
+  info:    '[background:hsl(var(--info))]',
   muted:   'bg-muted-foreground/40',
   neutral: 'bg-foreground/40',
 };
@@ -33,7 +33,7 @@ export function StatusBadge({ tone = 'neutral', children, dot, pulse, className 
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium',
+        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold leading-4',
         toneStyles[tone],
         className
       )}

@@ -34,13 +34,10 @@ RUN mkdir -p /app/server/playbooks && chown -R shipyard:shipyard /app/server/pla
 RUN mkdir -p /app/bundled-playbooks && cp -a /app/server/playbooks/. /app/bundled-playbooks/ && chown -R shipyard:shipyard /app/bundled-playbooks
 RUN mkdir -p /app/plugins && chown -R shipyard:shipyard /app/plugins
 
-# Bundle default plugins — seeded into the volume on first run by the entrypoint
-COPY plugins/ /app/bundled-plugins/
-RUN chown -R shipyard:shipyard /app/bundled-plugins
-
 VOLUME ["/app/server/data"]
-EXPOSE 443
+EXPOSE 8443
 ENV NODE_ENV=production
+ENV PORT=8443
 ENV TZ=Europe/Zurich
 
 # Entrypoint runs as root to fix data-volume ownership, then drops to shipyard

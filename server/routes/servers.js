@@ -8,7 +8,7 @@ const systemInfo = require('../services/system-info');
 const ansibleRunner = require('../services/ansible-runner');
 const { refreshDockerCache } = require('../services/docker-inventory');
 const resourceAlerts = require('../services/resource-alerts');
-const { parseImageUpdateOutput } = require('../utils/parse-image-updates');
+const { parseImageUpdateReport } = require('../utils/parse-image-updates');
 const { serverError } = require('../utils/http-error');
 const { targetIncludesServer, validateInventoryHostName } = require('../utils/validate');
 const { isValidStorageMountPath, parseConfiguredStorageMounts } = require('../utils/storage-mounts');
@@ -150,7 +150,7 @@ function resolveGroupIdByTags(tags, groups) {
   return null;
 }
 
-const { getPermissions, filterServers, can, guardServerAccess } = require('../utils/permissions');
+const { getPermissions, filterServers, can, guardServerAccess, canAccessServerGroup, canAccessEnvironment, guardServerGroupAccess } = require('../utils/permissions');
 
 function guard(cap) {
   return (req, res, next) => {
@@ -159,11 +159,19 @@ function guard(cap) {
   };
 }
 
+function accessibleGroupsForEnvironment(permissions, environmentId) {
+  return db.serverGroups.getAll(environmentId)
+    .filter(group => canAccessServerGroup(permissions, group));
+}
+
 // GET /api/servers - List all servers
 router.get('/', guard('canViewServers'), (req, res) => {
   try {
     const perms = getPermissions(req.user);
-    res.json(filterServers(db.servers.getAll(), perms).map(parseServer));
+    const environmentId = String(req.query.environment_id || '').trim();
+    const servers = filterServers(db.servers.getAll(), perms)
+      .filter(server => !environmentId || String(server.environment_id || 'default') === environmentId);
+    res.json(servers.map(parseServer));
   } catch (error) {
     serverError(res, error, 'list servers');
   }
@@ -276,7 +284,8 @@ router.post('/import', guard('canExportImportServers'), (req, res) => {
 // GET /api/servers/groups — only return groups the user can see
 router.get('/groups', guard('canViewServers'), (req, res) => {
   const perms = getPermissions(req.user);
-  const allGroups = db.serverGroups.getAll();
+  const environmentId = String(req.query.environment_id || '').trim() || null;
+  const allGroups = db.serverGroups.getAll(environmentId);
   if (!perms || perms.full || perms.servers === 'all') return res.json(allGroups);
 
   // Collect the group IDs the user has explicit access to
@@ -308,12 +317,22 @@ router.get('/groups', guard('canViewServers'), (req, res) => {
 // POST /api/servers/groups
 router.post('/groups', guard('canEditServers'), (req, res) => {
   const { name, color, parent_id } = req.body;
+  const environmentId = String(req.body?.environment_id || 'default').trim() || 'default';
   if (!name?.trim()) return res.status(400).json({ error: 'Name required' });
-  res.json(db.serverGroups.create(name.trim(), color, parent_id || null));
+  if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Umgebung nicht gefunden.' });
+  const parent = parent_id ? db.db.prepare('SELECT * FROM server_groups WHERE id = ?').get(String(parent_id)) : null;
+  if (parent_id && (!parent || parent.environment_id !== environmentId)) return res.status(400).json({ error: 'Übergeordneter Ordner gehört nicht zu dieser Umgebung.' });
+  const perms = getPermissions(req.user);
+  // A restricted operator may add a child folder only below an explicitly
+  // assigned folder.  Root folders remain an environment administration task.
+  if (!perms?.full && perms?.servers !== 'all' && (!parent || !canAccessServerGroup(perms, parent))) {
+    return res.status(403).json({ error: 'Ordner dürfen nur innerhalb eines zugewiesenen Ordners angelegt werden.' });
+  }
+  res.json(db.serverGroups.create(name.trim(), color, parent_id || null, environmentId));
 });
 
 // PUT /api/servers/groups/:groupId
-router.put('/groups/:groupId', guard('canEditServers'), (req, res) => {
+router.put('/groups/:groupId', guard('canEditServers'), guardServerGroupAccess, (req, res) => {
   const { name, color } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Name required' });
   db.serverGroups.update(req.params.groupId, name.trim(), color);
@@ -321,18 +340,23 @@ router.put('/groups/:groupId', guard('canEditServers'), (req, res) => {
 });
 
 // DELETE /api/servers/groups/:groupId
-router.delete('/groups/:groupId', guard('canDeleteServers'), (req, res) => {
+router.delete('/groups/:groupId', guard('canDeleteServers'), guardServerGroupAccess, (req, res) => {
   db.serverGroups.delete(req.params.groupId);
   res.json({ success: true });
 });
 
 // PUT /api/servers/groups/:groupId/parent
-router.put('/groups/:groupId/parent', guard('canEditServers'), (req, res) => {
+router.put('/groups/:groupId/parent', guard('canEditServers'), guardServerGroupAccess, (req, res) => {
   const groupId = String(req.params.groupId || '');
   const parentId = req.body.parent_id ? String(req.body.parent_id) : null;
   const groups = db.serverGroups.getAll();
-  if (!groups.some(group => group.id === groupId)) return res.status(404).json({ error: 'Ordner nicht gefunden.' });
-  if (parentId && !groups.some(group => group.id === parentId)) return res.status(400).json({ error: 'Übergeordneter Ordner nicht gefunden.' });
+  const current = groups.find(group => group.id === groupId);
+  if (!current) return res.status(404).json({ error: 'Ordner nicht gefunden.' });
+  const parent = parentId ? groups.find(group => group.id === parentId) : null;
+  if (parentId && !parent) return res.status(400).json({ error: 'Übergeordneter Ordner nicht gefunden.' });
+  const perms = getPermissions(req.user);
+  if (parent && !canAccessServerGroup(perms, parent)) return res.status(403).json({ error: 'Zielordnerzugriff verweigert.' });
+  if (parent && parent.environment_id !== current.environment_id) return res.status(400).json({ error: 'Ordner können nicht umgebungsübergreifend verschachtelt werden.' });
   if (parentId === groupId) return res.status(400).json({ error: 'Ein Ordner kann nicht sein eigener Überordner sein.' });
   const descendantIds = new Set([groupId]);
   let changed = true;
@@ -342,10 +366,44 @@ router.put('/groups/:groupId/parent', guard('canEditServers'), (req, res) => {
   res.json({ success: true });
 });
 
+// PUT /api/servers/group/bulk — move a checked set without issuing a partial
+// update.  Every host and the target folder must be accessible to the caller.
+router.put('/group/bulk', guard('canEditServers'), (req, res) => {
+  const serverIds = [...new Set((Array.isArray(req.body?.server_ids) ? req.body.server_ids : [])
+    .map(value => String(value || '').trim()).filter(Boolean))];
+  const groupId = req.body?.group_id ? String(req.body.group_id) : null;
+  if (serverIds.length === 0 || serverIds.length > 500) return res.status(400).json({ error: 'Wähle zwischen 1 und 500 Hosts aus.' });
+
+  const placeholders = serverIds.map(() => '?').join(',');
+  const servers = db.db.prepare(`SELECT * FROM servers WHERE id IN (${placeholders})`).all(...serverIds);
+  if (servers.length !== serverIds.length) return res.status(404).json({ error: 'Mindestens ein Host wurde nicht gefunden.' });
+  const permissions = getPermissions(req.user);
+  if (filterServers(servers, permissions).length !== servers.length) return res.status(403).json({ error: 'Mindestens ein Host liegt außerhalb deiner Berechtigung.' });
+
+  const environments = new Set(servers.map(server => String(server.environment_id || 'default')));
+  if (environments.size !== 1) return res.status(400).json({ error: 'Hosts aus verschiedenen Umgebungen können nicht gemeinsam verschoben werden.' });
+  const target = groupId ? db.db.prepare('SELECT * FROM server_groups WHERE id = ?').get(groupId) : null;
+  if (groupId && !target) return res.status(400).json({ error: 'Zielordner nicht gefunden.' });
+  if (target && !canAccessServerGroup(permissions, target)) return res.status(403).json({ error: 'Zielordnerzugriff verweigert.' });
+  if (target && String(target.environment_id || 'default') !== [...environments][0]) return res.status(400).json({ error: 'Zielordner gehört zu einer anderen Umgebung.' });
+
+  db.db.transaction(() => {
+    const update = db.db.prepare('UPDATE servers SET group_id = ? WHERE id = ?');
+    servers.forEach(server => update.run(groupId, server.id));
+  })();
+  db.auditLog.write('servers.group_bulk_move', `servers=${serverIds.length} group=${groupId || 'root'}`, req.ip, true, req.user?.username);
+  res.json({ success: true, moved: serverIds.length, group_id: groupId });
+});
+
 // PUT /api/servers/:id/group
 router.put('/:id/group', guardServerAccess, guard('canEditServers'), (req, res) => {
   const groupId = req.body.group_id ? String(req.body.group_id) : null;
-  if (groupId && !db.serverGroups.getAll().some(group => group.id === groupId)) return res.status(400).json({ error: 'Zielordner nicht gefunden.' });
+  const server = db.servers.getById(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Server not found' });
+  const target = groupId ? db.serverGroups.getAll().find(group => group.id === groupId) : null;
+  if (groupId && !target) return res.status(400).json({ error: 'Zielordner nicht gefunden.' });
+  if (target && !canAccessServerGroup(getPermissions(req.user), target)) return res.status(403).json({ error: 'Zielordnerzugriff verweigert.' });
+  if (target && String(target.environment_id || 'default') !== String(server.environment_id || 'default')) return res.status(400).json({ error: 'Zielordner gehört zu einer anderen Umgebung.' });
   db.serverGroups.setServerGroup(req.params.id, groupId);
   res.json({ success: true });
 });
@@ -354,7 +412,7 @@ router.put('/:id/group', guardServerAccess, guard('canEditServers'), (req, res) 
 router.post('/auto-group-by-tags', guard('canEditServers'), (req, res) => {
   try {
     const perms = getPermissions(req.user);
-    const allGroups = db.serverGroups.getAll();
+    const allGroups = db.serverGroups.getAll().filter(group => canAccessServerGroup(perms, group));
     const servers = filterServers(db.servers.getAll(), perms);
     let matched = 0;
     let moved = 0;
@@ -399,12 +457,13 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
     if (ip_address.length > 45) return res.status(400).json({ error: 'IP address too long (max 45)' });
     if (hostname && (typeof hostname !== 'string' || hostname.length > 255)) return res.status(400).json({ error: 'Hostname too long (max 255)' });
     if (ssh_user && (typeof ssh_user !== 'string' || ssh_user.length > 100)) return res.status(400).json({ error: 'SSH user too long (max 100)' });
-    const allGroups = db.serverGroups.getAll();
     const normalizedLinks = normalizeServerLinks(links || []);
     const normalizedStorageMounts = normalizeStorageMounts(storage_mounts || []);
     const normalizedTags = Array.isArray(tags) ? tags.filter(t => typeof t === 'string').map(t => t.slice(0, 100)) : [];
     const environmentId = environment_id || 'default';
     if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found' });
+    const permissions = getPermissions(req.user);
+    if (!canAccessEnvironment(permissions, environmentId)) return res.status(403).json({ error: 'Environment access denied' });
     const server = db.servers.create({
       name: normalizedName,
       hostname: (hostname || ip_address).slice(0, 255),
@@ -417,7 +476,7 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
       storage_mounts: normalizedStorageMounts,
       environment_id: environmentId,
     });
-    const autoGroupId = resolveGroupIdByTags(normalizedTags, allGroups);
+    const autoGroupId = resolveGroupIdByTags(normalizedTags, accessibleGroupsForEnvironment(permissions, environmentId));
     if (autoGroupId) {
       db.serverGroups.setServerGroup(server.id, autoGroupId);
       server.group_id = autoGroupId;
@@ -434,7 +493,6 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
 router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
   try {
     const existing = req.server;
-    const allGroups = db.serverGroups.getAll();
 
     const { name, hostname, ip_address, ssh_port, ssh_user, tags, services, links, storage_mounts, dockerEnabled, environment_id } = req.body;
     const sName   = name !== undefined ? String(name).trim().slice(0, 100) : existing.name;
@@ -453,6 +511,8 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
     const sDockerEnabled = dockerEnabled !== undefined ? (dockerEnabled ? 1 : 0) : (existing.docker_enabled || 0);
     const environmentId = environment_id !== undefined ? environment_id : (existing.environment_id || 'default');
     if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found' });
+    const permissions = getPermissions(req.user);
+    if (!canAccessEnvironment(permissions, environmentId)) return res.status(403).json({ error: 'Environment access denied' });
     const server = db.servers.update(req.params.id, {
       name: sName, hostname: sHost, ip_address: sIp,
       ssh_port: sPort, ssh_user: sUser, tags: sTags, services: sSvcs,
@@ -461,8 +521,13 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
       docker_enabled: sDockerEnabled,
       environment_id: environmentId,
     });
+    const environmentChanged = String(environmentId) !== String(existing.environment_id || 'default');
+    if (environmentChanged && existing.group_id) {
+      db.serverGroups.setServerGroup(req.params.id, null);
+      server.group_id = null;
+    }
     if (tags !== undefined) {
-      const autoGroupId = resolveGroupIdByTags(sTags, allGroups);
+      const autoGroupId = resolveGroupIdByTags(sTags, accessibleGroupsForEnvironment(permissions, environmentId));
       if (autoGroupId && autoGroupId !== existing.group_id) {
         db.serverGroups.setServerGroup(req.params.id, autoGroupId);
         server.group_id = autoGroupId;
@@ -480,12 +545,12 @@ router.delete('/:id', guardServerAccess, guard('canDeleteServers'), (req, res) =
   try {
     const server = req.server;
     db.servers.delete(req.params.id);
-    // OpenTofu and imported Proxmox inventory mappings are plugin-owned and
-    // deliberately have no database foreign key for backwards compatibility.
+    // OpenTofu and imported Proxmox inventory mappings deliberately have no
+    // database foreign key for backwards compatibility.
     // Remove them with the host so an old resource never remains as a broken
     // link in the infrastructure tree.
-    try { db.db.prepare('DELETE FROM tofu_managed_servers WHERE server_id = ?').run(req.params.id); } catch { /* plugin not installed */ }
-    try { db.db.prepare('DELETE FROM proxmox_inventory_servers WHERE server_id = ?').run(req.params.id); } catch { /* plugin not installed */ }
+    try { db.db.prepare('DELETE FROM tofu_managed_servers WHERE server_id = ?').run(req.params.id); } catch { /* schema unavailable during partial migration */ }
+    try { db.db.prepare('DELETE FROM proxmox_inventory_servers WHERE server_id = ?').run(req.params.id); } catch { /* schema unavailable during partial migration */ }
     db.auditLog.write('server.delete', `Server "${server.name}" (${server.ip_address}) deleted`, req.ip, true, req.user?.username);
     res.json({ message: 'Server deleted' });
   } catch (error) {
@@ -714,7 +779,13 @@ router.get('/:id/updates', guardServerAccess, guard('canViewUpdates'), async (re
     resourceAlerts.evaluateServer(server.id);
     res.json(updates);
   } catch (error) {
-    if (cached) return res.json(cached);
+    // A background refresh may use the last known result. A manually forced
+    // check must instead report its failure so the UI never presents stale
+    // data as a freshly completed package check.
+    if (cached && !force) return res.json(cached);
+    if (error.message && error.message.includes('SSH connection failed')) {
+      return res.status(503).json({ error: error.message });
+    }
     serverError(res, error, 'get server updates');
   }
 });
@@ -796,7 +867,11 @@ router.get('/:id/docker', guardServerAccess, guard('canViewDocker'), async (req,
   }
 
   try {
-    await refreshDockerCache(server);
+    const refreshed = await refreshDockerCache(server);
+    if (!refreshed) {
+      if (cached.length > 0) return res.json(cached.map(c => ({ ...c, _cached: true })));
+      return res.status(502).json({ error: 'Docker-Inventar konnte auf diesem Host nicht geladen werden. Prüfe die SSH-Verbindung und Docker-Berechtigungen.' });
+    }
     res.json(buildDockerResponse(req.params.id));
   } catch (error) {
     if (cached.length > 0) return res.json(cached);
@@ -849,10 +924,14 @@ router.get('/:id/docker/image-updates', guardServerAccess, guard('canPullDocker'
   const server = req.server;
   try {
     const result = await ansibleRunner.runPlaybook('check-image-updates.yml', server.name);
-    const updates = parseImageUpdateOutput(result.stdout);
-    db.dockerImageUpdatesCache.set(server.id, updates);
+    const report = parseImageUpdateReport(result.stdout);
+    if (!result.success || !report.complete) {
+      log.warn({ server: server.name, exitCode: result.code }, 'Image update check returned no complete result');
+      return res.status(502).json({ error: 'Image update check did not complete. Existing results were kept.' });
+    }
+    db.dockerImageUpdatesCache.set(server.id, report.results);
     resourceAlerts.evaluateServer(server.id);
-    res.json(updates);
+    res.json(report.results);
   } catch (error) {
     serverError(res, error, 'get docker image updates');
   }

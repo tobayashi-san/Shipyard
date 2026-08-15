@@ -22,19 +22,28 @@ export function OverflowMenu({
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
     document.addEventListener('click', handler);
-    return () => document.removeEventListener('click', handler);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('click', handler);
+      document.removeEventListener('keydown', onKeyDown);
+    };
   }, [open]);
 
   return (
     <div className="relative" ref={ref}>
-      <Button variant="ghost" size="icon" onClick={() => setOpen(!open)} title={title}>
+      <Button variant="ghost" size="icon" onClick={() => setOpen(!open)} title={title} aria-label={title} aria-haspopup="menu" aria-expanded={open}>
         <MoreVertical className="h-4 w-4" />
       </Button>
       {open && (
         <div
           className={`absolute right-0 top-full mt-1 z-50 ${width} rounded-md border bg-popover p-1 shadow-md`}
           onClick={() => setOpen(false)}
+          role="menu"
+          aria-label={title}
         >
           {children}
         </div>
@@ -65,9 +74,11 @@ export function OverflowItem({
     : 'hover:bg-accent';
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm disabled:opacity-50 disabled:pointer-events-none ${colorClass}`}
+      role="menuitem"
+      className={`flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm disabled:pointer-events-none disabled:opacity-50 ${colorClass}`}
     >
       {Icon && <Icon className="h-3.5 w-3.5" />} {children}
     </button>

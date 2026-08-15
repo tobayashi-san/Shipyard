@@ -6,7 +6,7 @@ const ansibleRunner = require('../services/ansible-runner');
 const db = require('../db');
 const scheduler = require('../services/scheduler');
 const { sendWebhook, sendEmail } = require('../services/notifier');
-const { adminOnly } = require('../middleware/auth');
+const { adminOnly, requireCap } = require('../middleware/auth');
 const { setSecret } = require('../utils/crypto');
 const { serverError } = require('../utils/http-error');
 const log = require('../utils/logger').child('system');
@@ -30,14 +30,111 @@ function isValidTimeZone(value) {
   }
 }
 
+const SSH_ASSIGNMENT_TYPES = new Set(['server', 'deployment', 'vm_template']);
+
+function hasTable(name) {
+  return Boolean(db.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name));
+}
+
+// Audit entries deliberately stay human-readable, but a name or assignment ID
+// should not force an administrator to manually search for the affected
+// object. Resolve only exact, current inventory matches; stale/deleted objects
+// intentionally remain plain text instead of producing a misleading link.
+function auditObjectLinks(detail) {
+  const text = String(detail || '');
+  const links = [];
+  const seen = new Set();
+  const add = (kind, id, label, href) => {
+    if (!id || seen.has(`${kind}:${id}`)) return;
+    seen.add(`${kind}:${id}`);
+    links.push({ kind, id, label, href });
+  };
+
+  const target = text.match(/(?:^|\s)type=(server|deployment|vm_template)\s+target=([^\s]+)/);
+  if (target) {
+    const [, type, id] = target;
+    if (type === 'server') {
+      const row = db.db.prepare('SELECT id, name FROM servers WHERE id = ?').get(id);
+      if (row) add('server', row.id, row.name, `/servers/${row.id}`);
+    } else if (type === 'deployment' && hasTable('tofu_workspaces')) {
+      const row = db.db.prepare('SELECT id, name FROM tofu_workspaces WHERE id = ?').get(id);
+      if (row) add('deployment', row.id, row.name, `/deployments/${row.id}`);
+    }
+  }
+
+  const namedServer = text.match(/\bserver=([^\s]+)/) || text.match(/\bServer "([^"]+)"/);
+  if (namedServer) {
+    const row = db.db.prepare('SELECT id, name FROM servers WHERE name = ?').get(namedServer[1]);
+    if (row) add('server', row.id, row.name, `/servers/${row.id}`);
+  }
+  // Workspace names are allowed to contain spaces. Stop at the next known
+  // key/value field rather than at the first whitespace.
+  const workspace = text.match(/\bworkspace=(.+?)(?=\s+(?:vm|playbook|status|action|error)=|$)/);
+  if (workspace && hasTable('tofu_workspaces')) {
+    const row = db.db.prepare('SELECT id, name FROM tofu_workspaces WHERE name = ?').get(workspace[1]);
+    if (row) add('deployment', row.id, row.name, `/deployments/${row.id}`);
+  }
+
+  // IPAM records deliberately log the canonical prefix.  Resolve it here so
+  // operators can move from an audit event back to the affected address space
+  // without searching through the prefix inventory.
+  const subnet = text.match(/\bsubnet=([^\s]+)/);
+  if (subnet && hasTable('ipam_subnets')) {
+    const row = db.db.prepare('SELECT id, cidr, name FROM ipam_subnets WHERE cidr = ?').get(subnet[1]);
+    if (row) add('network', row.id, row.name ? `${row.cidr} · ${row.name}` : row.cidr, `/networks/${row.id}`);
+  }
+  return links;
+}
+
+function sshAssignmentTargets(environmentId) {
+  const targets = {
+    servers: db.db.prepare('SELECT id, name, ip_address FROM servers WHERE environment_id = ? ORDER BY name COLLATE NOCASE').all(environmentId)
+      .map(row => ({ id: row.id, label: row.ip_address ? `${row.name} · ${row.ip_address}` : row.name })),
+    deployments: [],
+    vm_templates: [],
+  };
+  if (!hasTable('tofu_workspaces')) return targets;
+  targets.deployments = db.db.prepare('SELECT id, name FROM tofu_workspaces WHERE environment_id = ? ORDER BY name COLLATE NOCASE').all(environmentId)
+    .map(row => ({ id: row.id, label: row.name }));
+  if (hasTable('tofu_proxmox_vm_templates')) {
+    targets.vm_templates = db.db.prepare(`
+      SELECT template.id, template.name, workspace.name AS workspace_name
+      FROM tofu_proxmox_vm_templates template
+      JOIN tofu_workspaces workspace ON workspace.id = template.workspace_id
+      WHERE workspace.environment_id = ?
+      ORDER BY workspace.name COLLATE NOCASE, template.name COLLATE NOCASE
+    `).all(environmentId).map(row => ({ id: row.id, label: `${row.workspace_name} · ${row.name}` }));
+  }
+  return targets;
+}
+
+function resolveSshAssignmentTarget(type, id, environmentId) {
+  if (!SSH_ASSIGNMENT_TYPES.has(type) || !id || id.length > 128) return null;
+  if (type === 'server') {
+    const row = db.db.prepare('SELECT id, name, ip_address FROM servers WHERE id = ? AND environment_id = ?').get(id, environmentId);
+    return row ? { label: row.ip_address ? `${row.name} · ${row.ip_address}` : row.name } : null;
+  }
+  if (!hasTable('tofu_workspaces')) return null;
+  if (type === 'deployment') {
+    const row = db.db.prepare('SELECT name FROM tofu_workspaces WHERE id = ? AND environment_id = ?').get(id, environmentId);
+    return row ? { label: row.name } : null;
+  }
+  if (!hasTable('tofu_proxmox_vm_templates')) return null;
+  const row = db.db.prepare(`
+    SELECT template.name, workspace.name AS workspace_name
+    FROM tofu_proxmox_vm_templates template
+    JOIN tofu_workspaces workspace ON workspace.id = template.workspace_id
+    WHERE template.id = ? AND workspace.environment_id = ?
+  `).get(id, environmentId);
+  return row ? { label: `${row.workspace_name} · ${row.name}` } : null;
+}
+
 // GET /api/system/key - Get current SSH key info
 router.get('/key', adminOnly, (req, res) => {
   try {
-    let keyInfo = sshManager.getKeyInfo();
+    const keyInfo = sshManager.getKeyInfo();
     if (!keyInfo) {
-      // Auto-generate if none exists
-      const result = sshManager.generateKey();
-      keyInfo = sshManager.getKeyInfo();
+      return res.status(404).json({ error: 'SSH key not configured' });
     }
     res.json(keyInfo);
   } catch (error) {
@@ -163,6 +260,48 @@ router.post('/deploy-all', adminOnly, deployLimiter, async (req, res) => {
   }
 });
 
+// ── SSH key scope ────────────────────────────────────────────────────────
+// The private Fleet key stays central. These records only declare the
+// resources for which its public part is intended, making access intent
+// visible in the console and auditable without duplicating key material.
+router.get('/key-assignments', adminOnly, (req, res) => {
+  const environmentId = String(req.query.environment_id || 'default').trim() || 'default';
+  const rows = db.db.prepare('SELECT * FROM ssh_key_assignments WHERE environment_id = ? ORDER BY target_type, target_label COLLATE NOCASE').all(environmentId);
+  res.json(rows);
+});
+
+router.get('/key-assignment-targets', adminOnly, (req, res) => {
+  const environmentId = String(req.query.environment_id || 'default').trim() || 'default';
+  if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(404).json({ error: 'Umgebung nicht gefunden.' });
+  res.json(sshAssignmentTargets(environmentId));
+});
+
+router.put('/key-assignments', adminOnly, (req, res) => {
+  const environmentId = String(req.body?.environment_id || 'default').trim() || 'default';
+  const targetType = String(req.body?.target_type || '').trim();
+  const targetId = String(req.body?.target_id || '').trim();
+  if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Umgebung nicht gefunden.' });
+  const target = resolveSshAssignmentTarget(targetType, targetId, environmentId);
+  if (!target) return res.status(400).json({ error: 'Ziel ist ungültig oder gehört nicht zu dieser Umgebung.' });
+  const existing = db.db.prepare('SELECT id FROM ssh_key_assignments WHERE key_name = ? AND target_type = ? AND target_id = ?').get('fleet', targetType, targetId);
+  const id = existing?.id || db.uuidv4();
+  db.db.prepare(`INSERT INTO ssh_key_assignments (id, key_name, target_type, target_id, target_label, environment_id, updated_at)
+    VALUES (?, 'fleet', ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(key_name, target_type, target_id) DO UPDATE SET target_label=excluded.target_label, environment_id=excluded.environment_id, updated_at=datetime('now')`)
+    .run(id, targetType, targetId, target.label, environmentId);
+  const row = db.db.prepare('SELECT * FROM ssh_key_assignments WHERE id = ?').get(id);
+  db.auditLog.write('ssh.assignment.upsert', `key=fleet type=${targetType} target=${targetId}`, req.ip, true, req.user?.username);
+  res.status(existing ? 200 : 201).json(row);
+});
+
+router.delete('/key-assignments/:id', adminOnly, (req, res) => {
+  const row = db.db.prepare('SELECT * FROM ssh_key_assignments WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Schlüsselzuordnung nicht gefunden.' });
+  db.db.prepare('DELETE FROM ssh_key_assignments WHERE id = ?').run(row.id);
+  db.auditLog.write('ssh.assignment.delete', `key=${row.key_name} type=${row.target_type} target=${row.target_id}`, req.ip, true, req.user?.username);
+  res.status(204).end();
+});
+
 // GET /api/system/settings - Get all app settings (white label etc.)
 router.get('/settings', adminOnly, (req, res) => {
   try {
@@ -276,7 +415,7 @@ router.post('/smtp-test', adminOnly, async (req, res) => {
 });
 
 // GET /api/system/polling-config
-router.get('/polling-config', (req, res) => {
+router.get('/polling-config', adminOnly, (req, res) => {
   const g = (key) => db.settings.get(key) ?? scheduler.DEFAULTS[key];
   res.json({
     info:          { enabled: g('poll_info_enabled') !== '0',          intervalMin: parseInt(g('poll_info_interval_min', 10)) },
@@ -324,20 +463,43 @@ router.post('/onboarding-complete', adminOnly, (req, res) => {
 });
 
 // GET /api/system/audit - Recent audit log entries (with optional filters)
-router.get('/audit', adminOnly, (req, res) => {
+// Audit visibility is a deliberately assignable read capability.  The UI
+// exposes recent object tasks on platform, node and VM pages, so using the
+// broader admin guard here made those pages silently fail for an otherwise
+// authorised operator.  Mutating system endpoints below remain admin-only.
+router.get('/audit', requireCap('canViewAudit'), (req, res) => {
   try {
     const { action, user, ip, success, from, to } = req.query;
     const limit = Math.min(parseInt(req.query.limit, 10) || 200, 500);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
     const rows = db.auditLog.query({ action, user, ip, success, from, to, limit, offset });
-    res.json(rows);
+    res.json(rows.map(row => ({ ...row, object_links: auditObjectLinks(row.detail) })));
   } catch (error) {
     serverError(res, error, 'audit log');
   }
 });
 
+// GET /api/system/audit/export - filtered, spreadsheet-compatible audit export
+router.get('/audit/export', requireCap('canViewAudit'), (req, res) => {
+  try {
+    const { action, user, ip, success, from, to } = req.query;
+    const rows = db.auditLog.query({ action, user, ip, success, from, to, limit: 10_000, offset: 0 });
+    const csv = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const body = [
+      ['Zeitpunkt', 'Aktion', 'Benutzer', 'IP-Adresse', 'Erfolg', 'Details'],
+      ...rows.map(row => [row.created_at, row.action, row.user, row.ip, row.success ? 'ja' : 'nein', row.detail]),
+    ].map(row => row.map(csv).join(';')).join('\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="fleet-audit-log.csv"');
+    res.send(`\ufeff${body}`);
+    db.auditLog.write('system.audit_export', `rows=${rows.length}`, req.ip, true, req.user?.username);
+  } catch (error) {
+    serverError(res, error, 'audit export');
+  }
+});
+
 // GET /api/system/audit/meta - Filter options for audit log UI
-router.get('/audit/meta', adminOnly, (req, res) => {
+router.get('/audit/meta', requireCap('canViewAudit'), (req, res) => {
   try {
     res.json({
       actions: db.auditLog.distinctActions(),

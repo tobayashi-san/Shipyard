@@ -11,10 +11,10 @@ const ICONS: Record<ToastKind, React.ComponentType<{ className?: string }>> = {
 };
 
 const KIND_ICON_COLOR: Record<ToastKind, string> = {
-  success: 'text-emerald-500',
+  success: 'text-success',
   error:   'text-rose-500',
-  warning: 'text-amber-500',
-  info:    'text-blue-500',
+  warning: 'text-warning',
+  info:    'text-info',
 };
 
 const MAX_VISIBLE = 3;
@@ -22,41 +22,23 @@ const MAX_VISIBLE = 3;
 export function Toaster() {
   const toasts = useToastStore((s) => s.toasts);
   const dismiss = useToastStore((s) => s.dismiss);
-  const [hovered, setHovered] = useState(false);
-
-  // Show newest first; expanded on hover, collapsed otherwise
-  const sorted = [...toasts].reverse();
-  const visible = hovered ? sorted : sorted.slice(0, MAX_VISIBLE);
+  // Keep notifications readable: a small normal stack is more useful than
+  // decorative overlap, especially while forms and dialogs are closing.
+  const visible = [...toasts].reverse().slice(0, MAX_VISIBLE);
 
   return (
     <div
       aria-live="polite"
       className="fixed bottom-4 right-4 z-[100] w-[min(360px,calc(100%-2rem))]"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
     >
-      <div className={cn('relative', hovered ? 'space-y-2' : '')}>
-        {visible.map((t, i) => {
+      <div className="space-y-2">
+        {visible.map((t) => {
           const Icon = ICONS[t.kind];
-          // Stack effect when collapsed
-          const stackedStyle: React.CSSProperties = hovered
-            ? {}
-            : {
-                position: i === 0 ? 'relative' : 'absolute',
-                top: 0,
-                right: 0,
-                left: 0,
-                transform: i === 0 ? 'none' : `translateY(-${i * 8}px) scale(${1 - i * 0.04})`,
-                opacity: 1 - i * 0.15,
-                zIndex: MAX_VISIBLE - i,
-                pointerEvents: i === 0 ? 'auto' : 'none',
-              };
           return (
             <div
               key={t.id}
-              style={stackedStyle}
               className={cn(
-                'pointer-events-auto relative flex items-start gap-3 rounded-lg border bg-popover p-3',
+                'pointer-events-auto relative flex items-start gap-3 rounded-[3px] border bg-popover p-3',
                 'animate-slide-up transition-all duration-200'
               )}
               role="status"
@@ -69,6 +51,7 @@ export function Toaster() {
                 )}
                 {t.action && (
                   <button
+                    type="button"
                     onClick={() => { t.action!.onClick(); dismiss(t.id); }}
                     className="mt-2 rounded border border-strong bg-background px-2 py-0.5 text-xs font-medium hover:bg-accent"
                   >
@@ -77,6 +60,7 @@ export function Toaster() {
                 )}
               </div>
               <button
+                type="button"
                 onClick={() => dismiss(t.id)}
                 className="-mr-1 -mt-0.5 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                 aria-label="Dismiss"

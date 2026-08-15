@@ -3,7 +3,7 @@ const router = express.Router();
 const db = require('../db');
 const cron = require('node-cron');
 const scheduler = require('../services/scheduler');
-const { getPermissions, can, canAccessPlaybook, canAccessTargets } = require('../utils/permissions');
+const { getPermissions, can, canAccessPlaybook, canAccessTargets, canAccessEnvironment } = require('../utils/permissions');
 const { isValidPlaybook, validateTargets } = require('../utils/validate');
 
 function requireScheduleCapability(capability) {
@@ -14,28 +14,48 @@ function requireScheduleCapability(capability) {
 }
 
 function normalizeScheduleTargets(targets) {
-  return typeof targets === 'string' && targets.trim() ? targets.trim() : 'all';
+  return typeof targets === 'string' ? targets.trim() : '';
 }
 
-function validateScheduleScope(req, playbook, targets) {
+function validateScheduleScope(req, playbook, targets, environmentId = 'default') {
   const perms = getPermissions(req.user);
+  if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return 'Environment not found';
+  if (!canAccessEnvironment(perms, environmentId)) return 'Environment access denied';
   if (!canAccessPlaybook(perms, playbook)) {
     return 'Playbook not permitted for your role';
   }
-  if (!canAccessTargets(perms, normalizeScheduleTargets(targets), db.servers.getAll())) {
+  const servers = db.servers.getAll().filter(server => String(server.environment_id || 'default') === environmentId);
+  if (!canAccessTargets(perms, normalizeScheduleTargets(targets), servers)) {
     return 'Target servers not permitted for your role';
   }
   return null;
 }
 
 function canAccessSchedule(req, schedule) {
-  return !validateScheduleScope(req, schedule.playbook, schedule.targets);
+  return !validateScheduleScope(req, schedule.playbook, schedule.targets, schedule.environment_id || 'default');
+}
+
+function presentSchedule(schedule) {
+  return {
+    ...schedule,
+    next_run: scheduler.getNextRun(schedule.id),
+    timezone: scheduler.getSchedulerTimezone(),
+  };
+}
+
+function validExtraVars(value) {
+  return !value || (typeof value === 'object' && !Array.isArray(value)
+    && Object.values(value).every(item => ['string', 'number', 'boolean'].includes(typeof item))
+    && JSON.stringify(value).length <= 4096);
 }
 
 // GET /api/schedules — list all
 router.get('/', requireScheduleCapability('canViewSchedules'), (req, res) => {
-  const schedules = db.schedules.getAll().filter(schedule => canAccessSchedule(req, schedule));
-  res.json(schedules);
+  const environmentId = String(req.query.environment_id || 'default').trim() || 'default';
+  if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found' });
+  if (!canAccessEnvironment(getPermissions(req.user), environmentId)) return res.status(403).json({ error: 'Environment access denied' });
+  const schedules = db.schedules.getAll(environmentId).filter(schedule => canAccessSchedule(req, schedule));
+  res.json(schedules.map(presentSchedule));
 });
 
 // GET /api/schedules/:id — single
@@ -43,14 +63,15 @@ router.get('/:id', requireScheduleCapability('canViewSchedules'), (req, res) => 
   const schedule = db.schedules.getById(req.params.id);
   if (!schedule) return res.status(404).json({ error: 'Schedule not found' });
   if (!canAccessSchedule(req, schedule)) return res.status(403).json({ error: 'Schedule access denied' });
-  res.json(schedule);
+  res.json(presentSchedule(schedule));
 });
 
 // POST /api/schedules — create
 router.post('/', requireScheduleCapability('canAddSchedules'), (req, res) => {
-  const { name, playbook, targets, cronExpression } = req.body;
-  if (!name || !playbook || !cronExpression) {
-    return res.status(400).json({ error: 'name, playbook, and cronExpression are required' });
+  const { name, playbook, targets, cronExpression, extraVars, checkMode, forks } = req.body;
+  const environmentId = String(req.body.environment_id || 'default').trim() || 'default';
+  if (!name || !playbook || !cronExpression || !normalizeScheduleTargets(targets)) {
+    return res.status(400).json({ error: 'name, playbook, targets, and cronExpression are required' });
   }
   if (typeof name !== 'string' || !name.trim() || name.length > 100) return res.status(400).json({ error: 'Invalid name' });
   if (!isValidPlaybook(playbook)) return res.status(400).json({ error: 'Invalid playbook filename (must be letters/digits/_ - ending in .yml or .yaml)' });
@@ -61,12 +82,16 @@ router.post('/', requireScheduleCapability('canAddSchedules'), (req, res) => {
   const targetsErr = validateTargets(targets);
   if (targetsErr) return res.status(400).json({ error: targetsErr });
   const normalizedTargets = normalizeScheduleTargets(targets);
-  const scopeErr = validateScheduleScope(req, playbook, normalizedTargets);
+  if (!validExtraVars(extraVars)) return res.status(400).json({ error: 'extraVars must be a flat object (max 4KB)' });
+  if (checkMode !== undefined && typeof checkMode !== 'boolean') return res.status(400).json({ error: 'checkMode must be boolean' });
+  const scopeErr = validateScheduleScope(req, playbook, normalizedTargets, environmentId);
   if (scopeErr) return res.status(403).json({ error: scopeErr });
   if (db.schedules.getAll().length >= 100) {
     return res.status(400).json({ error: 'Maximum number of schedules (100) reached' });
   }
-  const id = db.schedules.create(name.trim(), playbook, normalizedTargets, cronExpression);
+  const id = db.schedules.create(name.trim(), playbook, normalizedTargets, cronExpression, {
+    environmentId, extraVars: extraVars || {}, checkMode, forks,
+  });
   scheduler.reload(id);
   db.auditLog.write('schedule.create', `Schedule "${name.trim()}" created (${playbook})`, req.ip, true, req.user?.username);
   res.json({ id, status: 'created' });
@@ -78,7 +103,7 @@ router.put('/:id', requireScheduleCapability('canEditSchedules'), (req, res) => 
   if (!existing) return res.status(404).json({ error: 'Schedule not found' });
   if (!canAccessSchedule(req, existing)) return res.status(403).json({ error: 'Schedule access denied' });
 
-  const { name, playbook, targets, cronExpression, enabled } = req.body;
+  const { name, playbook, targets, cronExpression, enabled, extraVars, checkMode, forks } = req.body;
   const fields = {};
   if (name !== undefined) {
     if (typeof name !== 'string' || !name.trim() || name.length > 100) return res.status(400).json({ error: 'Invalid name' });
@@ -92,6 +117,7 @@ router.put('/:id', requireScheduleCapability('canEditSchedules'), (req, res) => 
     const targetsErr = validateTargets(targets);
     if (targetsErr) return res.status(400).json({ error: targetsErr });
     fields.targets = normalizeScheduleTargets(targets);
+    if (!fields.targets) return res.status(400).json({ error: 'At least one target is required; select all explicitly to target every server' });
   }
   if (cronExpression !== undefined) {
     if (!cron.validate(cronExpression)) {
@@ -103,6 +129,15 @@ router.put('/:id', requireScheduleCapability('canEditSchedules'), (req, res) => 
     if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be a boolean' });
     fields.enabled = enabled ? 1 : 0;
   }
+  if (extraVars !== undefined) {
+    if (!validExtraVars(extraVars)) return res.status(400).json({ error: 'extraVars must be a flat object (max 4KB)' });
+    fields.extraVars = extraVars;
+  }
+  if (checkMode !== undefined) {
+    if (typeof checkMode !== 'boolean') return res.status(400).json({ error: 'checkMode must be boolean' });
+    fields.checkMode = checkMode;
+  }
+  if (forks !== undefined) fields.forks = forks;
 
   if (Object.keys(fields).length === 0) {
     return res.status(400).json({ error: 'No fields to update' });
@@ -110,7 +145,7 @@ router.put('/:id', requireScheduleCapability('canEditSchedules'), (req, res) => 
 
   const nextPlaybook = fields.playbook || existing.playbook;
   const nextTargets = fields.targets || existing.targets;
-  const scopeErr = validateScheduleScope(req, nextPlaybook, nextTargets);
+  const scopeErr = validateScheduleScope(req, nextPlaybook, nextTargets, existing.environment_id || 'default');
   if (scopeErr) return res.status(403).json({ error: scopeErr });
 
   db.schedules.update(req.params.id, fields);

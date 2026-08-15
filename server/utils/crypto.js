@@ -13,6 +13,10 @@ function getMasterKey() {
   return crypto.createHash('sha256').update(secret).digest();
 }
 
+function isEncryptionAvailable() {
+  return Boolean(getMasterKey());
+}
+
 let _noKeyWarned = false;
 
 function encrypt(plaintext) {
@@ -73,4 +77,4 @@ function setSecret(db, key, value) {
   db.settings.set(key, encrypt(value || ''));
 }
 
-module.exports = { encrypt, decrypt, getSecret, setSecret };
+module.exports = { encrypt, decrypt, getSecret, setSecret, isEncryptionAvailable };

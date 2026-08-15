@@ -29,6 +29,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
+            echo "Releases must be dispatched from the main branch" >&2
+            exit 1
+          fi
           VERSION="${{ inputs.version }}"
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
             echo "Version must look like 1.2.3 or 1.2.3-rc.1" >&2
@@ -67,6 +71,10 @@ jobs:
       - name: Run backend tests
         working-directory: server
         run: npm test
+
+      - name: Check typed backend feature boundaries
+        working-directory: server
+        run: npm run typecheck
 
       - name: Audit production backend dependencies
         working-directory: server
@@ -107,6 +115,16 @@ jobs:
         working-directory: frontend-next
         run: npm test
 
+      - name: Install backend dependencies for browser tests
+        working-directory: server
+        run: npm ci
+
+      - name: Run browser end-to-end tests
+        working-directory: frontend-next
+        run: |
+          npx playwright install --with-deps firefox
+          npm run test:e2e
+
       - name: Audit production frontend dependencies
         working-directory: frontend-next
         run: npm audit --omit=dev
@@ -127,7 +145,29 @@ jobs:
         with:
           context: .
           push: false
+          load: true
           tags: shipyard:release-check
+
+      - name: Smoke-test production container
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'docker logs shipyard-smoke || true; docker rm -f shipyard-smoke >/dev/null 2>&1 || true' EXIT
+          docker run -d --name shipyard-smoke \
+            -e JWT_SECRET=release-smoke-jwt-secret-000000000000 \
+            -e SHIPYARD_KEY_SECRET=release-smoke-key-secret-0000000000 \
+            -p 127.0.0.1:8443:8443 shipyard:release-check
+          for attempt in {1..30}; do
+            if curl --fail --silent --insecure https://127.0.0.1:8443/api/health >/dev/null; then break; fi
+            if [[ "$attempt" == 30 ]]; then exit 1; fi
+            sleep 1
+          done
+          docker restart shipyard-smoke >/dev/null
+          for attempt in {1..30}; do
+            if curl --fail --silent --insecure https://127.0.0.1:8443/api/health >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          exit 1
 
   release-rc:
     name: Publish RC release

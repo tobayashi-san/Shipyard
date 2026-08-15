@@ -280,6 +280,7 @@ function AgentToggle() {
     onSuccess: () => {
       showToast(t('set.agentFeatureSaved'), 'success');
       qc.invalidateQueries({ queryKey: ['settings'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
     },
     onError: (err) => {
       setChecked((c) => !c); // revert
@@ -291,6 +292,7 @@ function AgentToggle() {
     <SettingsRow label={t('set.agentFeatureToggle')} noBorder>
       <Switch
         checked={checked}
+        aria-label={t('set.agentFeatureToggle')}
         onCheckedChange={(v) => { setChecked(v); save.mutate(v); }}
         disabled={save.isPending}
       />

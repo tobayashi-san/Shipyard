@@ -5,14 +5,14 @@ const path = require('path');
 const fs = require('fs');
 
 process.env.DB_PATH = path.join(os.tmpdir(), `lab_test_opentofu_${Date.now()}.db`);
-process.env.JWT_SECRET = 'test-jwt-secret-for-opentofu-plugin';
+process.env.JWT_SECRET = 'test-jwt-secret-for-opentofu-core';
 process.env.NODE_ENV = 'test';
 
 const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 
 const db = require('../db');
-const opentofuPlugin = require('../../plugins/opentofu/index.js');
+const opentofuFeature = require('../features/opentofu');
 
 const {
   extractManagedServersFromState,
@@ -28,9 +28,16 @@ const {
   moveWorkspaceDirectory,
   destroyConfirmationPhrase,
   hasValidDestroyConfirmation,
+  destroyVmConfirmationPhrase,
+  hasValidDestroyVmConfirmation,
   normalizePostDeployPlaybooks,
   normalizeProxmoxVmTemplate,
-} = opentofuPlugin._test;
+  normalizedWorkspaceName,
+  terraformConfigurationHash,
+  summarizePlanJson,
+  redactTofuOutput,
+  createStreamingRedactor,
+} = opentofuFeature._test;
 
 after(() => {
   for (const ext of ['', '-wal', '-shm']) {
@@ -47,13 +54,60 @@ test('destroy requires a workspace-specific confirmation phrase', () => {
   assert.equal(hasValidDestroyConfirmation(null, 'production'), false);
 });
 
+test('targeted VM destroy requires a workspace and VM-specific confirmation phrase', () => {
+  const phrase = destroyVmConfirmationPhrase('production', 'web-01');
+  assert.equal(phrase, 'DESTROY production/web-01');
+  assert.equal(hasValidDestroyVmConfirmation(phrase, 'production', 'web-01'), true);
+  assert.equal(hasValidDestroyVmConfirmation('DESTROY production', 'production', 'web-01'), false);
+  assert.equal(hasValidDestroyVmConfirmation('DESTROY production/db-01', 'production', 'web-01'), false);
+});
+
+test('workspace names are safe for the Git workspace and plans are summarized', () => {
+  assert.equal(normalizedWorkspaceName('prod-app_01'), 'prod-app_01');
+  assert.throws(() => normalizedWorkspaceName('../../escape'), /deployment name/i);
+  assert.throws(() => normalizedWorkspaceName('bad/name'), /deployment name/i);
+  assert.deepEqual(summarizePlanJson({ resource_changes: [
+    { change: { actions: ['create'] } },
+    { change: { actions: ['update'] } },
+    { change: { actions: ['delete'] } },
+    { change: { actions: ['delete', 'create'] } },
+  ] }), { create: 1, update: 1, delete: 1, replace: 1, no_op: 0, read: 0 });
+});
+
+test('configuration hash changes with Terraform files and variables', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tofu-hash-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'main.tf'), 'resource "x" "a" {}\n');
+    const first = terraformConfigurationHash(dir, { TF_VAR_token: 'one' });
+    const same = terraformConfigurationHash(dir, { TF_VAR_token: 'one', PATH: '/ignored' });
+    const changed = terraformConfigurationHash(dir, { TF_VAR_token: 'two' });
+    assert.equal(first, same);
+    assert.notEqual(first, changed);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('OpenTofu output redacts workspace variable values before persistence', () => {
+  assert.equal(
+    redactTofuOutput('provider failed with super-secret-token', { TF_VAR_token: 'super-secret-token' }),
+    'provider failed with ********'
+  );
+  const chunks = [];
+  const stream = createStreamingRedactor({ TF_VAR_token: 'super-secret-token' }, chunk => chunks.push(chunk));
+  stream.write('provider: super-sec');
+  stream.write('ret-token failed');
+  stream.flush();
+  assert.equal(chunks.join(''), 'provider: ******** failed');
+});
+
 test('post-deploy playbook selections are normalized and path-safe', () => {
   assert.deepEqual(
     normalizePostDeployPlaybooks(['docker-install.yml', 'system/agent/agent-update.yml', 'docker-install.yml']),
     ['docker-install.yml', 'system/agent/agent-update.yml']
   );
-  assert.throws(() => normalizePostDeployPlaybooks(['../../escape.yml']), /Ungültiger Playbook-Name/);
-  assert.throws(() => normalizePostDeployPlaybooks('docker-install.yml'), /Liste/);
+  assert.throws(() => normalizePostDeployPlaybooks(['../../escape.yml']), /Invalid playbook name/);
+  assert.throws(() => normalizePostDeployPlaybooks('docker-install.yml'), /provided as a list/);
 });
 
 test('VM templates preserve a validated post-deploy order', () => {
@@ -66,7 +120,7 @@ test('VM templates preserve a validated post-deploy order', () => {
   });
   assert.equal(template.name, 'Ubuntu App Server');
   assert.deepEqual(template.config.post_deploy_playbooks, ['system/update.yml', 'docker/install.yml']);
-  assert.throws(() => normalizeProxmoxVmTemplate({ name: 'Bad', config: null }), /gültige Konfiguration/);
+  assert.throws(() => normalizeProxmoxVmTemplate({ name: 'Bad', config: null }), /valid configuration/);
 });
 
 test('extractManagedServersFromState prefers explicit shipyard outputs', () => {
@@ -303,7 +357,7 @@ test('moveWorkspaceDirectory moves an existing workspace without losing files', 
   fs.rmSync(baseDir, { recursive: true, force: true });
 });
 
-test('reconcileManagedServers creates, updates and cleans up plugin-managed servers', async () => {
+test('reconcileManagedServers creates, updates and detaches deployment-managed servers without deleting inventory', async () => {
   const workspace = { id: 'ws-managed', name: 'lab-managed' };
   const desired = [{
     resource_key: 'output:shipyard_servers:web-1',
@@ -317,7 +371,7 @@ test('reconcileManagedServers creates, updates and cleans up plugin-managed serv
   }];
 
   const created = await reconcileManagedServers({ db, workspace, desiredServers: desired });
-  assert.deepEqual(created, { created: 1, updated: 0, deleted: 0, untracked: 0 });
+  assert.deepEqual(created, { created: 1, updated: 0, detached: 0 });
 
   const mapping = db.db.prepare('SELECT * FROM tofu_managed_servers WHERE workspace_id = ?').get(workspace.id);
   assert.ok(mapping);
@@ -337,7 +391,7 @@ test('reconcileManagedServers creates, updates and cleans up plugin-managed serv
       tags: ['role:web', 'prod'],
     }],
   });
-  assert.deepEqual(updated, { created: 0, updated: 1, deleted: 0, untracked: 0 });
+  assert.deepEqual(updated, { created: 0, updated: 1, detached: 0 });
 
   const updatedServer = db.servers.getById(mapping.server_id);
   assert.equal(updatedServer.ip_address, '10.10.10.42');
@@ -346,8 +400,8 @@ test('reconcileManagedServers creates, updates and cleans up plugin-managed serv
   assert.ok(JSON.parse(updatedServer.tags).includes('opentofu:lab-managed'));
 
   const cleaned = cleanupManagedServersForWorkspace({ db, workspace });
-  assert.deepEqual(cleaned, { deleted: 1, untracked: 0 });
-  assert.equal(db.servers.getById(mapping.server_id), undefined);
+  assert.deepEqual(cleaned, { detached: 1 });
+  assert.ok(db.servers.getById(mapping.server_id));
   assert.equal(db.db.prepare('SELECT COUNT(*) AS c FROM tofu_managed_servers WHERE workspace_id = ?').get(workspace.id).c, 0);
 });
 
@@ -378,7 +432,7 @@ test('cleanupManagedServersForWorkspace keeps reused manual servers', async () =
     }],
   });
 
-  assert.deepEqual(result, { created: 0, updated: 1, deleted: 0, untracked: 0 });
+  assert.deepEqual(result, { created: 0, updated: 1, detached: 0 });
 
   const mapping = db.db.prepare('SELECT * FROM tofu_managed_servers WHERE workspace_id = ?').get(workspace.id);
   assert.ok(mapping);
@@ -386,6 +440,6 @@ test('cleanupManagedServersForWorkspace keeps reused manual servers', async () =
   assert.equal(mapping.created_by_plugin, 0);
 
   const cleaned = cleanupManagedServersForWorkspace({ db, workspace });
-  assert.deepEqual(cleaned, { deleted: 0, untracked: 1 });
+  assert.deepEqual(cleaned, { detached: 1 });
   assert.ok(db.servers.getById(manual.id));
 });

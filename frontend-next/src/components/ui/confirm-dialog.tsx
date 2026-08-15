@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './dialog';
 import { Button } from './button';
 import { Input } from './input';
@@ -36,6 +36,7 @@ export function ConfirmDialog({
   confirmInputHelp,
 }: ConfirmDialogProps) {
   const [typed, setTyped] = useState('');
+  const confirmInputId = useId();
   const requiredValue = String(confirmTextValue ?? '');
   const requiresText = requiredValue.length > 0;
   const canConfirm = !requiresText || typed === requiredValue;
@@ -55,9 +56,15 @@ export function ConfirmDialog({
         </DialogHeader>
         {requiresText && (
           <div className="space-y-2">
-            <Label>{confirmInputLabel}</Label>
+            <Label htmlFor={confirmInputId}>{confirmInputLabel}</Label>
             <Input
+              id={confirmInputId}
               value={typed}
+              // `input` is deliberately handled in addition to React's
+              // change abstraction.  Browser autofill/password managers and
+              // some WebKit/Firefox paths update the native value first; the
+              // destructive-action guard must follow that value immediately.
+              onInput={(e) => setTyped(e.currentTarget.value)}
               onChange={(e) => setTyped(e.target.value)}
               placeholder={confirmInputPlaceholder ?? requiredValue}
               autoComplete="off"

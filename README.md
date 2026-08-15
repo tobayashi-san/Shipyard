@@ -1,62 +1,39 @@
-# Shipyard
+# Fleet (Shipyard)
 
-Web dashboard for managing Linux servers — SSH access, monitoring, Docker workloads, updates, and Ansible automation in a single interface.
+Fleet is the Shipyard web dashboard for managing Linux servers — SSH access,
+monitoring, Docker workloads, updates, and Ansible automation in a single
+interface. The repository, container image, data paths, and `SHIPYARD_*`
+configuration names retain the Shipyard name for upgrade compatibility.
 
 > **Do not expose Shipyard to the public internet.**
 > It stores SSH private keys and has direct shell access to all managed servers.
 > Run it inside a private network or VPN. See the [Security Guide](https://github.com/tobayashi-san/Shipyard/wiki/Security-Guide).
 
+## Docker deployment
+
+The supported production path is Docker Compose. Follow the concise,
+security-focused guide in [Docker deployment](docs/DOCKER_DEPLOYMENT.md). It
+covers secret generation, localhost-by-default networking, TLS, backups, and
+safe updates.
+
 ## Quick Start
 
 ```bash
-mkdir shipyard && cd shipyard
-
-# Generate secrets
-echo "JWT_SECRET=$(openssl rand -hex 32)" > .env
-echo "SHIPYARD_KEY_SECRET=$(openssl rand -hex 32)" >> .env
-
-# Create docker-compose.yml
-cat > docker-compose.yml << 'EOF'
-services:
-  shipyard:
-    # "latest" points to stable releases only (no RC tags)
-    image: ghcr.io/tobayashi-san/shipyard:latest
-    container_name: shipyard
-    restart: unless-stopped
-    ports:
-      - "443:443"
-    volumes:
-      - shipyard-data:/app/server/data
-      - ./playbooks:/app/server/playbooks
-      - ./plugins:/app/plugins
-      # OpenTofu workspaces (optional bind mount):
-      # - /path/to/workspaces:/workspaces
-      # Custom TLS certificate (optional):
-      # - /etc/ssl/certs/shipyard.crt:/certs/shipyard.crt:ro
-      # - /etc/ssl/private/shipyard.key:/certs/shipyard.key:ro
-    environment:
-      - NODE_ENV=production
-      - TZ=${TZ:-Europe/Zurich}
-      - SHIPYARD_TIMEZONE=${SHIPYARD_TIMEZONE:-Europe/Zurich}
-      - JWT_SECRET=${JWT_SECRET:?Create a .env file with JWT_SECRET — see README}
-      - SHIPYARD_KEY_SECRET=${SHIPYARD_KEY_SECRET:?Create a .env file with SHIPYARD_KEY_SECRET — see README}
-      # - PORT=443
-      # - ALLOWED_ORIGINS=https://yourdomain.com
-      # - SSL_CERT=/certs/shipyard.crt
-      # - SSL_KEY=/certs/shipyard.key
-      # Set to 1 when running behind a reverse proxy that sends X-Forwarded-* headers
-      # - TRUST_PROXY=1
-      # Extra SANs for the self-signed TLS certificate (useful for agent push mode)
-      # - CERT_SANS=IP:10.30.1.10,DNS:shipyard.example.com
-
-volumes:
-  shipyard-data:
-EOF
-
-docker compose up -d
+git clone https://github.com/tobayashi-san/Shipyard.git
+cd Shipyard
+cp .env.example .env
+chmod 600 .env
+# Generate two different values and enter them as JWT_SECRET and
+# SHIPYARD_KEY_SECRET in .env:
+openssl rand -hex 32
+openssl rand -hex 32
+docker compose up -d --wait
 ```
 
-Open **`https://<host-ip>`** in your browser. The setup wizard will guide you through account creation, appearance settings, and SSH key generation.
+By default the supplied Compose file binds Shipyard to **`https://localhost`**.
+Set an explicit private-LAN bind address in `.env` only when access is protected
+by a firewall or VPN. The setup wizard will guide you through account creation,
+appearance settings, and SSH key generation.
 The setup wizard appears only when no users exist; otherwise you will see the login page.
 
 HTTPS is enabled by default with a self-signed certificate — accept the browser warning once, or [bring your own certificate](https://github.com/tobayashi-san/Shipyard/wiki/Installation#custom-tls-certificate).
@@ -66,7 +43,7 @@ For agent push/auto mode, set `CERT_SANS` to the LAN IP or DNS name that managed
 
 ```bash
 docker compose pull
-docker compose up -d
+docker compose up -d --wait
 ```
 
 With `:latest`, this updates Shipyard to the newest **stable** release.
@@ -80,7 +57,7 @@ Images are published to GitHub Container Registry:
 - Versioned releases: `ghcr.io/tobayashi-san/shipyard:<version>`
 - Release candidates: `ghcr.io/tobayashi-san/shipyard:<version>-rc.<n>`
 
-The Docker image serves the React frontend from `frontend-next/dist` and bundles the default plugins and starter playbooks. On first start, bundled plugins are seeded into `/app/plugins`; later starts update bundled plugins when their bundled version changes.
+The Docker image serves the React frontend from `frontend-next/dist`, includes OpenTofu as a built-in server feature, and bundles the starter playbooks. Optional plugins remain operator-managed in `/app/plugins`.
 
 ### Plugin trust
 
@@ -121,8 +98,9 @@ Current screenshots are captured from a seeded local demo instance. Primary asse
 - **SSH Key Management** — auto-generate Ed25519, deploy via UI, AES-256-GCM encryption at rest
 - **Notifications** — webhooks (Discord, Slack) and SMTP email alerts
 - **Auth & Security** — JWT, RBAC with custom roles, TOTP/2FA, audit log, rate limiting, HTTPS
-- **Plugins** — hot-reloadable; bundled: OpenTofu / Terraform workspace manager
-- **UI** — German & English, light/dark/auto theme, white-label support
+- **Deployments** — environment-scoped OpenTofu plans, reviewed-plan Apply, drift checks, encrypted local-state recovery, run locking, and Proxmox VM blueprints
+- **Plugins** — hot-reloadable extensions with scoped UI and API integration
+- **UI** — English, light/dark/system theme, white-label support
 
 ## Development
 

@@ -23,7 +23,7 @@ export function SkeletonRow({ cols = 4 }: { cols?: number }) {
  */
 export function SkeletonCard() {
   return (
-    <div className="space-y-3 rounded-lg border bg-card p-4">
+    <div className="space-y-3 rounded-[3px] border bg-card p-4">
       <Skeleton className="h-4 w-1/3" />
       <Skeleton className="h-3 w-2/3" />
       <Skeleton className="h-3 w-1/2" />

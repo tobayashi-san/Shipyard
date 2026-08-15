@@ -29,6 +29,7 @@ jobs:
         run: |
           npm ci
           npm test
+          npm run typecheck
 
       - name: Install, test and build frontend
         working-directory: frontend-next
@@ -37,6 +38,8 @@ jobs:
           npm run typecheck
           npm run lint
           npm test
+          npx playwright install --with-deps firefox
+          npm run test:e2e
           npm run build
 
   build-and-push:

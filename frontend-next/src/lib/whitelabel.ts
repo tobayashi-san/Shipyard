@@ -61,13 +61,11 @@ function shadeHsl(hslComponents: string, pctDelta: number): string {
   return `${parts[1]} ${parts[2]}% ${newL}%`;
 }
 
-function escSvg(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function buildFaviconDataUrl(appName: string, accent: string): string {
-  const letter = (String(appName || '').trim()[0] || 'S').toUpperCase();
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="8" y="8" width="48" height="48" rx="12" fill="${accent}"/><text x="32" y="42" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="26" fill="#ffffff">${escSvg(letter)}</text></svg>`;
+function buildFaviconDataUrl(accent: string): string {
+  // Keep the shipyard mark recognizable at browser-tab size while allowing
+  // the configured accent colour to carry through white-label installations.
+  const safeAccent = /^#[0-9a-f]{6}$/i.test(accent) ? accent : DEFAULT_ACCENT;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path fill="${safeAccent}" d="M28 13h8v18h11v7h-3l-4 11H24l-4-11h-3v-7h11zm-6 25 4.2 8h11.6l4.2-8z"/></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
@@ -96,9 +94,14 @@ export function applyWhiteLabel(wl: WhiteLabelSettings): void {
   // Values must be HSL components (e.g. "217 91% 56%") because Tailwind uses hsl(var(--brand))
   const root = document.documentElement;
   const hsl = hexToHslComponents(accent) || '217 91% 56%';
-  root.style.setProperty('--brand', hsl);
-  root.style.setProperty('--brand-hover', shadeHsl(hsl, -8));
-  root.style.setProperty('--brand-light', shadeHsl(hsl, 38));
+  // A console palette owns interactive colours. The white-label accent stays
+  // available for the favicon and branding, but must not overwrite a chosen
+  // theme with an unrelated blue/purple/red action colour.
+  if (!root.dataset.consoleTheme) {
+    root.style.setProperty('--brand', hsl);
+    root.style.setProperty('--brand-hover', shadeHsl(hsl, -8));
+    root.style.setProperty('--brand-light', shadeHsl(hsl, 38));
+  }
   const rgb = hexToRgb(accent);
   if (rgb) root.style.setProperty('--brand-rgb', rgb);
 
@@ -110,5 +113,5 @@ export function applyWhiteLabel(wl: WhiteLabelSettings): void {
     favicon.setAttribute('type', 'image/svg+xml');
     document.head.appendChild(favicon);
   }
-  favicon.setAttribute('href', buildFaviconDataUrl(name, accent));
+  favicon.setAttribute('href', buildFaviconDataUrl(accent));
 }

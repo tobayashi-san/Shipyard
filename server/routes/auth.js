@@ -11,8 +11,13 @@ const { getJwtSecret } = require('../utils/jwt-secret');
 const { serverError } = require('../utils/http-error');
 const { authSensitiveLimiter } = require('../utils/rate-limiters');
 const { normalizeUsername, validateUsername } = require('../utils/usernames');
+const { normalizeEmail } = require('../utils/email');
 
 const isTest = process.env.NODE_ENV === 'test';
+
+function requestBody(req) {
+  return req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+}
 
 // Dummy hash for constant-time comparison when user not found (prevents timing attacks)
 const DUMMY_HASH = '$2a$12$LJ3m4ys3Rl4Eqb4oNaeyxOV2OVXjoAiGxvuoQDcxXnQmYVG.gu0Vu';
@@ -101,10 +106,17 @@ router.get('/profile', authSensitiveLimiter, authMiddleware, (req, res) => {
 
 // PUT /api/auth/profile – users can update their display name and email only
 router.put('/profile', authSensitiveLimiter, authMiddleware, (req, res) => {
-  const { displayName, email } = req.body;
+  const { displayName, email } = requestBody(req);
   const fields = {};
-  if (displayName !== undefined) fields.display_name = String(displayName).trim().slice(0, 100);
-  if (email !== undefined) fields.email = String(email).trim().slice(0, 256);
+  if (displayName !== undefined) {
+    if (typeof displayName !== 'string') return res.status(400).json({ error: 'displayName must be a string' });
+    fields.display_name = displayName.trim().replace(/\s+/g, ' ').slice(0, 100);
+  }
+  if (email !== undefined) {
+    const normalizedEmail = normalizeEmail(email);
+    if (normalizedEmail && normalizedEmail.error) return res.status(400).json({ error: normalizedEmail.error });
+    fields.email = normalizedEmail;
+  }
 
   if (Object.keys(fields).length) {
     try {
@@ -123,7 +135,7 @@ router.post('/setup', setupLimiter, async (req, res) => {
   if (db.users.count() > 0) {
     return res.status(400).json({ error: 'Users already exist. Use /api/auth/change.' });
   }
-  let { username, password } = req.body;
+  let { username, password } = requestBody(req);
   username = normalizeUsername(username) || 'admin';
   const usernameErr = validateUsername(username);
   if (usernameErr) return res.status(400).json({ error: usernameErr });
@@ -148,7 +160,7 @@ router.post('/setup', setupLimiter, async (req, res) => {
 
 // POST /api/auth/login
 router.post('/login', loginLimiter, async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password } = requestBody(req);
   if (!password || typeof password !== 'string') {
     return res.status(400).json({ error: 'Password required' });
   }
@@ -179,7 +191,10 @@ router.post('/login', loginLimiter, async (req, res) => {
 
   // If 2FA is enabled for this user, issue a short-lived temp token
   if (user.totp_enabled) {
-    const tempToken = makeTempToken({ totp_pending: true, userId: user.id });
+    // Bind the intermediate token to this exact account session generation.
+    // It becomes unusable immediately when 2FA, the password, or the role is
+    // changed and its token version is rotated.
+    const tempToken = makeTempToken({ totp_pending: true, userId: user.id, tv: user.token_version || 0 });
     return res.json({ requires2FA: true, tempToken });
   }
 
@@ -189,7 +204,7 @@ router.post('/login', loginLimiter, async (req, res) => {
 
 // POST /api/auth/change – change password (requires valid JWT)
 router.post('/change', changeLimiter, authMiddleware, async (req, res) => {
-  const { currentPassword, newPassword } = req.body;
+  const { currentPassword, newPassword } = requestBody(req);
   if (!currentPassword || !newPassword) {
     return res.status(400).json({ error: 'currentPassword and newPassword required' });
   }
@@ -215,14 +230,14 @@ router.post('/change', changeLimiter, authMiddleware, async (req, res) => {
 
 // POST /api/auth/totp/login – verify TOTP code after password step
 router.post('/totp/login', loginLimiter, (req, res) => {
-  const { tempToken, code } = req.body;
+  const { tempToken, code } = requestBody(req);
   if (!tempToken || !code) return res.status(400).json({ error: 'tempToken and code required' });
 
   let payload;
   try { payload = jwt.verify(tempToken, getJwtSecret()); }
   catch { return res.status(401).json({ error: 'Invalid or expired session. Please log in again.' }); }
 
-  if (!payload.totp_pending || !payload.userId) {
+  if (!payload.totp_pending || !payload.userId || !Number.isInteger(payload.tv)) {
     return res.status(401).json({ error: 'Invalid token type' });
   }
 
@@ -230,6 +245,9 @@ router.post('/totp/login', loginLimiter, (req, res) => {
     db.users.getById(payload.userId)?.username || ''
   );
   if (!user) return res.status(401).json({ error: 'User not found' });
+  if (!user.totp_enabled || payload.tv !== (user.token_version || 0)) {
+    return res.status(401).json({ error: 'Invalid or expired session. Please log in again.' });
+  }
   const secret = db.users.getTotpSecret(user.id);
   if (!secret) return res.status(400).json({ error: '2FA not configured' });
   if (!verifyTotp(code, secret)) {
@@ -265,7 +283,7 @@ router.post('/totp/setup', authSensitiveLimiter, authMiddleware, async (req, res
 
 // POST /api/auth/totp/confirm – verify code, then enable 2FA
 router.post('/totp/confirm', authSensitiveLimiter, authMiddleware, (req, res) => {
-  const { code } = req.body;
+  const { code } = requestBody(req);
   if (!code) return res.status(400).json({ error: 'code required' });
 
   const fullUser = db.users.getByUsername(req.user.username);
@@ -274,14 +292,19 @@ router.post('/totp/confirm', authSensitiveLimiter, authMiddleware, (req, res) =>
   if (!verifyTotp(code, secret)) return res.status(400).json({ error: 'Invalid code – try again' });
   db.users.setTotp(req.user.id, secret, true);
   db.users.setPendingTotp(req.user.id, '');
+  // A token created before 2FA was enabled must never stay usable as a
+  // password-only session. Return a replacement so the active UI continues
+  // without interruption.
+  db.users.incrementTokenVersion(req.user.id);
+  const updatedUser = db.users.getById(req.user.id);
 
   db.auditLog.write('auth.totp', '2FA enabled', req.ip, true, req.user?.username);
-  res.json({ success: true });
+  res.json({ success: true, token: makeToken(updatedUser) });
 });
 
 // DELETE /api/auth/totp – disable 2FA (requires password re-authentication)
 router.delete('/totp', authSensitiveLimiter, authMiddleware, async (req, res) => {
-  const { password } = req.body || {};
+  const { password } = requestBody(req);
   if (!password || typeof password !== 'string') {
     return res.status(400).json({ error: 'Password required to disable 2FA' });
   }
@@ -291,9 +314,12 @@ router.delete('/totp', authSensitiveLimiter, authMiddleware, async (req, res) =>
   const valid = await bcrypt.compare(password, fullUser.password_hash);
   if (!valid) return res.status(401).json({ error: 'Incorrect password' });
   db.users.setTotp(req.user.id, '', false);
+  db.users.setPendingTotp(req.user.id, '');
+  db.users.incrementTokenVersion(req.user.id);
+  const updatedUser = db.users.getById(req.user.id);
 
   db.auditLog.write('auth.totp', '2FA disabled', req.ip, true, req.user?.username);
-  res.json({ success: true });
+  res.json({ success: true, token: makeToken(updatedUser) });
 });
 
 module.exports = { router };

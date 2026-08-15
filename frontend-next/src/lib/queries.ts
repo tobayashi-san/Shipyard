@@ -82,3 +82,16 @@ export function canSeePlugin(profile: Profile | undefined | null, pluginId: stri
   if (perms.full || perms.plugins === 'all') return true;
   return Array.isArray(perms.plugins) && perms.plugins.includes(pluginId);
 }
+
+/** Shared navigation rule for the built-in deployment area. */
+export function canAccessDeployments(profile: Profile | undefined | null): boolean {
+  return hasCap(profile, 'canViewDeployments') || hasCap(profile, 'canManageDeployments');
+}
+
+/** Shared navigation rule for the operational workbench and maintenance windows. */
+export function canAccessOperations(profile: Profile | undefined | null): boolean {
+  return canAccessDeployments(profile)
+    || hasCap(profile, 'canViewSchedules')
+    || hasCap(profile, 'canViewAudit')
+    || hasCap(profile, 'canViewMaintenance');
+}

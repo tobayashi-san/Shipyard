@@ -15,18 +15,18 @@ export function EmptyState({ icon, title, description, action, className, compac
     <div
       className={cn(
         'flex flex-col items-center justify-center text-center gap-3',
-        compact ? 'py-8' : 'py-12 sm:py-14',
+        compact ? 'min-h-[9rem] py-7' : 'min-h-[15rem] py-10 sm:py-12',
         className
       )}
     >
       {icon && (
-        <div className="flex h-11 w-11 items-center justify-center rounded-md border bg-muted/50 text-muted-foreground">
+        <div className="flex h-10 w-10 items-center justify-center rounded-md border bg-muted/65 text-muted-foreground shadow-sm">
           {icon}
         </div>
       )}
       <div className="space-y-1">
         <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-        {description && <p className="max-w-sm text-xs text-muted-foreground">{description}</p>}
+        {description && <p className="max-w-md text-sm text-muted-foreground">{description}</p>}
       </div>
       {action && <div className="mt-1">{action}</div>}
     </div>

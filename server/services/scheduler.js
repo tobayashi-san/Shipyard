@@ -1,14 +1,15 @@
-const cron = require('node-cron');
-const log = require('../utils/logger').child('scheduler');
-const db = require('../db');
-const ansibleRunner = require('./ansible-runner');
-const systemInfo = require('./system-info');
-const sshManager = require('./ssh-manager');
-const { parseImageUpdateOutput } = require('../utils/parse-image-updates');
-const gitSync = require('./git-sync');
-const { resolveTargets } = require('../utils/validate');
-const pullModeManager = require('./pull-mode-manager');
-const resourceAlerts = require('./resource-alerts');
+const cron = require("node-cron");
+const log = require("../utils/logger").child("scheduler");
+const db = require("../db");
+const ansibleRunner = require("./ansible-runner");
+const systemInfo = require("./system-info");
+const sshManager = require("./ssh-manager");
+const { parseImageUpdateReport } = require("../utils/parse-image-updates");
+const gitSync = require("./git-sync");
+const { resolveTargets } = require("../utils/validate");
+const pullModeManager = require("./pull-mode-manager");
+const resourceAlerts = require("./resource-alerts");
+const { syncIpamSource } = require("../routes/ipam");
 
 // In-memory map: scheduleId -> cron task
 const jobs = new Map();
@@ -20,29 +21,36 @@ let infoPoller = null;
 let updatesPoller = null;
 let imageUpdatesPoller = null;
 let customUpdatesPoller = null;
+let ipamSourcesPoller = null;
 let agentMetricsPruner = null;
 let infoPolling = false;
 let updatesPolling = false;
 let imageUpdatesPolling = false;
 let customUpdatesPolling = false;
+let ipamSourcesPolling = false;
 
 const STALE_THRESHOLD_MS = 4 * 60 * 1000;
-const DEFAULT_TIMEZONE = process.env.SHIPYARD_TIMEZONE || process.env.TZ || 'Europe/Zurich';
+const DEFAULT_TIMEZONE =
+  process.env.SHIPYARD_TIMEZONE || process.env.TZ || "Europe/Zurich";
 
 function getSchedulerTimezone() {
-  return db.settings.get('scheduler_timezone') || DEFAULT_TIMEZONE;
+  return db.settings.get("scheduler_timezone") || DEFAULT_TIMEZONE;
 }
 
 // Defaults (used when DB has no value)
 const DEFAULTS = {
-  poll_info_enabled:              '1',
-  poll_info_interval_min:         '5',
-  poll_updates_enabled:           '1',
-  poll_updates_interval_min:      '60',
-  poll_image_updates_enabled:     '1',
-  poll_image_updates_interval_min:'360',
-  poll_custom_updates_enabled:    '1',
-  poll_custom_updates_interval_min:'360',
+  poll_info_enabled: "1",
+  poll_info_interval_min: "5",
+  poll_updates_enabled: "1",
+  poll_updates_interval_min: "60",
+  poll_image_updates_enabled: "1",
+  poll_image_updates_interval_min: "360",
+  poll_custom_updates_enabled: "1",
+  poll_custom_updates_interval_min: "360",
+  // This is the scheduler check cadence. Every source also has its own
+  // interval, so different DHCP controllers can refresh independently.
+  poll_ipam_sources_enabled: "1",
+  poll_ipam_sources_interval_min: "5",
 };
 
 function getPollingConfig() {
@@ -52,21 +60,78 @@ function getPollingConfig() {
     return (Number.isFinite(val) && val > 0 ? val : fallback) * 60 * 1000;
   };
   return {
-    info:          { enabled: g('poll_info_enabled') !== '0',          intervalMs: safeMs('poll_info_interval_min', 5) },
-    updates:       { enabled: g('poll_updates_enabled') !== '0',       intervalMs: safeMs('poll_updates_interval_min', 60) },
-    imageUpdates:  { enabled: g('poll_image_updates_enabled') !== '0', intervalMs: safeMs('poll_image_updates_interval_min', 360) },
-    customUpdates: { enabled: g('poll_custom_updates_enabled') !== '0',intervalMs: safeMs('poll_custom_updates_interval_min', 360) },
+    info: {
+      enabled: g("poll_info_enabled") !== "0",
+      intervalMs: safeMs("poll_info_interval_min", 5),
+    },
+    updates: {
+      enabled: g("poll_updates_enabled") !== "0",
+      intervalMs: safeMs("poll_updates_interval_min", 60),
+    },
+    imageUpdates: {
+      enabled: g("poll_image_updates_enabled") !== "0",
+      intervalMs: safeMs("poll_image_updates_interval_min", 360),
+    },
+    customUpdates: {
+      enabled: g("poll_custom_updates_enabled") !== "0",
+      intervalMs: safeMs("poll_custom_updates_interval_min", 360),
+    },
+    ipamSources: {
+      enabled: g("poll_ipam_sources_enabled") !== "0",
+      intervalMs: safeMs("poll_ipam_sources_interval_min", 5),
+    },
   };
 }
 
 let lastInfoPollTime = 0;
 
 function runNow(pollFn, label) {
-  pollFn().catch(err => log.error({ err, label }, 'Poller error'));
+  pollFn().catch((err) => log.error({ err, label }, "Poller error"));
 }
 
 function makePoller(pollFn, label, intervalMs) {
   return setInterval(() => runNow(pollFn, label), intervalMs);
+}
+
+async function pollIpamSources() {
+  if (ipamSourcesPolling) return;
+  ipamSourcesPolling = true;
+  try {
+    const now = Date.now();
+    const sources = db.db
+      .prepare(
+        `SELECT * FROM ipam_sync_sources WHERE enabled = 1 AND COALESCE(auto_sync, 1) = 1`,
+      )
+      .all();
+    const due = sources.filter((source) => {
+      const interval =
+        Math.min(
+          1440,
+          Math.max(5, Number.parseInt(source.sync_interval_min, 10) || 15),
+        ) *
+        60 *
+        1000;
+      const last = Date.parse(source.last_synced_at || "");
+      return !Number.isFinite(last) || now - last >= interval;
+    });
+    const results = await Promise.allSettled(
+      due.map((source) => syncIpamSource(source, { actor: "scheduler" })),
+    );
+    const failed = results.filter(
+      (result) => result.status === "rejected",
+    ).length;
+    if (due.length) {
+      broadcast({ type: "cache_updated", scope: "ipam" });
+      log.info(
+        { configured: sources.length, synced: due.length - failed, failed },
+        "IPAM sources refreshed",
+      );
+    }
+  } catch (err) {
+    log.error({ err }, "IPAM source poll failed");
+  } finally {
+    ipamSourcesPolling = false;
+  }
 }
 
 // Broadcast function (set during init)
@@ -81,26 +146,35 @@ function init(broadcastFn) {
   try {
     const staleCount = db.scheduleHistory.failStaleRunning();
     if (staleCount > 0) {
-      log.warn({ count: staleCount }, 'Marked stale running schedule history entries as failed');
+      log.warn(
+        { count: staleCount },
+        "Marked stale running schedule history entries as failed",
+      );
     }
   } catch (e) {
-    log.error({ err: e }, 'Failed to mark stale schedule history entries');
+    log.error({ err: e }, "Failed to mark stale schedule history entries");
   }
 
   let schedules = [];
   try {
     schedules = db.schedules.getAll();
   } catch (e) {
-    log.error({ err: e }, 'Failed to load schedules from DB');
+    log.error({ err: e }, "Failed to load schedules from DB");
     return;
   }
   for (const s of schedules) {
     if (s.enabled) {
-      try { register(s); }
-      catch (e) { log.error({ err: e, schedule: s.name }, 'Failed to register schedule'); }
+      try {
+        register(s);
+      } catch (e) {
+        log.error({ err: e, schedule: s.name }, "Failed to register schedule");
+      }
     }
   }
-  log.info({ count: schedules.filter(s => s.enabled).length }, 'Loaded active schedules');
+  log.info(
+    { count: schedules.filter((s) => s.enabled).length },
+    "Loaded active schedules",
+  );
 }
 
 /**
@@ -112,52 +186,117 @@ function register(schedule) {
   }
 
   if (!cron.validate(schedule.cron_expression)) {
-    log.error({ cron: schedule.cron_expression, schedule: schedule.name }, 'Invalid cron expression');
+    log.error(
+      { cron: schedule.cron_expression, schedule: schedule.name },
+      "Invalid cron expression",
+    );
     return;
   }
 
-  const task = cron.schedule(schedule.cron_expression, async () => {
-    if (running.has(schedule.id)) {
-      log.info({ schedule: schedule.name }, 'Skipping – previous run still in progress');
-      return;
-    }
-    running.add(schedule.id);
-    log.info({ schedule: schedule.name, playbook: schedule.playbook, targets: schedule.targets }, 'Running schedule');
-    broadcast({ type: 'schedule_start', scheduleId: schedule.id, name: schedule.name });
-
-    // Sync playbooks from git before running
-    await gitSync.autoPull();
-
-    const resolvedTargets = resolveTargets(schedule.targets, db.servers.getAll());
-    const histId = db.scheduleHistory.create(schedule.id, schedule.name, schedule.playbook, resolvedTargets);
-    const outputLines = [];
-
-    try {
-      const result = await ansibleRunner.runPlaybook(
-        schedule.playbook,
-        schedule.targets || 'all',
-        {},
-        (type, data) => {
-          broadcast({ type: 'update_output', scheduleId: schedule.id, stream: type, data });
-          outputLines.push(data);
-        }
+  const task = cron.schedule(
+    schedule.cron_expression,
+    async () => {
+      if (running.has(schedule.id)) {
+        log.info(
+          { schedule: schedule.name },
+          "Skipping – previous run still in progress",
+        );
+        return;
+      }
+      running.add(schedule.id);
+      log.info(
+        {
+          schedule: schedule.name,
+          playbook: schedule.playbook,
+          targets: schedule.targets,
+        },
+        "Running schedule",
       );
+      broadcast({
+        type: "schedule_start",
+        scheduleId: schedule.id,
+        name: schedule.name,
+      });
 
-      const status = result.success ? 'success' : 'failed';
-      db.schedules.updateLastRun(schedule.id, status);
-      db.scheduleHistory.complete(histId, status, outputLines.join(''));
-      db.scheduleHistory.prune();
-      broadcast({ type: 'schedule_complete', scheduleId: schedule.id, success: result.success });
-      log.info({ schedule: schedule.name, status }, 'Schedule completed');
-    } catch (error) {
-      db.schedules.updateLastRun(schedule.id, 'failed');
-      db.scheduleHistory.complete(histId, 'failed', outputLines.join('') + (outputLines.length ? '\n' : '') + error.message);
-      broadcast({ type: 'schedule_error', scheduleId: schedule.id, error: error.message });
-      log.error({ err: error, schedule: schedule.name }, 'Schedule error');
-    } finally {
-      running.delete(schedule.id);
-    }
-  }, { timezone: getSchedulerTimezone() });
+      const resolvedTargets = resolveTargets(
+        schedule.targets,
+        db.servers.getAll().filter(server =>
+          String(server.environment_id || "default") === String(schedule.environment_id || "default")),
+      );
+      const histId = db.scheduleHistory.create(
+        schedule.id,
+        schedule.name,
+        schedule.playbook,
+        resolvedTargets,
+        {
+          environmentId: schedule.environment_id || "default",
+          triggeredBy: "scheduler",
+          checkMode: Boolean(schedule.check_mode),
+        },
+      );
+      ansibleRunner.prepareRun(histId);
+      const outputLines = [];
+
+      try {
+        // Sync playbooks from git before running. Failures are recorded as a
+        // run result instead of leaving the schedule stuck in "running".
+        await gitSync.autoPull();
+        const result = await ansibleRunner.runPlaybook(
+          schedule.playbook,
+          schedule.targets || "all",
+          schedule.extra_vars || {},
+          (type, data) => {
+            broadcast({
+              type: "update_output",
+              scheduleId: schedule.id,
+              stream: type,
+              data,
+            });
+            outputLines.push(data);
+            db.scheduleHistory.appendOutput(histId, data);
+          },
+          {
+            environmentId: schedule.environment_id || "default",
+            checkMode: Boolean(schedule.check_mode),
+            forks: schedule.forks,
+            runId: histId,
+          },
+        );
+
+        const status = result.cancelled ? "cancelled" : result.success ? "success" : "failed";
+        db.schedules.updateLastRun(schedule.id, status);
+        db.scheduleHistory.complete(histId, status, outputLines.join(""));
+        db.scheduleHistory.prune();
+        broadcast({
+          type: "schedule_complete",
+          scheduleId: schedule.id,
+          runId: histId,
+          success: result.success,
+          status,
+        });
+        log.info({ schedule: schedule.name, status }, "Schedule completed");
+      } catch (error) {
+        ansibleRunner.clearRun(histId);
+        db.schedules.updateLastRun(schedule.id, "failed");
+        db.scheduleHistory.complete(
+          histId,
+          "failed",
+          outputLines.join("") +
+            (outputLines.length ? "\n" : "") +
+            error.message,
+        );
+        broadcast({
+          type: "schedule_error",
+          scheduleId: schedule.id,
+          error: error.message,
+        });
+        log.error({ err: error, schedule: schedule.name }, "Schedule error");
+      } finally {
+        running.delete(schedule.id);
+      }
+    },
+    { timezone: getSchedulerTimezone() },
+  );
 
   jobs.set(schedule.id, task);
 }
@@ -170,6 +309,12 @@ function unregister(scheduleId) {
     jobs.get(scheduleId).stop();
     jobs.delete(scheduleId);
   }
+}
+
+function getNextRun(scheduleId) {
+  const task = jobs.get(scheduleId);
+  const next = task?.getNextRun?.();
+  return next instanceof Date && Number.isFinite(next.getTime()) ? next.toISOString() : null;
 }
 
 /**
@@ -189,16 +334,25 @@ function reloadAllSchedules() {
   try {
     schedules = db.schedules.getAll();
   } catch (e) {
-    log.error({ err: e }, 'Failed to reload schedules from DB');
+    log.error({ err: e }, "Failed to reload schedules from DB");
     return;
   }
   for (const s of schedules) {
     if (s.enabled) {
-      try { register(s); }
-      catch (e) { log.error({ err: e, schedule: s.name }, 'Failed to register schedule'); }
+      try {
+        register(s);
+      } catch (e) {
+        log.error({ err: e, schedule: s.name }, "Failed to register schedule");
+      }
     }
   }
-  log.info({ count: schedules.filter(s => s.enabled).length, timezone: getSchedulerTimezone() }, 'Reloaded active schedules');
+  log.info(
+    {
+      count: schedules.filter((s) => s.enabled).length,
+      timezone: getSchedulerTimezone(),
+    },
+    "Reloaded active schedules",
+  );
 }
 
 /**
@@ -210,50 +364,70 @@ async function pollSystemInfo() {
   lastInfoPollTime = Date.now();
   try {
     const servers = db.servers.getAll();
-    const agentEnabled = db.settings.get('agent_enabled') === '1';
-    await Promise.allSettled(servers.map(async server => {
-      const agentCfg = agentEnabled ? db.agentConfig.getByServerId(server.id) : null;
-      if (agentCfg?.mode === 'push') {
-        const intervalSec = Math.max(5, parseInt(agentCfg.interval, 10) || 30);
-        const lastSeenMs = agentCfg.last_seen ? new Date(agentCfg.last_seen).getTime() : 0;
-        if (lastSeenMs && (Date.now() - lastSeenMs) <= intervalSec * 10 * 1000) {
-          db.servers.updateStatus(server.id, 'online');
-          return;
-        }
-        if (lastSeenMs) {
-          // Agent has reported before but is now overdue — mark offline
-          db.servers.updateStatus(server.id, 'offline');
-          return;
-        }
-        // Agent never reported yet — fall through to SSH polling as fallback
-      }
-
-      if (agentCfg?.mode === 'pull') {
-        const r = await pullModeManager.pollServer(server);
-        if (r.ok) {
-          const intervalSec = Math.max(5, parseInt(agentCfg.interval, 10) || 30);
-          const lastSeenMs = agentCfg.last_seen ? new Date(agentCfg.last_seen).getTime() : 0;
-          if (lastSeenMs && (Date.now() - lastSeenMs) <= intervalSec * 10 * 1000) {
-            db.servers.updateStatus(server.id, 'online');
-          } else if (!r.report) {
-            db.servers.updateStatus(server.id, 'offline');
+    const agentEnabled = db.settings.get("agent_enabled") === "1";
+    await Promise.allSettled(
+      servers.map(async (server) => {
+        const agentCfg = agentEnabled
+          ? db.agentConfig.getByServerId(server.id)
+          : null;
+        if (agentCfg?.mode === "push") {
+          const intervalSec = Math.max(
+            5,
+            parseInt(agentCfg.interval, 10) || 30,
+          );
+          const lastSeenMs = agentCfg.last_seen
+            ? new Date(agentCfg.last_seen).getTime()
+            : 0;
+          if (
+            lastSeenMs &&
+            Date.now() - lastSeenMs <= intervalSec * 10 * 1000
+          ) {
+            db.servers.updateStatus(server.id, "online");
+            return;
           }
-          return;
+          if (lastSeenMs) {
+            // Agent has reported before but is now overdue — mark offline
+            db.servers.updateStatus(server.id, "offline");
+            return;
+          }
+          // Agent never reported yet — fall through to SSH polling as fallback
         }
-      }
 
-      try {
-        const info = await systemInfo.getSystemInfo(server);
-        db.serverInfo.upsert(server.id, info);
-        db.servers.updateStatus(server.id, 'online');
-      } catch (err) {
-        log.debug({ err, server: server.name }, 'System info poll failed');
-        db.servers.updateStatus(server.id, 'offline');
-      }
-    }));
+        if (agentCfg?.mode === "pull") {
+          const r = await pullModeManager.pollServer(server);
+          if (r.ok) {
+            const intervalSec = Math.max(
+              5,
+              parseInt(agentCfg.interval, 10) || 30,
+            );
+            const lastSeenMs = agentCfg.last_seen
+              ? new Date(agentCfg.last_seen).getTime()
+              : 0;
+            if (
+              lastSeenMs &&
+              Date.now() - lastSeenMs <= intervalSec * 10 * 1000
+            ) {
+              db.servers.updateStatus(server.id, "online");
+            } else if (!r.report) {
+              db.servers.updateStatus(server.id, "offline");
+            }
+            return;
+          }
+        }
+
+        try {
+          const info = await systemInfo.getSystemInfo(server);
+          db.serverInfo.upsert(server.id, info);
+          db.servers.updateStatus(server.id, "online");
+        } catch (err) {
+          log.debug({ err, server: server.name }, "System info poll failed");
+          db.servers.updateStatus(server.id, "offline");
+        }
+      }),
+    );
     resourceAlerts.evaluateAll();
-    broadcast({ type: 'cache_updated', scope: 'info' });
-    log.info({ count: servers.length }, 'System info refreshed');
+    broadcast({ type: "cache_updated", scope: "info" });
+    log.info({ count: servers.length }, "System info refreshed");
   } finally {
     infoPolling = false;
   }
@@ -261,14 +435,20 @@ async function pollSystemInfo() {
 
 function startAgentMetricsRetention() {
   if (agentMetricsPruner) clearInterval(agentMetricsPruner);
-  agentMetricsPruner = setInterval(() => {
-    try {
-      const days = parseInt(db.settings.get('agent_metrics_retention_days', 10) || '7', 10);
-      db.agentMetrics.pruneOlderThanDays(days);
-    } catch (err) {
-      log.debug({ err }, 'Agent metrics retention prune failed');
-    }
-  }, 60 * 60 * 1000);
+  agentMetricsPruner = setInterval(
+    () => {
+      try {
+        const days = parseInt(
+          db.settings.get("agent_metrics_retention_days", 10) || "7",
+          10,
+        );
+        db.agentMetrics.pruneOlderThanDays(days);
+      } catch (err) {
+        log.debug({ err }, "Agent metrics retention prune failed");
+      }
+    },
+    60 * 60 * 1000,
+  );
 }
 
 /**
@@ -279,17 +459,19 @@ async function pollUpdates() {
   updatesPolling = true;
   try {
     const servers = db.servers.getAll();
-    await Promise.allSettled(servers.map(async server => {
-      try {
-        const updates = await systemInfo.getAvailableUpdates(server);
-        db.updatesCache.set(server.id, updates);
-      } catch (err) {
-        log.debug({ err, server: server.name }, 'Updates poll failed');
-      }
-    }));
+    await Promise.allSettled(
+      servers.map(async (server) => {
+        try {
+          const updates = await systemInfo.getAvailableUpdates(server);
+          db.updatesCache.set(server.id, updates);
+        } catch (err) {
+          log.debug({ err, server: server.name }, "Updates poll failed");
+        }
+      }),
+    );
     resourceAlerts.evaluateAll();
-    broadcast({ type: 'cache_updated', scope: 'updates' });
-    log.info({ count: servers.length }, 'Updates cache refreshed');
+    broadcast({ type: "cache_updated", scope: "updates" });
+    log.info({ count: servers.length }, "Updates cache refreshed");
   } finally {
     updatesPolling = false;
   }
@@ -302,19 +484,28 @@ async function pollImageUpdates() {
   if (imageUpdatesPolling) return;
   imageUpdatesPolling = true;
   try {
-    const servers = db.servers.getAll().filter(s => s.status === 'online');
-    await Promise.allSettled(servers.map(async server => {
-      try {
-        const result = await ansibleRunner.runPlaybook('check-image-updates.yml', server.name);
-        const results = parseImageUpdateOutput(result.stdout);
-        db.dockerImageUpdatesCache.set(server.id, results);
-      } catch (err) {
-        log.debug({ err, server: server.name }, 'Image updates poll failed');
-      }
-    }));
+    const servers = db.servers.getAll().filter((s) => s.status === "online");
+    await Promise.allSettled(
+      servers.map(async (server) => {
+        try {
+          const result = await ansibleRunner.runPlaybook(
+            "check-image-updates.yml",
+            server.name,
+          );
+          const report = parseImageUpdateReport(result.stdout);
+          if (!result.success || !report.complete) {
+            log.warn({ server: server.name, exitCode: result.code }, "Image updates poll returned no complete result; keeping cached status");
+            return;
+          }
+          db.dockerImageUpdatesCache.set(server.id, report.results);
+        } catch (err) {
+          log.debug({ err, server: server.name }, "Image updates poll failed");
+        }
+      }),
+    );
     resourceAlerts.evaluateAll();
-    broadcast({ type: 'cache_updated', scope: 'image_updates' });
-    log.info({ count: servers.length }, 'Docker image updates checked');
+    broadcast({ type: "cache_updated", scope: "image_updates" });
+    log.info({ count: servers.length }, "Docker image updates checked");
   } finally {
     imageUpdatesPolling = false;
   }
@@ -329,17 +520,24 @@ async function checkCustomTask(server, task) {
   let currentVersion = task.current_version;
   let hasUpdate = false;
 
-  if (task.type === 'github' && task.github_repo) {
+  if (task.type === "github" && task.github_repo) {
     try {
-      const headers = { 'Accept': 'application/vnd.github+json', 'User-Agent': 'Shipyard/1.0' };
-      if (process.env.GITHUB_TOKEN) headers['Authorization'] = `Bearer ${process.env.GITHUB_TOKEN}`;
-      const res = await fetch(`https://api.github.com/repos/${task.github_repo}/releases/latest`, { headers, signal: AbortSignal.timeout(15000) });
+      const headers = {
+        Accept: "application/vnd.github+json",
+        "User-Agent": "Shipyard/1.0",
+      };
+      if (process.env.GITHUB_TOKEN)
+        headers["Authorization"] = `Bearer ${process.env.GITHUB_TOKEN}`;
+      const res = await fetch(
+        `https://api.github.com/repos/${task.github_repo}/releases/latest`,
+        { headers, signal: AbortSignal.timeout(15000) },
+      );
       if (res.ok) {
         const data = await res.json();
         lastVersion = data.tag_name || lastVersion;
       }
     } catch (err) {
-      log.debug({ err, repo: task.github_repo }, 'GitHub release check failed');
+      log.debug({ err, repo: task.github_repo }, "GitHub release check failed");
     }
   }
 
@@ -348,33 +546,50 @@ async function checkCustomTask(server, task) {
       const result = await sshManager.execCommand(server, task.latest_command);
       if (result.code === 0) lastVersion = result.stdout.trim() || lastVersion;
     } catch (err) {
-      log.debug({ err, server: server.name, task: task.name }, 'Latest version command failed');
+      log.debug(
+        { err, server: server.name, task: task.name },
+        "Latest version command failed",
+      );
     }
   }
 
   if (task.check_command) {
     try {
       const result = await sshManager.execCommand(server, task.check_command);
-      if (result.code === 0) currentVersion = result.stdout.trim() || currentVersion;
+      if (result.code === 0)
+        currentVersion = result.stdout.trim() || currentVersion;
     } catch (err) {
-      log.debug({ err, server: server.name, task: task.name }, 'Custom update check command failed');
+      log.debug(
+        { err, server: server.name, task: task.name },
+        "Custom update check command failed",
+      );
     }
   }
 
-  const normalize = v => v ? v.trim().replace(/^v/i, '') : v;
+  const normalize = (v) => (v ? v.trim().replace(/^v/i, "") : v);
   currentVersion = normalize(currentVersion);
   lastVersion = normalize(lastVersion);
 
-  if (task.type === 'trigger') {
+  if (task.type === "trigger") {
     lastVersion = task.trigger_output || null;
-    hasUpdate = typeof currentVersion === 'string'
-      && typeof task.trigger_output === 'string'
-      && currentVersion.trim() === task.trigger_output.trim();
+    hasUpdate =
+      typeof currentVersion === "string" &&
+      typeof task.trigger_output === "string" &&
+      currentVersion.trim() === task.trigger_output.trim();
   } else {
-    hasUpdate = !!(lastVersion && currentVersion && lastVersion !== currentVersion);
+    hasUpdate = !!(
+      lastVersion &&
+      currentVersion &&
+      lastVersion !== currentVersion
+    );
   }
 
-  db.customUpdateTasks.setVersionInfo(task.id, currentVersion, lastVersion, hasUpdate);
+  db.customUpdateTasks.setVersionInfo(
+    task.id,
+    currentVersion,
+    lastVersion,
+    hasUpdate,
+  );
 }
 
 /**
@@ -385,13 +600,24 @@ async function pollCustomUpdates() {
   customUpdatesPolling = true;
   try {
     const servers = db.servers.getAll();
-    await Promise.allSettled(servers.map(async server => {
-      const tasks = db.customUpdateTasks.getByServer(server.id);
-      await Promise.allSettled(tasks.map(task => checkCustomTask(server, task).catch(err => log.debug({ err, server: server.name }, 'Custom task check failed'))));
-    }));
+    await Promise.allSettled(
+      servers.map(async (server) => {
+        const tasks = db.customUpdateTasks.getByServer(server.id);
+        await Promise.allSettled(
+          tasks.map((task) =>
+            checkCustomTask(server, task).catch((err) =>
+              log.debug(
+                { err, server: server.name },
+                "Custom task check failed",
+              ),
+            ),
+          ),
+        );
+      }),
+    );
     resourceAlerts.evaluateAll();
-    broadcast({ type: 'cache_updated', scope: 'custom_updates' });
-    log.info('Custom update tasks checked');
+    broadcast({ type: "cache_updated", scope: "custom_updates" });
+    log.info("Custom update tasks checked");
   } finally {
     customUpdatesPolling = false;
   }
@@ -406,21 +632,52 @@ function setupPollingIntervals() {
   if (cfg.info.enabled) {
     infoPoller = setInterval(() => {
       if (Date.now() - lastInfoPollTime >= cfg.info.intervalMs) {
-        pollSystemInfo().catch(err => log.error({ err }, 'System info poll error'));
+        pollSystemInfo().catch((err) =>
+          log.error({ err }, "System info poll error"),
+        );
       }
     }, 60 * 1000); // tick every minute, decide whether to actually poll
   }
 
-  if (cfg.updates.enabled)       updatesPoller       = makePoller(pollUpdates,       'Updates',        cfg.updates.intervalMs);
-  if (cfg.imageUpdates.enabled)  imageUpdatesPoller  = makePoller(pollImageUpdates,  'Image updates',  cfg.imageUpdates.intervalMs);
-  if (cfg.customUpdates.enabled) customUpdatesPoller = makePoller(pollCustomUpdates, 'Custom updates', cfg.customUpdates.intervalMs);
+  if (cfg.updates.enabled)
+    updatesPoller = makePoller(pollUpdates, "Updates", cfg.updates.intervalMs);
+  if (cfg.imageUpdates.enabled)
+    imageUpdatesPoller = makePoller(
+      pollImageUpdates,
+      "Image updates",
+      cfg.imageUpdates.intervalMs,
+    );
+  if (cfg.customUpdates.enabled)
+    customUpdatesPoller = makePoller(
+      pollCustomUpdates,
+      "Custom updates",
+      cfg.customUpdates.intervalMs,
+    );
+  if (cfg.ipamSources.enabled)
+    ipamSourcesPoller = makePoller(
+      pollIpamSources,
+      "IPAM sources",
+      cfg.ipamSources.intervalMs,
+    );
 
-  log.info({
-    info: cfg.info.enabled ? cfg.info.intervalMs / 60000 + 'min' : 'off',
-    updates: cfg.updates.enabled ? cfg.updates.intervalMs / 60000 + 'min' : 'off',
-    images: cfg.imageUpdates.enabled ? cfg.imageUpdates.intervalMs / 60000 + 'min' : 'off',
-    custom: cfg.customUpdates.enabled ? cfg.customUpdates.intervalMs / 60000 + 'min' : 'off',
-  }, 'Poller config');
+  log.info(
+    {
+      info: cfg.info.enabled ? cfg.info.intervalMs / 60000 + "min" : "off",
+      updates: cfg.updates.enabled
+        ? cfg.updates.intervalMs / 60000 + "min"
+        : "off",
+      images: cfg.imageUpdates.enabled
+        ? cfg.imageUpdates.intervalMs / 60000 + "min"
+        : "off",
+      custom: cfg.customUpdates.enabled
+        ? cfg.customUpdates.intervalMs / 60000 + "min"
+        : "off",
+      ipamSources: cfg.ipamSources.enabled
+        ? cfg.ipamSources.intervalMs / 60000 + "min check"
+        : "off",
+    },
+    "Poller config",
+  );
 }
 
 /**
@@ -428,10 +685,11 @@ function setupPollingIntervals() {
  */
 function startPolling() {
   const cfg = getPollingConfig();
-  if (cfg.info.enabled)          runNow(pollSystemInfo,    'System info');
-  if (cfg.updates.enabled)       runNow(pollUpdates,       'Updates');
-  if (cfg.imageUpdates.enabled)  runNow(pollImageUpdates,  'Image updates');
-  if (cfg.customUpdates.enabled) runNow(pollCustomUpdates, 'Custom updates');
+  if (cfg.info.enabled) runNow(pollSystemInfo, "System info");
+  if (cfg.updates.enabled) runNow(pollUpdates, "Updates");
+  if (cfg.imageUpdates.enabled) runNow(pollImageUpdates, "Image updates");
+  if (cfg.customUpdates.enabled) runNow(pollCustomUpdates, "Custom updates");
+  if (cfg.ipamSources.enabled) runNow(pollIpamSources, "IPAM sources");
   setupPollingIntervals();
   startAgentMetricsRetention();
 }
@@ -448,7 +706,7 @@ function restartPolling() {
     restartPollingTimer = null;
     stopPolling();
     setupPollingIntervals();
-    log.info('Poller restarted with new config');
+    log.info("Poller restarted with new config");
   }, RESTART_POLLING_DEBOUNCE_MS);
 }
 
@@ -461,7 +719,7 @@ function flushRestartPolling() {
     restartPollingTimer = null;
     stopPolling();
     setupPollingIntervals();
-    log.info('Poller restarted with new config');
+    log.info("Poller restarted with new config");
   }
 }
 
@@ -471,7 +729,7 @@ function flushRestartPolling() {
  */
 function onClientConnect() {
   if (Date.now() - lastInfoPollTime > STALE_THRESHOLD_MS) {
-    runNow(pollSystemInfo, 'On-connect refresh');
+    runNow(pollSystemInfo, "On-connect refresh");
   }
 }
 
@@ -479,11 +737,30 @@ function onClientConnect() {
  * Stop background polling.
  */
 function stopPolling() {
-  if (infoPoller)           { clearInterval(infoPoller);           infoPoller = null; }
-  if (updatesPoller)        { clearInterval(updatesPoller);        updatesPoller = null; }
-  if (imageUpdatesPoller)   { clearInterval(imageUpdatesPoller);   imageUpdatesPoller = null; }
-  if (customUpdatesPoller)  { clearInterval(customUpdatesPoller);  customUpdatesPoller = null; }
-  if (agentMetricsPruner)   { clearInterval(agentMetricsPruner);   agentMetricsPruner = null; }
+  if (infoPoller) {
+    clearInterval(infoPoller);
+    infoPoller = null;
+  }
+  if (updatesPoller) {
+    clearInterval(updatesPoller);
+    updatesPoller = null;
+  }
+  if (imageUpdatesPoller) {
+    clearInterval(imageUpdatesPoller);
+    imageUpdatesPoller = null;
+  }
+  if (customUpdatesPoller) {
+    clearInterval(customUpdatesPoller);
+    customUpdatesPoller = null;
+  }
+  if (ipamSourcesPoller) {
+    clearInterval(ipamSourcesPoller);
+    ipamSourcesPoller = null;
+  }
+  if (agentMetricsPruner) {
+    clearInterval(agentMetricsPruner);
+    agentMetricsPruner = null;
+  }
 }
 
 /**
@@ -500,9 +777,31 @@ function stopJobs() {
  * Full shutdown: stop pollers and all cron jobs.
  */
 function shutdown() {
-  if (restartPollingTimer) { clearTimeout(restartPollingTimer); restartPollingTimer = null; }
+  if (restartPollingTimer) {
+    clearTimeout(restartPollingTimer);
+    restartPollingTimer = null;
+  }
   stopPolling();
   stopJobs();
 }
 
-module.exports = { init, register, unregister, reload, reloadAllSchedules, startPolling, stopPolling, stopJobs, shutdown, restartPolling, flushRestartPolling, onClientConnect, checkCustomTask, getPollingConfig, getSchedulerTimezone, DEFAULTS };
+module.exports = {
+  init,
+  register,
+  unregister,
+  reload,
+  reloadAllSchedules,
+  startPolling,
+  stopPolling,
+  stopJobs,
+  shutdown,
+  restartPolling,
+  flushRestartPolling,
+  onClientConnect,
+  checkCustomTask,
+  pollIpamSources,
+  getPollingConfig,
+  getSchedulerTimezone,
+  getNextRun,
+  DEFAULTS,
+};

@@ -26,7 +26,7 @@ export function CreateDeploymentDialog({ environmentId, open, onOpenChange }: { 
   const [connectionId, setConnectionId] = useState('');
   const connectionsQuery = useQuery({
     queryKey: ['opentofu', 'proxmox-connections', environmentId],
-    queryFn: () => apiFetch<ProxmoxConnection[]>(`/plugin/opentofu/proxmox-connections?environment_id=${encodeURIComponent(environmentId)}`),
+    queryFn: () => apiFetch<ProxmoxConnection[]>(`/opentofu/proxmox-connections?environment_id=${encodeURIComponent(environmentId)}`),
     enabled: open,
     staleTime: 15_000,
   });
@@ -42,14 +42,14 @@ export function CreateDeploymentDialog({ environmentId, open, onOpenChange }: { 
   }, [connectionId, connections, open]);
   const updateName = (value: string) => {
     setName(value);
-    if (!pathEdited) setPath(value ? `/workspaces/${workspaceSlug(value) || 'neues-deployment'}` : '');
+    if (!pathEdited) setPath(value ? `/workspaces/${workspaceSlug(value) || 'new-deployment'}` : '');
   };
   const createMutation = useMutation({
     mutationFn: () => {
-      return apiFetch<CreateResult>('/plugin/opentofu/workspaces', { method: 'POST', body: { name: name.trim(), path: path.trim(), description: description.trim(), environment_id: environmentId, proxmox_connection_id: connectionId, env_vars: {}, scaffold: { provider: 'proxmox' } } });
+      return apiFetch<CreateResult>('/opentofu/workspaces', { method: 'POST', body: { name: name.trim(), path: path.trim(), description: description.trim(), environment_id: environmentId, proxmox_connection_id: connectionId, env_vars: {}, scaffold: { provider: 'proxmox' } } });
     },
     onSuccess: result => {
-      showToast('Deployment wurde mit einem Proxmox-Grundgerüst angelegt.', 'success');
+      showToast('Deployment created with a Proxmox scaffold.', 'success');
       void queryClient.invalidateQueries({ queryKey: ['opentofu', 'workspaces'] });
       onOpenChange(false);
       void navigate({ to: '/deployments/$id', params: { id: result.id } });
@@ -60,14 +60,14 @@ export function CreateDeploymentDialog({ environmentId, open, onOpenChange }: { 
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-2xl overflow-y-auto">
       <DialogHeader>
-        <DialogTitle className="flex items-center gap-2"><FolderPlus className="h-5 w-5" />Neues Deployment</DialogTitle>
-        <DialogDescription>Fleet erstellt einen isolierten OpenTofu-Workspace mit dem Proxmox-Provider. Ressourcen definierst du danach direkt über die Konsole.</DialogDescription>
+        <DialogTitle className="flex items-center gap-2"><FolderPlus className="h-5 w-5" />New deployment</DialogTitle>
+        <DialogDescription>Fleet creates an isolated OpenTofu workspace with the Proxmox provider. You then define resources directly in the console.</DialogDescription>
       </DialogHeader>
       <form className="space-y-5" onSubmit={event => { event.preventDefault(); createMutation.mutate(); }}>
-        <section className="grid gap-4 sm:grid-cols-2"><div className="space-y-1.5"><Label htmlFor="deployment-name">Name</Label><Input id="deployment-name" required value={name} onChange={event => updateName(event.target.value)} placeholder="hr01-app-erpnext" pattern="[A-Za-z0-9][A-Za-z0-9._ -]{0,62}" /></div><div className="space-y-1.5"><Label htmlFor="deployment-path">Workspace-Pfad</Label><Input id="deployment-path" required value={path} onChange={event => { setPathEdited(true); setPath(event.target.value); }} placeholder="/workspaces/hr01-app-erpnext" /><p className="text-xs text-muted-foreground">Muss innerhalb von <code>/workspaces</code> liegen.</p></div></section>
-        <div className="space-y-1.5"><Label htmlFor="deployment-description">Beschreibung <span className="font-normal text-muted-foreground">(optional)</span></Label><Input id="deployment-description" value={description} onChange={event => setDescription(event.target.value)} placeholder="ERP-Anwendung in Produktion" /></div>
-        <section className="space-y-4 rounded-lg border bg-muted/20 p-4"><div><h3 className="text-sm font-semibold">Infrastrukturquelle</h3><p className="mt-1 text-xs text-muted-foreground">Ein Deployment automatisiert Ressourcen auf einer bestehenden Plattform. Zugangsdaten werden hier nicht gespeichert.</p></div><div className="space-y-1.5"><Label htmlFor="deployment-connection">Proxmox-Plattform</Label><select id="deployment-connection" required value={connectionId} onChange={event => setConnectionId(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm" disabled={connectionsQuery.isLoading || connections.length === 0}><option value="">{connectionsQuery.isLoading ? 'Wird geladen…' : 'Plattform auswählen…'}</option>{connections.map(connection => <option key={connection.id} value={connection.id}>{connection.name} · {connection.endpoint}</option>)}</select>{connections.length === 0 && <p className="text-xs text-amber-700 dark:text-amber-300">Lege zuerst unter Infrastruktur eine Proxmox-Plattform an.</p>}</div>{connectionId && <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">Token, TLS-Einstellung und Standard-SSH-Key werden zentral von der gewählten Plattform verwendet.</div>}</section>
-        <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Abbrechen</Button><Button type="submit" disabled={createMutation.isPending || !connectionId}>{createMutation.isPending ? <RefreshCw className="animate-spin" /> : <FolderPlus />}Deployment anlegen</Button></DialogFooter>
+        <section className="grid gap-4 sm:grid-cols-2"><div className="space-y-1.5"><Label htmlFor="deployment-name">Name</Label><Input id="deployment-name" required value={name} onChange={event => updateName(event.target.value)} placeholder="hr01-app-erpnext" pattern="[A-Za-z0-9][A-Za-z0-9._ -]{0,62}" /></div><div className="space-y-1.5"><Label htmlFor="deployment-path">Workspace path</Label><Input id="deployment-path" required value={path} onChange={event => { setPathEdited(true); setPath(event.target.value); }} placeholder="/workspaces/hr01-app-erpnext" /><p className="text-xs text-muted-foreground">Must be within <code>/workspaces</code>.</p></div></section>
+        <div className="space-y-1.5"><Label htmlFor="deployment-description">Description <span className="font-normal text-muted-foreground">(optional)</span></Label><Input id="deployment-description" value={description} onChange={event => setDescription(event.target.value)} placeholder="ERP application in production" /></div>
+        <section className="space-y-4 rounded-[3px] border border-border-strong/80 bg-muted/20 p-4"><div><h3 className="text-sm font-semibold">Infrastructure source</h3><p className="mt-1 text-xs text-muted-foreground">A deployment automates resources on an existing platform. Credentials are not stored here.</p></div><div className="space-y-1.5"><Label htmlFor="deployment-connection">Proxmox platform</Label><select id="deployment-connection" required value={connectionId} onChange={event => setConnectionId(event.target.value)} className="h-8 w-full rounded-sm border bg-background px-2.5 text-[13px]" disabled={connectionsQuery.isLoading || connections.length === 0}><option value="">{connectionsQuery.isLoading ? 'Loading…' : 'Select platform…'}</option>{connections.map(connection => <option key={connection.id} value={connection.id}>{connection.name} · {connection.endpoint}</option>)}</select>{connections.length === 0 && <p className="text-xs text-amber-700 dark:text-amber-300">Create a Proxmox platform under Infrastructure first.</p>}</div>{connectionId && <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">The selected platform centrally provides the token, TLS setting, and default SSH key.</div>}</section>
+        <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button type="submit" disabled={createMutation.isPending || !connectionId}>{createMutation.isPending ? <RefreshCw className="animate-spin" /> : <FolderPlus />}Create deployment</Button></DialogFooter>
       </form>
     </DialogContent>
   </Dialog>;

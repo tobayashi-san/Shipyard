@@ -4,7 +4,7 @@ type Id = string | number;
 
 /** Server inventory, monitoring, Docker, and custom-update API surface. */
 export const serversApi = {
-  getServers: () => apiFetchArray<AnyObj>('/servers'),
+  getServers: (environmentId?: string) => apiFetchArray<AnyObj>(`/servers${environmentId ? `?environment_id=${encodeURIComponent(environmentId)}` : ''}`),
   getServer: (id: Id) => apiFetch<AnyObj>(`/servers/${id}`),
   createServer: (data: AnyObj) => apiFetch<AnyObj>('/servers', { method: 'POST', body: data }),
   updateServer: (id: Id, data: AnyObj) => apiFetch(`/servers/${id}`, { method: 'PUT', body: data }),
@@ -13,8 +13,9 @@ export const serversApi = {
   resetServerHostKey: (id: Id) => apiFetch(`/servers/${id}/reset-host-key`, { method: 'POST' }),
   autoGroupByTags: () => apiFetch('/servers/auto-group-by-tags', { method: 'POST' }),
   setServerGroup: (serverId: Id, groupId: Id | null) => apiFetch(`/servers/${serverId}/group`, { method: 'PUT', body: { group_id: groupId } }),
-  getServerGroups: () => apiFetchArray<AnyObj>('/servers/groups'),
-  createServerGroup: (name: string, color?: string, parentId?: Id | null) => apiFetch('/servers/groups', { method: 'POST', body: { name, color, parent_id: parentId ?? null } }),
+  setServersGroup: (serverIds: Id[], groupId: Id | null) => apiFetch('/servers/group/bulk', { method: 'PUT', body: { server_ids: serverIds, group_id: groupId } }),
+  getServerGroups: (environmentId?: string) => apiFetchArray<AnyObj>(`/servers/groups${environmentId ? `?environment_id=${encodeURIComponent(environmentId)}` : ''}`),
+  createServerGroup: (name: string, color?: string, parentId?: Id | null, environmentId?: string) => apiFetch('/servers/groups', { method: 'POST', body: { name, color, parent_id: parentId ?? null, ...(environmentId ? { environment_id: environmentId } : {}) } }),
   updateServerGroup: (id: Id, name: string, color?: string) => apiFetch(`/servers/groups/${id}`, { method: 'PUT', body: { name, color } }),
   deleteServerGroup: (id: Id) => apiFetch(`/servers/groups/${id}`, { method: 'DELETE' }),
   setGroupParent: (groupId: Id, parentId: Id | null) => apiFetch(`/servers/groups/${groupId}/parent`, { method: 'PUT', body: { parent_id: parentId } }),

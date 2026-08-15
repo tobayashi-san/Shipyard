@@ -1,839 +1,479 @@
-import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useParams, Link, useNavigate } from '@tanstack/react-router';
 import {
-  ArrowLeft, RefreshCw, CircleDot, Cpu, HardDrive, MemoryStick, Clock,
-  HeartPulse, Box, Satellite, Boxes, ExternalLink, Info,
-  Terminal, Pencil, ArrowUp, Key, Power,
-  Play, Square, CloudDownload, FileText, RotateCw, Plus, Trash2,
-  ChevronDown, ChevronRight, Layers, Settings2, StickyNote, Eye, Bot,
-  Download, Shield, Sliders, History, Code2,
-  AlertTriangle, Bell, Camera, Workflow,
-} from 'lucide-react';
-import { api, apiFetch, ApiError } from '@/lib/api';
-import { ws } from '@/lib/ws';
-import { canSeePlugin, usePlugins, useProfile, useSettings, hasCap } from '@/lib/queries';
-import { useUi } from '@/lib/store';
-import { showToast } from '@/lib/toast';
-import { actionLabel, statusLabel } from '@/lib/history-labels';
-import { CreateServerDialog } from '@/components/CreateServerDialog';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Separator } from '@/components/ui/separator';
-import { PageHeader, SectionLabel } from '@/components/ui/page-header';
-import { StatusBadge, LiveDot } from '@/components/ui/status-badge';
-import { Skeleton, SkeletonRow } from '@/components/ui/skeleton';
-import { EmptyState } from '@/components/ui/empty-state';
-import { OverflowMenu, OverflowItem, OverflowSep } from '@/components/ui/overflow-menu';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { metricTextClass } from '@/components/ui/metric-bar';
-import { ActionRunDialog, type OutputLine, type RunStatus } from '@/components/ui/action-run-dialog';
-import { Switch } from '@/components/ui/switch';
-import { CopyButton, StatCard, ThresholdBar } from './components/summary-cards';
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
+  lazy,
+  Suspense,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
+import { useTranslation } from "react-i18next";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useParams, Link, useNavigate } from "@tanstack/react-router";
+import {
+  ArrowLeft,
+  RefreshCw,
+  CircleDot,
+  Cpu,
+  HardDrive,
+  Clock,
+  HeartPulse,
+  Box,
+  Satellite,
+  Boxes,
+  ExternalLink,
+  Info,
+  Terminal,
+  Pencil,
+  ArrowUp,
+  Key,
+  Power,
+  Play,
+  Square,
+  CloudDownload,
+  FileText,
+  RotateCw,
+  Plus,
+  Trash2,
+  ChevronDown,
+  ChevronRight,
+  Layers,
+  Settings2,
+  StickyNote,
+  Eye,
+  Bot,
+  Download,
+  Shield,
+  Sliders,
+  History,
+  Code2,
+  Bell,
+  Workflow,
+  X,
+  Network,
+} from "lucide-react";
+import { api, apiFetch, ApiError } from "@/lib/api";
+import { ws } from "@/lib/ws";
+import { useProfile, useSettings, hasCap } from "@/lib/queries";
+import { useUi } from "@/lib/store";
+import { showToast } from "@/lib/toast";
+import { actionLabel, statusLabel } from "@/lib/history-labels";
+import { CreateServerDialog } from "@/components/CreateServerDialog";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Separator } from "@/components/ui/separator";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatusBadge, LiveDot } from "@/components/ui/status-badge";
+import { Skeleton, SkeletonRow } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
+import {
+  OverflowMenu,
+  OverflowItem,
+  OverflowSep,
+} from "@/components/ui/overflow-menu";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { metricTextClass } from "@/components/ui/metric-bar";
+import {
+  ActionRunDialog,
+  type OutputLine,
+  type RunStatus,
+} from "@/components/ui/action-run-dialog";
+import { CopyButton, StatCard, ThresholdBar } from "./components/summary-cards";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
+import {
+  type AgentStatus,
+  type ContainerRow,
+  type CustomTask,
+  type HistoryRow,
+  type IpamReservation,
+  type ManagedDeploymentResponse,
+  type ServerDetail,
+  type ServerInfo,
+  CapacitySummary,
+  formatBytes,
+  formatDate,
+  formatUptime,
+  HostStorageInventory,
+  RecentHostTasks,
+  SummaryField,
+} from "./server-detail-model";
+import { useServerDetailController } from "./useServerDetailController";
+import { ServerOverviewTabs } from "./ServerOverviewTabs";
+import { ServerDockerTab } from "./ServerDockerTab";
+import { ServerUpdatesTab } from "./ServerUpdatesTab";
+import { ServerOperationsTabs } from "./ServerOperationsTabs";
+import { useUrlTab } from "@/lib/use-url-tab";
 
-const SshTerminal = lazy(() => import('@/components/SshTerminal').then((module) => ({ default: module.SshTerminal })));
+const SshTerminal = lazy(() =>
+  import("@/components/SshTerminal").then((module) => ({
+    default: module.SshTerminal,
+  })),
+);
 
 // ─── Types ────────────────────────────────────────────────────
-interface ServerDetail {
-  id: string;
-  name: string;
-  ip_address?: string;
-  hostname?: string;
-  ssh_user?: string;
-  ssh_port?: number;
-  status?: string;
-  group_name?: string;
-  tags?: string[];
-  services?: string[];
-  links?: { name: string; url: string }[];
-  storage_mounts?: { name: string; path: string }[];
-  notes?: string;
-  docker_enabled?: number;
-  [k: string]: unknown;
-}
-
-interface ServerInfo {
-  os?: string;
-  kernel?: string;
-  cpu?: string;
-  cpu_cores?: number;
-  cpu_usage_pct?: number | null;
-  uptime_seconds?: number;
-  ram_used_mb?: number | null;
-  ram_total_mb?: number | null;
-  disk_used_gb?: number;
-  disk_total_gb?: number;
-  load_avg?: string;
-  updates_count?: number;
-  _cached?: boolean;
-  storage_mount_metrics?: StorageMount[];
-  zfs_pools?: ZfsPool[];
-}
-
-interface StorageMount {
-  name?: string; path: string; filesystem?: string;
-  used_gb?: number; total_gb?: number; usage_pct?: number;
-}
-
-interface ZfsPool {
-  name: string; health: string; alloc_gb?: number; size_gb?: number; scrub?: string;
-}
-
-interface HistoryRow {
-  id: string; action?: string; status?: string; started_at?: string; completed_at?: string;
-  triggered_by?: string; playbook_name?: string; _type?: string;
-}
-
-interface ContainerRow {
-  container_name: string; image: string; status?: string; state?: string;
-  compose_project?: string; compose_working_dir?: string;
-}
-
-interface CustomTask {
-  id: string; name: string; type?: string; github_repo?: string;
-  check_command?: string; update_command?: string; trigger_output?: string; latest_command?: string;
-  current_version?: string; last_version?: string; has_update?: boolean; last_checked_at?: string;
-}
-
-interface AgentStatus {
-  installed?: boolean; mode?: string; lastSeen?: string; runnerVersion?: string;
-  manifestVersion?: number; latestManifestVersion?: number; interval?: number;
-  shipyardUrl?: string;
-}
-
-interface ResourceAlert {
-  id: string; server_id: string; type: string; target_key?: string; severity?: string; status: string;
-  value?: number | null; threshold?: number | null; message: string; first_seen_at?: string;
-  triggered_at?: string | null; acknowledged_at?: string | null; acknowledged_by?: string | null; resolved_at?: string | null;
-}
-
-interface AlertSettings {
-  enabled: boolean; notify_enabled: boolean; trigger_after_seconds: number;
-  thresholds: { cpu: number; ram: number; disk: number; storage: number };
-}
-
-interface ManagedDeployment {
-  workspace_id: string | null;
-  workspace_name: string;
-  resource_key: string;
-  kind?: 'inventory' | 'deployment';
-  vm?: {
-    id?: string;
-    name?: string;
-    node_name?: string;
-    vm_id?: number | string | null;
-    post_deploy_playbooks?: string[];
-  } | null;
-}
-
-interface ManagedDeploymentResponse { resources?: ManagedDeployment[]; }
-
-interface ProxmoxSnapshot {
-  name: string;
-  description?: string;
-  snaptime?: number;
-  vmstate?: number;
-}
-
-interface ProxmoxSnapshotResponse { snapshots?: ProxmoxSnapshot[]; }
-
-// ─── Helpers ──────────────────────────────────────────────────
-function parseArrayValue<T>(value: unknown): T[] {
-  if (Array.isArray(value)) return value as T[];
-  if (typeof value !== 'string' || !value.trim()) return [];
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed as T[] : [];
-  } catch {
-    return [];
-  }
-}
-
-function formatUptime(s: number): string {
-  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
-  if (d > 0) return `${d}d ${h}h ${m}m`;
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
-}
-
-function formatBytes(mb: number | null | undefined): string {
-  if (mb == null) return '—';
-  return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`;
-}
-
-function formatDate(d?: string, hour12?: boolean): string {
-  if (!d) return '—';
-  const utc = !d.endsWith('Z') ? d.replace(' ', 'T') + 'Z' : d;
-  try { return new Date(utc).toLocaleString(undefined, hour12 !== undefined ? { hour12 } : undefined); } catch { return d; }
-}
-
-// ═══════════════════════════════════════════════════════════════
 export function ServerDetailPage() {
-  const { t } = useTranslation();
-  const qc = useQueryClient();
-  const params = useParams({ strict: false }) as { id?: string };
-  const id = params.id ?? '';
-  const navigate = useNavigate();
-  const [terminalOpen, setTerminalOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
-  const [confirmRunUpdate, setConfirmRunUpdate] = useState(false);
-  const [confirmResetHostKey, setConfirmResetHostKey] = useState(false);
-  const [confirmReboot, setConfirmReboot] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmDeleteTask, setConfirmDeleteTask] = useState<CustomTask | null>(null);
-  const [confirmComposeDown, setConfirmComposeDown] = useState<{ proj: string; dir: string } | null>(null);
-  const [confirmAgentInstall, setConfirmAgentInstall] = useState(false);
-  const [confirmAgentRemove, setConfirmAgentRemove] = useState(false);
-  const [confirmRestartContainer, setConfirmRestartContainer] = useState<string | null>(null);
-  const [snapshotDialogOpen, setSnapshotDialogOpen] = useState(false);
-  const [snapshotName, setSnapshotName] = useState('');
-  const [snapshotDescription, setSnapshotDescription] = useState('');
-  const [actionRun, setActionRun] = useState<{ title: string; status: RunStatus; lines: OutputLine[]; historyId?: string } | null>(null);
-  const { data: profile } = useProfile();
-  const { data: plugins } = usePlugins();
-  const { data: settings } = useSettings();
-  const agentEnabled = !!(settings as Record<string, unknown>)?.agentEnabled;
-  const timeFormat = useUi((s) => s.timeFormat);
-  const hour12 = timeFormat === '12h';
-  // Do not start detail sub-queries until the primary host exists. Besides
-  // reducing requests, this keeps a stale browser URL from producing a wall
-  // of 404s while the normal not-found state is rendered.
-  const serverKnown = Boolean(qc.getQueryData(['server', id]));
-  const openTofuAvailable = Array.isArray(plugins) && plugins.some(plugin => plugin.id === 'opentofu' && plugin.enabled && canSeePlugin(profile, plugin.id));
-  const { data: deploymentData } = useQuery<ManagedDeploymentResponse>({
-    queryKey: ['server', id, 'deployment-context'],
-    queryFn: () => apiFetch(`/plugin/opentofu/managed-servers/${encodeURIComponent(id)}`),
-    enabled: Boolean(id && serverKnown && openTofuAvailable),
-    staleTime: 30_000,
-  });
-  const managedDeployments = Array.isArray(deploymentData?.resources) ? deploymentData.resources : [];
-  const managedProxmoxDeployment = managedDeployments.find(deployment => deployment.vm?.node_name && deployment.vm?.vm_id != null);
-  const { data: snapshotData, isFetching: snapshotsLoading } = useQuery<ProxmoxSnapshotResponse>({
-    queryKey: ['server', id, 'proxmox-snapshots'],
-    queryFn: () => apiFetch(`/plugin/opentofu/managed-servers/${encodeURIComponent(id)}/snapshots`),
-    enabled: Boolean(id && managedProxmoxDeployment),
-    staleTime: 15_000,
-  });
-  const snapshots = Array.isArray(snapshotData?.snapshots) ? snapshotData.snapshots : [];
-  const createSnapshotMut = useMutation({
-    mutationFn: ({ name, description }: { name: string; description: string }) => apiFetch(`/plugin/opentofu/managed-servers/${encodeURIComponent(id)}/snapshots`, { method: 'POST', body: { name, description } }),
-    onSuccess: () => {
-      showToast(t('det.snapshotCreateStarted'), 'success');
-      setSnapshotDialogOpen(false);
-      setSnapshotName('');
-      setSnapshotDescription('');
-      void qc.invalidateQueries({ queryKey: ['server', id, 'proxmox-snapshots'] });
-    },
-    onError: (error: Error) => showToast(error.message, 'error'),
-  });
+  const controller = useServerDetailController();
+  const {
+    t,
+    qc,
+    params,
+    id,
+    navigate,
+    terminalOpen,
+    setTerminalOpen,
+    editOpen,
+    setEditOpen,
+    confirmRunUpdate,
+    setConfirmRunUpdate,
+    confirmResetHostKey,
+    setConfirmResetHostKey,
+    confirmReboot,
+    setConfirmReboot,
+    confirmDelete,
+    setConfirmDelete,
+    confirmDeleteTask,
+    setConfirmDeleteTask,
+    confirmComposeDown,
+    setConfirmComposeDown,
+    confirmAgentInstall,
+    setConfirmAgentInstall,
+    confirmAgentRemove,
+    setConfirmAgentRemove,
+    confirmRestartContainer,
+    setConfirmRestartContainer,
+    actionRun,
+    setActionRun,
+    profile,
+    settings,
+    agentEnabled,
+    timeFormat,
+    hour12,
+    serverKnown,
+    openTofuAvailable,
+    deploymentData,
+    managedDeployments,
+    managedProxmoxDeployment,
+    startActionRun,
+    rawServer,
+    isLoading,
+    server,
+    info,
+    refetchInfo,
+    fetchingInfo,
+    infoFailed,
+    infoError,
+    ipamReservationData,
+    ipamReservations,
+    dockerContainers,
+    fetchingDocker,
+    rawUpdates,
+    history,
+    notesData,
+    customTasks,
+    customTaskList,
+    agentStatus,
+    refetchAgent,
+    imageUpdates,
+    setImageUpdates,
+    notes,
+    setNotes,
+    notesEditing,
+    setNotesEditing,
+    renderedNotes,
+    notesTimer,
+    saveNotesMut,
+    autoSaveNotes,
+    runUpdateMut,
+    runRebootMut,
+    proxmoxRebootMut,
+    testConnMut,
+    resetHostKeyMut,
+    deleteServerMut,
+    restartContainerMut,
+    logsContainer,
+    setLogsContainer,
+    logsContent,
+    setLogsContent,
+    logsTail,
+    setLogsTail,
+    logsLoading,
+    setLogsLoading,
+    logsError,
+    setLogsError,
+    logsRequestRef,
+    loadLogs,
+    taskDialog,
+    setTaskDialog,
+    taskForm,
+    setTaskForm,
+    saveTaskMut,
+    deleteTaskMut,
+    checkTaskMut,
+    runTaskMut,
+    checkImageMut,
+    checkSystemUpdatesMut,
+    composeActionMut,
+    composeDialog,
+    setComposeDialog,
+    confirmDeleteStack,
+    setConfirmDeleteStack,
+    deleteStackMut,
+    openEditCompose,
+    saveComposeMut,
+    latencyMs,
+    setLatencyMs,
+    agentUrl,
+    setAgentUrl,
+    agentCa,
+    setAgentCa,
+    agentInstallMut,
+    agentUpdateMut,
+    agentConfigMut,
+    agentRotateMut,
+    agentRemoveMut,
+    agentBusy,
+    HIST_PAGE_SIZE,
+    histPage,
+    setHistPage,
+    histItems,
+    histTotal,
+    histSafe,
+    histPage_,
+    ramPct,
+    diskPct,
+    cpuPct,
+    healthThresholds,
+    updatesList,
+    phasedList,
+    containers,
+    activeLogContainer,
+    stacks,
+  } = controller;
 
-  // ── Action run helpers ───────────────────────────────────────
-  const startActionRun = useCallback((title: string, historyId?: string) => {
-    setActionRun({ title, status: 'running', lines: [], historyId });
-  }, []);
-
-  // WS listener for action output/completion
-  useEffect(() => {
-    ws.connect();
-    const unsub = ws.subscribe((raw) => {
-      const data = raw as Record<string, unknown>;
-      setActionRun(prev => {
-        if (!prev || prev.status !== 'running') return prev;
-        if (prev.historyId && data.historyId !== prev.historyId) return prev;
-
-        if (data.type === 'update_output') {
-          const text = String(data.data ?? '');
-          const lines = text.split('\n').filter(l => l !== '');
-          return {
-            ...prev,
-            lines: [...prev.lines, ...lines.map(l => ({ text: l, cls: data.stream === 'stderr' ? 'text-amber-400' : undefined }))],
-          };
-        }
-        if (data.type === 'update_complete') {
-          const success = !!data.success;
-          return { ...prev, status: success ? 'success' : 'failed' };
-        }
-        if (data.type === 'update_error') {
-          return { ...prev, status: 'failed', lines: [...prev.lines, { text: String(data.error ?? 'Unknown error'), cls: 'text-red-400' }] };
-        }
-        return prev;
-      });
-    });
-    return unsub;
-  }, []);
-
-  // Listen for backend docker inventory refreshes (e.g. after compose up/down/pull)
-  // and invalidate the docker query for this server so the UI reflects the new state.
-  useEffect(() => {
-    ws.connect();
-    const unsub = ws.subscribe((raw) => {
-      const data = raw as { type?: string; serverId?: string | number };
-      if (data?.type !== 'docker_refreshed') return;
-      if (String(data.serverId) !== String(id)) return;
-      void qc.invalidateQueries({ queryKey: ['server', id, 'docker'] });
-    });
-    return unsub;
-  }, [id, qc]);
-
-  useEffect(() => {
-    ws.connect();
-    const unsub = ws.subscribe((raw) => {
-      const data = raw as { type?: string; serverId?: string | number };
-      if (data?.type !== 'resource_alert_triggered' && data?.type !== 'resource_alert_updated') return;
-      if (String(data.serverId) !== String(id)) return;
-      void qc.invalidateQueries({ queryKey: ['alerts'] });
-      void qc.invalidateQueries({ queryKey: ['server', id, 'info'] });
-    });
-    return unsub;
-  }, [id, qc]);
-
-  // Refresh relevant queries when an action run finishes
-  useEffect(() => {
-    if (!actionRun || actionRun.status === 'running') return;
-    void qc.invalidateQueries({ queryKey: ['server', id] });
-    void qc.invalidateQueries({ queryKey: ['server', id, 'docker'] });
-    void qc.invalidateQueries({ queryKey: ['server', id, 'history'] });
-    void qc.invalidateQueries({ queryKey: ['server', id, 'updates'] });
-    void qc.invalidateQueries({ queryKey: ['server', id, 'customTasks'] });
-  }, [actionRun?.status]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Data queries ────────────────────────────────────────────
-  const { data: rawServer, isLoading } = useQuery({
-    queryKey: ['server', id],
-    queryFn: () => api.getServer(id) as unknown as Promise<ServerDetail>,
-    enabled: !!id,
-  });
-  const server = useMemo(() => {
-    if (!rawServer) return null;
-    const s = rawServer as Record<string, unknown>;
-    return {
-      ...s,
-      id: String(s.id),
-      tags: parseArrayValue<string>(s.tags),
-      services: parseArrayValue<string>(s.services),
-      links: parseArrayValue<{ name: string; url: string }>(s.links),
-      storage_mounts: parseArrayValue<{ name: string; path: string }>(s.storage_mounts),
-    } as ServerDetail;
-  }, [rawServer]);
-
-  const { data: info, refetch: refetchInfo, isFetching: fetchingInfo, isError: infoFailed, error: infoError } = useQuery<ServerInfo>({
-    queryKey: ['server', id, 'info'],
-    queryFn: () => api.getServerInfo(id) as unknown as Promise<ServerInfo>,
-    enabled: !!server,
-  });
-
-  // ── Stat card queries (lazy-ish but auto) ───────────────────
-  const { data: dockerContainers, isFetching: fetchingDocker } = useQuery({
-    queryKey: ['server', id, 'docker'],
-    queryFn: () => api.getServerDocker(id) as unknown as Promise<ContainerRow[]>,
-    enabled: !!id && hasCap(profile, 'canViewDocker') && !!server?.docker_enabled,
-    staleTime: 60_000,
-  });
-  const { data: rawUpdates, isFetching: fetchingUpdates } = useQuery({
-    queryKey: ['server', id, 'updates'],
-    queryFn: () => api.getServerUpdates(id) as unknown as Promise<Record<string, unknown>[] | { updates: Record<string, unknown>[] }>,
-    enabled: !!server && hasCap(profile, 'canViewUpdates'),
-    staleTime: 60_000,
-  });
-  const { data: history } = useQuery({
-    queryKey: ['server', id, 'history'],
-    queryFn: () => api.getServerHistory(id) as unknown as Promise<HistoryRow[]>,
-    enabled: !!server,
-  });
-  const { data: notesData } = useQuery({
-    queryKey: ['server', id, 'notes'],
-    queryFn: () => api.getServerNotes(id),
-    enabled: !!server,
-  });
-  const { data: customTasks } = useQuery({
-    queryKey: ['server', id, 'customTasks'],
-    queryFn: () => api.getCustomUpdateTasks(id) as unknown as Promise<CustomTask[]>,
-    enabled: !!server && hasCap(profile, 'canViewCustomUpdates'),
-  });
-  // Older installations returned an object for an empty task list. Keep the
-  // detail view usable while those instances are being upgraded.
-  const customTaskList = Array.isArray(customTasks) ? customTasks : [];
-  const { data: agentStatus, refetch: refetchAgent } = useQuery({
-    queryKey: ['server', id, 'agent'],
-    queryFn: () => api.getAgentStatus(id) as unknown as Promise<AgentStatus>,
-    enabled: !!server && agentEnabled && profile?.role === 'admin',
-    staleTime: 30_000,
-  });
-  const { data: allAlerts } = useQuery({
-    queryKey: ['alerts', 'open'],
-    queryFn: () => api.getAlerts('open') as unknown as Promise<ResourceAlert[]>,
-    enabled: !!server,
-    staleTime: 30_000,
-  });
-  const serverAlerts = useMemo(() => {
-    const alerts = Array.isArray(allAlerts) ? allAlerts : [];
-    return alerts.filter((alert) => String(alert.server_id) === String(id));
-  }, [allAlerts, id]);
-  const { data: alertSettings } = useQuery({
-    queryKey: ['server', id, 'alertSettings'],
-    queryFn: () => api.getServerAlertSettings(id) as unknown as Promise<AlertSettings>,
-    enabled: !!server,
-    staleTime: 30_000,
-  });
-
-  const [alertForm, setAlertForm] = useState<AlertSettings | null>(null);
-  useEffect(() => {
-    if (alertSettings) setAlertForm(alertSettings);
-  }, [alertSettings]);
-
-  const saveAlertSettingsMut = useMutation({
-    mutationFn: () => alertForm ? api.saveServerAlertSettings(id, alertForm as unknown as Record<string, unknown>) : Promise.resolve(),
-    onSuccess: () => {
-      showToast(t('common.saved'), 'success');
-      void qc.invalidateQueries({ queryKey: ['server', id, 'alertSettings'] });
-      void qc.invalidateQueries({ queryKey: ['alerts'] });
-    },
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
-  });
-
-  const ackAlertMut = useMutation({
-    mutationFn: (alertId: string) => api.acknowledgeAlert(alertId),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['alerts'] }),
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
-  });
-
-  // ── Image update cache ──────────────────────────────────────
-  const [imageUpdates, setImageUpdates] = useState<Record<string, string>>({});
-  useEffect(() => {
-    if (!server || !hasCap(profile, 'canViewDocker')) return;
-    api.getCachedImageUpdates(id).then((r: unknown) => {
-      const res = r as { results?: { image: string; status: string }[] };
-      if (res?.results?.length) {
-        const m: Record<string, string> = {};
-        res.results.forEach(r => { m[r.image] = r.status; });
-        setImageUpdates(m);
-      }
-    }).catch(() => {});
-  }, [id, profile]);
-
-  // ── Notes state ─────────────────────────────────────────────
-  const [notes, setNotes] = useState('');
-  const [notesEditing, setNotesEditing] = useState(false);
-  const renderedNotes = useMemo(() => {
-    if (!notes.trim()) return '';
-    return DOMPurify.sanitize(marked.parse(notes, { async: false }) as string);
-  }, [notes]);
-  const notesTimer = useRef<ReturnType<typeof setTimeout>>();
-  useEffect(() => { if (notesData?.notes !== undefined) setNotes(notesData.notes); }, [notesData?.notes]);
-  const saveNotesMut = useMutation({
-    mutationFn: (text: string) => api.saveServerNotes(id, text),
-    onSuccess: () => showToast(t('det.notesSaved'), 'success'),
-    onError: () => showToast(t('det.notesError'), 'error'),
-  });
-  const autoSaveNotes = useCallback((text: string) => {
-    clearTimeout(notesTimer.current);
-    notesTimer.current = setTimeout(() => saveNotesMut.mutate(text), 800);
-  }, [saveNotesMut]);
-
-  // ── Mutations ───────────────────────────────────────────────
-  const runUpdateMut = useMutation({
-    mutationFn: () => api.runUpdate(id) as unknown as Promise<{ historyId: string }>,
-    onMutate: () => startActionRun(`${t('det.updates')} · ${server?.name || ''}`),
-    onSuccess: (data) => {
-      setActionRun(prev => prev ? { ...prev, historyId: data.historyId } : prev);
-      void qc.invalidateQueries({ queryKey: ['server', id] });
-    },
-    onError: (e: Error) => {
-      setActionRun(prev => prev ? { ...prev, status: 'failed', lines: [...prev.lines, { text: t('common.errorPrefix', { msg: e.message }), cls: 'text-red-400' }] } : prev);
-      showToast(t('common.errorPrefix', { msg: e.message }), 'error');
-    },
-  });
-  const runRebootMut = useMutation({
-    mutationFn: () => api.runReboot(id) as unknown as Promise<{ historyId: string }>,
-    onMutate: () => startActionRun(`${t('det.reboot')} · ${server?.name || ''}`),
-    onSuccess: (data) => {
-      setActionRun(prev => prev ? { ...prev, historyId: data.historyId } : prev);
-      showToast(t('det.rebootStarted'), 'success');
-    },
-    onError: (e: Error) => {
-      setActionRun(prev => prev ? { ...prev, status: 'failed', lines: [...prev.lines, { text: t('common.errorPrefix', { msg: e.message }), cls: 'text-red-400' }] } : prev);
-      showToast(t('common.errorPrefix', { msg: e.message }), 'error');
-    },
-  });
-  const proxmoxRebootMut = useMutation({
-    mutationFn: () => apiFetch(`/plugin/opentofu/managed-servers/${encodeURIComponent(id)}/power`, { method: 'POST', body: { action: 'reboot' } }),
-    onSuccess: () => {
-      showToast('Proxmox-Neustart wurde gestartet.', 'success');
-      void qc.invalidateQueries({ queryKey: ['server', id] });
-      void qc.invalidateQueries({ queryKey: ['opentofu', 'infrastructure'] });
-    },
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
-  });
-  const testConnMut = useMutation({
-    mutationFn: () => api.testConnection(id),
-    onSuccess: () => { showToast(t('det.reachable'), 'success'); void qc.invalidateQueries({ queryKey: ['server', id] }); },
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
-  });
-  const resetHostKeyMut = useMutation({
-    mutationFn: () => api.resetServerHostKey(id) as unknown as Promise<{ removed?: string[] }>,
-    onSuccess: (r) => showToast(t('srv.resetHostKeyDone', { entries: r.removed?.join(', ') || t('srv.resetHostKeyNoEntries') }), 'success'),
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
-  });
-  const deleteServerMut = useMutation({
-    mutationFn: () => api.deleteServer(id),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['servers'] });
-      void navigate({ to: '/servers' });
-      showToast(t('srv.deleted'), 'success');
-    },
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
-  });
-  const restartContainerMut = useMutation({
-    mutationFn: (name: string) => api.restartContainer(id, name) as unknown as Promise<{ historyId: string }>,
-    onMutate: (name) => startActionRun(`${t('det.output')} · ${name}`),
-    onSuccess: (data) => {
-      setActionRun(prev => prev ? { ...prev, historyId: data.historyId } : prev);
-    },
-    onError: (e: Error) => {
-      setActionRun(prev => prev ? { ...prev, status: 'failed', lines: [...prev.lines, { text: t('common.errorPrefix', { msg: e.message }), cls: 'text-red-400' }] } : prev);
-      showToast(t('common.errorPrefix', { msg: e.message }), 'error');
-    },
-  });
-
-  // ── Container logs state ────────────────────────────────────
-  const [logsContainer, setLogsContainer] = useState<string | null>(null);
-  const [logsContent, setLogsContent] = useState('');
-  const [logsTail, setLogsTail] = useState(200);
-  const [logsLoading, setLogsLoading] = useState(false);
-
-  const loadLogs = useCallback(async (container: string, tail = 200) => {
-    setLogsContainer(container);
-    setLogsLoading(true);
-    try {
-      const r = await api.getContainerLogs(id, container, tail);
-      setLogsContent((r as { logs: string }).logs || '');
-    } catch (e) {
-      setLogsContent(`Error: ${(e as Error).message}`);
-    }
-    setLogsLoading(false);
-  }, [id]);
-
-  // ── Custom task dialog ──────────────────────────────────────
-  const [taskDialog, setTaskDialog] = useState<{ open: boolean; task: CustomTask | null }>({ open: false, task: null });
-  const [taskForm, setTaskForm] = useState({ name: '', type: 'script', github_repo: '', check_command: '', update_command: '', trigger_output: '', latest_command: '' });
-
-  useEffect(() => {
-    if (taskDialog.open) {
-      const t = taskDialog.task;
-      setTaskForm({
-        name: t?.name || '', type: t?.type || 'script', github_repo: t?.github_repo || '',
-        check_command: t?.check_command || '', update_command: t?.update_command || '',
-        trigger_output: t?.trigger_output || '', latest_command: t?.latest_command || '',
-      });
-    }
-  }, [taskDialog]);
-
-  const saveTaskMut = useMutation({
-    mutationFn: async () => {
-      const data = { ...taskForm, github_repo: taskForm.github_repo || null, trigger_output: taskForm.trigger_output || null, latest_command: taskForm.latest_command || null, check_command: taskForm.check_command || null };
-      if (taskDialog.task) await api.updateCustomUpdateTask(id, taskDialog.task.id, data);
-      else await api.createCustomUpdateTask(id, data);
-    },
-    onSuccess: () => { showToast(t('det.taskSaved'), 'success'); setTaskDialog({ open: false, task: null }); void qc.invalidateQueries({ queryKey: ['server', id, 'customTasks'] }); },
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
-  });
-
-  const deleteTaskMut = useMutation({
-    mutationFn: (taskId: string) => api.deleteCustomUpdateTask(id, taskId),
-    onSuccess: () => { showToast(t('det.taskDeleted'), 'success'); void qc.invalidateQueries({ queryKey: ['server', id, 'customTasks'] }); },
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
-  });
-
-  const checkTaskMut = useMutation({
-    mutationFn: (taskId: string) => api.checkCustomUpdateTask(id, taskId),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['server', id, 'customTasks'] }),
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
-  });
-
-  const runTaskMut = useMutation({
-    mutationFn: (taskId: string) => api.runCustomUpdateTask(id, taskId) as unknown as Promise<{ historyId: string }>,
-    onMutate: (taskId) => {
-      const task = (Array.isArray(customTasks) ? customTasks : []).find(t2 => t2.id === taskId);
-      startActionRun(`${t('det.output')} · ${task?.name || t('det.customUpdates')}`);
-    },
-    onSuccess: (data) => {
-      setActionRun(prev => prev ? { ...prev, historyId: data.historyId } : prev);
-    },
-    onError: (e: Error) => {
-      setActionRun(prev => prev ? { ...prev, status: 'failed', lines: [...prev.lines, { text: t('common.errorPrefix', { msg: e.message }), cls: 'text-red-400' }] } : prev);
-      showToast(t('common.errorPrefix', { msg: e.message }), 'error');
-    },
-  });
-
-  // ── Check image updates ─────────────────────────────────────
-  const checkImageMut = useMutation({
-    mutationFn: () => api.checkImageUpdates(id) as unknown as Promise<{ image: string; status: string }[]>,
-    onSuccess: (results) => {
-      const m: Record<string, string> = {};
-      results.forEach(r => { m[r.image] = r.status; });
-      setImageUpdates(m);
-      void qc.invalidateQueries({ queryKey: ['server', id, 'docker'] });
-    },
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
-  });
-
-  // ── Compose actions ─────────────────────────────────────────
-  const composeActionMut = useMutation({
-    mutationFn: ({ dir, action }: { dir: string; action: string }) => api.composeAction(id, dir, action) as unknown as Promise<{ historyId: string }>,
-    onMutate: ({ action }) => startActionRun(`docker compose ${action} · ${server?.name || ''}`),
-    onSuccess: (data) => {
-      setActionRun(prev => prev ? { ...prev, historyId: data.historyId } : prev);
-    },
-    onError: (e: Error) => {
-      setActionRun(prev => prev ? { ...prev, status: 'failed', lines: [...prev.lines, { text: t('common.errorPrefix', { msg: e.message }), cls: 'text-red-400' }] } : prev);
-      showToast(t('common.errorPrefix', { msg: e.message }), 'error');
-    },
-  });
-
-  // ── Compose editor dialog ───────────────────────────────────
-  const [composeDialog, setComposeDialog] = useState<{ open: boolean; mode: 'edit' | 'add'; dir: string; content: string; loading: boolean }>({ open: false, mode: 'add', dir: '', content: '', loading: false });
-
-  const [confirmDeleteStack, setConfirmDeleteStack] = useState<{ proj: string; dir: string } | null>(null);
-  const deleteStackMut = useMutation({
-    mutationFn: (dir: string) => api.deleteComposeStack(id, dir),
-    onSuccess: () => {
-      showToast(t('det.stackRemoved'), 'success');
-      setConfirmDeleteStack(null);
-      void qc.invalidateQueries({ queryKey: ['server', id, 'docker'] });
-    },
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
-  });
-
-  const openEditCompose = useCallback(async (dir: string) => {
-    setComposeDialog({ open: true, mode: 'edit', dir, content: '', loading: true });
-    try {
-      const r = await api.getDockerCompose(id, dir) as unknown as { content: string };
-      setComposeDialog(prev => ({ ...prev, content: r.content || '', loading: false }));
-    } catch (e) {
-      showToast(t('common.errorPrefix', { msg: (e as Error).message }), 'error');
-      setComposeDialog(prev => ({ ...prev, loading: false }));
-    }
-  }, [id, t]);
-
-  const saveComposeMut = useMutation({
-    mutationFn: () => api.writeDockerCompose(id, composeDialog.dir, composeDialog.content),
-    onSuccess: () => {
-      showToast(t('det.composeSaved'), 'success');
-      setComposeDialog(prev => ({ ...prev, open: false }));
-      void qc.invalidateQueries({ queryKey: ['server', id, 'docker'] });
-    },
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
-  });
-
-  // ── Latency ping ────────────────────────────────────────────
-  const [latencyMs, setLatencyMs] = useState<number | null>(null);
-  useEffect(() => {
-    if (!id) return;
-    let cancelled = false;
-    (async () => {
-      const times: number[] = [];
-      for (let i = 0; i < 3; i++) {
-        const start = performance.now();
-        try {
-          await api.ping();
-          times.push(performance.now() - start);
-        } catch { /* ignore */ }
-      }
-      if (!cancelled && times.length > 0) {
-        setLatencyMs(Math.round(times.reduce((a, b) => a + b, 0) / times.length));
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [id]);
-
-  // ── Agent mutations ─────────────────────────────────────────
-  const [agentUrl, setAgentUrl] = useState('');
-  const [agentCa, setAgentCa] = useState('');
-  useEffect(() => { if (agentStatus?.shipyardUrl) setAgentUrl(agentStatus.shipyardUrl); else setAgentUrl(window.location.origin); }, [agentStatus]);
-
-  const agentInstallMut = useMutation({
-    mutationFn: () => api.installAgent(id, { mode: 'push', interval: 30, shipyard_url: agentUrl, shipyard_ca_cert_pem: agentCa }),
-    onSuccess: () => { showToast(t('det.agentInstallStarted'), 'success'); void refetchAgent(); },
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
-  });
-  const agentUpdateMut = useMutation({
-    mutationFn: () => api.updateAgent(id),
-    onSuccess: () => { showToast(t('det.agentUpdateStarted'), 'success'); void refetchAgent(); },
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
-  });
-  const agentConfigMut = useMutation({
-    mutationFn: () => api.configureAgent(id, { mode: agentStatus?.mode || 'push', interval: agentStatus?.interval || 30, shipyard_url: agentUrl, shipyard_ca_cert_pem: agentCa }),
-    onSuccess: () => { showToast(t('det.agentConfigureStarted'), 'success'); void refetchAgent(); },
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
-  });
-  const agentRotateMut = useMutation({
-    mutationFn: () => api.rotateAgentToken(id, { shipyard_url: agentUrl, shipyard_ca_cert_pem: agentCa }),
-    onSuccess: () => { showToast(t('det.agentTokenRotated'), 'success'); void refetchAgent(); },
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
-  });
-  const agentRemoveMut = useMutation({
-    mutationFn: () => api.removeAgent(id),
-    onSuccess: () => { showToast(t('det.agentRemoved'), 'success'); void refetchAgent(); },
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
-  });
-  const agentBusy = agentInstallMut.isPending || agentUpdateMut.isPending || agentConfigMut.isPending || agentRotateMut.isPending || agentRemoveMut.isPending;
-
-  // ── History pagination ──────────────────────────────────────
-  const HIST_PAGE_SIZE = 25;
-  const [histPage, setHistPage] = useState(1);
-  const histItems = Array.isArray(history) ? history : [];
-  const histTotal = Math.max(1, Math.ceil(histItems.length / HIST_PAGE_SIZE));
-  const histSafe = Math.min(histPage, histTotal);
-  const histPage_ = histItems.slice((histSafe - 1) * HIST_PAGE_SIZE, histSafe * HIST_PAGE_SIZE);
-
-  // ── Derived ─────────────────────────────────────────────────
-  const ramPct = info?.ram_total_mb ? Math.round(((info.ram_used_mb ?? 0) / info.ram_total_mb) * 100) : null;
-  const diskPct = info?.disk_total_gb ? Math.round(((info.disk_used_gb ?? 0) / info.disk_total_gb) * 100) : null;
-  const cpuPct = info?.cpu_usage_pct ?? null;
-  const thresholds = alertSettings?.thresholds;
-
-  const updatesList = useMemo(() => {
-    if (!rawUpdates) return [];
-    const nested = !Array.isArray(rawUpdates) ? (rawUpdates as Record<string, unknown>).updates : [];
-    const arr = Array.isArray(rawUpdates) ? rawUpdates : Array.isArray(nested) ? nested : [];
-    return arr.filter((u: Record<string, unknown>) => !u.phased) as { package: string; version?: string; phased?: boolean; _cached?: boolean }[];
-  }, [rawUpdates]);
-  const phasedList = useMemo(() => {
-    if (!rawUpdates) return [];
-    const nested = !Array.isArray(rawUpdates) ? (rawUpdates as Record<string, unknown>).updates : [];
-    const arr = Array.isArray(rawUpdates) ? rawUpdates : Array.isArray(nested) ? nested : [];
-    return arr.filter((u: Record<string, unknown>) => u.phased) as { package: string; version?: string }[];
-  }, [rawUpdates]);
-
-  const containers = Array.isArray(dockerContainers) ? dockerContainers as ContainerRow[] : [];
-  const stacks = useMemo(() => {
-    const map: Record<string, { dir: string; containers: ContainerRow[] }> = {};
-    const standalone: ContainerRow[] = [];
-    containers.forEach(c => {
-      if (c.compose_project && c.compose_working_dir) {
-        if (!map[c.compose_project]) map[c.compose_project] = { dir: c.compose_working_dir, containers: [] };
-        map[c.compose_project].containers.push(c);
-      } else standalone.push(c);
-    });
-    return { map, standalone };
-  }, [containers]);
+  const availableTabs = useMemo(() => {
+    const values = ["overview", "configuration"];
+    if (hasCap(profile, "canViewDocker") && server?.docker_enabled)
+      values.push("docker");
+    if (
+      hasCap(profile, "canViewUpdates") ||
+      hasCap(profile, "canRunUpdates") ||
+      hasCap(profile, "canRebootServers") ||
+      hasCap(profile, "canViewCustomUpdates") ||
+      hasCap(profile, "canRunCustomUpdates") ||
+      hasCap(profile, "canEditCustomUpdates") ||
+      hasCap(profile, "canDeleteCustomUpdates")
+    )
+      values.push("updates");
+    values.push("history");
+    if (agentEnabled && profile?.role === "admin") values.push("agent");
+    if (hasCap(profile, "canViewNotes")) values.push("notes");
+    return values;
+  }, [agentEnabled, profile, server?.docker_enabled]);
+  const serverTabs = useUrlTab("overview", availableTabs);
 
   // ── Loading / not found ─────────────────────────────────────
-  if (isLoading) return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Skeleton className="h-8 w-8 rounded-md" />
-        <div className="space-y-2">
-          <Skeleton className="h-5 w-48" />
-          <Skeleton className="h-3 w-64" />
+  if (isLoading)
+    return (
+      <div className="space-y-5">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-8 w-8 rounded-md" />
+          <div className="space-y-2">
+            <Skeleton className="h-5 w-48" />
+            <Skeleton className="h-3 w-64" />
+          </div>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 w-full" />
+          ))}
         </div>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-24 w-full" />
-        ))}
-      </div>
-    </div>
-  );
-  if (!server) return (
-    <EmptyState
-      icon={<ArrowLeft className="h-6 w-6" />}
-      title={t('det.notFound')}
-      action={<Button variant="secondary" size="sm" asChild><Link to="/servers"><ArrowLeft className="h-4 w-4 mr-1" />{t('common.back')}</Link></Button>}
-    />
-  );
+    );
+  if (!server)
+    return (
+      <EmptyState
+        icon={<ArrowLeft className="h-6 w-6" />}
+        title={t("det.notFound")}
+        action={
+          <Button variant="secondary" size="sm" asChild>
+            <Link to="/servers">
+              <ArrowLeft className="h-4 w-4 mr-1" />
+              {t("common.back")}
+            </Link>
+          </Button>
+        }
+      />
+    );
 
   // ═══════════════════════════════════════════════════════════
   return (
     <div className="space-y-6">
       {/* ── Header ──────────────────────────────────────────── */}
       <PageHeader
-        back={<Button variant="ghost" size="icon" onClick={() => navigate({ to: (sessionStorage.getItem('shipyard.lastNonDetailRoute') as '/' | '/servers' | '/playbooks' | '/settings' | '/profile' | null) ?? '/servers' })}><ArrowLeft className="h-4 w-4" /></Button>}
+        back={
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() =>
+              navigate({
+                to:
+                  (sessionStorage.getItem("shipyard.lastNonDetailRoute") as
+                    | "/"
+                    | "/servers"
+                    | "/playbooks"
+                    | "/settings"
+                    | "/profile"
+                    | null) ?? "/servers",
+              })
+            }
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+        }
+        breadcrumbs={
+          <>
+            <Link
+              to="/servers"
+              className="transition-colors hover:text-foreground"
+            >
+              Managed hosts
+            </Link>
+            <span aria-hidden="true">/</span>
+            {server.group_name && (
+              <>
+                <span>{server.group_name}</span>
+                <span aria-hidden="true">/</span>
+              </>
+            )}
+            <span className="font-medium text-foreground" aria-current="page">
+              {server.name}
+            </span>
+          </>
+        }
         title={server.name}
         badge={
-          server.status === 'online' ? (
-            <StatusBadge tone="success"><LiveDot tone="success" />{t('common.online')}</StatusBadge>
-          ) : server.status === 'offline' ? (
-            <StatusBadge tone="danger">{t('common.offline')}</StatusBadge>
+          server.status === "online" ? (
+            <StatusBadge tone="success">
+              <LiveDot tone="success" />
+              {t("common.online")}
+            </StatusBadge>
+          ) : server.status === "offline" ? (
+            <StatusBadge tone="danger">{t("common.offline")}</StatusBadge>
           ) : (
-            <StatusBadge tone="muted">{t('common.unknown')}</StatusBadge>
+            <StatusBadge tone="muted">{t("common.unknown")}</StatusBadge>
           )
         }
-        description={`${server.ip_address}${server.hostname && server.hostname !== server.ip_address ? ` · ${server.hostname}` : ''}`}
+        description={`${server.ip_address}${server.hostname && server.hostname !== server.ip_address ? ` · ${server.hostname}` : ""}`}
         actions={
           <>
-            {hasCap(profile, 'canUseTerminal') && (
-              <Button size="sm" onClick={() => setTerminalOpen(true)}><Terminal className="h-3.5 w-3.5 mr-1" />{t('common.terminal')}</Button>
+            {server.status !== "online" &&
+              hasCap(profile, "canEditServers") && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => testConnMut.mutate()}
+                  disabled={testConnMut.isPending}
+                >
+                  <Satellite
+                    className={`h-3.5 w-3.5 ${testConnMut.isPending ? "animate-pulse" : ""}`}
+                  />
+                  Test connection
+                </Button>
+              )}
+            {hasCap(profile, "canUseTerminal") && (
+              <Button size="sm" onClick={() => setTerminalOpen(true)}>
+                <Terminal className="h-3.5 w-3.5 mr-1" />
+                {t("common.terminal")}
+              </Button>
             )}
             <OverflowMenu width="w-52">
-              {hasCap(profile, 'canEditServers') && (
+              {hasCap(profile, "canEditServers") && (
                 <>
                   <OverflowItem icon={Pencil} onClick={() => setEditOpen(true)}>
-                    {t('common.edit')}
+                    {t("common.edit")}
                   </OverflowItem>
                   <OverflowSep />
                 </>
               )}
-              {hasCap(profile, 'canRunUpdates') && (
-                <OverflowItem icon={ArrowUp}
-                  onClick={() => setConfirmRunUpdate(true)}>
-                  {t('det.updates')}
+              {hasCap(profile, "canRunUpdates") && (
+                <OverflowItem
+                  icon={ArrowUp}
+                  onClick={() => setConfirmRunUpdate(true)}
+                >
+                  {t("det.updates")}
                 </OverflowItem>
               )}
-              {hasCap(profile, 'canUseTerminal') && (
-                <OverflowItem icon={Key} onClick={() => setConfirmResetHostKey(true)}>
-                  {t('srv.resetHostKey')}
+              {hasCap(profile, "canUseTerminal") && (
+                <OverflowItem
+                  icon={Key}
+                  onClick={() => setConfirmResetHostKey(true)}
+                >
+                  {t("srv.resetHostKey")}
                 </OverflowItem>
               )}
-              {hasCap(profile, 'canRebootServers') && (
+              {hasCap(profile, "canRebootServers") && (
                 <>
                   <OverflowSep />
-                  <OverflowItem icon={Power} warning onClick={() => setConfirmReboot(true)}>
-                    {t('det.reboot')}
+                  <OverflowItem
+                    icon={Power}
+                    warning
+                    onClick={() => setConfirmReboot(true)}
+                  >
+                    {t("det.reboot")}
                   </OverflowItem>
                 </>
               )}
-              {hasCap(profile, 'canDeleteServers') && (
+              {hasCap(profile, "canDeleteServers") && (
                 <>
                   <OverflowSep />
-                  <OverflowItem icon={Trash2} danger onClick={() => setConfirmDelete(true)}>
-                    {t('common.delete')}
+                  <OverflowItem
+                    icon={Trash2}
+                    danger
+                    onClick={() => setConfirmDelete(true)}
+                  >
+                    {t("common.delete")}
                   </OverflowItem>
                 </>
               )}
             </OverflowMenu>
-            {hasCap(profile, 'canEditServers') && (
+            {hasCap(profile, "canEditServers") && (
               <CreateServerDialog
                 editServer={server}
                 open={editOpen}
                 onOpenChange={setEditOpen}
-                onSuccess={() => { qc.invalidateQueries({ queryKey: ['server', id] }); }}
+                onSuccess={() => {
+                  qc.invalidateQueries({ queryKey: ["server", id] });
+                }}
               />
             )}
             <ConfirmDialog
               open={confirmRunUpdate}
               onOpenChange={setConfirmRunUpdate}
-              title={t('det.updates')}
-              description={t('det.confirmUpdate', { name: server.name })}
-              confirmLabel={t('det.updates')}
+              title={t("det.updates")}
+              description={t("det.confirmUpdate", { name: server.name })}
+              confirmLabel={t("det.updates")}
               onConfirm={() => runUpdateMut.mutate()}
               isPending={runUpdateMut.isPending}
             />
             <ConfirmDialog
               open={confirmResetHostKey}
               onOpenChange={setConfirmResetHostKey}
-              title={t('srv.resetHostKeyConfirmTitle')}
-              description={t('srv.resetHostKeyConfirmBody')}
-              confirmLabel={t('srv.resetHostKeyConfirmText')}
+              title={t("srv.resetHostKeyConfirmTitle")}
+              description={t("srv.resetHostKeyConfirmBody")}
+              confirmLabel={t("srv.resetHostKeyConfirmText")}
               variant="destructive"
               onConfirm={() => resetHostKeyMut.mutate()}
               isPending={resetHostKeyMut.isPending}
@@ -841,19 +481,31 @@ export function ServerDetailPage() {
             <ConfirmDialog
               open={confirmReboot}
               onOpenChange={setConfirmReboot}
-              title={t('det.reboot')}
-              description={managedProxmoxDeployment ? `Fleet startet „${server.name}“ direkt über die verknüpfte Proxmox-Plattform neu. Der SSH-Zugang wird dafür nicht benötigt.` : t('det.confirmReboot', { name: server.name })}
-              confirmLabel={t('det.reboot')}
+              title={t("det.reboot")}
+              description={
+                managedProxmoxDeployment
+                  ? `Fleet restarts “${server.name}” directly through the linked Proxmox platform. SSH access is not required.`
+                  : t("det.confirmReboot", { name: server.name })
+              }
+              confirmLabel={t("det.reboot")}
               variant="warning"
-              onConfirm={() => managedProxmoxDeployment ? proxmoxRebootMut.mutate() : runRebootMut.mutate()}
-              isPending={managedProxmoxDeployment ? proxmoxRebootMut.isPending : runRebootMut.isPending}
+              onConfirm={() =>
+                managedProxmoxDeployment
+                  ? proxmoxRebootMut.mutate()
+                  : runRebootMut.mutate()
+              }
+              isPending={
+                managedProxmoxDeployment
+                  ? proxmoxRebootMut.isPending
+                  : runRebootMut.isPending
+              }
             />
             <ConfirmDialog
               open={confirmDelete}
               onOpenChange={setConfirmDelete}
-              title={t('common.delete')}
-              description={t('det.confirmDeleteServer', { name: server.name })}
-              confirmLabel={t('common.delete')}
+              title={t("common.delete")}
+              description={t("det.confirmDeleteServer", { name: server.name })}
+              confirmLabel={t("common.delete")}
               variant="destructive"
               confirmTextValue={server.name}
               confirmInputLabel="Confirm server name"
@@ -863,18 +515,18 @@ export function ServerDetailPage() {
             <ConfirmDialog
               open={confirmAgentInstall}
               onOpenChange={setConfirmAgentInstall}
-              title={t('det.agentInstall')}
-              description={t('det.agentInstallConfirm')}
-              confirmLabel={t('det.agentInstall')}
+              title={t("det.agentInstall")}
+              description={t("det.agentInstallConfirm")}
+              confirmLabel={t("det.agentInstall")}
               onConfirm={() => agentInstallMut.mutate()}
               isPending={agentInstallMut.isPending}
             />
             <ConfirmDialog
               open={confirmAgentRemove}
               onOpenChange={setConfirmAgentRemove}
-              title={t('det.agentRemove')}
-              description={t('det.agentRemoveConfirm')}
-              confirmLabel={t('det.agentRemove')}
+              title={t("det.agentRemove")}
+              description={t("det.agentRemoveConfirm")}
+              confirmLabel={t("det.agentRemove")}
               variant="destructive"
               confirmTextValue={server.name}
               confirmInputLabel="Confirm server name"
@@ -883,13 +535,22 @@ export function ServerDetailPage() {
             />
             <ConfirmDialog
               open={!!confirmRestartContainer}
-              onOpenChange={(open) => { if (!open) setConfirmRestartContainer(null); }}
-              title={t('common.restart')}
-              description={confirmRestartContainer ? t('det.confirmRestartContainer', { name: confirmRestartContainer }) : ''}
-              confirmLabel={t('common.restart')}
+              onOpenChange={(open) => {
+                if (!open) setConfirmRestartContainer(null);
+              }}
+              title={t("common.restart")}
+              description={
+                confirmRestartContainer
+                  ? t("det.confirmRestartContainer", {
+                      name: confirmRestartContainer,
+                    })
+                  : ""
+              }
+              confirmLabel={t("common.restart")}
               variant="warning"
               onConfirm={() => {
-                if (confirmRestartContainer) restartContainerMut.mutate(confirmRestartContainer);
+                if (confirmRestartContainer)
+                  restartContainerMut.mutate(confirmRestartContainer);
                 setConfirmRestartContainer(null);
               }}
               isPending={restartContainerMut.isPending}
@@ -899,909 +560,338 @@ export function ServerDetailPage() {
       />
 
       {/* ── Tabs ─────────────────────────────────────────────── */}
-      <Tabs defaultValue="overview">
-        <TabsList className="h-auto flex-wrap justify-start rounded-none border-b bg-transparent p-0 [&>[role=tab]]:rounded-none [&>[role=tab]]:px-3 [&>[role=tab]]:py-2 [&>[data-state=active]]:border-b-2 [&>[data-state=active]]:border-primary [&>[data-state=active]]:bg-transparent [&>[data-state=active]]:shadow-none">
-          <TabsTrigger value="overview">{t('det.tabOverview')}</TabsTrigger>
-          {hasCap(profile, 'canViewDocker') && !!server.docker_enabled && <TabsTrigger value="docker">{t('det.tabDocker')}</TabsTrigger>}
-          {(hasCap(profile, 'canViewUpdates') || hasCap(profile, 'canRunUpdates') || hasCap(profile, 'canRebootServers') || hasCap(profile, 'canViewCustomUpdates') || hasCap(profile, 'canRunCustomUpdates') || hasCap(profile, 'canEditCustomUpdates') || hasCap(profile, 'canDeleteCustomUpdates')) && <TabsTrigger value="updates">{t('det.tabUpdates')}</TabsTrigger>}
-          <TabsTrigger value="history">{t('det.tabHistory')}</TabsTrigger>
-          {agentEnabled && profile?.role === 'admin' && <TabsTrigger value="agent">{t('det.tabAgent')}</TabsTrigger>}
-          {hasCap(profile, 'canViewNotes') && (
+      <Tabs
+        value={serverTabs.value}
+        onValueChange={serverTabs.onValueChange}
+        className="space-y-4"
+      >
+        <TabsList aria-label="Host sections" className="console-tabs">
+          <TabsTrigger value="overview">{t("det.tabOverview")}</TabsTrigger>
+          <TabsTrigger value="configuration">Configuration</TabsTrigger>
+          {hasCap(profile, "canViewDocker") && !!server.docker_enabled && (
+            <TabsTrigger value="docker">{t("det.tabDocker")}</TabsTrigger>
+          )}
+          {(hasCap(profile, "canViewUpdates") ||
+            hasCap(profile, "canRunUpdates") ||
+            hasCap(profile, "canRebootServers") ||
+            hasCap(profile, "canViewCustomUpdates") ||
+            hasCap(profile, "canRunCustomUpdates") ||
+            hasCap(profile, "canEditCustomUpdates") ||
+            hasCap(profile, "canDeleteCustomUpdates")) && (
+            <TabsTrigger value="updates">{t("det.tabUpdates")}</TabsTrigger>
+          )}
+          <TabsTrigger value="history">{t("det.tabHistory")}</TabsTrigger>
+          {agentEnabled && profile?.role === "admin" && (
+            <TabsTrigger value="agent">{t("det.tabAgent")}</TabsTrigger>
+          )}
+          {hasCap(profile, "canViewNotes") && (
             <TabsTrigger value="notes" className="gap-1">
-              <StickyNote className="h-3 w-3" />{t('det.tabNotes')}
-              {server.notes?.trim() && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
+              <StickyNote className="h-3 w-3" />
+              {t("det.tabNotes")}
+              {server.notes?.trim() && (
+                <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+              )}
             </TabsTrigger>
           )}
         </TabsList>
 
-        {/* ════ OVERVIEW ════ */}
-        <TabsContent value="overview" className="space-y-4">
-          {/* Stat cards */}
-          <div className="grid gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard icon={<HeartPulse className="h-5 w-5" />} label={t('det.health')}
-              value={server.status === 'offline' ? t('common.offline') : (info?.updates_count ?? 0) > 0 ? t('det.statusAttention') : info ? t('det.statusHealthy') : t('det.statusCached')}
-              variant={server.status === 'offline' ? 'error' : (info?.updates_count ?? 0) > 0 ? 'warning' : info ? 'ok' : 'warning'} compact />
-            <StatCard icon={<Box className="h-5 w-5" />} label={t('det.tabUpdates')}
-              value={server.status === 'offline' ? '—' : String(updatesList.length)} variant={server.status === 'offline' ? 'muted' : updatesList.length > 0 ? 'warning' : 'ok'} compact />
-            <StatCard icon={<Satellite className="h-5 w-5" />} label={t('det.latency')} value={server.status === 'offline' ? '—' : latencyMs !== null ? `${latencyMs} ms` : '—'} variant={server.status === 'offline' ? 'muted' : latencyMs !== null ? (latencyMs > 500 ? 'warning' : 'ok') : 'muted'} compact />
-            <StatCard icon={<Boxes className="h-5 w-5" />} label={t('det.tabDocker')}
-              value={server.status === 'offline' ? '—' : containers.length ? String(containers.length) : t('det.statusIdle')} variant={server.status === 'offline' ? 'muted' : containers.length ? undefined : 'muted'} compact />
-          </div>
-
-          {managedDeployments.length > 0 && (
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 py-3">
-                <CardTitle className="flex items-center gap-2 text-sm"><Workflow className="h-4 w-4 text-brand" /> {t('det.deployment')}</CardTitle>
-                <span className="text-xs text-muted-foreground">{managedDeployments.some(item => item.kind === 'inventory') ? 'Übernommene Proxmox-VM' : t('det.managedByOpenTofu')}</span>
-              </CardHeader>
-              <CardContent className="space-y-2 border-t px-4 py-3">
-                {managedDeployments.map((deployment) => (
-                  <div key={`${deployment.workspace_id || 'inventory'}:${deployment.resource_key}`} className="flex flex-col justify-between gap-2 rounded-md border bg-muted/20 px-3 py-2.5 sm:flex-row sm:items-center">
-                    <div className="min-w-0">
-                      <div className="font-medium">{deployment.kind === 'inventory' ? `Proxmox · ${deployment.workspace_name}` : deployment.workspace_name}</div>
-                      <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs text-muted-foreground">
-                        {deployment.vm?.node_name && <span>{t('det.node')}: {deployment.vm.node_name}</span>}
-                        {deployment.vm?.vm_id != null && <span>VM-ID: {deployment.vm.vm_id}</span>}
-                        {deployment.vm?.post_deploy_playbooks?.length ? <span>{t('det.postDeploySteps', { count: deployment.vm.post_deploy_playbooks.length })}</span> : null}
-                      </div>
-                    </div>
-                    <Button variant="secondary" size="sm" asChild><Link to={deployment.kind === 'inventory' ? '/infrastructure' : '/deployments'}>{deployment.kind === 'inventory' ? 'Infrastruktur öffnen' : t('det.openDeployment')}</Link></Button>
-                  </div>
-                ))}
-                {managedProxmoxDeployment && (
-                  <div className="border-t pt-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 text-sm font-medium"><Camera className="h-4 w-4 text-muted-foreground" /> {t('det.snapshots')}</div>
-                      {hasCap(profile, 'canEditServers') && <Button variant="secondary" size="sm" onClick={() => { setSnapshotName(`fleet-${new Date().toISOString().slice(0, 10)}`); setSnapshotDescription(''); setSnapshotDialogOpen(true); }}><Camera className="h-3.5 w-3.5" /> {t('det.createSnapshot')}</Button>}
-                    </div>
-                    <div className="mt-2 divide-y rounded-md border bg-background">
-                      {snapshotsLoading ? <div className="px-3 py-2 text-xs text-muted-foreground">{t('common.loading')}</div> : snapshots.length === 0 ? <div className="px-3 py-2 text-xs text-muted-foreground">{t('det.noSnapshots')}</div> : snapshots.map(snapshot => (
-                        <div key={snapshot.name} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-3 py-2 text-xs">
-                          <span className="font-mono font-medium">{snapshot.name}</span>
-                          <span className="text-muted-foreground">{snapshot.description || (snapshot.snaptime ? new Date(snapshot.snaptime * 1000).toLocaleString(undefined, { hour12 }) : '—')}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          <Dialog open={snapshotDialogOpen} onOpenChange={setSnapshotDialogOpen}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader><DialogTitle>{t('det.createSnapshot')}</DialogTitle></DialogHeader>
-              <div className="space-y-4">
-                <div className="space-y-1.5"><Label htmlFor="snapshot-name">{t('det.snapshotName')}</Label><Input id="snapshot-name" value={snapshotName} onChange={event => setSnapshotName(event.target.value)} placeholder="fleet-before-update" autoFocus /></div>
-                <div className="space-y-1.5"><Label htmlFor="snapshot-description">{t('det.snapshotDescription')}</Label><Textarea id="snapshot-description" value={snapshotDescription} onChange={event => setSnapshotDescription(event.target.value)} rows={3} /></div>
-              </div>
-              <DialogFooter>
-                <Button variant="ghost" onClick={() => setSnapshotDialogOpen(false)}>{t('common.cancel')}</Button>
-                <Button onClick={() => createSnapshotMut.mutate({ name: snapshotName.trim(), description: snapshotDescription.trim() })} disabled={!snapshotName.trim() || createSnapshotMut.isPending}>{t('det.createSnapshot')}</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          {server.status === 'offline' && (
-            <Card className="border-destructive/50">
-              <CardContent className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="mt-0.5 h-5 w-5 text-destructive" />
-                  <div>
-                    <p className="font-medium text-destructive">{t('det.offline')}</p>
-                    <p className="text-sm text-muted-foreground">{t('det.offlineHint')}</p>
-                    {typeof server.last_seen === 'string' && <p className="mt-1 text-xs text-muted-foreground">{t('det.lastSuccessfulContact', { time: formatDate(server.last_seen, hour12) })}</p>}
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => testConnMut.mutate()} disabled={testConnMut.isPending}>
-                    <Satellite className={`h-4 w-4 ${testConnMut.isPending ? 'animate-pulse' : ''}`} /> {t('det.testConn')}
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => refetchInfo()} disabled={fetchingInfo} title={t('common.refresh')}>
-                    <RefreshCw className={`h-4 w-4 ${fetchingInfo ? 'animate-spin' : ''}`} /> <span className="sr-only">{t('common.refresh')}</span>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Quick links */}
-          {(server.links || []).length > 0 && (
-            <Card>
-              <CardHeader className="px-4 py-3"><CardTitle className="text-sm">{t('det.quickLinks')}</CardTitle></CardHeader>
-              <CardContent className="px-4 pb-4 pt-0 flex flex-wrap gap-2">
-                {server.links!.map((l, i) => (
-                  <a key={i} href={l.url} target="_blank" rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm hover:bg-accent">
-                    {l.name} <ExternalLink className="h-3 w-3" />
-                  </a>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-
-          <div className="grid items-start gap-4 lg:grid-cols-2">
-            {/* System info */}
-            <Card>
-              <CardHeader className="px-4 py-3"><CardTitle className="text-sm flex items-center gap-2"><Info className="h-4 w-4" />{t('det.sysinfo')}</CardTitle></CardHeader>
-              <CardContent className="px-4 pb-4 pt-0 space-y-1">
-                {infoFailed && (
-                  <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-muted-foreground">
-                    <span>{t('det.infoUnavailable')}</span>
-                    <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2" onClick={() => refetchInfo()} disabled={fetchingInfo}>{t('common.retry')}</Button>
-                  </div>
-                )}
-                <dl className="grid gap-y-1.5 text-sm">
-                  {([
-                    [t('det.os'), info?.os],
-                    [t('det.kernel'), info?.kernel],
-                    [t('det.cpu'), info?.cpu],
-                    [t('det.cores'), info?.cpu_cores ? `${info.cpu_cores} ${t('det.cores')}` : null],
-                    [t('det.uptime'), info?.uptime_seconds ? formatUptime(info.uptime_seconds) : null],
-                    [t('det.loadAvg'), info?.load_avg],
-                  ] as [string, string | number | null | undefined][]).map(([k, v]) => (
-                    <div key={k} className="flex items-center justify-between border-b border-dashed py-1 last:border-0">
-                      <dt className="text-muted-foreground">{k}</dt>
-                      <dd className="font-medium tabular-nums">{v ?? '—'}</dd>
-                    </div>
-                  ))}
-                </dl>
-                <div className="mt-4 -mx-4 border-t px-4 pt-3">
-                <SectionLabel className="mb-2">{t('det.network')}</SectionLabel>
-                <dl className="grid gap-y-1.5 text-sm">
-                  <div className="flex items-center justify-between border-b border-dashed py-1">
-                    <dt className="text-muted-foreground">{t('det.ipAddress')}</dt>
-                    <dd className="flex items-center gap-1 font-mono text-xs">{server.ip_address}<CopyButton value={server.ip_address || ''} label={t('det.ipAddress')} /></dd>
-                  </div>
-                  {server.hostname && (
-                    <div className="flex items-center justify-between border-b border-dashed py-1">
-                      <dt className="text-muted-foreground">{t('det.hostname')}</dt>
-                      <dd className="flex items-center gap-1 font-mono text-xs">{server.hostname}<CopyButton value={server.hostname} label={t('det.hostname')} /></dd>
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between border-b border-dashed py-1">
-                    <dt className="text-muted-foreground">{t('det.sshPort')}</dt>
-                    <dd className="font-mono text-xs">{server.ssh_port || 22}</dd>
-                  </div>
-                  <div className="flex items-center justify-between py-1">
-                    <dt className="text-muted-foreground">{t('det.sshUser')}</dt>
-                    <dd className="font-mono text-xs">{server.ssh_user || 'root'}</dd>
-                  </div>
-                 </dl>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Resources */}
-            <Card>
-              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 px-4 py-3">
-                <CardTitle className="text-sm">{t('det.resources')}</CardTitle>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => refetchInfo()} disabled={fetchingInfo}>
-                  <RefreshCw className={`h-3.5 w-3.5 ${fetchingInfo ? 'animate-spin' : ''}`} />
-                </Button>
-              </CardHeader>
-              <CardContent className="px-4 pb-4 pt-0 space-y-4">
-                {infoFailed ? (
-                  <div className="flex min-h-28 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
-                    <span>{t('det.infoUnavailable')}</span>
-                    <span className="max-w-sm text-xs">{infoError instanceof ApiError ? infoError.message : t('det.offlineHint')}</span>
-                    <Button variant="outline" size="sm" onClick={() => refetchInfo()} disabled={fetchingInfo}><RefreshCw className={`h-3.5 w-3.5 ${fetchingInfo ? 'animate-spin' : ''}`} />{t('common.retry')}</Button>
-                  </div>
-                ) : cpuPct === null && info?.ram_used_mb == null ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">{t('det.offline')}</p>
-                ) : (
-                  <>
-                    {cpuPct !== null && (
-                      <div>
-                        <div className="flex justify-between text-sm mb-1"><span>{t('det.cpu')}</span><span className={`font-medium ${metricTextClass(cpuPct, thresholds?.cpu)}`}>{cpuPct}%</span></div>
-                        <ThresholdBar pct={cpuPct} warningAt={thresholds?.cpu} />
-                      </div>
-                    )}
-                    <div>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span>{t('det.ram')}</span>
-                        <span className={`font-medium ${metricTextClass(ramPct, thresholds?.ram)}`}>
-                          {formatBytes(info?.ram_used_mb)} / {formatBytes(info?.ram_total_mb)} · {ramPct ?? 0}%
-                        </span>
-                      </div>
-                      <ThresholdBar pct={ramPct} warningAt={thresholds?.ram} />
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span>{t('det.disk')}</span>
-                        <span className={`font-medium ${metricTextClass(diskPct, thresholds?.disk)}`}>
-                          {info?.disk_used_gb?.toFixed(1) ?? '—'} / {info?.disk_total_gb?.toFixed(1) ?? '—'} GB · {diskPct ?? 0}%
-                        </span>
-                      </div>
-                      <ThresholdBar pct={diskPct} warningAt={thresholds?.disk} />
-                    </div>
-
-                    {/* Storage mounts */}
-                    {(info?.storage_mount_metrics ?? []).length > 0 && (
-                      <>
-                        <SectionLabel className="pt-2">{t('det.storageMounts')}</SectionLabel>
-                        {info!.storage_mount_metrics!.map((m, i) => {
-                          const pct = m.usage_pct ?? null;
-                          return (
-                            <div key={i}>
-                              <div className="flex justify-between text-xs mb-1">
-                                <span className="font-medium">{m.name || m.path}{m.filesystem ? ` · ${m.filesystem}` : ''}</span>
-                                <span>{m.used_gb?.toFixed(1) ?? '—'} / {m.total_gb?.toFixed(1) ?? '—'} GB{pct != null ? ` · ${pct}%` : ''}</span>
-                              </div>
-                              <ThresholdBar pct={pct} warningAt={thresholds?.storage} />
-                            </div>
-                          );
-                        })}
-                      </>
-                    )}
-
-                    {/* ZFS pools */}
-                    {(info?.zfs_pools ?? []).length > 0 && (
-                      <>
-                        <SectionLabel className="pt-2">{t('det.zfsPools')}</SectionLabel>
-                        {info!.zfs_pools!.map((p, i) => {
-                          const pct = p.size_gb ? Math.round((p.alloc_gb! / p.size_gb) * 100) : 0;
-                          return (
-                            <div key={i}>
-                              <div className="flex justify-between text-xs mb-1">
-                                <span className="font-medium">{p.name} <StatusBadge tone={p.health === 'ONLINE' ? 'success' : 'danger'} className="ml-1">{p.health}</StatusBadge></span>
-                                <span>{p.alloc_gb?.toFixed(1)} / {p.size_gb?.toFixed(1)} GB · {pct}%</span>
-                              </div>
-                              {p.scrub && <div className="mb-1 text-[11px] text-muted-foreground">Last scrub: {p.scrub}</div>}
-                              <ThresholdBar pct={pct} />
-                            </div>
-                          );
-                        })}
-                      </>
-                    )}
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* ════ DOCKER ════ */}
-        {hasCap(profile, 'canViewDocker') && !!server.docker_enabled && (
-          <TabsContent value="docker" className="space-y-4">
-            <Card>
-              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 px-4 py-3">
-                <CardTitle className="text-sm flex items-center gap-2"><Boxes className="h-4 w-4" />{t('det.docker')}</CardTitle>
-                <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => qc.invalidateQueries({ queryKey: ['server', id, 'docker'] })} disabled={fetchingDocker}>
-                    <RefreshCw className={`h-3.5 w-3.5 ${fetchingDocker ? 'animate-spin' : ''}`} />
-                  </Button>
-                  {hasCap(profile, 'canManageDockerCompose') && (
-                    <Button size="sm" variant="secondary" onClick={() => setComposeDialog({ open: true, mode: 'add', dir: '', content: '', loading: false })}>
-                      <Plus className="h-3.5 w-3.5 mr-1" /> {t('det.addComposeStack')}
-                    </Button>
-                  )}
-                  {hasCap(profile, 'canPullDocker') && (
-                    <Button size="sm" variant="secondary" disabled={checkImageMut.isPending}
-                      onClick={() => checkImageMut.mutate()}>
-                      <CloudDownload className="h-3.5 w-3.5 mr-1" /> {checkImageMut.isPending ? t('det.checkingUpdates') : t('det.checkUpdates')}
-                    </Button>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="p-0">
-                {containers.length === 0 ? (
-                  <EmptyState compact icon={<Boxes className="h-5 w-5" />} title={t('det.noContainers')} description={t('det.noContainersHint')} />
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="border-b bg-muted/30 text-left text-xs uppercase tracking-wider text-muted-foreground">
-                        <tr>
-                          <th className="px-3 py-2 w-2"></th>
-                          <th className="px-3 py-2">{t('common.name')}</th>
-                          <th className="px-3 py-2">{t('common.image')}</th>
-                          <th className="px-3 py-2">{t('common.status')}</th>
-                          <th className="px-3 py-2">{t('det.checkUpdates')}</th>
-                          <th className="px-3 py-2">{t('common.actions')}</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y">
-                        {/* Stacks */}
-                        {Object.entries(stacks.map).map(([proj, data]) => {
-                          const allDown = data.containers.every(c => !c.status?.startsWith('Up'));
-                          return [
-                            <tr key={`stack-${proj}`} className="bg-muted/20">
-                              <td colSpan={5} className="px-3 py-2">
-                                <span className="inline-flex items-center gap-2">
-                                  <Layers className="h-3.5 w-3.5 text-primary" />
-                                  <strong className="text-sm">{proj}</strong>
-                                  <span className="font-mono text-[10px] text-muted-foreground">{data.dir}</span>
-                                  {allDown && <StatusBadge tone="danger">{t('common.offline')}</StatusBadge>}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2">
-                                <div className="flex items-center gap-0.5">
-                                 {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6" title={t('det.editCompose')} onClick={() => openEditCompose(data.dir)}><FileText className="h-3 w-3" /></Button>}
-                                   {hasCap(profile, 'canPullDocker') && <Button variant="ghost" size="icon" className="h-6 w-6" title="pull" onClick={() => composeActionMut.mutate({ dir: data.dir, action: 'pull' })} disabled={composeActionMut.isPending}><CloudDownload className="h-3 w-3" /></Button>}
-                                   {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6" title="up -d" onClick={() => composeActionMut.mutate({ dir: data.dir, action: 'up' })} disabled={composeActionMut.isPending}><Play className="h-3 w-3" /></Button>}
-                                   {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" title="down" onClick={() => setConfirmComposeDown({ proj, dir: data.dir })} disabled={composeActionMut.isPending}><Square className="h-3 w-3" /></Button>}
-                                   {hasCap(profile, 'canManageDockerCompose') && <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" title={t('det.removeStack')} onClick={() => setConfirmDeleteStack({ proj, dir: data.dir })} disabled={deleteStackMut.isPending}><Trash2 className="h-3 w-3" /></Button>}
-                                </div>
-                              </td>
-                            </tr>,
-                            ...data.containers.filter(c => c.container_name !== '[Stack Offline]').map(c => renderContainerRow(c)),
-                          ];
-                        })}
-                        {/* Standalone */}
-                        {stacks.standalone.length > 0 && (
-                          <tr className="bg-muted/20">
-                            <td colSpan={6} className="px-3 py-2"><span className="inline-flex items-center gap-2"><Box className="h-3.5 w-3.5 text-muted-foreground" /><strong className="text-sm">{t('det.standalone')}</strong></span></td>
-                          </tr>
-                        )}
-                        {stacks.standalone.map(c => renderContainerRow(c))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                {/* Logs panel */}
-                {logsContainer && (
-                  <div className="border-t">
-                    <div className="flex items-center justify-between px-4 py-2 bg-muted/30">
-                      <span className="text-sm font-medium">{t('det.logs')}: <span className="font-mono">{logsContainer}</span></span>
-                      <div className="flex items-center gap-2">
-                        <select value={logsTail} onChange={e => { setLogsTail(Number(e.target.value)); loadLogs(logsContainer!, Number(e.target.value)); }}
-                          className="h-7 rounded border bg-background px-2 text-xs">
-                          <option value={100}>100</option><option value={200}>200</option><option value={500}>500</option><option value={1000}>1000</option>
-                        </select>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => loadLogs(logsContainer!, logsTail)}><RefreshCw className="h-3 w-3" /></Button>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setLogsContainer(null)}>×</Button>
-                      </div>
-                    </div>
-                    <pre className="overflow-auto bg-black p-3 text-xs text-green-400 font-mono max-h-[400px]">
-                      {logsLoading ? t('common.loading') : logsContent || t('det.noOutput')}
-                    </pre>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        )}
-
-        {/* ════ UPDATES ════ */}
-        {(hasCap(profile, 'canViewUpdates') || hasCap(profile, 'canRunUpdates') || hasCap(profile, 'canRebootServers') || hasCap(profile, 'canViewCustomUpdates') || hasCap(profile, 'canRunCustomUpdates') || hasCap(profile, 'canEditCustomUpdates') || hasCap(profile, 'canDeleteCustomUpdates')) && (
-          <TabsContent value="updates" className="space-y-4">
-            {hasCap(profile, 'canViewUpdates') && (
-              <Card>
-                <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 px-4 py-3">
-                  <CardTitle className="text-sm">{t('det.tabUpdates')}</CardTitle>
-                  <Button variant="ghost" size="icon" className="h-7 w-7"
-                    onClick={() => qc.invalidateQueries({ queryKey: ['server', id, 'updates'] })} disabled={fetchingUpdates}>
-                    <RefreshCw className={`h-3.5 w-3.5 ${fetchingUpdates ? 'animate-spin' : ''}`} />
-                  </Button>
-                </CardHeader>
-                <CardContent className="p-0">
-                  {updatesList.length === 0 ? (
-                    <div className="flex items-center gap-2 px-4 py-3 text-sm text-emerald-500">
-                      <span>✓</span> {t('det.allUpToDate')}
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 text-amber-600 text-xs border-b">
-                        <span>⚠</span> {t('det.updatesAvail', { count: updatesList.length })}
-                      </div>
-                      <div className="divide-y max-h-64 overflow-auto">
-                        {updatesList.map((u, i) => (
-                          <div key={i} className="flex items-center justify-between px-4 py-1.5 text-sm">
-                            <span className="font-mono text-xs">{u.package}</span>
-                            <span className="text-xs text-muted-foreground">{u.version || ''}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                  {phasedList.length > 0 && (
-                    <>
-                      <div className="flex items-center gap-2 px-4 py-2 bg-muted/30 text-muted-foreground text-xs border-t">
-                        <span>⏸</span> {t('det.phasedCount', { count: phasedList.length })}
-                      </div>
-                      <div className="divide-y opacity-50 max-h-40 overflow-auto">
-                        {phasedList.map((u, i) => (
-                          <div key={i} className="flex items-center justify-between px-4 py-1.5 text-sm">
-                            <span className="font-mono text-xs">{u.package}</span>
-                            <span className="text-xs text-muted-foreground">{u.version || ''}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                  {hasCap(profile, 'canRunUpdates') && updatesList.length > 0 && (
-                    <div className="p-3 border-t">
-                      <Button size="sm" onClick={() => setConfirmRunUpdate(true)} disabled={runUpdateMut.isPending}>
-                        <ArrowUp className="h-3.5 w-3.5 mr-1" /> {t('det.runUpdate')}
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Custom tasks */}
-            {(hasCap(profile, 'canViewCustomUpdates') || hasCap(profile, 'canRunCustomUpdates') || hasCap(profile, 'canEditCustomUpdates') || hasCap(profile, 'canDeleteCustomUpdates')) && (
-              <Card>
-                <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 px-4 py-3">
-                  <CardTitle className="text-sm">{t('det.customUpdates')}</CardTitle>
-                  {hasCap(profile, 'canEditCustomUpdates') && (
-                    <Button size="sm" onClick={() => setTaskDialog({ open: true, task: null })}>
-                      <Plus className="h-3.5 w-3.5 mr-1" /> {t('det.addTask')}
-                    </Button>
-                  )}
-                </CardHeader>
-                <CardContent className="p-0">
-                  {customTaskList.length === 0 ? (
-                    <div className="flex min-h-12 items-center px-4 py-3 text-sm text-muted-foreground">{t('det.noCustomTasks')}</div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                    <table className="w-full min-w-[760px] table-fixed text-sm">
-                      <colgroup>
-                        <col className="w-[21%]" />
-                        <col className="w-[12%]" />
-                        <col className="w-[19%]" />
-                        <col className="w-[19%]" />
-                        <col className="w-[17%]" />
-                        <col className="w-[12%]" />
-                      </colgroup>
-                      <thead className="border-b bg-muted/30 text-left text-xs uppercase tracking-wider text-muted-foreground">
-                        <tr>
-                          <th className="px-4 py-2.5">{t('common.name')}</th>
-                          <th className="px-3 py-2.5">{t('det.taskType')}</th>
-                          <th className="px-3 py-2.5">{t('det.currentVersion')}</th>
-                          <th className="px-3 py-2.5">{t('det.latestVersion')}</th>
-                          <th className="px-3 py-2.5">{t('common.status')}</th>
-                          <th className="px-4 py-2.5 text-right">{t('common.actions')}</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y">
-                        {customTaskList.map(task => (
-                          <tr key={task.id}>
-                            <td className="px-4 py-3 font-medium truncate" title={task.name}>{task.name}</td>
-                            <td className="px-3 py-2 text-xs text-muted-foreground">{task.type === 'github' ? 'GitHub' : task.type === 'trigger' ? t('det.taskTypeTriggerShort') : 'Script'}</td>
-                            <td className="px-3 py-3 font-mono text-xs truncate" title={task.current_version || undefined}>{task.current_version || '—'}</td>
-                            <td className="px-3 py-3 font-mono text-xs truncate" title={task.type === 'trigger' ? (task.trigger_output || task.last_version || undefined) : (task.last_version || undefined)}>{task.type === 'trigger' ? (task.trigger_output || task.last_version || '—') : (task.last_version || '—')}</td>
-                            <td className="px-3 py-2">
-                              {task.has_update ? <StatusBadge tone="warning">{t('det.imageUpdateAvail')}</StatusBadge>
-                                : task.last_checked_at ? <span className="text-xs text-emerald-500">✓ {t('det.imageUpToDate')}</span>
-                                : <span className="text-xs text-muted-foreground">—</span>}
-                            </td>
-                            <td className="px-4 py-2 text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                {hasCap(profile, 'canRunCustomUpdates') && <Button variant="ghost" size="icon" className="h-7 w-7" title={t('common.refresh')} aria-label={t('common.refresh')} onClick={() => checkTaskMut.mutate(task.id)}><RefreshCw className="h-3.5 w-3.5" /></Button>}
-                                {hasCap(profile, 'canRunCustomUpdates') && task.update_command && <Button variant="ghost" size="icon" className="h-7 w-7" title={t('common.run')} aria-label={t('common.run')} onClick={() => runTaskMut.mutate(task.id)}><Play className="h-3.5 w-3.5" /></Button>}
-                                {hasCap(profile, 'canEditCustomUpdates') && <Button variant="ghost" size="icon" className="h-7 w-7" title={t('common.edit')} aria-label={t('common.edit')} onClick={() => setTaskDialog({ open: true, task })}><Pencil className="h-3.5 w-3.5" /></Button>}
-                                {hasCap(profile, 'canDeleteCustomUpdates') && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" title={t('common.delete')} aria-label={t('common.delete')} onClick={() => setConfirmDeleteTask(task)}><Trash2 className="h-3.5 w-3.5" /></Button>}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
-        )}
-
-        {/* ════ MONITORING ════ */}
-        <TabsContent value="monitoring" className="space-y-4">
-          <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
-            <Card>
-              <CardHeader className="px-4 py-3">
-                <CardTitle className="text-sm flex items-center gap-2"><AlertTriangle className="h-4 w-4" />{t('det.monitoring')}</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                {serverAlerts.length === 0 ? (
-                  <EmptyState compact icon={<AlertTriangle className="h-5 w-5" />} title={t('det.noAlerts')} />
-                ) : (
-                  <div className="overflow-x-auto">
-                  <table className="min-w-[620px] text-sm">
-                    <thead className="border-b bg-muted/30 text-left text-xs uppercase tracking-wider text-muted-foreground">
-                      <tr>
-                        <th className="px-3 py-2">{t('det.alertMessage')}</th>
-                        <th className="px-3 py-2">{t('det.alertValue')}</th>
-                        <th className="px-3 py-2">{t('common.status')}</th>
-                        <th className="px-3 py-2">{t('det.alertTime')}</th>
-                        <th className="px-3 py-2">{t('common.actions')}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {serverAlerts.map(alert => (
-                        <tr key={alert.id}>
-                          <td className="px-3 py-2">
-                            <div className="font-medium">{alert.message}</div>
-                            {alert.target_key && <div className="font-mono text-[11px] text-muted-foreground">{alert.target_key}</div>}
-                          </td>
-                          <td className="px-3 py-2 font-mono text-xs">
-                            {alert.value == null ? '—' : `${alert.value}${alert.threshold != null ? ` / ${alert.threshold}` : ''}`}
-                          </td>
-                          <td className="px-3 py-2">
-                            <StatusBadge tone={alert.status === 'resolved' ? 'success' : alert.status === 'acknowledged' ? 'muted' : alert.severity === 'critical' ? 'danger' : 'warning'}>
-                              {alert.status === 'acknowledged' ? t('det.acknowledged') : alert.status}
-                            </StatusBadge>
-                            {alert.status === 'acknowledged' && alert.acknowledged_by && (
-                              <div className="mt-1 text-[11px] text-muted-foreground">{alert.acknowledged_by}</div>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground">
-                            {formatDate(alert.triggered_at || alert.first_seen_at, hour12)}
-                          </td>
-                          <td className="px-3 py-2">
-                            {alert.status !== 'acknowledged' && alert.status !== 'resolved' && (
-                              <Button size="sm" variant="secondary" onClick={() => ackAlertMut.mutate(alert.id)} disabled={ackAlertMut.isPending}>
-                                {t('det.acknowledge')}
-                              </Button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="px-4 py-3">
-                <CardTitle className="text-sm flex items-center gap-2"><Sliders className="h-4 w-4" />{t('det.thresholds')}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4 px-4 pb-4 pt-0">
-                {alertForm && (
-                  <>
-                    <div className="space-y-3 rounded-md border bg-muted/20 p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <Label>{t('det.monitoring')}</Label>
-                        <Switch checked={alertForm.enabled} onCheckedChange={(v) => setAlertForm({ ...alertForm, enabled: v })} />
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <Label>{t('det.notify')}</Label>
-                        <Switch checked={alertForm.notify_enabled} onCheckedChange={(v) => setAlertForm({ ...alertForm, notify_enabled: v })} />
-                      </div>
-                      <div className="space-y-1">
-                        <Label>{t('det.triggerDelay')}</Label>
-                        <Input type="number" min={0} max={86400} value={alertForm.trigger_after_seconds}
-                          onChange={(e) => setAlertForm({ ...alertForm, trigger_after_seconds: Number(e.target.value) })} />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <SectionLabel>{t('det.thresholds')}</SectionLabel>
-                      <div className="grid grid-cols-2 gap-3">
-                        {(['cpu', 'ram', 'disk', 'storage'] as const).map(key => (
-                          <div key={key} className="space-y-1">
-                            <Label className="uppercase">{key} %</Label>
-                            <Input type="number" min={0} max={100} value={alertForm.thresholds[key]}
-                              onChange={(e) => setAlertForm({ ...alertForm, thresholds: { ...alertForm.thresholds, [key]: Number(e.target.value) } })} />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <Button size="sm" onClick={() => saveAlertSettingsMut.mutate()} disabled={saveAlertSettingsMut.isPending}>
-                      {t('common.save')}
-                    </Button>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* ════ HISTORY ════ */}
-        <TabsContent value="history">
-          {histItems.length === 0 ? (
-            <div className="flex min-h-14 items-center gap-3 rounded-lg border bg-card px-4 py-3 text-sm text-muted-foreground">
-              <History className="h-4 w-4 shrink-0" />
-              <span>{t('det.noHistory')}</span>
-            </div>
-          ) : (
-            <Card>
-              <CardContent className="p-0">
-                <>
-                  <div className="overflow-x-auto">
-                  <table className="min-w-[620px] text-sm">
-                    <thead className="border-b bg-muted/30 text-left text-xs uppercase tracking-wider text-muted-foreground">
-                      <tr>
-                        <th className="px-3 py-2">{t('det.colAction')}</th>
-                        <th className="px-3 py-2">{t('det.colTrigger')}</th>
-                        <th className="px-3 py-2">{t('common.status')}</th>
-                        <th className="px-3 py-2">{t('det.colStarted')}</th>
-                        <th className="px-3 py-2">{t('det.colDone')}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {histPage_.map(h => (
-                        <tr key={h.id}>
-                          <td className="px-3 py-2 font-mono text-xs">
-                            {h._type === 'schedule' && <StatusBadge tone="muted" className="mr-1">{t('det.playbookBadge')}</StatusBadge>}
-                            {h.action ? actionLabel(t, h.action) : (h.playbook_name || '—')}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground">{h.triggered_by || 'system'}</td>
-                          <td className="px-3 py-2">
-                            <StatusBadge tone={h.status === 'success' ? 'success' : h.status === 'failed' ? 'danger' : 'muted'}>
-                              {statusLabel(t, h.status)}
-                            </StatusBadge>
-                          </td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{formatDate(h.started_at, hour12)}</td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{formatDate(h.completed_at, hour12)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  </div>
-                  {histTotal > 1 && (
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-2">
-                      <span className="text-xs text-muted-foreground">
-                        {t('det.histPageInfo', { from: (histSafe - 1) * HIST_PAGE_SIZE + 1, to: Math.min(histSafe * HIST_PAGE_SIZE, histItems.length), total: histItems.length })}
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <Button size="sm" variant="ghost" disabled={histSafe === 1} onClick={() => setHistPage(histSafe - 1)}>‹</Button>
-                        {Array.from({ length: histTotal }, (_, i) => i + 1).filter(i => histTotal <= 7 || Math.abs(i - histSafe) <= 2 || i === 1 || i === histTotal).map((i, idx, arr) => (
-                          <span key={i}>
-                            {idx > 0 && i - arr[idx - 1] > 1 && <span className="px-1 text-muted-foreground">…</span>}
-                            <Button size="sm" variant={i === histSafe ? 'default' : 'ghost'} onClick={() => setHistPage(i)}>{i}</Button>
-                          </span>
-                        ))}
-                        <Button size="sm" variant="ghost" disabled={histSafe === histTotal} onClick={() => setHistPage(histSafe + 1)}>›</Button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-
-        {/* ════ AGENT ════ */}
-        {agentEnabled && profile?.role === 'admin' && (
-          <TabsContent value="agent" className="space-y-4">
-            <Card>
-              <CardContent className="px-4 pb-4 pt-4 space-y-4">
-                <p className="text-sm text-muted-foreground">{t('det.agentDescription')}</p>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <StatCard icon={<Settings2 className="h-5 w-5" />} label={t('det.agentMode')} value={agentStatus?.mode || 'legacy'} />
-                  <StatCard icon={<Clock className="h-5 w-5" />} label={t('det.agentLastSeen')} value={agentStatus?.lastSeen || '—'} />
-                  <StatCard icon={<Shield className="h-5 w-5" />} label={t('det.agentRunnerVersion')} value={agentStatus?.runnerVersion || '—'} />
-                  <StatCard icon={<FileText className="h-5 w-5" />} label={t('det.agentManifestVersion')} value={String(agentStatus?.manifestVersion || agentStatus?.latestManifestVersion || '—')} />
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {!agentStatus?.installed ? (
-                    <Button size="sm" onClick={() => setConfirmAgentInstall(true)} disabled={agentBusy}>
-                      <Download className="h-3.5 w-3.5 mr-1" /> {t('det.agentInstall')}
-                    </Button>
-                  ) : (
-                    <>
-                      <Button size="sm" variant="secondary" onClick={() => agentUpdateMut.mutate()} disabled={agentBusy}><RotateCw className="h-3.5 w-3.5 mr-1" />{t('det.agentUpdate')}</Button>
-                      <Button size="sm" variant="secondary" onClick={() => agentConfigMut.mutate()} disabled={agentBusy}><Sliders className="h-3.5 w-3.5 mr-1" />{t('det.agentConfigure')}</Button>
-                      <Button size="sm" variant="secondary" onClick={() => agentRotateMut.mutate()} disabled={agentBusy}><Key className="h-3.5 w-3.5 mr-1" />{t('det.agentRotateToken')}</Button>
-                      <Button size="sm" variant="destructive" onClick={() => setConfirmAgentRemove(true)} disabled={agentBusy}><Trash2 className="h-3.5 w-3.5 mr-1" />{t('det.agentRemove')}</Button>
-                    </>
-                  )}
-                </div>
-                {agentStatus?.installed && (
-                  <div className="text-xs text-muted-foreground space-y-1">
-                    <p><strong>{t('det.agentUpdate')}:</strong> {t('det.agentUpdateHint')}</p>
-                    <p><strong>{t('det.agentConfigure')}:</strong> {t('det.agentConfigureHint')}</p>
-                  </div>
-                )}
-                <div className="space-y-2 max-w-xl">
-                  <Label className="text-xs">{t('det.agentShipyardUrl')}</Label>
-                  <Input value={agentUrl} onChange={e => setAgentUrl(e.target.value)} placeholder={t('det.agentUrlPlaceholder')} />
-                  <Label className="text-xs">{t('det.agentCaPem')}</Label>
-                  <Textarea value={agentCa} onChange={e => setAgentCa(e.target.value)} rows={4} className="font-mono text-xs" placeholder={t('det.agentCaPemPlaceholder')} />
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        )}
-
-        {/* ════ NOTES ════ */}
-        {hasCap(profile, 'canViewNotes') && (
-          <TabsContent value="notes">
-            <Card>
-              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b px-5 py-3.5">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-md border bg-muted/40 text-muted-foreground">
-                    <StickyNote className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-sm">{t('det.tabNotes')}</CardTitle>
-                    <p className="mt-0.5 text-xs text-muted-foreground">Markdown</p>
-                  </div>
-                </div>
-                {hasCap(profile, 'canEditNotes') && (
-                  <div className="inline-flex rounded-md border bg-muted/30 p-0.5">
-                    <Button size="sm" variant={!notesEditing ? 'secondary' : 'ghost'} className="h-7 px-2.5" onClick={() => setNotesEditing(false)}>
-                      <Eye className="mr-1.5 h-3.5 w-3.5" />{t('det.notesView')}
-                    </Button>
-                    <Button size="sm" variant={notesEditing ? 'secondary' : 'ghost'} className="h-7 px-2.5" onClick={() => setNotesEditing(true)}>
-                      <Pencil className="mr-1.5 h-3.5 w-3.5" />{t('det.notesEdit')}
-                    </Button>
-                  </div>
-                )}
-              </CardHeader>
-              <CardContent className="p-5">
-                {notesEditing ? (
-                  <div className="grid gap-4 xl:grid-cols-2">
-                    <section className="overflow-hidden rounded-md border bg-background">
-                      <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2">
-                        <span className="section-label flex items-center gap-1.5"><Code2 className="h-3.5 w-3.5" /> Markdown</span>
-                        <span className="text-xs text-muted-foreground">{saveNotesMut.isPending ? 'Wird gespeichert…' : 'Automatisch gespeichert'}</span>
-                      </div>
-                      <Textarea value={notes} placeholder={t('det.notesPlaceholder')} className="min-h-[360px] resize-y rounded-none border-0 bg-transparent px-3 py-3 font-mono text-sm leading-6 focus-visible:ring-0"
-                        onChange={e => { setNotes(e.target.value); autoSaveNotes(e.target.value); }} />
-                    </section>
-                    <section className="overflow-hidden rounded-md border bg-background">
-                      <div className="flex items-center border-b bg-muted/30 px-3 py-2">
-                        <span className="section-label flex items-center gap-1.5"><Eye className="h-3.5 w-3.5" /> {t('det.notesView')}</span>
-                      </div>
-                      {notes.trim() ? (
-                        <div className="note-markdown min-h-[360px] px-5 py-4" dangerouslySetInnerHTML={{ __html: renderedNotes }} />
-                      ) : (
-                        <div className="flex min-h-[360px] items-center justify-center px-5 text-center text-sm text-muted-foreground">{t('det.notesPlaceholder')}</div>
-                      )}
-                    </section>
-                  </div>
-                ) : notes.trim() ? (
-                  <div className="note-markdown rounded-md border bg-background px-5 py-4" dangerouslySetInnerHTML={{ __html: renderedNotes }} />
-                ) : (
-                  <div className="flex min-h-28 items-center justify-center gap-2 rounded-md border border-dashed bg-muted/20 px-4 py-5 text-sm text-muted-foreground">
-                    <StickyNote className="h-4 w-4 shrink-0" />
-                    <span>{t('det.notesEmpty')}</span>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        )}
+        <ServerOverviewTabs controller={controller} />
+        <ServerDockerTab controller={controller} />
+        <ServerUpdatesTab controller={controller} />
+        <ServerOperationsTabs controller={controller} />
       </Tabs>
 
       {/* Custom task dialog */}
-      <Dialog open={taskDialog.open} onOpenChange={v => { if (!v) setTaskDialog({ open: false, task: null }); }}>
+      <Dialog
+        open={taskDialog.open}
+        onOpenChange={(v) => {
+          if (!v) setTaskDialog({ open: false, task: null });
+        }}
+      >
         <DialogContent>
-          <DialogHeader><DialogTitle>{taskDialog.task ? t('det.editTask') : t('det.addTask')}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>
+              {taskDialog.task ? t("det.editTask") : t("det.addTask")}
+            </DialogTitle>
+          </DialogHeader>
           <div className="space-y-3">
-            <div className="space-y-1"><Label>{t('det.taskName')}</Label><Input value={taskForm.name} onChange={e => setTaskForm(f => ({ ...f, name: e.target.value }))} /></div>
             <div className="space-y-1">
-              <Label>{t('det.taskType')}</Label>
-              <select value={taskForm.type} onChange={e => setTaskForm(f => ({ ...f, type: e.target.value }))}
-                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-                <option value="script">{t('det.taskTypeScript')}</option>
-                <option value="github">{t('det.taskTypeGithub')}</option>
-                <option value="trigger">{t('det.taskTypeTrigger')}</option>
-              </select>
-              <p className="text-xs text-muted-foreground">{taskForm.type === 'github' ? t('det.taskTypeGithubDesc') : taskForm.type === 'trigger' ? t('det.taskTypeTriggerDesc') : t('det.taskTypeScriptDesc')}</p>
+              <Label>{t("det.taskName")}</Label>
+              <Input
+                value={taskForm.name}
+                onChange={(e) =>
+                  setTaskForm((f) => ({ ...f, name: e.target.value }))
+                }
+              />
             </div>
-            {taskForm.type === 'github' && <div className="space-y-1"><Label>{t('det.taskGithubRepo')}</Label><Input value={taskForm.github_repo} onChange={e => setTaskForm(f => ({ ...f, github_repo: e.target.value }))} placeholder="owner/repo" className="font-mono" /></div>}
-            {taskForm.type === 'trigger' && <div className="space-y-1"><Label>{t('det.taskTriggerOutput')}</Label><Input value={taskForm.trigger_output} onChange={e => setTaskForm(f => ({ ...f, trigger_output: e.target.value }))} placeholder="AVAILABLE" className="font-mono" /></div>}
-            {taskForm.type === 'script' && <div className="space-y-1"><Label>{t('det.taskLatestCommand')}</Label><Input value={taskForm.latest_command} onChange={e => setTaskForm(f => ({ ...f, latest_command: e.target.value }))} className="font-mono" /></div>}
-            <div className="space-y-1"><Label>{t('det.taskCheckCommand')}</Label><Input value={taskForm.check_command} onChange={e => setTaskForm(f => ({ ...f, check_command: e.target.value }))} className="font-mono" /></div>
-            <div className="space-y-1"><Label>{t('det.taskUpdateCommand')}</Label><Input value={taskForm.update_command} onChange={e => setTaskForm(f => ({ ...f, update_command: e.target.value }))} className="font-mono" /></div>
+            <div className="space-y-1">
+              <Label>{t("det.taskType")}</Label>
+              <select
+                value={taskForm.type}
+                onChange={(e) =>
+                  setTaskForm((f) => ({ ...f, type: e.target.value }))
+                }
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value="script">{t("det.taskTypeScript")}</option>
+                <option value="github">{t("det.taskTypeGithub")}</option>
+                <option value="trigger">{t("det.taskTypeTrigger")}</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                {taskForm.type === "github"
+                  ? t("det.taskTypeGithubDesc")
+                  : taskForm.type === "trigger"
+                    ? t("det.taskTypeTriggerDesc")
+                    : t("det.taskTypeScriptDesc")}
+              </p>
+            </div>
+            {taskForm.type === "github" && (
+              <div className="space-y-1">
+                <Label>{t("det.taskGithubRepo")}</Label>
+                <Input
+                  value={taskForm.github_repo}
+                  onChange={(e) =>
+                    setTaskForm((f) => ({ ...f, github_repo: e.target.value }))
+                  }
+                  placeholder="owner/repo"
+                  className="font-mono"
+                />
+              </div>
+            )}
+            {taskForm.type === "trigger" && (
+              <div className="space-y-1">
+                <Label>{t("det.taskTriggerOutput")}</Label>
+                <Input
+                  value={taskForm.trigger_output}
+                  onChange={(e) =>
+                    setTaskForm((f) => ({
+                      ...f,
+                      trigger_output: e.target.value,
+                    }))
+                  }
+                  placeholder="AVAILABLE"
+                  className="font-mono"
+                />
+              </div>
+            )}
+            {taskForm.type === "script" && (
+              <div className="space-y-1">
+                <Label>{t("det.taskLatestCommand")}</Label>
+                <Input
+                  value={taskForm.latest_command}
+                  onChange={(e) =>
+                    setTaskForm((f) => ({
+                      ...f,
+                      latest_command: e.target.value,
+                    }))
+                  }
+                  className="font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t("det.taskLatestCommandHint")}
+                </p>
+              </div>
+            )}
+            <div className="space-y-1">
+              <Label>{t("det.taskCheckCommand")}</Label>
+              <Input
+                value={taskForm.check_command}
+                onChange={(e) =>
+                  setTaskForm((f) => ({ ...f, check_command: e.target.value }))
+                }
+                className="font-mono"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>{t("det.taskUpdateCommand")}</Label>
+              <Input
+                value={taskForm.update_command}
+                onChange={(e) =>
+                  setTaskForm((f) => ({ ...f, update_command: e.target.value }))
+                }
+                className="font-mono"
+              />
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setTaskDialog({ open: false, task: null })}>{t('common.cancel')}</Button>
-            <Button onClick={() => { if (!taskForm.name.trim()) { showToast(t('det.taskNameRequired'), 'error'); return; } saveTaskMut.mutate(); }} disabled={saveTaskMut.isPending}>{t('common.save')}</Button>
+            <Button
+              variant="ghost"
+              onClick={() => setTaskDialog({ open: false, task: null })}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              onClick={() => {
+                if (!taskForm.name.trim()) {
+                  showToast(t("det.taskNameRequired"), "error");
+                  return;
+                }
+                saveTaskMut.mutate();
+              }}
+              disabled={saveTaskMut.isPending}
+            >
+              {t("common.save")}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Compose editor dialog */}
-      <Dialog open={composeDialog.open} onOpenChange={v => { if (!v) setComposeDialog(prev => ({ ...prev, open: false })); }}>
+      <Dialog
+        open={composeDialog.open}
+        onOpenChange={(v) => {
+          if (!v) setComposeDialog((prev) => ({ ...prev, open: false }));
+        }}
+      >
         <DialogContent className="max-w-2xl">
-          <DialogHeader><DialogTitle>{composeDialog.mode === 'edit' ? t('det.editCompose') : t('det.addComposeStack')}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>
+              {composeDialog.mode === "edit"
+                ? t("det.editCompose")
+                : t("det.addComposeStack")}
+            </DialogTitle>
+          </DialogHeader>
           <div className="space-y-3">
-            {composeDialog.mode === 'add' && (
+            {composeDialog.mode === "add" && (
               <div className="space-y-1">
-                <Label>{t('det.composePath')}</Label>
-                <Input value={composeDialog.dir} onChange={e => setComposeDialog(prev => ({ ...prev, dir: e.target.value }))} placeholder="/opt/myapp" className="font-mono" />
+                <Label>{t("det.composePath")}</Label>
+                <Input
+                  value={composeDialog.dir}
+                  onChange={(e) =>
+                    setComposeDialog((prev) => ({
+                      ...prev,
+                      dir: e.target.value,
+                    }))
+                  }
+                  placeholder="/opt/myapp"
+                  className="font-mono"
+                />
               </div>
             )}
             <div className="space-y-1">
               <Label>docker-compose.yml</Label>
               {composeDialog.loading ? (
-                <div className="space-y-1 py-2"><SkeletonRow cols={3} /><SkeletonRow cols={3} /><SkeletonRow cols={3} /></div>
+                <div className="space-y-1 py-2">
+                  <SkeletonRow cols={3} />
+                  <SkeletonRow cols={3} />
+                  <SkeletonRow cols={3} />
+                </div>
               ) : (
-                <Textarea value={composeDialog.content} onChange={e => setComposeDialog(prev => ({ ...prev, content: e.target.value }))}
-                  rows={20} className="font-mono text-xs" />
+                <Textarea
+                  value={composeDialog.content}
+                  onChange={(e) =>
+                    setComposeDialog((prev) => ({
+                      ...prev,
+                      content: e.target.value,
+                    }))
+                  }
+                  rows={20}
+                  className="font-mono text-xs"
+                />
               )}
             </div>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setComposeDialog(prev => ({ ...prev, open: false }))}>{t('common.cancel')}</Button>
-            <Button onClick={() => { if (!composeDialog.dir.trim()) { showToast(t('det.composePathRequired'), 'error'); return; } saveComposeMut.mutate(); }}
-              disabled={saveComposeMut.isPending || composeDialog.loading}>{t('common.save')}</Button>
+            <Button
+              variant="ghost"
+              onClick={() =>
+                setComposeDialog((prev) => ({ ...prev, open: false }))
+              }
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              onClick={() => {
+                if (!composeDialog.dir.trim()) {
+                  showToast(t("det.composePathRequired"), "error");
+                  return;
+                }
+                saveComposeMut.mutate();
+              }}
+              disabled={saveComposeMut.isPending || composeDialog.loading}
+            >
+              {t("common.save")}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* SSH Terminal overlay */}
       {terminalOpen && (
-        <Suspense fallback={<div className="p-4 text-sm text-muted-foreground">{t('common.loading')}</div>}>
+        <Suspense
+          fallback={
+            <div className="p-4 text-sm text-muted-foreground">
+              {t("common.loading")}
+            </div>
+          }
+        >
           <SshTerminal server={server} onClose={() => setTerminalOpen(false)} />
         </Suspense>
       )}
       <ActionRunDialog
         open={!!actionRun}
-        title={actionRun?.title || t('det.output')}
-        status={actionRun?.status || 'running'}
+        title={actionRun?.title || t("det.output")}
+        status={actionRun?.status || "running"}
         lines={actionRun?.lines || []}
         onClose={() => setActionRun(null)}
       />
       <ConfirmDialog
         open={!!confirmDeleteTask}
-        onOpenChange={(open) => { if (!open) setConfirmDeleteTask(null); }}
-        title={t('common.delete')}
-        description={t('det.confirmDeleteTask', { name: confirmDeleteTask?.name || '' })}
-        confirmLabel={t('common.delete')}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDeleteTask(null);
+        }}
+        title={t("common.delete")}
+        description={t("det.confirmDeleteTask", {
+          name: confirmDeleteTask?.name || "",
+        })}
+        confirmLabel={t("common.delete")}
         variant="destructive"
-        confirmTextValue={confirmDeleteTask?.name || ''}
+        confirmTextValue={confirmDeleteTask?.name || ""}
         confirmInputLabel="Confirm task name"
-        onConfirm={() => { if (confirmDeleteTask) deleteTaskMut.mutate(confirmDeleteTask.id); }}
+        onConfirm={() => {
+          if (confirmDeleteTask) deleteTaskMut.mutate(confirmDeleteTask.id);
+        }}
         isPending={deleteTaskMut.isPending}
       />
       <ConfirmDialog
         open={!!confirmComposeDown}
-        onOpenChange={(open) => { if (!open) setConfirmComposeDown(null); }}
+        onOpenChange={(open) => {
+          if (!open) setConfirmComposeDown(null);
+        }}
         title="Compose down"
-        description={`Stop and remove containers for "${confirmComposeDown?.proj || ''}".`}
+        description={`Stop and remove containers for "${confirmComposeDown?.proj || ""}".`}
         confirmLabel="Down"
         variant="destructive"
-        confirmTextValue={confirmComposeDown?.proj || ''}
+        confirmTextValue={confirmComposeDown?.proj || ""}
         confirmInputLabel="Confirm stack name"
-        onConfirm={() => { if (confirmComposeDown) composeActionMut.mutate({ dir: confirmComposeDown.dir, action: 'down' }); }}
+        onConfirm={() => {
+          if (confirmComposeDown)
+            composeActionMut.mutate({
+              dir: confirmComposeDown.dir,
+              action: "down",
+            });
+        }}
         isPending={composeActionMut.isPending}
       />
       <ConfirmDialog
         open={!!confirmDeleteStack}
-        onOpenChange={(open) => { if (!open) setConfirmDeleteStack(null); }}
-        title={t('det.removeStack')}
-        description={t('det.confirmRemoveStack', { name: confirmDeleteStack?.proj || '' })}
-        confirmLabel={t('common.delete')}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDeleteStack(null);
+        }}
+        title={t("det.removeStack")}
+        description={t("det.confirmRemoveStack", {
+          name: confirmDeleteStack?.proj || "",
+        })}
+        confirmLabel={t("common.delete")}
         variant="destructive"
-        confirmTextValue={confirmDeleteStack?.proj || ''}
+        confirmTextValue={confirmDeleteStack?.proj || ""}
         confirmInputLabel="Confirm stack name"
-        onConfirm={() => { if (confirmDeleteStack) deleteStackMut.mutate(confirmDeleteStack.dir); }}
+        onConfirm={() => {
+          if (confirmDeleteStack) deleteStackMut.mutate(confirmDeleteStack.dir);
+        }}
         isPending={deleteStackMut.isPending}
       />
     </div>
   );
 
-  // ── Container row helper ────────────────────────────────────
-  function renderContainerRow(c: ContainerRow) {
-    const isUp = c.status?.startsWith('Up');
-    const upd = imageUpdates[c.image] || imageUpdates[c.image + ':latest'];
-    return (
-      <tr key={c.container_name}>
-        <td className="px-3 py-2 pl-6">{isUp ? <LiveDot tone="success" /> : <span className="inline-block h-2 w-2 rounded-full bg-rose-500" />}</td>
-        <td className="px-3 py-2 font-mono text-xs">{c.container_name}</td>
-        <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground">{c.image}</td>
-        <td className="px-3 py-2"><span className={`text-xs ${isUp ? 'text-emerald-500' : 'text-rose-500'}`}>{c.status || c.state}</span></td>
-        <td className="px-3 py-2">
-          {upd === 'update_available' ? <StatusBadge tone="warning">{t('det.imageUpdateAvail')}</StatusBadge>
-            : upd === 'up_to_date' ? <span className="text-xs text-muted-foreground">✓ {t('det.imageUpToDate')}</span>
-            : upd === 'updated' ? <StatusBadge tone="success">{t('det.imageUpdated')}</StatusBadge>
-            : <span className="text-xs text-muted-foreground">—</span>}
-        </td>
-        <td className="px-3 py-2">
-          <div className="flex items-center gap-0.5">
-            {hasCap(profile, 'canViewDocker') && (
-              <Button variant="ghost" size="icon" className="h-6 w-6" title={t('det.showLogs')} onClick={() => loadLogs(c.container_name, logsTail)}>
-                <FileText className="h-3 w-3" />
-              </Button>
-            )}
-            {hasCap(profile, 'canRestartDocker') && (
-              <Button variant="ghost" size="icon" className="h-6 w-6" title={t('common.restart')}
-                onClick={() => setConfirmRestartContainer(c.container_name)}>
-                <RotateCw className="h-3 w-3" />
-              </Button>
-            )}
-          </div>
-        </td>
-      </tr>
-    );
-  }
 }

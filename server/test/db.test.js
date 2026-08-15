@@ -305,6 +305,13 @@ describe('db.schedules', () => {
     assert.ok(scheduleId);
   });
 
+  test('create rejects an empty target instead of widening it to all', () => {
+    assert.throws(
+      () => db.schedules.create('Unsafe backup', 'backup.yml', '  ', '0 2 * * *'),
+      /targets are required/i,
+    );
+  });
+
   test('getById returns correct schedule', () => {
     const s = db.schedules.getById(scheduleId);
     assert.equal(s.name, 'Nightly backup');

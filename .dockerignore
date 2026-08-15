@@ -1,8 +1,17 @@
 node_modules
 server/node_modules
+server/data
+server/coverage
+server/test
 frontend/node_modules
 frontend/dist
+frontend-next/node_modules
+frontend-next/dist
+frontend-next/playwright-report
+frontend-next/test-results
 .git
 .env
+.env.*
+!.env.example
 *.md
 docs/

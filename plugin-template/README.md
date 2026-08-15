@@ -179,14 +179,6 @@ _wsUnsub = onWsMessage(msg => {
 });
 ```
 
-## Reference: OpenTofu Plugin
-
-The built-in OpenTofu plugin (`/app/plugins/opentofu/`) is a complete real-world example. It demonstrates:
-
-- Backend: SQLite table creation, file system access, spawning long-running processes, streaming output via `broadcast`
-- Frontend: tabs, a file tree, a CodeMirror editor, terminal output rendering
-- Docker: mounting workspace directories via `docker-compose.yml`
-
 ## Security
 
 Plugins run as **Node.js code on the server** with full access to the file system, SSH connections, the Shipyard database, and the network.

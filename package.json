@@ -12,7 +12,7 @@
     "test:server": "npm --prefix server test",
     "test:frontend": "npm --prefix frontend-next test",
     "build": "npm --prefix frontend-next run build",
-    "typecheck": "npm --prefix frontend-next run typecheck",
+    "typecheck": "npm --prefix server run typecheck && npm --prefix frontend-next run typecheck",
     "lint": "npm --prefix frontend-next run lint",
     "audit": "npm --prefix server audit --omit=dev && npm --prefix frontend-next audit --omit=dev",
     "check": "npm run lint && npm run typecheck && npm test && npm run build"
