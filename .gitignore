@@ -9,6 +9,7 @@ frontend-next/dist/
 frontend-next/playwright-report/
 frontend-next/test-results/
 test-results/
+server/playbooks/playbook_e2e_*.yml
 
 # Runtime data — never commit
 server/data/

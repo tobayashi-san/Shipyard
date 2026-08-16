@@ -21,7 +21,7 @@ async function login(page: import('@playwright/test').Page) {
   await expect(page).toHaveURL(/\/$/);
 }
 
-test('capture populated IPAM pages for visual review', async ({ page }) => {
+test('IPAM workflows remain usable across desktop and mobile layouts', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 980 });
   await login(page);
   await page.goto('/networks');
@@ -40,8 +40,6 @@ test('capture populated IPAM pages for visual review', async ({ page }) => {
   await deprecatedRow.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Deprecated', exact: true }).click();
 
-  await page.screenshot({ path: 'test-results/visual-review/ipam-overview-populated.png', fullPage: true });
-
   await page.getByRole('link', { name: 'Sources' }).click();
   const sources = page.locator('[data-ipam-sources]');
   await sources.getByRole('button', { name: 'Add source' }).click();
@@ -50,7 +48,6 @@ test('capture populated IPAM pages for visual review', async ({ page }) => {
   await sources.locator('input[type="password"]').fill('visual-source-token');
   await sources.getByRole('button', { name: 'Save source' }).click();
   await expect(sources.getByText('UniFi Produktion', { exact: true })).toBeVisible();
-  await page.screenshot({ path: 'test-results/visual-review/ipam-sources-page.png', fullPage: true });
   await page.getByRole('link', { name: 'Back to IPAM' }).click();
 
   await page.getByRole('link', { name: /10\.20\.1\.0\/24/i }).first().click();
@@ -69,16 +66,13 @@ test('capture populated IPAM pages for visual review', async ({ page }) => {
   await reservation.getByRole('button', { name: 'Add IP address' }).click();
   await expect(reservation).toBeHidden();
   await expect(page.locator('tbody').getByText('app-erp', { exact: true })).toBeVisible();
-  await page.screenshot({ path: 'test-results/visual-review/ipam-prefix-populated.png', fullPage: true });
-
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
   await expect(page.getByText('29 free IPs', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('02:00:00:00:01:30', { exact: true }).first()).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  await page.screenshot({ path: 'test-results/visual-review/ipam-prefix-mobile.png', fullPage: true });
   await page.goto('/networks');
-  await page.screenshot({ path: 'test-results/visual-review/ipam-overview-mobile.png', fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.getByRole('link', { name: 'Sources' }).click();
-  await page.screenshot({ path: 'test-results/visual-review/ipam-sources-mobile.png', fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });

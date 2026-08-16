@@ -1,13 +1,14 @@
 # Fleet (Shipyard)
 
-Fleet is the Shipyard web dashboard for managing Linux servers — SSH access,
-monitoring, Docker workloads, updates, and Ansible automation in a single
-interface. The repository, container image, data paths, and `SHIPYARD_*`
-configuration names retain the Shipyard name for upgrade compatibility.
+Fleet is the Shipyard console for Linux infrastructure — managed hosts, SSH
+access, Docker workloads, updates, Ansible automation, Proxmox inventory, and
+OpenTofu deployments in a single interface. The repository, container image,
+data paths, and `SHIPYARD_*` configuration names retain the Shipyard name for
+upgrade compatibility.
 
 > **Do not expose Shipyard to the public internet.**
 > It stores SSH private keys and has direct shell access to all managed servers.
-> Run it inside a private network or VPN. See the [Security Guide](https://github.com/tobayashi-san/Shipyard/wiki/Security-Guide).
+> Run it inside a private network or VPN. See [Docker deployment](docs/DOCKER_DEPLOYMENT.md).
 
 ## Docker deployment
 
@@ -36,7 +37,9 @@ by a firewall or VPN. The setup wizard will guide you through account creation,
 appearance settings, and SSH key generation.
 The setup wizard appears only when no users exist; otherwise you will see the login page.
 
-HTTPS is enabled by default with a self-signed certificate — accept the browser warning once, or [bring your own certificate](https://github.com/tobayashi-san/Shipyard/wiki/Installation#custom-tls-certificate).
+HTTPS is enabled by default with a self-signed certificate. Accept the browser
+warning once or configure your own certificate as described in
+[Docker deployment](docs/DOCKER_DEPLOYMENT.md#network-and-tls).
 For agent push/auto mode, set `CERT_SANS` to the LAN IP or DNS name that managed servers use to reach Shipyard.
 
 ## Update
@@ -65,31 +68,19 @@ Plugins run as server-side code and have the same access as Shipyard itself. Ins
 
 ## Documentation
 
-**[Wiki](https://github.com/tobayashi-san/Shipyard/wiki)** — [Installation](https://github.com/tobayashi-san/Shipyard/wiki/Installation) · [Configuration](https://github.com/tobayashi-san/Shipyard/wiki/Configuration) · [Security Guide](https://github.com/tobayashi-san/Shipyard/wiki/Security-Guide) · [Server Management](https://github.com/tobayashi-san/Shipyard/wiki/Server-Management) · [Playbooks & Schedules](https://github.com/tobayashi-san/Shipyard/wiki/Playbooks-and-Schedules) · [Docker Management](https://github.com/tobayashi-san/Shipyard/wiki/Docker-Management) · [Plugin System](https://github.com/tobayashi-san/Shipyard/wiki/Plugin-System) · [API Reference](https://github.com/tobayashi-san/Shipyard/wiki/API-Reference) · [Troubleshooting](https://github.com/tobayashi-san/Shipyard/wiki/Troubleshooting)
+- [Docker deployment](docs/DOCKER_DEPLOYMENT.md) — installation, networking,
+  TLS, persistent data, and updates
+- [Development pipeline](docs/DEVELOPMENT_PIPELINE.md) — local checks, CI, and
+  releases
 
-## Screenshots
-
-Current screenshots are captured from a seeded local demo instance. Primary assets live in `docs/images/`, additional UI shots in `docs/images/demo/`.
-
-![Dashboard](docs/images/Dashboard.png)
-
-<details>
-<summary>More screenshots</summary>
-
-![Servers](docs/images/demo/Servers.png)
-![Server Detail](docs/images/Server-Detail.png)
-![Docker](docs/images/Docker.png)
-![Updates](docs/images/demo/Updates.png)
-![Terminal](docs/images/Terminal.png)
-![Playbooks](docs/images/Playbooks.png)
-![Quick Run](docs/images/demo/Quick-Run.png)
-
-</details>
+The application itself is the source of truth for feature-level help. UI
+screenshots are intentionally not stored in the repository because they become
+stale whenever the console design changes.
 
 ## Features
 
-- **Servers** — add, edit, group, tag, attach quick links, and bulk import/export (JSON or CSV)
-- **Monitoring** — CPU, RAM, disk, mounted storage, uptime, and load average via SSH polling or directly from the Shipyard Agent
+- **Managed hosts** — add, edit, group, tag, attach quick links, and bulk import/export (JSON or CSV)
+- **Host state** — inspect CPU, RAM, disk, mounted storage, uptime, and load average via SSH or the optional Shipyard Agent
 - **OS Updates** — via Ansible (`apt`, `dnf`, `pacman`, …) with live terminal output
 - **Custom Update Tasks** — track scripts or GitHub releases, shows current vs. latest
 - **Docker & Compose** — container overview, logs, restart, edit and run Compose stacks
@@ -98,7 +89,7 @@ Current screenshots are captured from a seeded local demo instance. Primary asse
 - **SFTP File Transfer** — browse, upload, download, and stream files between managed hosts
 - **SSH Key Management** — auto-generate Ed25519, deploy via UI, AES-256-GCM encryption at rest
 - **Notifications** — webhooks (Discord, Slack) and SMTP email alerts
-- **Auth & Security** — JWT, RBAC with custom roles, TOTP/2FA, audit log, rate limiting, HTTPS
+- **Auth & Security** — JWT, host- and capability-scoped RBAC, custom roles, TOTP/2FA, audit log, rate limiting, and HTTPS
 - **Deployments** — environment-scoped OpenTofu plans, reviewed-plan Apply, drift checks, encrypted local-state recovery, run locking, and Proxmox VM blueprints
 - **Plugins** — hot-reloadable extensions with scoped UI and API integration
 - **UI** — English, light/dark/system theme, white-label support
@@ -107,13 +98,13 @@ Current screenshots are captured from a seeded local demo instance. Primary asse
 
 ```bash
 # Install root dev tools
-npm install
+npm ci
 
 # Backend (port 3001)
-cd server && npm install && npm run dev
+cd server && npm ci && npm run dev
 
 # Frontend (port 5174) — in a second terminal
-cd frontend-next && npm install && npm run dev
+cd frontend-next && npm ci && npm run dev
 ```
 
 ```bash
@@ -127,7 +118,8 @@ cd server && node --test test/auth.test.js
 cd frontend-next && npm run build
 ```
 
-Production mode serves the built frontend from `frontend-next/dist` at the application root. The old `frontend/` Vite app has been removed.
+Production mode serves the frontend build from `frontend-next/dist` at the
+application root.
 
 For the full PR, CI, release-candidate, and stable-release workflow, see [Development Pipeline](docs/DEVELOPMENT_PIPELINE.md).
 

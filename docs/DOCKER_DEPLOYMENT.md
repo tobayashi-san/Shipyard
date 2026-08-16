@@ -97,7 +97,7 @@ depending on a backup.
 Pin a release tag in `.env` for predictable production updates:
 
 ```dotenv
-SHIPYARD_IMAGE=ghcr.io/tobayashi-san/shipyard:1.2.3
+SHIPYARD_IMAGE=ghcr.io/tobayashi-san/shipyard:3.0
 ```
 
 After taking a backup, update with:
