@@ -300,9 +300,9 @@ test('playbook workflows expose safe secrets, explicit targets and one run flow'
 
     await dialog.getByRole('button', { name: 'Create', exact: true }).click();
     await expect(page.getByText(/select at least one target/i)).toBeVisible();
-    await dialog.getByLabel(/all servers/i).check();
+    await dialog.getByLabel(/all (?:managed hosts|servers)/i).check();
     await dialog.getByRole('button', { name: 'Create', exact: true }).click();
-    await expect(page.getByText(/confirm the all-server target/i)).toBeVisible();
+    await expect(page.getByText(/confirm the all-(?:host|server) target/i)).toBeVisible();
     await dialog.getByLabel(/run on every host in this environment/i).check();
     await dialog.getByLabel(/extra variables/i).fill('{"release_channel":"stable"}');
     await dialog.getByRole('switch', { name: 'Dry run' }).click();
@@ -399,7 +399,7 @@ test('a Fleet host can be assigned to a folder through the resource list', async
   // before exercising the real move control.
   await page.reload();
 
-  await page.getByRole('button', { name: /server hinzufügen|add server/i }).click();
+  await page.getByRole('button', { name: /host hinzufügen|server hinzufügen|add (?:managed )?(?:host|server)/i }).click();
   const form = page.getByRole('dialog');
   await form.locator('#server-name').fill('e2e-move-host');
   await form.locator('#server-ip-address').fill('10.99.0.11');
@@ -656,7 +656,7 @@ test('a discovered Proxmox VM can be adopted through the browser without changin
     // on platform capacity and node health.
     await page.getByRole('tab', { name: /virtual machines/i }).click();
     await page.getByRole('button', { name: 'Manage in Fleet' }).click();
-    const dialog = page.getByRole('dialog', { name: /adopt VM into Fleet|VM in Fleet übernehmen/i });
+    const dialog = page.getByRole('dialog', { name: /adopt VM (?:into Fleet|as (?:a )?managed host)|VM in Fleet übernehmen/i });
     await expect(dialog).toBeVisible();
     const inputs = dialog.locator('input');
     await expect(inputs.nth(1)).toHaveValue('10.250.0.207');
@@ -664,9 +664,9 @@ test('a discovered Proxmox VM can be adopted through the browser without changin
     await inputs.nth(3).fill('2222');
     await Promise.all([
       page.waitForResponse(response => response.url().includes('/import-vm') && response.request().method() === 'POST' && response.status() === 201),
-      dialog.getByRole('button', { name: /adopt into Fleet|in Fleet übernehmen/i }).click(),
+      dialog.getByRole('button', { name: /adopt (?:into Fleet|as (?:a )?managed host)|in Fleet übernehmen/i }).click(),
     ]);
-    await expect(page.getByText(/VM adopted as a Fleet host|VM wurde als Fleet-Host übernommen/i)).toBeVisible();
+    await expect(page.getByText(/VM adopted as (?:a Fleet host|a managed host)|VM wurde als Fleet-Host übernommen/i)).toBeVisible();
     await page.goto('/servers');
     const row = page.getByRole('row', { name: /e2e-import-vm/i });
     await expect(row).toBeVisible();
@@ -737,8 +737,8 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
     }));
     expect(updateTableWidth.table).toBeGreaterThanOrEqual(updateTableWidth.container - 2);
     await platformUpdatesTable.getByRole('button', { name: 'Add to Fleet' }).click();
-    const addFleetDialog = page.getByRole('dialog', { name: 'Add Server' });
-    await expect(addFleetDialog.getByLabel('Server Name')).toHaveValue('hierarchy-node');
+    const addFleetDialog = page.getByRole('dialog', { name: /Add (?:managed host|server)/i });
+    await expect(addFleetDialog.getByLabel(/(?:host|server) name/i)).toHaveValue('hierarchy-node');
     await expect(addFleetDialog.getByLabel('IP Address')).toHaveValue('10.250.0.10');
     await expect(addFleetDialog.getByLabel('Hostname')).toHaveValue('hierarchy-node');
     const [createdFleetResponse] = await Promise.all([
