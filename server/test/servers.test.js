@@ -329,12 +329,12 @@ test('POST /api/servers/:id/reset-host-key removes stale known_hosts entries', a
   }
 });
 
-test('GET /api/servers/:id/docker/:container/logs uses become-enabled ansible access', async () => {
-  const original = ansibleRunner.runAdHoc;
+test('GET /api/servers/:id/docker/:container/logs uses direct host SSH with sudo fallback', async () => {
+  const original = sshManager.execCommand;
   let captured = null;
-  ansibleRunner.runAdHoc = async (targets, module, args, onOutput, options) => {
-    captured = { targets, module, args, options };
-    return { success: true, stdout: 'my-server | CHANGED | rc=0 >>\nlog line 1\nlog line 2\n', stderr: '' };
+  sshManager.execCommand = async (server, command) => {
+    captured = { server, command };
+    return { code: 0, stdout: 'log line 1\nlog line 2\n', stderr: '' };
   };
   try {
     const res = await request(app)
@@ -342,14 +342,11 @@ test('GET /api/servers/:id/docker/:container/logs uses become-enabled ansible ac
       .set('Authorization', `Bearer ${token}`);
     assert.equal(res.status, 200);
     assert.equal(res.body.logs, 'log line 1\nlog line 2\n');
-    assert.deepEqual(captured, {
-      targets: 'renamed-server',
-      module: 'shell',
-      args: '$(command -v docker 2>/dev/null || command -v podman 2>/dev/null) logs --tail "50" --timestamps -- "app-1" 2>&1',
-      options: { become: true },
-    });
+    assert.equal(captured.server.id, serverId);
+    assert.match(captured.command, /logs --tail 50 --timestamps -- 'app-1'/);
+    assert.match(captured.command, /sudo -n/);
   } finally {
-    ansibleRunner.runAdHoc = original;
+    sshManager.execCommand = original;
   }
 });
 

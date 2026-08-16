@@ -21,7 +21,10 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
   try {
     const perms = getPermissions(req.user);
     if (!can(perms, 'canViewServers')) return res.status(403).json({ error: 'Permission denied' });
-    const servers = filterServers(db.servers.getAll(), perms);
+    const environmentId = req.environmentId || 'default';
+    const servers = filterServers(db.servers.getAll(environmentId), perms);
+    const canViewUpdates = can(perms, 'canViewUpdates');
+    const canViewDocker = can(perms, 'canViewDocker');
     const canViewCustomUpdates = can(perms, 'canViewCustomUpdates');
     const agentEnabled = db.settings.get('agent_enabled') === '1';
     const online = servers.filter(s => s.status === 'online').length;
@@ -32,14 +35,14 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
 
     const serverStats = servers.map(s => {
       const info = db.serverInfo.get(s.id);
-      const updates = db.updatesCache.get(s.id) || [];
-      const containers = db.dockerContainers.getByServer(s.id);
-      const imageUpdatesMeta = db.dockerImageUpdatesCache.getWithMeta(s.id);
+      const updates = canViewUpdates ? (db.updatesCache.get(s.id) || []) : [];
+      const containers = canViewDocker ? db.dockerContainers.getByServer(s.id) : [];
+      const imageUpdatesMeta = canViewDocker && canViewUpdates ? db.dockerImageUpdatesCache.getWithMeta(s.id) : null;
       const imageUpdates = imageUpdatesMeta ? imageUpdatesMeta.results : null;
       const agentCfg = agentEnabled ? db.agentConfig.getByServerId(s.id) : null;
 
-      if (info?.reboot_required) rebootRequired++;
-      totalUpdates += updates.filter(u => !u.phased).length;
+      if (canViewUpdates && info?.reboot_required) rebootRequired++;
+      if (canViewUpdates) totalUpdates += updates.filter(u => !u.phased).length;
 
       const isOnline = s.status === 'online';
       const ramPct = (isOnline && info?.ram_total_mb) ? Math.round((info.ram_used_mb / info.ram_total_mb) * 100) : null;
@@ -93,13 +96,19 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
         disk_pct: diskPct,
         cpu_pct: isOnline ? (info?.cpu_usage_pct ?? null) : null,
         load_avg: isOnline ? (info?.load_avg || null) : null,
-        reboot_required: !!info?.reboot_required,
-        updates_count: updates.filter(u => !u.phased).length,
-        containers_running: containers.filter(c => c.state === 'running').length,
-        containers_total: containers.length,
-        image_updates_count: imageUpdates === null ? null : imageUpdates.filter(r => r.status === 'update_available').length,
-        image_updates_checked_at: imageUpdatesMeta?.updated_at || null,
-        custom_updates_count: db.customUpdateTasks.countHasUpdate(s.id),
+        ...(canViewUpdates ? {
+          reboot_required: !!info?.reboot_required,
+          updates_count: updates.filter(u => !u.phased).length,
+        } : {}),
+        ...(canViewDocker ? {
+          containers_running: containers.filter(c => c.state === 'running').length,
+          containers_total: containers.length,
+        } : {}),
+        ...(canViewDocker && canViewUpdates ? {
+          image_updates_count: imageUpdates === null ? null : imageUpdates.filter(r => r.status === 'update_available').length,
+          image_updates_checked_at: imageUpdatesMeta?.updated_at || null,
+        } : {}),
+        ...(canViewCustomUpdates ? { custom_updates_count: db.customUpdateTasks.countHasUpdate(s.id) } : {}),
         ...(customUpdateTasks ? { custom_update_tasks: customUpdateTasks } : {}),
         info_cached_at: info?.updated_at || null,
         agent_mode: agentMode,
@@ -108,12 +117,14 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
       };
     });
 
-    const allRecentHistory = db.db.prepare(`
+    const canViewHistory = canViewUpdates || can(perms, 'canViewSchedules') || can(perms, 'canViewAudit');
+    const allRecentHistory = canViewHistory ? db.db.prepare(`
       SELECT h.*, s.name as server_name
       FROM update_history h
       LEFT JOIN servers s ON h.server_id = s.id
+      WHERE h.environment_id = ?
       ORDER BY h.started_at DESC LIMIT 500
-    `).all();
+    `).all(environmentId) : [];
 
     const isServerRestricted = perms && !perms.full && perms.servers !== 'all' && perms.servers != null;
     const allowedServerIds = new Set(servers.map(s => s.id));

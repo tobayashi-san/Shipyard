@@ -1,17 +1,19 @@
 import {
   cloneElement,
+  Fragment,
   isValidElement,
   useEffect,
   useId,
   useState,
 } from "react";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   ArrowLeft,
   Box,
   Layers3,
+  LockKeyhole,
   Network,
   Pencil,
   Plus,
@@ -42,6 +44,9 @@ import { useUi } from "@/lib/store";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useUrlTab } from "@/lib/use-url-tab";
+import { TablePagination } from "@/components/ui/table-pagination";
+import i18n from "@/lib/i18n";
+import { hasCap, useProfile } from "@/lib/queries";
 
 const NETWORK_TABS = ["allocations", "children"] as const;
 
@@ -51,6 +56,9 @@ interface Prefix {
   name: string;
   cidr: string;
   gateway?: string;
+  dhcp_start?: string;
+  dhcp_end?: string;
+  dhcp_address_count?: number;
   dns_servers?: string[];
   vlan_id?: number | null;
   bridge?: string;
@@ -75,6 +83,7 @@ interface Reservation {
   server_name?: string;
   mac_address?: string;
   status: string;
+  configured_status?: string;
   role?: string;
   description?: string;
   source_type?: string;
@@ -82,6 +91,13 @@ interface Reservation {
   last_synced_at?: string | null;
   conflict?: boolean;
   conflicts?: string[];
+  observed_sources?: string[];
+  source_observations?: SourceObservation[];
+}
+interface SourceObservation {
+  name: string;
+  type: string;
+  last_seen_at?: string | null;
 }
 interface Allocation extends Partial<Reservation> {
   id: string;
@@ -92,6 +108,7 @@ interface Allocation extends Partial<Reservation> {
   status: string;
   role?: string;
   description?: string;
+  system_managed?: boolean;
 }
 interface Server {
   id: string;
@@ -119,13 +136,30 @@ interface SyncConflict {
   existing_server_id?: string;
   existing_server_name?: string;
 }
+interface Paginated<T> {
+  items: T[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  free_segments?: FreeSpaceSegment[];
+}
+interface FreeSpaceSegment {
+  start_address: string;
+  end_address: string;
+  address_count: number;
+  before_allocation_key: string | null;
+}
+
+const tr = (key: string, options?: Record<string, unknown>) =>
+  String(i18n.t(`ipam.${key}`, options));
 
 const statusLabel: Record<string, string> = {
-  active: "Active",
-  reserved: "Reserved",
-  dhcp: "DHCP",
-  deprecated: "Deprecated",
-  container: "Container",
+  active: tr("active"),
+  reserved: tr("reserved"),
+  dhcp: tr("dhcp"),
+  deprecated: tr("deprecated"),
+  container: tr("container"),
 };
 const capacityTone = (usage: number): "healthy" | "warning" | "critical" =>
   usage > 90 ? "critical" : usage > 70 ? "warning" : "healthy";
@@ -146,22 +180,21 @@ const sourceSystemName = (type?: string) =>
       ? "UniFi"
       : type === "pfsense"
         ? "pfSense"
+        : type === "system"
+          ? "System"
         : type || "";
-function sourceSyncLabel(
-  row: Pick<Reservation, "source_type" | "source_name" | "last_synced_at">,
-) {
-  const system = sourceSystemName(row.source_type);
-  if (!system || row.source_type === "manual") return null;
-  return `${row.source_name || system}${row.last_synced_at ? ` · ${new Date(row.last_synced_at).toLocaleString()}` : ""}`;
-}
 
 export function NetworkDetailPage() {
   const networkTabs = useUrlTab("allocations", NETWORK_TABS);
   const { id } = useParams({ strict: false }) as { id: string };
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const environmentId = useUi((state) => state.environmentId);
+  const { data: profile } = useProfile();
+  const canEdit = hasCap(profile, "canEditServers");
   const [address, setAddress] = useState("");
   const [hostname, setHostname] = useState("");
+  const [macAddress, setMacAddress] = useState("");
   const [description, setDescription] = useState("");
   const [serverId, setServerId] = useState("");
   const [addressStatus, setAddressStatus] = useState("active");
@@ -175,16 +208,22 @@ export function NetworkDetailPage() {
   const [addKind, setAddKind] = useState<"address" | "range">("address");
   const [connectionId, setConnectionId] = useState("");
   const [releaseTarget, setReleaseTarget] = useState<Allocation | null>(null);
+  const [editPrefixOpen, setEditPrefixOpen] = useState(false);
+  const [deletePrefixOpen, setDeletePrefixOpen] = useState(false);
+  const [allocationPage, setAllocationPage] = useState(1);
+  const [allocationSearch, setAllocationSearch] = useState("");
+  const [allocationStatus, setAllocationStatus] = useState("all");
+  const allocationPageSize = 50;
 
   const detail = useQuery({
     queryKey: ["ipam", "network", id],
     queryFn: () => apiFetch<Prefix>(`/ipam/subnets/${encodeURIComponent(id)}`),
   });
   const allocations = useQuery({
-    queryKey: ["ipam", "allocations", id],
+    queryKey: ["ipam", "allocations", id, allocationPage, allocationSearch, allocationStatus],
     queryFn: () =>
-      apiFetch<Allocation[]>(
-        `/ipam/subnets/${encodeURIComponent(id)}/allocations`,
+      apiFetch<Paginated<Allocation>>(
+        `/ipam/subnets/${encodeURIComponent(id)}/allocations?paginated=1&page=${allocationPage}&page_size=${allocationPageSize}&q=${encodeURIComponent(allocationSearch)}&status=${encodeURIComponent(allocationStatus)}`,
       ),
   });
   const syncConflicts = useQuery({
@@ -200,8 +239,8 @@ export function NetworkDetailPage() {
       apiFetch<Prefix[]>(`/ipam/subnets/${encodeURIComponent(id)}/children`),
   });
   const servers = useQuery({
-    queryKey: ["servers"],
-    queryFn: () => apiFetch<Server[]>("/servers"),
+    queryKey: ["servers", environmentId],
+    queryFn: () => apiFetch<Server[]>(`/servers?environment_id=${encodeURIComponent(environmentId)}`),
   });
   const connections = useQuery({
     queryKey: ["opentofu", "proxmox-connections", environmentId],
@@ -213,6 +252,24 @@ export function NetworkDetailPage() {
   });
   const refresh = () =>
     void queryClient.invalidateQueries({ queryKey: ["ipam"] });
+  const openAddressReservation = (nextAddress = "") => {
+    setAddress(nextAddress);
+    setHostname("");
+    setMacAddress("");
+    setDescription("");
+    setServerId("");
+    setAddressStatus("active");
+    setAddressRole("");
+    setAddKind("address");
+    setAddOpen(true);
+  };
+  const openRangeReservation = (segment: FreeSpaceSegment) => {
+    setRangeStart(segment.start_address);
+    setRangeEnd(segment.end_address);
+    setRangeDescription("");
+    setAddKind("range");
+    setAddOpen(true);
+  };
 
   const reserve = useMutation({
     mutationFn: () =>
@@ -221,6 +278,7 @@ export function NetworkDetailPage() {
         body: {
           address,
           hostname,
+          mac_address: macAddress,
           description,
           server_id: serverId || undefined,
           status: addressStatus,
@@ -230,10 +288,11 @@ export function NetworkDetailPage() {
     onSuccess: () => {
       setAddress("");
       setHostname("");
+      setMacAddress("");
       setDescription("");
       setServerId("");
       setAddOpen(false);
-      showToast("IP address created.", "success");
+      showToast(tr("ipCreated"), "success");
       refresh();
     },
     onError: (error: Error) => showToast(error.message, "error"),
@@ -257,7 +316,7 @@ export function NetworkDetailPage() {
       setRangeEnd("");
       setRangeDescription("");
       setAddOpen(false);
-      showToast(`Range with ${result.count} addresses reserved.`, "success");
+      showToast(tr("rangeReserved", { count: result.count }), "success");
       refresh();
     },
     onError: (error: Error) => showToast(error.message, "error"),
@@ -268,7 +327,7 @@ export function NetworkDetailPage() {
         method: "DELETE",
       }),
     onSuccess: () => {
-      showToast("IP address released.", "success");
+      showToast(tr("ipReleased"), "success");
       refresh();
     },
     onError: (error: Error) => showToast(error.message, "error"),
@@ -279,7 +338,7 @@ export function NetworkDetailPage() {
         method: "DELETE",
       }),
     onSuccess: () => {
-      showToast("IP range released.", "success");
+      showToast(tr("rangeReleased"), "success");
       refresh();
     },
     onError: (error: Error) => showToast(error.message, "error"),
@@ -288,12 +347,40 @@ export function NetworkDetailPage() {
     mutationFn: (reservation: Reservation) =>
       apiFetch(`/ipam/reservations/${encodeURIComponent(reservation.id)}`, {
         method: "PUT",
-        body: reservation,
+        body: {
+          ...reservation,
+          status:
+            reservation.configured_status ||
+            (reservation.status === "dhcp" ? "active" : reservation.status),
+        },
       }),
     onSuccess: () => {
-      showToast("IP address saved.", "success");
+      showToast(tr("ipSaved"), "success");
       setEditing(null);
       refresh();
+    },
+    onError: (error: Error) => showToast(error.message, "error"),
+  });
+  const updatePrefix = useMutation({
+    mutationFn: (value: Partial<Prefix>) =>
+      apiFetch(`/ipam/subnets/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        body: value,
+      }),
+    onSuccess: () => {
+      setEditPrefixOpen(false);
+      showToast(tr("prefixSaved"), "success");
+      refresh();
+    },
+    onError: (error: Error) => showToast(error.message, "error"),
+  });
+  const deletePrefix = useMutation({
+    mutationFn: () => apiFetch(`/ipam/subnets/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    onSuccess: async () => {
+      setDeletePrefixOpen(false);
+      await queryClient.invalidateQueries({ queryKey: ["ipam"] });
+      showToast(tr("prefixDeleted"), "success");
+      await navigate({ to: "/networks" });
     },
     onError: (error: Error) => showToast(error.message, "error"),
   });
@@ -310,7 +397,11 @@ export function NetworkDetailPage() {
       ),
     onSuccess: (result) => {
       showToast(
-        `${result.created} new, ${result.updated} updated IPs${result.conflicts ? ` · ${result.conflicts} conflicts` : ""}`,
+        tr("proxmoxSyncResult", {
+          created: result.created,
+          updated: result.updated,
+          conflicts: result.conflicts ? tr("conflictsSuffix", { count: result.conflicts }) : "",
+        }),
         result.failed || result.conflicts ? "warning" : "success",
       );
       setSyncOpen(false);
@@ -320,8 +411,11 @@ export function NetworkDetailPage() {
   });
 
   const network = detail.data;
-  const allocationRows = Array.isArray(allocations.data)
-    ? allocations.data
+  const allocationRows = Array.isArray(allocations.data?.items)
+    ? allocations.data.items
+    : [];
+  const freeSegments = Array.isArray(allocations.data?.free_segments)
+    ? allocations.data.free_segments
     : [];
   const childRows = Array.isArray(children.data) ? children.data : [];
   const serverRows = Array.isArray(servers.data) ? servers.data : [];
@@ -331,10 +425,17 @@ export function NetworkDetailPage() {
   const conflictRows = Array.isArray(syncConflicts.data)
     ? syncConflicts.data
     : [];
+  useEffect(() => {
+    setAllocationPage(1);
+  }, [allocationSearch, allocationStatus, id]);
+  useEffect(() => {
+    if (allocations.data && allocationPage > allocations.data.total_pages)
+      setAllocationPage(allocations.data.total_pages);
+  }, [allocationPage, allocations.data]);
   if (detail.isPending)
     return (
       <div className="p-6 text-sm text-muted-foreground">
-        Loading prefix…
+        {tr("loadingPrefix")}
       </div>
     );
   if (detail.isError || !network)
@@ -343,27 +444,27 @@ export function NetworkDetailPage() {
         <PageHeader
           back={
             <Button variant="ghost" size="icon" asChild>
-              <Link to="/networks" aria-label="Back to prefixes">
+              <Link to="/networks" aria-label={tr("backPrefixes")}>
                 <ArrowLeft />
               </Link>
             </Button>
           }
-          title="Prefix unavailable"
-          description="The requested address space could not be loaded."
+          title={tr("prefixUnavailable")}
+          description={tr("prefixUnavailableDescription")}
         />
         <Card>
           <EmptyState
             icon={<AlertTriangle className="h-5 w-5" />}
-            title="IPAM prefix could not be loaded"
-            description="Check the connection and whether the prefix still exists. No data was changed."
+            title={tr("prefixLoadFailed")}
+            description={tr("prefixLoadFailedDescription")}
             action={
               <div className="flex gap-2">
                 <Button variant="outline" asChild>
-                  <Link to="/networks">Back to prefix overview</Link>
+                  <Link to="/networks">{tr("backOverview")}</Link>
                 </Button>
                 <Button onClick={() => void detail.refetch()}>
                   <RefreshCw />
-                  Try again
+                  {tr("tryAgain")}
                 </Button>
               </div>
             }
@@ -382,7 +483,7 @@ export function NetworkDetailPage() {
       <PageHeader
         back={
           <Button variant="ghost" size="icon" asChild>
-            <Link to="/networks" aria-label="Back to prefixes">
+            <Link to="/networks" aria-label={tr("backPrefixes")}>
               <ArrowLeft />
             </Link>
           </Button>
@@ -395,7 +496,7 @@ export function NetworkDetailPage() {
           </span>
         }
         actions={
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex w-full min-w-0 flex-wrap items-center justify-start gap-2 sm:w-auto sm:justify-end">
             <StatusBadge tone={statusTone(network.status)} dot>
               {statusLabel[network.status] || network.status}
             </StatusBadge>
@@ -412,19 +513,18 @@ export function NetworkDetailPage() {
                     : undefined
                 }
               />
-              Refresh
+              {tr("refresh")}
             </Button>
-            <Button
+            {canEdit && <Button
               size="sm"
               onClick={() => {
-                setAddKind("address");
-                setAddOpen(true);
+                openAddressReservation();
               }}
             >
               <Plus />
-              Reserve address
-            </Button>
-            <Button
+              {tr("reserveAddress")}
+            </Button>}
+            {canEdit && <Button
               variant="outline"
               size="sm"
               onClick={() => {
@@ -434,13 +534,21 @@ export function NetworkDetailPage() {
               disabled={connectionRows.length === 0}
               title={
                 connections.isError
-                  ? "Proxmox connections could not be loaded."
-                  : "No Proxmox connection is available in this environment."
+                  ? tr("proxmoxConnectionsFailed")
+                  : tr("noProxmoxConnection")
               }
             >
               <ServerCog />
-              Synchronize Proxmox
-            </Button>
+              {tr("syncProxmox")}
+            </Button>}
+            {canEdit && <Button variant="outline" size="sm" onClick={() => setEditPrefixOpen(true)}>
+              <Pencil />
+              {tr("editPrefix")}
+            </Button>}
+            {canEdit && <Button variant="outline" size="sm" onClick={() => setDeletePrefixOpen(true)}>
+              <Trash2 className="text-destructive" />
+              {tr("delete")}
+            </Button>}
           </div>
         }
       />
@@ -450,7 +558,7 @@ export function NetworkDetailPage() {
           params={{ id: network.parent_id }}
           className="inline-flex text-sm text-brand hover:underline"
         >
-          Parent prefix: {network.parent_cidr}
+          {tr("parentPrefix", { cidr: network.parent_cidr })}
         </Link>
       )}
       <section className="console-object-summary overflow-hidden">
@@ -458,45 +566,45 @@ export function NetworkDetailPage() {
           <div className="console-object-summary-main">
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
               <Network className="h-4 w-4 text-brand" />
-              Address space
+              {tr("addressSpace")}
             </div>
             <div className="console-object-info-grid grid-cols-2 lg:grid-cols-4">
               <NetworkFact
-                label="Usable IPs"
+                label={tr("usableIps")}
                 value={network.usable_address_count}
-                detail={`${network.used_address_count} used`}
+                detail={tr("assignedCount", { count: network.used_address_count })}
               />
               <NetworkFact
-                label="Free"
+                label={tr("free")}
                 value={network.free_address_count}
-                detail={`${Math.max(0, 100 - usagePercent)}% available`}
+                detail={tr("availablePercent", { count: Math.max(0, 100 - usagePercent) })}
                 tone="success"
               />
               <NetworkFact
-                label="Individual addresses"
+                label={tr("individualAddresses")}
                 value={network.reservation_count}
-                detail="Used or reserved"
+                detail={tr("usedOrReserved")}
               />
               <NetworkFact
-                label="Ranges"
+                label={tr("ranges")}
                 value={network.range_count}
                 detail={
                   network.child_prefix_count
-                    ? `${network.child_prefix_count} child prefixes`
-                    : "No child prefixes"
+                    ? tr("childCount", { count: network.child_prefix_count })
+                    : tr("noChildren")
                 }
               />
             </div>
           </div>
           <div className="console-object-capacity">
             <div className="mb-3 flex items-center justify-between gap-3 text-sm font-semibold">
-              <span>Address space usage</span>
+              <span>{tr("usage")}</span>
               <span className="font-mono text-muted-foreground">
                 {usagePercent} %
               </span>
             </div>
             <div className="flex items-center justify-between gap-3 text-xs">
-              <span>Used</span>
+              <span>{tr("used")}</span>
               <span className="font-mono text-muted-foreground">
                 {network.used_address_count} / {network.usable_address_count}
               </span>
@@ -509,7 +617,7 @@ export function NetworkDetailPage() {
             </div>
             <div className="mt-3 flex items-center justify-between gap-3">
               <span className="text-xs text-muted-foreground">
-                Next free IP
+                {tr("nextFree")}
               </span>
               {network.next_free_address ? (
                 <button
@@ -525,7 +633,7 @@ export function NetworkDetailPage() {
                 </button>
               ) : (
                 <span className="text-xs text-muted-foreground">
-                  None free
+                  {tr("noneFree")}
                 </span>
               )}
             </div>
@@ -536,20 +644,32 @@ export function NetworkDetailPage() {
         <CardHeader className="border-b bg-muted/15 py-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Network className="h-4 w-4" />
-            Network configuration
+            {tr("networkConfiguration")}
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-0 p-0 text-sm sm:grid-cols-2">
           <Info
-            label="VLAN / Bridge"
+            label={tr("vlanBridge")}
             value={`${network.vlan_id ? `VLAN ${network.vlan_id}` : "—"} · ${network.bridge || "—"}`}
           />
-          <Info label="Gateway" value={network.gateway || "—"} />
+          <Info label={tr("gateway")} value={network.gateway || "—"} />
           <Info
-            label="DNS"
+            label={tr("dhcpRange")}
+            value={
+              network.dhcp_start && network.dhcp_end
+                ? `${network.dhcp_start} – ${network.dhcp_end} (${tr("dhcpPoolCount", { count: network.dhcp_address_count || 0 })})`
+                : tr("dhcpNotConfigured")
+            }
+          />
+          <Info
+            label={tr("dns")}
             value={(network.dns_servers || []).join(", ") || "—"}
           />
-          <Info label="Role" value={network.role || "—"} />
+          <Info label={tr("role")} value={network.role || "—"} />
+          <Info
+            label={tr("descriptionLabel")}
+            value={network.description || "—"}
+          />
         </CardContent>
       </Card>
       {syncConflicts.isError && (
@@ -557,8 +677,8 @@ export function NetworkDetailPage() {
           <EmptyState
             compact
             icon={<AlertTriangle className="h-5 w-5" />}
-            title="Synchronization conflicts could not be loaded"
-            description="Existing reservations remain unchanged."
+            title={tr("syncConflictLoadFailed")}
+            description={tr("unchangedReservations")}
             action={
               <Button
                 variant="outline"
@@ -566,7 +686,7 @@ export function NetworkDetailPage() {
                 onClick={() => void syncConflicts.refetch()}
               >
                 <RefreshCw />
-                Try again
+                {tr("tryAgain")}
               </Button>
             }
           />
@@ -577,25 +697,35 @@ export function NetworkDetailPage() {
         value={networkTabs.value}
         onValueChange={networkTabs.onValueChange}
       >
-        <TabsList aria-label="Prefix sections" className="console-tabs">
+        <TabsList aria-label={tr("prefixSections")} className="console-tabs">
           <TabsTrigger value="allocations">
-            Address inventory{" "}
-            <Badge variant="secondary">{allocationRows.length}</Badge>
+            {tr("addressInventory")}{" "}
+            <Badge variant="secondary">{allocations.data?.total || 0}</Badge>
           </TabsTrigger>
           <TabsTrigger value="children">
-            Child prefixes <Badge variant="secondary">{childRows.length}</Badge>
+            {tr("childPrefixes")} <Badge variant="secondary">{childRows.length}</Badge>
           </TabsTrigger>
         </TabsList>
         <TabsContent value="allocations">
           {allocations.isError ? (
             <QueryLoadError
-              label="Address inventory"
+              label={tr("addressInventory")}
               onRetry={() => void allocations.refetch()}
             />
           ) : (
             <AllocationTable
               rows={allocationRows}
+              freeSegments={freeSegments}
               loading={allocations.isPending}
+              page={allocationPage}
+              pageSize={allocationPageSize}
+              total={allocations.data?.total || 0}
+              search={allocationSearch}
+              statusFilter={allocationStatus}
+              canEdit={canEdit}
+              onPage={setAllocationPage}
+              onSearch={setAllocationSearch}
+              onStatusFilter={setAllocationStatus}
               onEdit={setEditing}
               onRelease={setReleaseTarget}
               onBulkRelease={async (selected) => {
@@ -610,22 +740,26 @@ export function NetworkDetailPage() {
                   ),
                 );
                 showToast(
-                  `${selected.length} record${selected.length === 1 ? "" : "s"} released.`,
+                  tr("recordsReleased", { count: selected.length }),
                   "success",
                 );
                 refresh();
               }}
+              onReserveFirst={(segment) =>
+                openAddressReservation(segment.start_address)
+              }
+              onReserveRange={openRangeReservation}
             />
           )}
         </TabsContent>
         <TabsContent value="children">
           {children.isError ? (
             <QueryLoadError
-              label="Child prefixes"
+              label={tr("childPrefixes")}
               onRetry={() => void children.refetch()}
             />
           ) : (
-            <ChildPrefixTable rows={childRows} loading={children.isPending} />
+            <ChildPrefixTable rows={childRows} loading={children.isPending} canEdit={canEdit} />
           )}
         </TabsContent>
       </Tabs>
@@ -637,50 +771,48 @@ export function NetworkDetailPage() {
         onSave={(value) => updateReservation.mutate(value)}
         saving={updateReservation.isPending}
       />
+      <EditPrefixDialog
+        prefix={network}
+        open={editPrefixOpen}
+        onOpenChange={setEditPrefixOpen}
+        onSave={(value) => updatePrefix.mutate(value)}
+        saving={updatePrefix.isPending}
+      />
+      <ConfirmDialog
+        open={deletePrefixOpen}
+        onOpenChange={setDeletePrefixOpen}
+        title={tr("deletePrefix")}
+        description={tr("deletePrefixDescription", {
+          cidr: network.cidr,
+          addresses: network.reservation_count,
+          ranges: network.range_count,
+        })}
+        confirmLabel={tr("deletePrefixAction")}
+        cancelLabel={tr("cancel")}
+        variant="destructive"
+        onConfirm={() => deletePrefix.mutate()}
+        isPending={deletePrefix.isPending}
+      />
       <ConfirmDialog
         open={Boolean(releaseTarget)}
         onOpenChange={(open) => !open && setReleaseTarget(null)}
         title={
           releaseTarget?.kind === "range"
-            ? "Release IP range?"
-            : "Release IP address?"
+            ? tr("releaseRangeTitle")
+            : tr("releaseAddressTitle")
         }
-        description={
-          releaseTarget ? (
-            <>
-              {releaseTarget.kind === "range" ? (
-                <>
-                  The reserved range{" "}
-                  <strong className="font-mono">
-                    {releaseTarget.start_address} – {releaseTarget.end_address}
-                  </strong>{" "}
-                  will be removed from IPAM.
-                </>
-              ) : (
-                <>
-                  <strong className="font-mono">
-                    {releaseTarget.start_address}
-                  </strong>{" "}
-                  will be removed from IPAM.
-                  {releaseTarget.source_type &&
-                  releaseTarget.source_type !== "manual" ? (
-                    <span className="mt-2 block">
-                      This address comes from{" "}
-                      <strong>
-                        {sourceSystemName(releaseTarget.source_type)}
-                      </strong>
-                      . It may be restored by the source during the next sync.
-                    </span>
-                  ) : null}
-                </>
-              )}
-            </>
-          ) : (
-            ""
-          )
-        }
-        confirmLabel="Release"
-        cancelLabel="Cancel"
+        description={releaseTarget ? (
+          <>
+            {releaseTarget.kind === "range"
+              ? tr("releaseRangeDescription", { range: `${releaseTarget.start_address} – ${releaseTarget.end_address}` })
+              : tr("releaseAddressDescription", { address: releaseTarget.start_address })}
+            {releaseTarget.kind === "address" && releaseTarget.source_type && releaseTarget.source_type !== "manual" ? (
+              <span className="mt-2 block">{tr("sourceRestoreWarning", { source: sourceSystemName(releaseTarget.source_type) })}</span>
+            ) : null}
+          </>
+        ) : ""}
+        confirmLabel={tr("release")}
+        cancelLabel={tr("cancel")}
         variant="destructive"
         onConfirm={() => {
           if (!releaseTarget) return;
@@ -693,10 +825,9 @@ export function NetworkDetailPage() {
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Reserve address space</DialogTitle>
+            <DialogTitle>{tr("reserveSpace")}</DialogTitle>
             <DialogDescription>
-              Add a single address or reserve a contiguous range. Detail fields
-              remain in the selected form.
+              {tr("reserveSpaceDescription")}
             </DialogDescription>
           </DialogHeader>
           <div className="inline-flex w-fit rounded-md border bg-muted/30 p-0.5">
@@ -706,7 +837,7 @@ export function NetworkDetailPage() {
               variant={addKind === "address" ? "secondary" : "ghost"}
               onClick={() => setAddKind("address")}
             >
-              Single address
+              {tr("singleAddress")}
             </Button>
             <Button
               type="button"
@@ -714,13 +845,14 @@ export function NetworkDetailPage() {
               variant={addKind === "range" ? "secondary" : "ghost"}
               onClick={() => setAddKind("range")}
             >
-              Range
+              {tr("range")}
             </Button>
           </div>
           {addKind === "address" ? (
             <AddressForm
               address={address}
               hostname={hostname}
+              macAddress={macAddress}
               description={description}
               serverId={serverId}
               status={addressStatus}
@@ -729,6 +861,7 @@ export function NetworkDetailPage() {
               submitting={reserve.isPending}
               onAddress={setAddress}
               onHostname={setHostname}
+              onMacAddress={setMacAddress}
               onDescription={setDescription}
               onServer={setServerId}
               onStatus={setAddressStatus}
@@ -752,10 +885,9 @@ export function NetworkDetailPage() {
       <Dialog open={syncOpen} onOpenChange={setSyncOpen}>
         <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-md overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Synchronize Proxmox IP addresses</DialogTitle>
+            <DialogTitle>{tr("syncProxmoxTitle")}</DialogTitle>
             <DialogDescription>
-              Guest addresses are read from the QEMU Guest Agent. Manually
-              managed records and ranges remain unchanged.
+              {tr("syncProxmoxDescription")}
             </DialogDescription>
           </DialogHeader>
           <select
@@ -771,7 +903,7 @@ export function NetworkDetailPage() {
           </select>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSyncOpen(false)}>
-              Cancel
+              {tr("cancel")}
             </Button>
             <Button
               onClick={() => syncProxmox.mutate()}
@@ -782,7 +914,7 @@ export function NetworkDetailPage() {
               ) : (
                 <ServerCog />
               )}
-              Synchronize
+              {tr("synchronize")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -804,11 +936,11 @@ function QueryLoadError({
         compact
         icon={<AlertTriangle className="h-5 w-5" />}
         title={`${label} could not be loaded`}
-        description="IPAM data is currently unavailable. No changes were made."
+        description={tr("queryLoadDescription")}
         action={
           <Button variant="outline" onClick={onRetry}>
             <RefreshCw />
-            Try again
+            {tr("tryAgain")}
           </Button>
         }
       />
@@ -819,9 +951,11 @@ function QueryLoadError({
 function ChildPrefixTable({
   rows,
   loading = false,
+  canEdit,
 }: {
   rows: Prefix[];
   loading?: boolean;
+  canEdit: boolean;
 }) {
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -841,14 +975,14 @@ function ChildPrefixTable({
     onSuccess: (_result, variables) => {
       setSelected(new Set());
       showToast(
-        `${variables.ids.length} child prefix${variables.ids.length === 1 ? "" : "es"} updated.`,
+        tr("childPrefixesUpdated", { count: variables.ids.length }),
         "success",
       );
       void queryClient.invalidateQueries({ queryKey: ["ipam"] });
     },
     onError: (error: Error) =>
       showToast(
-        error.message || "Status could not be updated.",
+        error.message || tr("statusUpdateFailed"),
         "error",
       ),
   });
@@ -865,17 +999,17 @@ function ChildPrefixTable({
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <Box className="h-4 w-4" />
-            Child prefixes
+            {tr("childPrefixes")}
           </CardTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Direkt untergeordnete Netzbereiche dieses Prefixes.
+            {tr("directChildrenDescription")}
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {selectedRows.length > 0 && (
+          {canEdit && selectedRows.length > 0 && (
             <>
               <span className="whitespace-nowrap text-xs font-medium tabular-nums">
-                {selectedRows.length} selected
+                {tr("selected", { count: selectedRows.length })}
               </span>
               <Button
                 size="sm"
@@ -888,7 +1022,7 @@ function ChildPrefixTable({
                   })
                 }
               >
-                Active
+                {tr("active")}
               </Button>
               <Button
                 size="sm"
@@ -901,7 +1035,7 @@ function ChildPrefixTable({
                   })
                 }
               >
-                Reserved
+                {tr("reserved")}
               </Button>
             </>
           )}
@@ -912,10 +1046,10 @@ function ChildPrefixTable({
       </CardHeader>
       <CardContent className="p-0">
         {loading ? (
-          <EmptyState compact title="Loading child prefixes…" />
+          <EmptyState compact title={tr("loadingChildren")} />
         ) : rows.length === 0 ? (
           <p className="p-8 text-sm text-muted-foreground">
-            No direct child prefixes.
+            {tr("noDirectChildren")}
           </p>
         ) : (
           <>
@@ -926,13 +1060,13 @@ function ChildPrefixTable({
                   className="flex gap-3 p-4"
                   data-selected={selected.has(child.id) || undefined}
                 >
-                  <input
+                  {canEdit && <input
                     className="mt-1"
                     type="checkbox"
-                    aria-label={`Select ${child.cidr}`}
+                    aria-label={tr("selectPrefix", { cidr: child.cidr })}
                     checked={selected.has(child.id)}
                     onChange={() => toggle(child.id)}
-                  />
+                  />}
                   <Link
                     to="/networks/$id"
                     params={{ id: child.id }}
@@ -947,7 +1081,7 @@ function ChildPrefixTable({
                         <p className="mt-1 truncate text-sm text-muted-foreground">
                           {child.name ||
                             child.description ||
-                            "No description"}
+                            tr("noDescription")}
                         </p>
                       </div>
                       <StatusBadge tone={statusTone(child.status)} dot>
@@ -956,11 +1090,11 @@ function ChildPrefixTable({
                     </div>
                     <div className="mt-3 flex justify-between text-xs text-muted-foreground">
                       <span>
-                        {child.vlan_id ? `VLAN ${child.vlan_id}` : "No VLAN"}{" "}
+                        {child.vlan_id ? `VLAN ${child.vlan_id}` : tr("noVlan")}{" "}
                         ·{" "}
                         <span className="font-mono">{child.bridge || "—"}</span>
                       </span>
-                      <span>{child.free_address_count} free</span>
+                      <span>{tr("freeCount", { count: child.free_address_count })}</span>
                     </div>
                   </Link>
                 </div>
@@ -973,10 +1107,10 @@ function ChildPrefixTable({
               >
                 <thead>
                   <tr>
-                    <th className="w-11 px-3">
+                    {canEdit && <th className="w-11 px-3">
                       <input
                         type="checkbox"
-                        aria-label="Select all child prefixes"
+                        aria-label={tr("selectAllChildren")}
                         checked={allSelected}
                         ref={(input) => {
                           if (input) input.indeterminate = someSelected;
@@ -989,13 +1123,13 @@ function ChildPrefixTable({
                           )
                         }
                       />
-                    </th>
-                    <th className="px-3">Prefix</th>
-                    <th className="px-3">Status</th>
-                    <th className="px-3">VLAN / Bridge</th>
-                    <th className="px-3">Free</th>
-                    <th className="px-3">Description</th>
-                    <th className="w-20 px-3 text-right">Open</th>
+                    </th>}
+                    <th className="px-3">{tr("prefixes")}</th>
+                    <th className="px-3">{tr("status")}</th>
+                    <th className="px-3">{tr("vlanBridge")}</th>
+                    <th className="px-3">{tr("free")}</th>
+                    <th className="px-3">{tr("descriptionLabel")}</th>
+                    <th className="w-20 px-3 text-right">{tr("open")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1004,14 +1138,14 @@ function ChildPrefixTable({
                       key={child.id}
                       data-selected={selected.has(child.id) || undefined}
                     >
-                      <td className="px-3">
+                      {canEdit && <td className="px-3">
                         <input
                           type="checkbox"
-                          aria-label={`Select ${child.cidr}`}
+                          aria-label={tr("selectPrefix", { cidr: child.cidr })}
                           checked={selected.has(child.id)}
                           onChange={() => toggle(child.id)}
                         />
-                      </td>
+                      </td>}
                       <td className="px-3">
                         <Link
                           to="/networks/$id"
@@ -1022,7 +1156,7 @@ function ChildPrefixTable({
                           {child.cidr}
                         </Link>
                         <div className="mt-0.5 text-xs text-muted-foreground">
-                          {child.name || "Unnamed"}
+                          {child.name || tr("noDescription")}
                         </div>
                       </td>
                       <td className="px-3">
@@ -1047,7 +1181,7 @@ function ChildPrefixTable({
                       <td className="px-3 text-right">
                         <Button asChild size="sm" variant="ghost">
                           <Link to="/networks/$id" params={{ id: child.id }}>
-                            Open
+                            {tr("open")}
                           </Link>
                         </Button>
                       </td>
@@ -1065,50 +1199,63 @@ function ChildPrefixTable({
 
 function AllocationTable({
   rows,
+  freeSegments,
   loading = false,
+  page,
+  pageSize,
+  total,
+  search,
+  statusFilter,
+  canEdit,
+  onPage,
+  onSearch,
+  onStatusFilter,
   onEdit,
   onRelease,
   onBulkRelease,
+  onReserveFirst,
+  onReserveRange,
 }: {
   rows: Allocation[];
+  freeSegments: FreeSpaceSegment[];
   loading?: boolean;
+  page: number;
+  pageSize: number;
+  total: number;
+  search: string;
+  statusFilter: string;
+  canEdit: boolean;
+  onPage: (page: number) => void;
+  onSearch: (value: string) => void;
+  onStatusFilter: (value: string) => void;
   onEdit: (row: Reservation) => void;
   onRelease: (row: Allocation) => void;
   onBulkRelease: (rows: Allocation[]) => Promise<void>;
+  onReserveFirst: (segment: FreeSpaceSegment) => void;
+  onReserveRange: (segment: FreeSpaceSegment) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmRelease, setConfirmRelease] = useState(false);
   const [releasing, setReleasing] = useState(false);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const keyFor = (row: Allocation) => `${row.kind}:${row.id}`;
-  const visibleRows = rows.filter((row) => {
-    const needle = search.trim().toLowerCase();
-    const searchable = [
-      row.start_address,
-      row.end_address,
-      row.hostname,
-      row.server_name,
-      row.description,
-      row.role,
-      row.source_type,
-      row.status,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return (
-      (!needle || searchable.includes(needle)) &&
-      (statusFilter === "all" || row.status === statusFilter)
-    );
-  });
-  const selectedRows = visibleRows.filter((row) => selected.has(keyFor(row)));
+  const visibleRows = rows;
+  const freeBefore = (row: Allocation) =>
+    freeSegments.filter((segment) => segment.before_allocation_key === keyFor(row));
+  const trailingFree = freeSegments.filter(
+    (segment) => segment.before_allocation_key === null,
+  );
+  const isProtected = (row: Allocation) =>
+    row.kind === "address" &&
+    (row.system_managed || Boolean(row.source_type && row.source_type !== "manual"));
+  const selectableRows = visibleRows.filter((row) => !isProtected(row));
+  const selectedRows = selectableRows.filter((row) => selected.has(keyFor(row)));
   const allSelected =
-    visibleRows.length > 0 && selectedRows.length === visibleRows.length;
+    selectableRows.length > 0 && selectedRows.length === selectableRows.length;
   const someSelected = selectedRows.length > 0 && !allSelected;
   const toggle = (row: Allocation) =>
     setSelected((current) => {
+      if (isProtected(row)) return current;
       const next = new Set(current);
       const key = keyFor(row);
       if (next.has(key)) next.delete(key);
@@ -1124,7 +1271,7 @@ function AllocationTable({
     } catch (error) {
       showToast(
         (error as Error).message ||
-          "Records could not be released.",
+          tr("releaseFailed"),
         "error",
       );
     } finally {
@@ -1138,19 +1285,19 @@ function AllocationTable({
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
               <Layers3 className="h-4 w-4" />
-              Used and reserved addresses
+              {tr("usedReserved")}
             </CardTitle>
             <p className="mt-1 text-sm font-normal text-muted-foreground">
-              Individual addresses and ranges in ascending IP order.
+              {tr("inventoryOrder")}
             </p>
           </div>
-          <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto">
+          <div className="flex w-full min-w-0 flex-1 flex-wrap items-center gap-2 lg:max-w-3xl lg:justify-end">
             <Input
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              className="h-9 min-w-[190px] flex-1 lg:w-56"
-              placeholder="Search address, host, or source…"
-              aria-label="Search address space"
+              onChange={(event) => onSearch(event.target.value)}
+              className="h-9 min-w-[280px] flex-1 lg:min-w-[380px]"
+              placeholder={tr("searchAllocations")}
+              aria-label={tr("addressSearchLabel")}
             />
             <Button
               type="button"
@@ -1159,9 +1306,9 @@ function AllocationTable({
               onClick={() => setFiltersOpen((open) => !open)}
             >
               <Settings2 />
-              Filter{statusFilter !== "all" ? ": 1" : ""}
+              {statusFilter !== "all" ? tr("filterCount", { count: 1 }) : tr("filter")}
             </Button>
-            {selectedRows.length > 0 && (
+            {canEdit && selectedRows.length > 0 && (
               <Button
                 type="button"
                 size="sm"
@@ -1169,7 +1316,7 @@ function AllocationTable({
                 onClick={() => setConfirmRelease(true)}
               >
                 <Trash2 />
-                Release {selectedRows.length}
+                {tr("release")} {selectedRows.length}
               </Button>
             )}
           </div>
@@ -1180,16 +1327,16 @@ function AllocationTable({
               htmlFor="allocation-status-filter"
               className="text-xs text-muted-foreground"
             >
-              Status
+              {tr("status")}
             </Label>
             <select
               id="allocation-status-filter"
               value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
+              onChange={(event) => onStatusFilter(event.target.value)}
               className="h-9 rounded-md border bg-background px-2 text-sm"
-              aria-label="Adressstatus filtern"
+              aria-label={tr("addressStatusFilterLabel")}
             >
-              <option value="all">All statuses</option>
+              <option value="all">{tr("allStatuses")}</option>
               {Object.entries(statusLabel).map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
@@ -1201,9 +1348,9 @@ function AllocationTable({
                 type="button"
                 size="sm"
                 variant="ghost"
-                onClick={() => setStatusFilter("all")}
+                onClick={() => onStatusFilter("all")}
               >
-                Reset
+                {tr("reset")}
               </Button>
             )}
           </div>
@@ -1211,41 +1358,58 @@ function AllocationTable({
       </CardHeader>
       <CardContent className="p-0">
         {loading ? (
-          <EmptyState compact title="Loading address inventory…" />
-        ) : rows.length === 0 ? (
+          <EmptyState compact title={tr("loadingInventory")} />
+        ) : rows.length === 0 && freeSegments.length === 0 ? (
           <p className="p-8 text-sm text-muted-foreground">
-            This prefix has no used addresses or ranges yet.
-          </p>
-        ) : visibleRows.length === 0 ? (
-          <p className="p-8 text-sm text-muted-foreground">
-            No records match the current search or
-            Statusfilter.
+            {search || statusFilter !== "all"
+              ? tr("emptyFilter")
+              : tr("emptyInventory")}
           </p>
         ) : (
           <>
             <div className="divide-y md:hidden">
               {visibleRows.map((row) => (
-                <AllocationMobileRow
-                  key={keyFor(row)}
-                  row={row}
-                  checked={selected.has(keyFor(row))}
-                  onToggle={() => toggle(row)}
-                  onEdit={onEdit}
-                  onRelease={onRelease}
+                <Fragment key={keyFor(row)}>
+                  {freeBefore(row).map((segment) => (
+                    <FreeSpaceMobileRow
+                      key={`${segment.start_address}-${segment.end_address}`}
+                      segment={segment}
+                      onReserveFirst={onReserveFirst}
+                      onReserveRange={onReserveRange}
+                      canEdit={canEdit}
+                    />
+                  ))}
+                  <AllocationMobileRow
+                    row={row}
+                    checked={selected.has(keyFor(row))}
+                    onToggle={() => toggle(row)}
+                    onEdit={onEdit}
+                    onRelease={onRelease}
+                    canEdit={canEdit}
+                  />
+                </Fragment>
+              ))}
+              {trailingFree.map((segment) => (
+                <FreeSpaceMobileRow
+                  key={`${segment.start_address}-${segment.end_address}`}
+                  segment={segment}
+                  onReserveFirst={onReserveFirst}
+                  onReserveRange={onReserveRange}
+                  canEdit={canEdit}
                 />
               ))}
             </div>
             <div className="table-scroll hidden md:block">
               <table
-                className="w-full min-w-[820px] text-sm"
+                className="w-full min-w-[980px] text-sm"
                 data-density="compact"
               >
                 <thead>
                   <tr>
-                    <th className="w-11 px-3">
+                    {canEdit && <th className="w-11 px-3">
                       <input
                         type="checkbox"
-                        aria-label="Select all visible address-space records"
+                        aria-label={tr("selectAllAllocations")}
                         checked={allSelected}
                         ref={(input) => {
                           if (input) input.indeterminate = someSelected;
@@ -1254,17 +1418,18 @@ function AllocationTable({
                           setSelected(
                             allSelected
                               ? new Set()
-                              : new Set(visibleRows.map(keyFor)),
+                              : new Set(selectableRows.map(keyFor)),
                           )
                         }
                       />
-                    </th>
-                    <th className="px-3">Address / range</th>
-                    <th className="px-3">Type</th>
-                    <th className="px-3">Status</th>
-                    <th className="px-3">Assigned to</th>
-                    <th className="px-3">Description</th>
-                    <th className="w-24 px-3 text-right">Actions</th>
+                    </th>}
+                    <th className="px-3">{tr("addressRange")}</th>
+                    <th className="px-3">{tr("status")}</th>
+                    <th className="px-3">{tr("assignedTo")}</th>
+                    <th className="px-3">{tr("source")}</th>
+                    <th className="px-3">{tr("macAddress")}</th>
+                    <th className="px-3">{tr("descriptionLabel")}</th>
+                    {canEdit && <th className="w-24 px-3 text-right">{tr("actions")}</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1275,37 +1440,39 @@ function AllocationTable({
                       : `${row.start_address} – ${row.end_address}`;
                     const checked = selected.has(keyFor(row));
                     const conflicts = isAddress ? row.conflicts || [] : [];
-                    const sourceLabel = isAddress ? sourceSyncLabel(row) : null;
                     return (
-                      <tr
-                        key={keyFor(row)}
-                        data-selected={checked || undefined}
-                      >
-                        <td className="px-3">
+                      <Fragment key={keyFor(row)}>
+                        {freeBefore(row).map((segment) => (
+                          <FreeSpaceTableRow
+                            key={`${segment.start_address}-${segment.end_address}`}
+                            segment={segment}
+                            onReserveFirst={onReserveFirst}
+                            onReserveRange={onReserveRange}
+                            canEdit={canEdit}
+                          />
+                        ))}
+                      <tr data-selected={checked || undefined}>
+                        {canEdit && <td className="px-3">
                           <input
                             type="checkbox"
-                            aria-label={`Select ${label}`}
+                            aria-label={tr("selectAllocation", { allocation: label })}
                             checked={checked}
+                            disabled={isProtected(row)}
                             onChange={() => toggle(row)}
                           />
-                        </td>
+                        </td>}
                         <td className="px-3">
                           <span className="font-mono font-medium">{label}</span>
                           {!isAddress && (
                             <div className="mt-0.5 text-[11px] text-muted-foreground">
-                              {row.address_count} addresses
+                              {tr("addressCount", { count: row.address_count })}
                             </div>
                           )}
-                          {sourceLabel && (
-                            <div className="mt-0.5 text-[10px] text-muted-foreground">
-                              Synchronized from {sourceLabel}
-                            </div>
+                          {!isAddress && (
+                            <Badge variant="outline" className="mt-1 w-fit">
+                              {tr("range")}
+                            </Badge>
                           )}
-                        </td>
-                        <td className="px-3">
-                          <Badge variant="outline" className="w-fit">
-                            {isAddress ? "Single IP" : "Range"}
-                          </Badge>
                         </td>
                         <td className="px-3">
                           <div className="flex flex-wrap items-center gap-1">
@@ -1318,7 +1485,7 @@ function AllocationTable({
                                 className="inline-flex items-center gap-1 rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive"
                               >
                                 <AlertTriangle className="h-3 w-3" />
-                                Conflict
+                                {tr("conflict")}
                               </span>
                             )}
                           </div>
@@ -1332,63 +1499,98 @@ function AllocationTable({
                             >
                               {row.server_name ||
                                 row.hostname ||
-                                "Open Fleet host"}
+                                tr("openManagedHost")}
                             </Link>
                           ) : (
-                            <span className="block truncate">
+                            <span
+                              className={
+                                isAddress && (row.server_name || row.hostname)
+                                  ? "block truncate font-semibold text-foreground"
+                                  : "block truncate text-muted-foreground"
+                              }
+                            >
                               {isAddress
                                 ? row.server_name || row.hostname || "—"
                                 : row.role || "—"}
                             </span>
                           )}
                         </td>
+                        <td className="max-w-[230px] px-3">
+                          <SourceBadges row={row} />
+                        </td>
+                        <td className="px-3">
+                          <span className="font-mono text-xs">
+                            {isAddress ? row.mac_address || "—" : "—"}
+                          </span>
+                        </td>
                         <td className="max-w-[240px] px-3">
-                          <span className="block truncate text-muted-foreground">
+                          <span
+                            className="block truncate text-muted-foreground"
+                            title={conflicts.length ? conflicts.join(" · ") : row.description || undefined}
+                          >
                             {conflicts.length
                               ? conflicts.join(" · ")
                               : row.description || "—"}
                           </span>
                         </td>
-                        <td className="px-3">
+                        {canEdit && <td className="px-3">
                           <div className="flex justify-end gap-1">
-                            {isAddress && (
+                            {isAddress && !isProtected(row) && (
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => onEdit(row as Reservation)}
-                                aria-label={`Edit ${row.start_address}`}
+                                aria-label={tr("editAllocation", { allocation: row.start_address })}
                               >
                                 <Pencil className="h-4 w-4" />
                               </Button>
                             )}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => onRelease(row)}
-                              aria-label={`Release ${label}`}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
+                            {!isProtected(row) && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => onRelease(row)}
+                                aria-label={tr("releaseAllocation", { allocation: label })}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            )}
                           </div>
-                        </td>
+                        </td>}
                       </tr>
+                      </Fragment>
                     );
                   })}
+                  {trailingFree.map((segment) => (
+                    <FreeSpaceTableRow
+                      key={`${segment.start_address}-${segment.end_address}`}
+                      segment={segment}
+                      onReserveFirst={onReserveFirst}
+                      onReserveRange={onReserveRange}
+                      canEdit={canEdit}
+                    />
+                  ))}
                 </tbody>
               </table>
             </div>
           </>
         )}
       </CardContent>
+      <TablePagination
+        page={page}
+        pageSize={pageSize}
+        totalItems={total}
+        onPageChange={onPage}
+        disabled={loading}
+        itemLabel={tr("allocationsPagination")}
+      />
       <ConfirmDialog
         open={confirmRelease}
         onOpenChange={setConfirmRelease}
-        title="Release selected records?"
+        title={tr("releaseSelectedTitle")}
         description={
           <>
-            You are releasing <strong>{selectedRows.length}</strong> reserved
-            {selectedRows.length === 1 ? " address or range" : " addresses or ranges"}.
-            This action cannot be undone.
+            {tr("releaseSelectedDescription", { count: selectedRows.length })}
             {selectedRows.some(
               (row) =>
                 row.kind === "address" &&
@@ -1396,19 +1598,186 @@ function AllocationTable({
                 row.source_type !== "manual",
             ) ? (
               <span className="mt-2 block">
-                Some selected addresses are managed by external sources. They
-                may be restored during the next synchronization.
+                {tr("externalReleaseWarning")}
               </span>
             ) : null}
           </>
         }
-        confirmLabel="Release"
-        cancelLabel="Cancel"
+        confirmLabel={tr("release")}
+        cancelLabel={tr("cancel")}
         variant="destructive"
         onConfirm={releaseSelected}
         isPending={releasing}
       />
     </Card>
+  );
+}
+
+function FreeSpaceLabel({ segment }: { segment: FreeSpaceSegment }) {
+  return (
+    <div className="min-w-0 text-left text-xs">
+      <div className="font-semibold text-emerald-700 dark:text-emerald-300">
+        {tr("freeAddresses", { count: segment.address_count })}
+      </div>
+      <div className="mt-0.5 truncate font-mono text-muted-foreground">
+        {segment.start_address === segment.end_address
+          ? segment.start_address
+          : `${segment.start_address} – ${segment.end_address}`}
+      </div>
+    </div>
+  );
+}
+
+function FreeSpaceActions({
+  segment,
+  onReserveFirst,
+  onReserveRange,
+}: {
+  segment: FreeSpaceSegment;
+  onReserveFirst: (segment: FreeSpaceSegment) => void;
+  onReserveRange: (segment: FreeSpaceSegment) => void;
+}) {
+  return (
+    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        onClick={() => onReserveFirst(segment)}
+      >
+        <Plus />
+        {tr("reserveFirstIp")}
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        onClick={() => onReserveRange(segment)}
+      >
+        {tr("reserveFreeRange")}
+      </Button>
+    </div>
+  );
+}
+
+function FreeSpaceTableRow({
+  segment,
+  onReserveFirst,
+  onReserveRange,
+  canEdit,
+}: {
+  segment: FreeSpaceSegment;
+  onReserveFirst: (segment: FreeSpaceSegment) => void;
+  onReserveRange: (segment: FreeSpaceSegment) => void;
+  canEdit: boolean;
+}) {
+  return (
+    <tr className="bg-emerald-500/[0.025]" aria-label={tr("freeSectionAria", { count: segment.address_count })}>
+      <td colSpan={canEdit ? 8 : 6} className="px-4 py-2">
+        <div className="flex items-center justify-between gap-4">
+          <FreeSpaceLabel segment={segment} />
+          {canEdit && <FreeSpaceActions
+            segment={segment}
+            onReserveFirst={onReserveFirst}
+            onReserveRange={onReserveRange}
+          />}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function FreeSpaceMobileRow({
+  segment,
+  onReserveFirst,
+  onReserveRange,
+  canEdit,
+}: {
+  segment: FreeSpaceSegment;
+  onReserveFirst: (segment: FreeSpaceSegment) => void;
+  onReserveRange: (segment: FreeSpaceSegment) => void;
+  canEdit: boolean;
+}) {
+  return (
+    <div className="space-y-2 bg-emerald-500/[0.025] px-4 py-3">
+      <FreeSpaceLabel segment={segment} />
+      {canEdit && <FreeSpaceActions
+        segment={segment}
+        onReserveFirst={onReserveFirst}
+        onReserveRange={onReserveRange}
+      />}
+    </div>
+  );
+}
+
+function isStaleTimestamp(value?: string | null) {
+  if (!value) return false;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) && Date.now() - timestamp > 60 * 60 * 1000;
+}
+
+function SourceBadges({ row }: { row: Allocation }) {
+  if (row.kind !== "address") return <span className="text-muted-foreground">—</span>;
+  const primarySystem = sourceSystemName(row.source_type);
+  const primaryName = row.source_name || primarySystem;
+  const primaryIsStale = isStaleTimestamp(row.last_synced_at);
+  const observations = Array.isArray(row.source_observations)
+    ? row.source_observations
+    : (row.observed_sources || []).map((name) => ({
+        name,
+        type: "",
+        last_seen_at: null,
+      }));
+  const distinctObservations = observations.filter(
+    (source, index, all) =>
+      !(source.type === row.source_type && source.name === primaryName) &&
+      all.findIndex(
+        (candidate) =>
+          candidate.type === source.type && candidate.name === source.name,
+      ) === index,
+  );
+  return (
+    <div className="flex flex-wrap gap-1">
+      {row.source_type === "system" || row.system_managed ? (
+        <Badge variant="secondary" title={tr("systemSourceTitle")}>
+          <LockKeyhole className="h-3 w-3" />
+          {tr("systemSource")}
+        </Badge>
+      ) : row.source_type && row.source_type !== "manual" ? (
+        <Badge
+          variant={primaryIsStale ? "warning" : "secondary"}
+          title={tr("managedSourceTitle", {
+            name: primaryName || primarySystem,
+            date: row.last_synced_at
+              ? new Date(row.last_synced_at).toLocaleString()
+              : tr("unknownTime"),
+          })}
+        >
+          <LockKeyhole className="h-3 w-3" />
+          {tr("managedBy", { source: primarySystem || primaryName })}
+        </Badge>
+      ) : (
+        <Badge variant="outline">{tr("manualSource")}</Badge>
+      )}
+      {distinctObservations.map((source) => {
+        const system = sourceSystemName(source.type) || source.name;
+        const stale = isStaleTimestamp(source.last_seen_at);
+        return (
+          <Badge
+            key={`${source.type}:${source.name}`}
+            variant={stale ? "warning" : "outline"}
+            title={tr("observedSourceTitle", {
+              name: source.name,
+              date: source.last_seen_at
+                ? new Date(source.last_seen_at).toLocaleString()
+                : tr("unknownTime"),
+            })}
+          >
+            {tr("observedBy", { source: system })}
+          </Badge>
+        );
+      })}
+    </div>
   );
 }
 
@@ -1418,50 +1787,48 @@ function AllocationMobileRow({
   onToggle,
   onEdit,
   onRelease,
+  canEdit,
 }: {
   row: Allocation;
   checked: boolean;
   onToggle: () => void;
   onEdit: (row: Reservation) => void;
   onRelease: (row: Allocation) => void;
+  canEdit: boolean;
 }) {
   const isAddress = row.kind === "address";
   const label = isAddress
     ? row.start_address
     : `${row.start_address} – ${row.end_address}`;
   const conflicts = isAddress ? row.conflicts || [] : [];
-  const sourceLabel = isAddress ? sourceSyncLabel(row) : null;
+  const protectedRow =
+    isAddress &&
+    (row.system_managed || Boolean(row.source_type && row.source_type !== "manual"));
   return (
     <div className="space-y-3 p-4" data-selected={checked || undefined}>
       <div className="flex items-start gap-3">
-        <input
+        {canEdit && <input
           className="mt-1"
           type="checkbox"
-          aria-label={`Select ${label}`}
+          aria-label={tr("selectAllocation", { allocation: label })}
           checked={checked}
+          disabled={protectedRow}
           onChange={onToggle}
-        />
+        />}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono font-medium">{label}</span>
-            <Badge variant="outline">
-              {isAddress ? "Single IP" : "Range"}
-            </Badge>
+            {!isAddress && <Badge variant="outline">{tr("range")}</Badge>}
             {conflicts.length > 0 && (
               <span className="inline-flex items-center gap-1 rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive">
                 <AlertTriangle className="h-3 w-3" />
-                Conflict
+                {tr("conflict")}
               </span>
             )}
           </div>
           {!isAddress && (
             <p className="mt-1 text-xs text-muted-foreground">
-              {row.address_count} addresses
-            </p>
-          )}
-          {sourceLabel && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              Synchronized from {sourceLabel}
+              {tr("addressCount", { count: row.address_count })}
             </p>
           )}
         </div>
@@ -1471,14 +1838,14 @@ function AllocationMobileRow({
       </div>
       <div className="ml-7 grid gap-1 text-xs">
         <span className="text-muted-foreground">
-          Assigned to:{" "}
+          {tr("assignedToLabel")}
           {isAddress && row.server_id ? (
             <Link
               to="/servers/$id"
               params={{ id: row.server_id }}
               className="font-medium text-primary hover:underline"
             >
-              {row.server_name || row.hostname || "Open Fleet host"}
+              {row.server_name || row.hostname || tr("openManagedHost")}
             </Link>
           ) : (
             <span className="text-foreground">
@@ -1488,33 +1855,42 @@ function AllocationMobileRow({
             </span>
           )}
         </span>
+        {isAddress && row.mac_address && (
+          <span className="text-muted-foreground">
+            {tr("macAddressLabel")}
+            <span className="font-mono text-foreground">{row.mac_address}</span>
+          </span>
+        )}
+        <SourceBadges row={row} />
         {(conflicts.length > 0 || row.description) && (
           <span className="text-muted-foreground">
             {conflicts.length ? conflicts.join(" · ") : row.description}
           </span>
         )}
       </div>
-      <div className="ml-7 flex gap-2">
-        {isAddress && (
+      {canEdit && <div className="ml-7 flex gap-2">
+        {isAddress && !protectedRow && (
           <Button
             variant="outline"
             size="sm"
             onClick={() => onEdit(row as Reservation)}
           >
             <Pencil />
-            Edit
+            {tr("edit")}
           </Button>
         )}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-destructive hover:text-destructive"
-          onClick={() => onRelease(row)}
-        >
-          <Trash2 />
-          Freigeben
-        </Button>
-      </div>
+        {!protectedRow && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            onClick={() => onRelease(row)}
+          >
+            <Trash2 />
+            {tr("release")}
+          </Button>
+        )}
+      </div>}
     </div>
   );
 }
@@ -1525,13 +1901,11 @@ function SyncConflictPanel({ rows }: { rows: SyncConflict[] }) {
       <CardHeader className="border-b bg-destructive/[0.04] py-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <AlertTriangle className="h-4 w-4 text-destructive" />
-          Synchronization conflicts{" "}
+          {tr("syncConflictsTitle")}{" "}
           <Badge variant="destructive">{rows.length}</Badge>
         </CardTitle>
         <p className="text-sm font-normal text-muted-foreground">
-          Fleet left the existing IPAM assignment unchanged. Check the source
-          or correct the existing address before trying again
-          synchronisierst.
+          {tr("syncConflictsDescription")}
         </p>
       </CardHeader>
       <CardContent className="p-0">
@@ -1546,10 +1920,10 @@ function SyncConflictPanel({ rows }: { rows: SyncConflict[] }) {
                 <Badge variant="outline">{row.source_name}</Badge>
               </div>
               <p className="text-muted-foreground">
-                Observed: {row.hostname || "no hostname"}
+                {tr("observed")}: {row.hostname || tr("noHostname")}
               </p>
               <p className="text-muted-foreground">
-                Bestehend:{" "}
+                {tr("existing")}:{" "}
                 {row.existing_server_id ? (
                   <Link
                     to="/servers/$id"
@@ -1563,7 +1937,7 @@ function SyncConflictPanel({ rows }: { rows: SyncConflict[] }) {
                 ) : (
                   row.existing_hostname ||
                   row.existing_address ||
-                  "no longer present"
+                  tr("noLongerPresent")
                 )}
               </p>
               <p className="text-destructive">{row.reason}</p>
@@ -1577,12 +1951,12 @@ function SyncConflictPanel({ rows }: { rows: SyncConflict[] }) {
           >
             <thead>
               <tr>
-                <th className="px-3">Address</th>
-                <th className="px-3">Source</th>
-                <th className="px-3">Beobachtet</th>
-                <th className="px-3">Existing assignment</th>
-                <th className="px-3">Grund</th>
-                <th className="px-3">Zuletzt gesehen</th>
+                <th className="px-3">{tr("address")}</th>
+                <th className="px-3">{tr("source")}</th>
+                <th className="px-3">{tr("observed")}</th>
+                <th className="px-3">{tr("existingAssignment")}</th>
+                <th className="px-3">{tr("reason")}</th>
+                <th className="px-3">{tr("lastSeen")}</th>
               </tr>
             </thead>
             <tbody>
@@ -1610,7 +1984,7 @@ function SyncConflictPanel({ rows }: { rows: SyncConflict[] }) {
                     ) : (
                       row.existing_hostname ||
                       row.existing_address ||
-                      "No longer present"
+                      tr("noLongerPresent")
                     )}
                   </td>
                   <td className="max-w-[24rem] px-3">
@@ -1639,6 +2013,7 @@ function SyncConflictPanel({ rows }: { rows: SyncConflict[] }) {
 function AddressForm({
   address,
   hostname,
+  macAddress,
   description,
   serverId,
   status,
@@ -1647,6 +2022,7 @@ function AddressForm({
   submitting,
   onAddress,
   onHostname,
+  onMacAddress,
   onDescription,
   onServer,
   onStatus,
@@ -1655,6 +2031,7 @@ function AddressForm({
 }: {
   address: string;
   hostname: string;
+  macAddress: string;
   description: string;
   serverId: string;
   status: string;
@@ -1663,6 +2040,7 @@ function AddressForm({
   submitting: boolean;
   onAddress: (value: string) => void;
   onHostname: (value: string) => void;
+  onMacAddress: (value: string) => void;
   onDescription: (value: string) => void;
   onServer: (value: string) => void;
   onStatus: (value: string) => void;
@@ -1678,7 +2056,7 @@ function AddressForm({
       }}
     >
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="IP address">
+        <Field label={tr("ipAddress")}>
           <Input
             required
             autoFocus
@@ -1688,46 +2066,56 @@ function AddressForm({
             inputMode="decimal"
           />
         </Field>
-        <Field label="Hostname">
+        <Field label={tr("hostname")}>
           <Input
             value={hostname}
             onChange={(event) => onHostname(event.target.value)}
-            placeholder="z. B. app-01"
+            placeholder={tr("hostnameExample")}
           />
         </Field>
-        <Field label="Status">
+        <Field label={tr("macAddress")}>
+          <Input
+            value={macAddress}
+            onChange={(event) => onMacAddress(event.target.value)}
+            placeholder="02:00:00:00:00:01"
+            autoComplete="off"
+          />
+        </Field>
+        <Field label={tr("status")}>
           <select
             value={status}
             onChange={(event) => onStatus(event.target.value)}
             className="h-8 w-full rounded-sm border bg-background px-2.5 text-[13px]"
           >
-            <option value="active">Active</option>
-            <option value="reserved">Reserved</option>
-            <option value="dhcp">DHCP</option>
-            <option value="deprecated">Deprecated</option>
+            <option value="active">{tr("active")}</option>
+            <option value="reserved">{tr("reserved")}</option>
+            <option value="deprecated">{tr("deprecated")}</option>
           </select>
         </Field>
-        <Field label="Role">
+        <p className="sm:col-span-2 rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+          {tr("dhcpStatusManagedHint")}
+        </p>
+        <Field label={tr("role")}>
           <select
             value={role}
             onChange={(event) => onRole(event.target.value)}
             className="h-8 w-full rounded-sm border bg-background px-2.5 text-[13px]"
           >
-            <option value="">No role</option>
-            <option value="gateway">Gateway</option>
-            <option value="vip">VIP</option>
-            <option value="secondary">Secondary</option>
-            <option value="loopback">Loopback</option>
+            <option value="">{tr("noRole")}</option>
+            <option value="gateway">{tr("gatewayRole")}</option>
+            <option value="vip">{tr("vipRole")}</option>
+            <option value="secondary">{tr("secondaryRole")}</option>
+            <option value="loopback">{tr("loopbackRole")}</option>
           </select>
         </Field>
         <div className="sm:col-span-2">
-          <Field label="Fleet-Host">
+          <Field label={tr("fleetHost")}>
             <select
               value={serverId}
               onChange={(event) => onServer(event.target.value)}
               className="h-8 w-full rounded-sm border bg-background px-2.5 text-[13px]"
             >
-              <option value="">Not assigned</option>
+              <option value="">{tr("notAssigned")}</option>
               {servers.map((server) => (
                 <option key={server.id} value={server.id}>
                   {server.name}
@@ -1738,11 +2126,11 @@ function AddressForm({
           </Field>
         </div>
         <div className="sm:col-span-2">
-          <Field label="Description">
+          <Field label={tr("descriptionLabel")}>
             <Input
               value={description}
               onChange={(event) => onDescription(event.target.value)}
-              placeholder="Purpose, service, or owner"
+              placeholder={tr("purposePlaceholder")}
             />
           </Field>
         </div>
@@ -1750,7 +2138,7 @@ function AddressForm({
       <DialogFooter>
         <Button type="submit" disabled={submitting}>
           <Plus />
-          Add IP address
+          {tr("addIp")}
         </Button>
       </DialogFooter>
     </form>
@@ -1785,7 +2173,7 @@ function RangeForm({
       }}
     >
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="First address">
+        <Field label={tr("firstAddress")}>
           <Input
             required
             autoFocus
@@ -1795,7 +2183,7 @@ function RangeForm({
             inputMode="decimal"
           />
         </Field>
-        <Field label="Last address">
+        <Field label={tr("lastAddress")}>
           <Input
             required
             value={end}
@@ -1805,27 +2193,37 @@ function RangeForm({
           />
         </Field>
         <div className="sm:col-span-2">
-          <Field label="Description">
+          <Field label={tr("descriptionLabel")}>
             <Input
               value={description}
               onChange={(event) => onDescription(event.target.value)}
-              placeholder="e.g. DHCP pool, printers, or reserve"
+              placeholder={tr("rangePurposePlaceholder")}
             />
           </Field>
         </div>
       </div>
       <p className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-        The range is managed as one IPAM object and appears together with
-        individual addresses in the address space.
+        {tr("rangeObjectHint")}
       </p>
       <DialogFooter>
         <Button type="submit" variant="secondary" disabled={submitting}>
           <Plus />
-          Reserve range
+          {tr("reserveRange")}
         </Button>
       </DialogFooter>
     </form>
   );
+}
+
+function editableReservationValue(reservation: Reservation | null) {
+  return reservation
+    ? {
+        ...reservation,
+        status:
+          reservation.configured_status ||
+          (reservation.status === "dhcp" ? "active" : reservation.status),
+      }
+    : null;
 }
 
 function EditAddressDialog({
@@ -1843,9 +2241,11 @@ function EditAddressDialog({
   onSave: (reservation: Reservation) => void;
   saving: boolean;
 }) {
-  const [value, setValue] = useState<Reservation | null>(reservation);
+  const [value, setValue] = useState<Reservation | null>(
+    editableReservationValue(reservation),
+  );
   useEffect(() => {
-    setValue(reservation);
+    setValue(editableReservationValue(reservation));
   }, [reservation]);
   if (!value) return null;
   const sourceName = sourceSystemName(value.source_type);
@@ -1853,23 +2253,21 @@ function EditAddressDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Edit IP address</DialogTitle>
+          <DialogTitle>{tr("editAddress")}</DialogTitle>
           <DialogDescription>
-            Change the core data, assignment, and status of this address.
+            {tr("changeAddressDescription")}
           </DialogDescription>
         </DialogHeader>
         {sourceName && value.source_type !== "manual" ? (
           <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-sm text-foreground">
-            <strong>Synchronized from {sourceName}.</strong>
+            <strong>{tr("syncedFrom", { source: sourceName })}</strong>
             <span className="mt-1 block text-muted-foreground">
-              Hostname, MAC address, status, and description may be updated by
-              the source during the next synchronization. Maintain these values
-              permanently in the source.
+              {tr("syncedEditWarning")}
             </span>
           </div>
         ) : null}
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="IP address">
+          <Field label={tr("ipAddress")}>
             <Input
               value={value.address}
               onChange={(event) =>
@@ -1877,7 +2275,7 @@ function EditAddressDialog({
               }
             />
           </Field>
-          <Field label="Status">
+          <Field label={tr("status")}>
             <select
               value={value.status}
               onChange={(event) =>
@@ -1885,22 +2283,21 @@ function EditAddressDialog({
               }
               className="h-8 w-full rounded-sm border bg-background px-2.5 text-[13px]"
             >
-              <option value="active">Active</option>
-              <option value="reserved">Reserved</option>
-              <option value="dhcp">DHCP</option>
-              <option value="deprecated">Deprecated</option>
+              <option value="active">{tr("active")}</option>
+              <option value="reserved">{tr("reserved")}</option>
+              <option value="deprecated">{tr("deprecated")}</option>
             </select>
           </Field>
-          <Field label="Hostname">
+          <Field label={tr("hostname")}>
             <Input
               value={value.hostname || ""}
               onChange={(event) =>
                 setValue({ ...value, hostname: event.target.value })
               }
-              placeholder="app-01"
+              placeholder={tr("hostnameExample")}
             />
           </Field>
-          <Field label="MAC address">
+          <Field label={tr("macAddress")}>
             <Input
               value={value.mac_address || ""}
               onChange={(event) =>
@@ -1909,7 +2306,7 @@ function EditAddressDialog({
               placeholder="52:54:00:12:34:56"
             />
           </Field>
-          <Field label="Role">
+          <Field label={tr("role")}>
             <select
               value={value.role || ""}
               onChange={(event) =>
@@ -1917,14 +2314,14 @@ function EditAddressDialog({
               }
               className="h-8 w-full rounded-sm border bg-background px-2.5 text-[13px]"
             >
-              <option value="">No role</option>
-              <option value="gateway">Gateway</option>
-              <option value="vip">VIP</option>
-              <option value="secondary">Secondary</option>
-              <option value="loopback">Loopback</option>
+              <option value="">{tr("noRole")}</option>
+              <option value="gateway">{tr("gatewayRole")}</option>
+              <option value="vip">{tr("vipRole")}</option>
+              <option value="secondary">{tr("secondaryRole")}</option>
+              <option value="loopback">{tr("loopbackRole")}</option>
             </select>
           </Field>
-          <Field label="Fleet-Host">
+          <Field label={tr("fleetHost")}>
             <select
               value={value.server_id || ""}
               onChange={(event) =>
@@ -1935,7 +2332,7 @@ function EditAddressDialog({
               }
               className="h-8 w-full rounded-sm border bg-background px-2.5 text-[13px]"
             >
-              <option value="">Not assigned</option>
+              <option value="">{tr("notAssigned")}</option>
               {servers.map((server) => (
                 <option key={server.id} value={server.id}>
                   {server.name}
@@ -1944,7 +2341,7 @@ function EditAddressDialog({
             </select>
           </Field>
           <div className="sm:col-span-2">
-            <Field label="Description">
+            <Field label={tr("descriptionLabel")}>
               <Input
                 value={value.description || ""}
                 onChange={(event) =>
@@ -1954,15 +2351,115 @@ function EditAddressDialog({
             </Field>
           </div>
         </div>
+        {reservation?.status === "dhcp" && (
+          <p className="rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-muted-foreground">
+            {tr("dhcpAddressHint")}
+          </p>
+        )}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {tr("cancel")}
           </Button>
           <Button onClick={() => onSave(value)} disabled={saving}>
             <Pencil />
-            Save
+            {tr("save")}
           </Button>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditPrefixDialog({
+  prefix,
+  open,
+  onOpenChange,
+  onSave,
+  saving,
+}: {
+  prefix: Prefix;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSave: (value: Partial<Prefix>) => void;
+  saving: boolean;
+}) {
+  const [value, setValue] = useState({
+    name: prefix.name,
+    gateway: prefix.gateway || "",
+    dhcpStart: prefix.dhcp_start || "",
+    dhcpEnd: prefix.dhcp_end || "",
+    dns: (prefix.dns_servers || []).join(", "),
+    vlan: prefix.vlan_id == null ? "" : String(prefix.vlan_id),
+    bridge: prefix.bridge || "",
+    description: prefix.description || "",
+    status: prefix.status,
+    role: prefix.role || "",
+  });
+  useEffect(() => {
+    if (!open) return;
+    setValue({
+      name: prefix.name,
+      gateway: prefix.gateway || "",
+      dhcpStart: prefix.dhcp_start || "",
+      dhcpEnd: prefix.dhcp_end || "",
+      dns: (prefix.dns_servers || []).join(", "),
+      vlan: prefix.vlan_id == null ? "" : String(prefix.vlan_id),
+      bridge: prefix.bridge || "",
+      description: prefix.description || "",
+      status: prefix.status,
+      role: prefix.role || "",
+    });
+  }, [open, prefix]);
+  const change = (key: keyof typeof value, next: string) =>
+    setValue((current) => ({ ...current, [key]: next }));
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{tr("editPrefix")}</DialogTitle>
+          <DialogDescription>
+            {tr("editPrefixDescription", { cidr: prefix.cidr })}
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="grid gap-4 sm:grid-cols-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSave({
+              name: value.name,
+              gateway: value.gateway,
+              dhcp_start: value.dhcpStart,
+              dhcp_end: value.dhcpEnd,
+              dns_servers: value.dns.split(",").map((item) => item.trim()).filter(Boolean),
+              vlan_id: value.vlan ? Number(value.vlan) : null,
+              bridge: value.bridge,
+              description: value.description,
+              status: value.status,
+              role: value.role,
+            });
+          }}
+        >
+          <Field label={tr("name")}><Input required value={value.name} onChange={(event) => change("name", event.target.value)} /></Field>
+          <Field label={tr("cidr")}><Input value={prefix.cidr} disabled /></Field>
+          <Field label={tr("status")}>
+            <select value={value.status} onChange={(event) => change("status", event.target.value)} className="h-8 w-full rounded-sm border bg-background px-2.5 text-[13px]">
+              <option value="active">{tr("active")}</option><option value="container">{tr("container")}</option><option value="reserved">{tr("reserved")}</option><option value="deprecated">{tr("deprecated")}</option>
+            </select>
+          </Field>
+          <Field label={tr("role")}><Input value={value.role} onChange={(event) => change("role", event.target.value)} /></Field>
+          <Field label={tr("gateway")}><Input value={value.gateway} onChange={(event) => change("gateway", event.target.value)} /></Field>
+          <Field label={tr("dhcpStart")}><Input inputMode="decimal" value={value.dhcpStart} onChange={(event) => change("dhcpStart", event.target.value)} placeholder="10.20.10.100" /></Field>
+          <Field label={tr("dhcpEnd")}><Input inputMode="decimal" value={value.dhcpEnd} onChange={(event) => change("dhcpEnd", event.target.value)} placeholder="10.20.10.200" /></Field>
+          <p className="sm:col-span-2 rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">{tr("dhcpRangeHint")}</p>
+          <Field label={tr("dnsServers")}><Input value={value.dns} onChange={(event) => change("dns", event.target.value)} placeholder="10.20.10.10, 10.20.10.11" /></Field>
+          <Field label={tr("vlanId")}><Input inputMode="numeric" value={value.vlan} onChange={(event) => change("vlan", event.target.value)} /></Field>
+          <Field label={tr("bridge")}><Input value={value.bridge} onChange={(event) => change("bridge", event.target.value)} /></Field>
+          <div className="sm:col-span-2"><Field label={tr("descriptionLabel")}><Input value={value.description} onChange={(event) => change("description", event.target.value)} /></Field></div>
+          <DialogFooter className="sm:col-span-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{tr("cancel")}</Button>
+            <Button type="submit" disabled={saving}><Pencil />{tr("savePrefix")}</Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

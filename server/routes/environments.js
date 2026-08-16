@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { getPermissions, canAccessEnvironment } = require('../utils/permissions');
+const { getPermissions, filterServers, can, canAccessEnvironment } = require('../utils/permissions');
 const scheduler = require('../services/scheduler');
 const { serverError } = require('../utils/http-error');
 
@@ -54,7 +54,15 @@ router.get('/', (req, res) => {
     : '';
   const rows = db.db.prepare(`SELECT e.id, e.name, COUNT(DISTINCT s.id) AS server_count, ${deploymentCount} FROM environments e LEFT JOIN servers s ON s.environment_id = e.id ${workspaceJoin} GROUP BY e.id ORDER BY e.name`).all();
   const permissions = getPermissions(req.user);
-  res.json(rows.filter(row => canAccessEnvironment(permissions, row.id)));
+  res.json(rows
+    .filter(row => canAccessEnvironment(permissions, row.id))
+    .map(row => ({
+      ...row,
+      server_count: filterServers(db.servers.getAll(row.id), permissions).length,
+      deployment_count: can(permissions, 'canViewDeployments') || can(permissions, 'canManageDeployments')
+        ? row.deployment_count
+        : undefined,
+    })));
 });
 
 router.post('/', (req, res) => {
@@ -97,8 +105,11 @@ router.delete('/:id', (req, res) => {
       moveEnvironmentRows('ssh_key_assignments', id);
       moveEnvironmentRows('schedules', id);
       moveEnvironmentRows('schedule_history', id);
+      moveEnvironmentRows('update_history', id);
+      moveEnvironmentRows('audit_log', id);
       moveEnvironmentRows('ansible_vars', id);
       moveEnvironmentRows('ipam_subnets', id);
+      moveEnvironmentRows('ipam_source_observations', id);
       moveEnvironmentRows('ipam_sync_sources', id, ", updated_at = datetime('now')");
       moveEnvironmentRows('ipam_sync_conflicts', id);
       moveEnvironmentRows('ipam_proxmox_sync_conflicts', id);

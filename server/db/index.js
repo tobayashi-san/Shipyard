@@ -6,6 +6,12 @@ const { applySchema } = require('./schema');
 const { applyMigrations } = require('./migrations');
 const { seedDb } = require('./seed');
 const cryptoUtil = require('../utils/crypto');
+const { currentEnvironment } = require('../utils/request-environment');
+
+function inclusiveAuditUpperBound(value) {
+  const text = String(value || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? `${text} 23:59:59` : text;
+}
 
 /**
  * Read a TOTP-secret column. If the row is plaintext (legacy), auto-encrypt
@@ -98,6 +104,7 @@ function readAnsibleVarRow(row, revealSecret = false) {
 // Server CRUD
 const serverQueries = {
   getAll: db.prepare('SELECT * FROM servers ORDER BY name'),
+  getAllByEnvironment: db.prepare('SELECT * FROM servers WHERE environment_id = ? ORDER BY name'),
   getById: db.prepare('SELECT * FROM servers WHERE id = ?'),
   insert: db.prepare(`
     INSERT INTO servers (id, name, hostname, ip_address, ssh_port, ssh_user, tags, services, links, storage_mounts, environment_id)
@@ -134,7 +141,7 @@ const infoQueries = {
 // Update History
 const historyQueries = {
   getByServer: db.prepare('SELECT * FROM update_history WHERE server_id = ? ORDER BY started_at DESC LIMIT 20'),
-  insert: db.prepare('INSERT INTO update_history (id, server_id, action, status, triggered_by) VALUES (?, ?, ?, ?, ?)'),
+  insert: db.prepare('INSERT INTO update_history (id, server_id, environment_id, action, status, triggered_by) VALUES (?, ?, ?, ?, ?, ?)'),
   updateStatus: db.prepare(`UPDATE update_history SET status = ?, output = ?, completed_at = datetime('now') WHERE id = ?`),
 };
 
@@ -180,6 +187,7 @@ const agentConfigQueries = {
     ON CONFLICT(server_id) DO UPDATE SET
       mode = excluded.mode,
       token = excluded.token,
+      pending_token = NULL,
       shipyard_url = COALESCE(excluded.shipyard_url, agent_config.shipyard_url),
       interval = excluded.interval,
       installed_at = COALESCE(excluded.installed_at, agent_config.installed_at),
@@ -201,7 +209,10 @@ const agentConfigQueries = {
     SET mode = ?, interval = ?, shipyard_url = COALESCE(?, shipyard_url), updated_at = datetime('now')
     WHERE server_id = ?
   `),
-  setToken: db.prepare('UPDATE agent_config SET token = ?, updated_at = datetime(\'now\') WHERE server_id = ?'),
+  setToken: db.prepare("UPDATE agent_config SET token = ?, pending_token = NULL, updated_at = datetime('now') WHERE server_id = ?"),
+  beginTokenRotation: db.prepare("UPDATE agent_config SET pending_token = ?, updated_at = datetime('now') WHERE server_id = ?"),
+  commitTokenRotation: db.prepare("UPDATE agent_config SET token = pending_token, pending_token = NULL, updated_at = datetime('now') WHERE server_id = ? AND pending_token = ?"),
+  clearPendingToken: db.prepare("UPDATE agent_config SET pending_token = NULL, updated_at = datetime('now') WHERE server_id = ?"),
   delete: db.prepare('DELETE FROM agent_config WHERE server_id = ?'),
 };
 
@@ -222,7 +233,9 @@ module.exports = {
   db,
   uuidv4,
   servers: {
-    getAll: () => serverQueries.getAll.all(),
+    getAll: (environmentId = null) => environmentId
+      ? serverQueries.getAllByEnvironment.all(environmentId)
+      : serverQueries.getAll.all(),
     getById: (id) => serverQueries.getById.get(id),
     create: (server) => {
       const id = uuidv4();
@@ -305,15 +318,15 @@ module.exports = {
   },
   updateHistory: {
     getByServer: (serverId) => historyQueries.getByServer.all(serverId),
-    create: (serverId, action, triggeredBy = null) => {
+    create: (serverId, action, triggeredBy = null, environmentId = null) => {
       const id = uuidv4();
-      try {
-        historyQueries.insert.run(id, serverId, action, 'pending', triggeredBy);
-      } catch (e) {
-        if (e.code !== 'SQLITE_CONSTRAINT_FOREIGNKEY') {
-          throw e;
-        }
-      }
+      const server = db.prepare('SELECT environment_id FROM servers WHERE id = ?').get(serverId);
+      const scopedEnvironment = environmentId || server?.environment_id || currentEnvironment() || 'default';
+      // update_history is deliberately single-server history. Callers that
+      // operate on target expressions or bulk inventories must use
+      // schedule_history instead of receiving an ID for a row that was never
+      // inserted.
+      historyQueries.insert.run(id, serverId, scopedEnvironment, action, 'pending', triggeredBy);
       return id;
     },
     updateStatus: (id, status, output) => historyQueries.updateStatus.run(status, output, id),
@@ -418,31 +431,45 @@ module.exports = {
   },
 
   auditLog: {
-    write: (action, detail, ip, success = true, user = null) => {
+    write: (action, detail, ip, success = true, user = null, environmentId = null) => {
       const id = uuidv4();
-      db.prepare('INSERT INTO audit_log (id, action, detail, user, ip, success) VALUES (?, ?, ?, ?, ?, ?)').run(id, action, detail || null, user || null, ip || null, success ? 1 : 0);
+      const scopedEnvironment = environmentId || currentEnvironment() || 'default';
+      db.prepare('INSERT INTO audit_log (id, environment_id, action, detail, user, ip, success) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, scopedEnvironment, action, detail || null, user || null, ip || null, success ? 1 : 0);
     },
     getRecent: (limit = 100) => db.prepare('SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ?').all(limit),
-    query: ({ action, user, ip, success, from, to, limit = 200, offset = 0 } = {}) => {
+    query: ({ environmentId = 'default', action, user, ip, success, from, to, limit = 200, offset = 0 } = {}) => {
       // Escape SQL LIKE wildcards so user-supplied filters can't widen the match.
       const escapeLike = (s) => String(s).replace(/[\\%_]/g, ch => '\\' + ch);
-      const conditions = [];
-      const params = [];
+      const conditions = ['environment_id = ?'];
+      const params = [environmentId];
       if (action) { conditions.push("action LIKE ? ESCAPE '\\'"); params.push(`${escapeLike(action)}%`); }
       if (user) { conditions.push('user = ?'); params.push(user); }
       if (ip) { conditions.push("ip LIKE ? ESCAPE '\\'"); params.push(`%${escapeLike(ip)}%`); }
       if (success !== undefined && success !== '') { conditions.push('success = ?'); params.push(Number(success)); }
       if (from) { conditions.push('created_at >= ?'); params.push(from); }
-      if (to) { conditions.push('created_at <= ?'); params.push(to); }
+      if (to) { conditions.push('created_at <= ?'); params.push(inclusiveAuditUpperBound(to)); }
       const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
       const safeLimit = Math.min(500, Math.max(1, parseInt(limit, 10) || 200));
       const safeOffset = Math.max(0, parseInt(offset, 10) || 0);
       params.push(safeLimit, safeOffset);
       return db.prepare(`SELECT * FROM audit_log ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...params);
     },
-    countAll: () => db.prepare('SELECT COUNT(*) as count FROM audit_log').get().count,
-    distinctActions: () => db.prepare('SELECT DISTINCT action FROM audit_log ORDER BY action').all().map(r => r.action),
-    distinctUsers: () => db.prepare("SELECT DISTINCT user FROM audit_log WHERE user IS NOT NULL AND user != '' ORDER BY user").all().map(r => r.user),
+    count: ({ environmentId = 'default', action, user, ip, success, from, to } = {}) => {
+      const escapeLike = (s) => String(s).replace(/[\\%_]/g, ch => '\\' + ch);
+      const conditions = ['environment_id = ?'];
+      const params = [environmentId];
+      if (action) { conditions.push("action LIKE ? ESCAPE '\\'"); params.push(`${escapeLike(action)}%`); }
+      if (user) { conditions.push('user = ?'); params.push(user); }
+      if (ip) { conditions.push("ip LIKE ? ESCAPE '\\'"); params.push(`%${escapeLike(ip)}%`); }
+      if (success !== undefined && success !== '') { conditions.push('success = ?'); params.push(Number(success)); }
+      if (from) { conditions.push('created_at >= ?'); params.push(from); }
+      if (to) { conditions.push('created_at <= ?'); params.push(inclusiveAuditUpperBound(to)); }
+      const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+      return db.prepare(`SELECT COUNT(*) as count FROM audit_log ${where}`).get(...params).count;
+    },
+    countAll: (environmentId = 'default') => db.prepare('SELECT COUNT(*) as count FROM audit_log WHERE environment_id = ?').get(environmentId).count,
+    distinctActions: (environmentId = 'default') => db.prepare('SELECT DISTINCT action FROM audit_log WHERE environment_id = ? ORDER BY action').all(environmentId).map(r => r.action),
+    distinctUsers: (environmentId = 'default') => db.prepare("SELECT DISTINCT user FROM audit_log WHERE environment_id = ? AND user IS NOT NULL AND user != '' ORDER BY user").all(environmentId).map(r => r.user),
     pruneOlderThan: (days) => db.prepare("DELETE FROM audit_log WHERE created_at < datetime('now', ?)").run(`-${days} days`),
   },
 
@@ -483,6 +510,9 @@ module.exports = {
     setSeen: (serverId, runnerVersion, manifestVersion) => agentConfigQueries.setSeen.run(runnerVersion || null, Number.isInteger(manifestVersion) ? manifestVersion : null, serverId),
     updateModeInterval: (serverId, mode, interval, shipyardUrl = null) => agentConfigQueries.updateModeInterval.run(mode, interval, shipyardUrl, serverId),
     setToken: (serverId, token) => agentConfigQueries.setToken.run(token, serverId),
+    beginTokenRotation: (serverId, token) => agentConfigQueries.beginTokenRotation.run(token, serverId),
+    commitTokenRotation: (serverId, token) => agentConfigQueries.commitTokenRotation.run(serverId, token),
+    clearPendingToken: (serverId) => agentConfigQueries.clearPendingToken.run(serverId),
     delete: (serverId) => agentConfigQueries.delete.run(serverId),
   },
 
@@ -841,8 +871,8 @@ module.exports = {
   },
 
   users: {
-    getAll: () => db.prepare('SELECT id, username, display_name, email, role, totp_enabled, token_version, created_at FROM users ORDER BY created_at').all(),
-    getById: (id) => db.prepare('SELECT id, username, display_name, email, role, totp_enabled, token_version, created_at FROM users WHERE id = ?').get(id),
+    getAll: () => db.prepare('SELECT id, username, display_name, email, role, totp_enabled, token_version, disabled, last_login_at, created_at FROM users ORDER BY created_at').all(),
+    getById: (id) => db.prepare('SELECT id, username, display_name, email, role, totp_enabled, token_version, disabled, last_login_at, created_at FROM users WHERE id = ?').get(id),
     getByUsername: (username) => db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(username),
     create: (username, email, passwordHash, role, displayName) => {
       const id = uuidv4();
@@ -850,7 +880,7 @@ module.exports = {
         INSERT INTO users (id, username, display_name, email, password_hash, role)
         VALUES (?, ?, ?, ?, ?, ?)
       `).run(id, username, displayName || '', email || '', passwordHash, role || 'user');
-      return db.prepare('SELECT id, username, display_name, email, role, totp_enabled, token_version, created_at FROM users WHERE id = ?').get(id);
+      return db.prepare('SELECT id, username, display_name, email, role, totp_enabled, token_version, disabled, last_login_at, created_at FROM users WHERE id = ?').get(id);
     },
     /**
      * Atomically create the first admin user during onboarding. Throws
@@ -870,12 +900,12 @@ module.exports = {
           INSERT INTO users (id, username, display_name, email, password_hash, role)
           VALUES (?, ?, '', '', ?, 'admin')
         `).run(id, username, passwordHash);
-        return db.prepare('SELECT id, username, display_name, email, role, totp_enabled, token_version, created_at FROM users WHERE id = ?').get(id);
+        return db.prepare('SELECT id, username, display_name, email, role, totp_enabled, token_version, disabled, last_login_at, created_at FROM users WHERE id = ?').get(id);
       });
       return tx();
     },
     update: (id, fields) => {
-      const allowed = { username: 'username', display_name: 'display_name', email: 'email', role: 'role' };
+      const allowed = { username: 'username', display_name: 'display_name', email: 'email', role: 'role', disabled: 'disabled' };
       const sets = [];
       const vals = [];
       for (const [k, v] of Object.entries(fields)) {
@@ -886,7 +916,7 @@ module.exports = {
       if (!sets.length) return;
       vals.push(id);
       db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
-      return db.prepare('SELECT id, username, display_name, email, role, totp_enabled, token_version, created_at FROM users WHERE id = ?').get(id);
+      return db.prepare('SELECT id, username, display_name, email, role, totp_enabled, token_version, disabled, last_login_at, created_at FROM users WHERE id = ?').get(id);
     },
     setPasswordHash: (id, hash) => db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, id),
     setTotp: (id, secret, enabled) => {
@@ -908,6 +938,8 @@ module.exports = {
       return readUserTotp(row?.totp_secret_pending, id, 'totp_secret_pending');
     },
     incrementTokenVersion: (id) => db.prepare('UPDATE users SET token_version = COALESCE(token_version, 0) + 1 WHERE id = ?').run(id),
+    markLogin: (id) => db.prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ?").run(id),
+    countActiveAdmins: () => db.prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'admin' AND disabled = 0").get().c,
     delete: (id) => db.prepare('DELETE FROM users WHERE id = ?').run(id),
     count: () => db.prepare('SELECT COUNT(*) as c FROM users').get().c,
   },

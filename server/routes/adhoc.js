@@ -40,7 +40,8 @@ router.post('/run', adhocLimiter, (req, res, next) => {
   const targetStr = (typeof targets === 'string' && targets.trim()) ? targets.trim() : 'all';
   const targetsErr = validateTargets(targetStr);
   if (targetsErr) return res.status(400).json({ error: targetsErr });
-  const allServers = db.servers.getAll();
+  const environmentId = req.environmentId || 'default';
+  const allServers = db.servers.getAll(environmentId);
   const knownTargetsErr = validateKnownInventoryTargets(targetStr, allServers);
   if (knownTargetsErr) return res.status(400).json({ error: knownTargetsErr });
 
@@ -62,7 +63,8 @@ router.post('/run', adhocLimiter, (req, res, next) => {
     const outputLines = [];
     const result = await ansibleRunner.runAdHoc(
       targetStr, mod, args || '',
-      (type, data) => outputLines.push({ type, data })
+      (type, data) => outputLines.push({ type, data }),
+      { environmentId },
     );
     res.json({ success: result.success, output: outputLines, exitCode: result.code ?? 0 });
   } catch (e) {

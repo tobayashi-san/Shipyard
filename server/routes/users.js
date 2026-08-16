@@ -74,15 +74,24 @@ router.put('/:id', adminOnly, (req, res) => {
     fields.role = role;
   }
   try {
+    const existing = db.users.getById(id);
+    if (!existing) return res.status(404).json({ error: 'User not found' });
     if (fields.username) {
       const existingByUsername = db.users.getByUsername(fields.username);
       if (existingByUsername && existingByUsername.id !== id) {
         return res.status(409).json({ error: 'Username already exists' });
       }
     }
+    if (fields.role && existing.role !== fields.role) {
+      if (req.user.id === id) {
+        return res.status(400).json({ error: 'Cannot change your own role' });
+      }
+      if (existing.role === 'admin' && fields.role !== 'admin' && db.users.countActiveAdmins() <= 1) {
+        return res.status(409).json({ error: 'Cannot remove the last active administrator' });
+      }
+    }
     // Invalidate tokens when role changes so user gets new permissions on next login
     if (fields.role) {
-      const existing = db.users.getById(id);
       if (existing && existing.role !== fields.role) {
         db.users.incrementTokenVersion(id);
       }
@@ -96,6 +105,52 @@ router.put('/:id', adminOnly, (req, res) => {
       return res.status(409).json({ error: 'Username already exists' });
     }
     serverError(res, e, 'update user');
+  }
+});
+
+// PUT /api/users/:id/status – suspend or reactivate an account
+router.put('/:id/status', adminOnly, (req, res) => {
+  const { id } = req.params;
+  const { disabled } = req.body || {};
+  if (typeof disabled !== 'boolean') {
+    return res.status(400).json({ error: 'disabled must be a boolean' });
+  }
+  const user = db.users.getById(id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (req.user.id === id && disabled) {
+    return res.status(400).json({ error: 'Cannot disable your own account' });
+  }
+  if (disabled && user.role === 'admin' && !user.disabled && db.users.countActiveAdmins() <= 1) {
+    return res.status(409).json({ error: 'Cannot disable the last active administrator' });
+  }
+  try {
+    const updated = db.users.update(id, { disabled: disabled ? 1 : 0 });
+    // Both suspension and reactivation revoke every previously issued token.
+    db.users.incrementTokenVersion(id);
+    db.auditLog.write(
+      disabled ? 'users.disable' : 'users.enable',
+      `${disabled ? 'Disabled' : 'Enabled'} user: ${id}`,
+      req.ip,
+      true,
+      req.user?.username,
+    );
+    res.json(db.users.getById(updated.id));
+  } catch (e) {
+    serverError(res, e, 'update user status');
+  }
+});
+
+// POST /api/users/:id/revoke-sessions – revoke all API and WebSocket sessions
+router.post('/:id/revoke-sessions', adminOnly, (req, res) => {
+  const { id } = req.params;
+  const user = db.users.getById(id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  try {
+    db.users.incrementTokenVersion(id);
+    db.auditLog.write('users.sessions.revoke', `Revoked sessions for user: ${id}`, req.ip, true, req.user?.username);
+    res.json({ success: true });
+  } catch (e) {
+    serverError(res, e, 'revoke user sessions');
   }
 });
 
@@ -144,9 +199,12 @@ router.delete('/:id', adminOnly, (req, res) => {
   }
   const user = db.users.getById(id);
   if (!user) return res.status(404).json({ error: 'User not found' });
+  if (user.role === 'admin' && !user.disabled && db.users.countActiveAdmins() <= 1) {
+    return res.status(409).json({ error: 'Cannot delete the last active administrator' });
+  }
   try {
     db.users.delete(id);
-    db.auditLog.write('users.delete', `Deleted user: ${id}`, req.ip);
+    db.auditLog.write('users.delete', `Deleted user: ${id}`, req.ip, true, req.user?.username);
     res.json({ success: true });
   } catch (e) {
     serverError(res, e, 'delete user');

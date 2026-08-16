@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { ws } from './ws';
 
 type Theme = 'light' | 'dark' | 'system';
 export type ThemePreset =
@@ -141,7 +142,11 @@ export const useUi = create<UiState>((set) => ({
       return { dashAttentionOnly: v };
     }),
   environmentId: readEnvironment(),
-  setEnvironmentId: (id) => set(() => { try { localStorage.setItem(ENVIRONMENT_KEY, id); } catch {} return { environmentId: id }; }),
+  setEnvironmentId: (id) => set(() => {
+    try { localStorage.setItem(ENVIRONMENT_KEY, id); } catch {}
+    ws.setEnvironment(id);
+    return { environmentId: id };
+  }),
 }));
 
 export function applyTheme(theme: Theme, preset = readThemePreset()): void {

@@ -62,7 +62,7 @@ function installProxmoxMock() {
           cipassword: 'must-never-leave-proxmox',
         }
         : parsed.pathname.endsWith('/agent/network-get-interfaces') ? {
-          result: [{ name: 'lo', 'ip-addresses': [{ 'ip-address': '127.0.0.1', 'ip-address-type': 'ipv4' }] }, { name: 'ens18', 'ip-addresses': [{ 'ip-address': '10.20.1.42', 'ip-address-type': 'ipv4' }] }],
+          result: [{ name: 'lo', 'ip-addresses': [{ 'ip-address': '127.0.0.1', 'ip-address-type': 'ipv4' }] }, { name: 'ens18', 'hardware-address': 'AA:BB:CC:DD:EE:FF', 'ip-addresses': [{ 'ip-address': '10.20.1.42', 'ip-address-type': 'ipv4' }] }],
         }
         : 'UPID:mock:task';
       process.nextTick(() => {
@@ -97,6 +97,7 @@ before(async () => {
   const readOnlyRole = db.roles.create('Read-only platform operator', {
     servers: 'all',
     canViewServers: true,
+    canViewInfrastructure: true,
     canManageDeployments: true,
     canRunUpdates: false,
   });
@@ -195,7 +196,7 @@ test('Proxmox package catalog refresh requires update permission', async () => {
   assert.equal(calls.length, 0);
 });
 
-test('OpenTofu platform APIs cannot be reached without deployment access', async () => {
+test('OpenTofu platform APIs cannot be reached without infrastructure access', async () => {
   calls.length = 0;
   const denied = await request(app).post(`${vmPath}/power`).set('Authorization', `Bearer ${noDeploymentAccessToken}`).send({ action: 'reboot' });
   assert.equal(denied.status, 403);
@@ -242,4 +243,21 @@ test('inventory import reads the guest agent address, preserves SSH metadata and
     .set('Authorization', `Bearer ${token}`)
     .send({ name: 'fleet-app-01', node_name: 'pve001', vm_id: 101, ip_address: '10.20.1.42' });
   assert.equal(duplicate.status, 409);
+});
+
+test('Proxmox IPAM synchronization stores guest interface MAC addresses', async () => {
+  const subnetId = 'platform-actions-ipam-prefix';
+  db.db.prepare("INSERT OR IGNORE INTO ipam_subnets (id, environment_id, name, cidr) VALUES (?, 'default', 'Proxmox guests', '10.20.1.0/24')")
+    .run(subnetId);
+  inventory = [{ type: 'qemu', node: 'pve001', vmid: 101, name: 'app-01' }];
+  const sync = await request(app)
+    .post(`/api/opentofu/proxmox-connections/${connectionId}/sync-ipam`)
+    .set('Authorization', `Bearer ${token}`)
+    .send({ subnet_id: subnetId });
+  assert.equal(sync.status, 200, JSON.stringify(sync.body));
+  assert.equal(sync.body.created, 1);
+  const reservation = db.db.prepare('SELECT address, mac_address, source_type FROM ipam_reservations WHERE subnet_id = ?').get(subnetId);
+  assert.deepEqual(reservation, {
+    address: '10.20.1.42', mac_address: 'aa:bb:cc:dd:ee:ff', source_type: 'proxmox',
+  });
 });

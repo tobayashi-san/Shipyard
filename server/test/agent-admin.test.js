@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 process.env.DB_PATH = path.join(os.tmpdir(), `lab_test_agent_admin_${Date.now()}.db`);
 process.env.JWT_SECRET = 'test-jwt-secret-agent-admin';
+process.env.SHIPYARD_KEY_SECRET = 'test-agent-admin-secret';
 process.env.NODE_ENV = 'test';
 
 const { test, after } = require('node:test');
@@ -15,7 +16,7 @@ const request = require('supertest');
 const db = require('../db');
 const ansibleRunner = require('../services/ansible-runner');
 const agentAdminRouter = require('../routes/agent-admin');
-const { encrypt } = require('../utils/crypto');
+const { encrypt, decrypt } = require('../utils/crypto');
 
 function wipeDb() {
   const tables = [
@@ -127,5 +128,54 @@ test('agent configure rejects undecryptable stored token with 409', async () => 
     ansibleRunner.runPlaybook = originalRunPlaybook;
     if (originalSecret === undefined) delete process.env.SHIPYARD_KEY_SECRET;
     else process.env.SHIPYARD_KEY_SECRET = originalSecret;
+  }
+});
+
+test('agent token rotation keeps the old token until deployment succeeds and reuses the pending token', async () => {
+  wipeDb();
+  const app = makeApp();
+  const server = db.servers.create({
+    name: 'agent-rotation', hostname: 'agent-rotation', ip_address: '10.0.0.23', environment_id: 'default',
+  });
+  const originalEncryptedToken = encrypt('old-agent-token');
+  db.agentConfig.upsert({
+    server_id: server.id,
+    mode: 'pull',
+    token: originalEncryptedToken,
+    shipyard_url: 'http://shipyard.local',
+    interval: 30,
+  });
+
+  const originalIsInstalled = ansibleRunner.isInstalled;
+  const originalRunPlaybook = ansibleRunner.runPlaybook;
+  const deployedTokens = [];
+  ansibleRunner.isInstalled = () => true;
+  ansibleRunner.runPlaybook = async (_playbook, _target, vars, _output, options) => {
+    deployedTokens.push({ token: vars.agent_token, options });
+    return { success: deployedTokens.length > 1, stdout: '', stderr: 'ambiguous failure' };
+  };
+
+  try {
+    const first = await request(app)
+      .post(`/api/v1/servers/${server.id}/agent/token-rotate`)
+      .send({ shipyard_url: 'http://shipyard.local' });
+    assert.equal(first.status, 500);
+    const pending = db.agentConfig.getByServerId(server.id);
+    assert.equal(pending.token, originalEncryptedToken);
+    assert.ok(pending.pending_token);
+    assert.equal(decrypt(pending.pending_token), deployedTokens[0].token);
+
+    const retry = await request(app)
+      .post(`/api/v1/servers/${server.id}/agent/token-rotate`)
+      .send({ shipyard_url: 'http://shipyard.local' });
+    assert.equal(retry.status, 200);
+    assert.equal(deployedTokens[1].token, deployedTokens[0].token);
+    assert.deepEqual(deployedTokens[1].options, { environmentId: 'default' });
+    const committed = db.agentConfig.getByServerId(server.id);
+    assert.equal(decrypt(committed.token), deployedTokens[0].token);
+    assert.equal(committed.pending_token, null);
+  } finally {
+    ansibleRunner.isInstalled = originalIsInstalled;
+    ansibleRunner.runPlaybook = originalRunPlaybook;
   }
 });

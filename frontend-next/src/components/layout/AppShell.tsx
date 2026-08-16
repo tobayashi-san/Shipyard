@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { Bug, ChevronDown, Github, HelpCircle, LogOut, Menu, Moon, PanelLeft, Pencil, Search, Sun, Trash2, User, UserRoundCog } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Sidebar } from './Sidebar';
 import { CommandPalette } from '@/components/CommandPalette';
 import { ActivityCenter } from '@/components/ActivityCenter';
-import { useProfile, useSettings } from '@/lib/queries';
+import { canAccessDeployments, useProfile, useSettings } from '@/lib/queries';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { applyWhiteLabel, type WhiteLabelSettings } from '@/lib/whitelabel';
@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils';
 import { setToken } from '@/lib/auth';
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const navigate = useNavigate();
   const { data: settings } = useSettings();
   const queryClient = useQueryClient();
   const { data: profile } = useProfile();
@@ -39,11 +40,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [environmentToRename, setEnvironmentToRename] = useState<{ id: string; name: string } | null>(null);
   const [environmentToDelete, setEnvironmentToDelete] = useState<{ id: string; name: string } | null>(null);
   const environmentMenuRef = useRef<HTMLDivElement>(null);
+  const switchEnvironment = (id: string) => {
+    if (!id || id === environmentId) return;
+    setEnvironmentId(id);
+    queryClient.removeQueries({
+      predicate: (query) => !['profile', 'settings', 'plugins', 'environments'].includes(String(query.queryKey[0] || '')),
+    });
+    void navigate({ to: '/' });
+  };
   const createEnvironment = useMutation({
     mutationFn: (name: string) => api.createEnvironment(name),
     onSuccess: (environment) => {
       void queryClient.invalidateQueries({ queryKey: ['environments'] });
-      setEnvironmentId(String(environment.id));
+      switchEnvironment(String(environment.id));
       setNewEnvironmentName('');
     },
   });
@@ -54,7 +63,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const removeEnvironment = useMutation({
     mutationFn: (id: string) => api.deleteEnvironment(id),
     onSuccess: (_, id) => {
-      if (environmentId === id) setEnvironmentId('default');
+      if (environmentId === id) switchEnvironment('default');
       void queryClient.invalidateQueries({ queryKey: ['environments'] });
     },
   });
@@ -115,6 +124,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const appName = (settings as Record<string, unknown> | undefined)?.appName as string | undefined;
   const displayName = (profile?.displayName as string) || (profile?.username as string) || 'User';
   const isAdmin = profile?.role === 'admin';
+  const canViewDeployments = canAccessDeployments(profile);
   const activeEnvironment = environments.find((item) => String(item.id) === environmentId) || environments[0];
 
   const openCommandPalette = () => {
@@ -140,7 +150,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <select
             aria-label="Environment"
             value={environmentId}
-            onChange={(event) => setEnvironmentId(event.target.value)}
+            onChange={(event) => switchEnvironment(event.target.value)}
             className="ml-auto h-8 min-w-0 max-w-[9rem] rounded-md border border-input bg-background px-2 text-xs text-foreground md:hidden"
           >
             {environments.length === 0 && (
@@ -167,7 +177,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 const id = String(item.id);
                 const name = String(item.name);
                 return <div key={id} className={cn('group flex items-center rounded-sm hover:bg-accent', id === environmentId && 'bg-accent')}>
-                  <button type="button" onClick={() => { setEnvironmentId(id); setEnvironmentOpen(false); }} className={cn('flex min-w-0 flex-1 items-center justify-between px-2 py-2 text-sm', id === environmentId && 'font-medium')}><span className="truncate">{name}</span><span className="ml-2 shrink-0 text-xs text-muted-foreground">{String(item.server_count ?? 0)} S · {String(item.deployment_count ?? 0)} D</span></button>
+                  <button type="button" onClick={() => { switchEnvironment(id); setEnvironmentOpen(false); }} className={cn('flex min-w-0 flex-1 items-center justify-between px-2 py-2 text-sm', id === environmentId && 'font-medium')}><span className="truncate">{name}</span><span className="ml-2 shrink-0 text-xs text-muted-foreground">{String(item.server_count ?? 0)} hosts{canViewDeployments ? ` · ${String(item.deployment_count ?? 0)} deployments` : ''}</span></button>
                   {isAdmin && <div className="mr-1 hidden items-center gap-0.5 group-hover:flex">
                     <button type="button" title="Rename environment" aria-label={`Rename ${name}`} className="rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground" onClick={() => { setEnvironmentToRename({ id, name }); setEnvironmentOpen(false); }}><Pencil className="h-3 w-3" /></button>
                     {id !== 'default' && <button type="button" title="Delete environment" aria-label={`Delete ${name}`} className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={() => { setEnvironmentToDelete({ id, name }); setEnvironmentOpen(false); }}><Trash2 className="h-3 w-3" /></button>}

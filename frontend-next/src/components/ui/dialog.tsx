@@ -8,14 +8,19 @@ const DialogTrigger = DialogPrimitive.Trigger;
 const DialogClose = DialogPrimitive.Close;
 const DialogPortal = DialogPrimitive.Portal;
 
+interface DialogOverlayProps extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay> {
+  disableMotion?: boolean;
+}
+
 const DialogOverlay = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Overlay>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
->(({ className, ...props }, ref) => (
+  DialogOverlayProps
+>(({ className, disableMotion = false, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      'fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-[1px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+      'fixed inset-0 z-50 bg-slate-950/45',
+      !disableMotion && 'backdrop-blur-[1px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
       className
     )}
     {...props}
@@ -23,17 +28,22 @@ const DialogOverlay = React.forwardRef<
 ));
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
+interface DialogContentProps extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
+  /** Avoid transformed/blurred layers for dialogs opened after native browser UI. */
+  disableMotion?: boolean;
+}
+
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+  DialogContentProps
+>(({ className, children, disableMotion = false, ...props }, ref) => (
   <DialogPortal>
-    <DialogOverlay />
+    <DialogOverlay disableMotion={disableMotion} />
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
         'fixed inset-x-4 top-1/2 z-50 grid min-w-0 max-h-[calc(100dvh-2rem)] w-auto max-w-lg -translate-y-1/2 gap-4 overscroll-contain overflow-x-hidden overflow-y-auto rounded-[3px] border border-border-strong bg-card p-4 shadow-2xl duration-200 sm:left-1/2 sm:right-auto sm:w-[calc(100vw-2rem)] sm:-translate-x-1/2 sm:p-5',
-        'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
+        !disableMotion && 'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
         className
       )}
       {...props}

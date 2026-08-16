@@ -170,7 +170,7 @@ function KeyAssignments({ environmentId }: { environmentId: string }) {
           className="h-9 rounded-sm border border-input bg-background px-2.5 text-[13px]"
           aria-label="Zieltyp"
         >
-          <option value="server">Fleet-Host</option>
+          <option value="server">Managed host</option>
           <option value="deployment">Deployment</option>
           <option value="vm_template">VM template</option>
         </select>
@@ -226,7 +226,7 @@ function KeyAssignments({ environmentId }: { environmentId: string }) {
                 className="h-7 w-7 text-destructive hover:text-destructive"
                 onClick={() => remove.mutate(assignment.id)}
                 disabled={remove.isPending}
-                aria-label={`${assignment.target_label} entfernen`}
+                aria-label={`Remove ${assignment.target_label}`}
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
@@ -540,7 +540,7 @@ function ImportKeyDialog({
         }
       }}
     >
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-sm" disableMotion>
         <DialogHeader>
           <DialogTitle>{t("set.importKeyTitle")}</DialogTitle>
         </DialogHeader>

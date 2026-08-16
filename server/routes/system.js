@@ -11,6 +11,8 @@ const { setSecret } = require('../utils/crypto');
 const { serverError } = require('../utils/http-error');
 const log = require('../utils/logger').child('system');
 const { rotateJwtSecret } = require('../utils/jwt-secret');
+const { getPermissions } = require('../utils/permissions');
+const { queryVisibleAuditRows } = require('../utils/audit-scope');
 
 const deployLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -40,7 +42,7 @@ function hasTable(name) {
 // should not force an administrator to manually search for the affected
 // object. Resolve only exact, current inventory matches; stale/deleted objects
 // intentionally remain plain text instead of producing a misleading link.
-function auditObjectLinks(detail) {
+function auditObjectLinks(detail, environmentId = 'default') {
   const text = String(detail || '');
   const links = [];
   const seen = new Set();
@@ -54,24 +56,24 @@ function auditObjectLinks(detail) {
   if (target) {
     const [, type, id] = target;
     if (type === 'server') {
-      const row = db.db.prepare('SELECT id, name FROM servers WHERE id = ?').get(id);
+      const row = db.db.prepare('SELECT id, name FROM servers WHERE id = ? AND environment_id = ?').get(id, environmentId);
       if (row) add('server', row.id, row.name, `/servers/${row.id}`);
     } else if (type === 'deployment' && hasTable('tofu_workspaces')) {
-      const row = db.db.prepare('SELECT id, name FROM tofu_workspaces WHERE id = ?').get(id);
+      const row = db.db.prepare('SELECT id, name FROM tofu_workspaces WHERE id = ? AND environment_id = ?').get(id, environmentId);
       if (row) add('deployment', row.id, row.name, `/deployments/${row.id}`);
     }
   }
 
   const namedServer = text.match(/\bserver=([^\s]+)/) || text.match(/\bServer "([^"]+)"/);
   if (namedServer) {
-    const row = db.db.prepare('SELECT id, name FROM servers WHERE name = ?').get(namedServer[1]);
+    const row = db.db.prepare('SELECT id, name FROM servers WHERE name = ? AND environment_id = ?').get(namedServer[1], environmentId);
     if (row) add('server', row.id, row.name, `/servers/${row.id}`);
   }
   // Workspace names are allowed to contain spaces. Stop at the next known
   // key/value field rather than at the first whitespace.
   const workspace = text.match(/\bworkspace=(.+?)(?=\s+(?:vm|playbook|status|action|error)=|$)/);
   if (workspace && hasTable('tofu_workspaces')) {
-    const row = db.db.prepare('SELECT id, name FROM tofu_workspaces WHERE name = ?').get(workspace[1]);
+    const row = db.db.prepare('SELECT id, name FROM tofu_workspaces WHERE name = ? AND environment_id = ?').get(workspace[1], environmentId);
     if (row) add('deployment', row.id, row.name, `/deployments/${row.id}`);
   }
 
@@ -80,7 +82,7 @@ function auditObjectLinks(detail) {
   // without searching through the prefix inventory.
   const subnet = text.match(/\bsubnet=([^\s]+)/);
   if (subnet && hasTable('ipam_subnets')) {
-    const row = db.db.prepare('SELECT id, cidr, name FROM ipam_subnets WHERE cidr = ?').get(subnet[1]);
+    const row = db.db.prepare('SELECT id, cidr, name FROM ipam_subnets WHERE cidr = ? AND environment_id = ?').get(subnet[1], environmentId);
     if (row) add('network', row.id, row.name ? `${row.cidr} · ${row.name}` : row.cidr, `/networks/${row.id}`);
   }
   return links;
@@ -197,13 +199,15 @@ router.post('/deploy', adminOnly, deployLimiter, async (req, res) => {
     }
     const port = Number(ssh_port || 22);
     if (!Number.isInteger(port) || port < 1 || port > 65535) return res.status(400).json({ error: 'Invalid SSH port' });
-    const target = serverId ? db.servers.getById(String(serverId)) : db.servers.getAll().find(server => server.ip_address === ip_address);
+    const environmentId = req.environmentId || 'default';
+    const target = serverId ? db.servers.getById(String(serverId)) : db.servers.getAll(environmentId).find(server => server.ip_address === ip_address);
+    if (target && String(target.environment_id || 'default') !== environmentId) return res.status(404).json({ error: 'Server not found' });
     if (serverId && !target) return res.status(404).json({ error: 'Server not found' });
     const result = await sshManager.deployKey(ip_address, ssh_user || 'root', password, port, { serverId: target?.id || null });
     // If a server with this IP exists and has no fingerprint yet, persist what we just learned (TOFU).
     try {
       if (result?.fingerprint) {
-        const match = db.servers.getAll().find(s => s.ip_address === ip_address);
+        const match = db.servers.getAll(environmentId).find(s => s.ip_address === ip_address);
         if (match && !db.servers.getHostFingerprint(match.id)) {
           db.servers.setHostFingerprint(match.id, result.fingerprint);
         }
@@ -229,7 +233,7 @@ router.post('/deploy-all', adminOnly, deployLimiter, async (req, res) => {
       return res.status(400).json({ error: 'password is required' });
     }
 
-    const allServers = db.servers.getAll();
+    const allServers = db.servers.getAll(req.environmentId || 'default');
     let targets = allServers;
     if (Array.isArray(serverIds) && serverIds.length > 0) {
       const idSet = new Set(serverIds.filter(id => typeof id === 'string'));
@@ -265,19 +269,19 @@ router.post('/deploy-all', adminOnly, deployLimiter, async (req, res) => {
 // resources for which its public part is intended, making access intent
 // visible in the console and auditable without duplicating key material.
 router.get('/key-assignments', adminOnly, (req, res) => {
-  const environmentId = String(req.query.environment_id || 'default').trim() || 'default';
+  const environmentId = req.environmentId || String(req.query.environment_id || 'default').trim() || 'default';
   const rows = db.db.prepare('SELECT * FROM ssh_key_assignments WHERE environment_id = ? ORDER BY target_type, target_label COLLATE NOCASE').all(environmentId);
   res.json(rows);
 });
 
 router.get('/key-assignment-targets', adminOnly, (req, res) => {
-  const environmentId = String(req.query.environment_id || 'default').trim() || 'default';
+  const environmentId = req.environmentId || String(req.query.environment_id || 'default').trim() || 'default';
   if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(404).json({ error: 'Umgebung nicht gefunden.' });
   res.json(sshAssignmentTargets(environmentId));
 });
 
 router.put('/key-assignments', adminOnly, (req, res) => {
-  const environmentId = String(req.body?.environment_id || 'default').trim() || 'default';
+  const environmentId = req.environmentId || String(req.body?.environment_id || 'default').trim() || 'default';
   const targetType = String(req.body?.target_type || '').trim();
   const targetId = String(req.body?.target_id || '').trim();
   if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Umgebung nicht gefunden.' });
@@ -296,7 +300,7 @@ router.put('/key-assignments', adminOnly, (req, res) => {
 
 router.delete('/key-assignments/:id', adminOnly, (req, res) => {
   const row = db.db.prepare('SELECT * FROM ssh_key_assignments WHERE id = ?').get(req.params.id);
-  if (!row) return res.status(404).json({ error: 'Schlüsselzuordnung nicht gefunden.' });
+  if (!row || (req.environmentId && row.environment_id !== req.environmentId)) return res.status(404).json({ error: 'Schlüsselzuordnung nicht gefunden.' });
   db.db.prepare('DELETE FROM ssh_key_assignments WHERE id = ?').run(row.id);
   db.auditLog.write('ssh.assignment.delete', `key=${row.key_name} type=${row.target_type} target=${row.target_id}`, req.ip, true, req.user?.username);
   res.status(204).end();
@@ -470,10 +474,14 @@ router.post('/onboarding-complete', adminOnly, (req, res) => {
 router.get('/audit', requireCap('canViewAudit'), (req, res) => {
   try {
     const { action, user, ip, success, from, to } = req.query;
+    const environmentId = req.environmentId || String(req.query.environment_id || 'default').trim() || 'default';
     const limit = Math.min(parseInt(req.query.limit, 10) || 200, 500);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
-    const rows = db.auditLog.query({ action, user, ip, success, from, to, limit, offset });
-    res.json(rows.map(row => ({ ...row, object_links: auditObjectLinks(row.detail) })));
+    const rows = queryVisibleAuditRows(
+      { environmentId, action, user, ip, success, from, to },
+      getPermissions(req.user),
+    ).slice(offset, offset + limit);
+    res.json(rows.map(row => ({ ...row, object_links: auditObjectLinks(row.detail, environmentId) })));
   } catch (error) {
     serverError(res, error, 'audit log');
   }
@@ -483,7 +491,11 @@ router.get('/audit', requireCap('canViewAudit'), (req, res) => {
 router.get('/audit/export', requireCap('canViewAudit'), (req, res) => {
   try {
     const { action, user, ip, success, from, to } = req.query;
-    const rows = db.auditLog.query({ action, user, ip, success, from, to, limit: 10_000, offset: 0 });
+    const environmentId = req.environmentId || String(req.query.environment_id || 'default').trim() || 'default';
+    const rows = queryVisibleAuditRows(
+      { environmentId, action, user, ip, success, from, to },
+      getPermissions(req.user),
+    ).slice(0, 10_000);
     const csv = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
     const body = [
       ['Zeitpunkt', 'Aktion', 'Benutzer', 'IP-Adresse', 'Erfolg', 'Details'],
@@ -501,10 +513,15 @@ router.get('/audit/export', requireCap('canViewAudit'), (req, res) => {
 // GET /api/system/audit/meta - Filter options for audit log UI
 router.get('/audit/meta', requireCap('canViewAudit'), (req, res) => {
   try {
+    const { action, user, ip, success, from, to } = req.query;
+    const environmentId = req.environmentId || String(req.query.environment_id || 'default').trim() || 'default';
+    const permissions = getPermissions(req.user);
+    const rows = queryVisibleAuditRows({ environmentId, action, user, ip, success, from, to }, permissions);
+    const allVisibleRows = queryVisibleAuditRows({ environmentId }, permissions);
     res.json({
-      actions: db.auditLog.distinctActions(),
-      users: db.auditLog.distinctUsers(),
-      count: db.auditLog.countAll(),
+      actions: [...new Set(allVisibleRows.map(row => row.action).filter(Boolean))].sort(),
+      users: [...new Set(allVisibleRows.map(row => row.user).filter(Boolean))].sort(),
+      count: rows.length,
     });
   } catch (error) {
     serverError(res, error, 'audit meta');

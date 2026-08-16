@@ -25,7 +25,7 @@ router.get('/', (req, res) => {
   }
   const limit = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 100));
   const scheduleId = req.query.scheduleId || null;
-  const environmentId = String(req.query.environment_id || 'default').trim() || 'default';
+  const environmentId = req.environmentId || String(req.query.environment_id || 'default').trim() || 'default';
 
   const perms = getPermissions(req.user);
   if (!perms) return res.status(403).json({ error: 'Permission denied' });
@@ -54,6 +54,9 @@ router.get('/:id', (req, res) => {
   }
   const row = db.scheduleHistory.getById(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
+  if (req.environmentId && String(row.environment_id || 'default') !== req.environmentId) {
+    return res.status(404).json({ error: 'Not found' });
+  }
 
   // Restricted users can only view history for servers they have access to
   const perms = getPermissions(req.user);

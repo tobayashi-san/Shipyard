@@ -58,6 +58,15 @@ export function useSettings() {
   });
 }
 
+/** Environments are global console context and shared by headers and dialogs. */
+export function useEnvironments() {
+  return useQuery<Array<Record<string, unknown>>>({
+    queryKey: ['environments'],
+    queryFn: () => api.getEnvironments() as Promise<Array<Record<string, unknown>>>,
+    staleTime: 60_000,
+  });
+}
+
 /**
  * Capability check matching backend permission semantics:
  *   - admin or `full=true` → always true
@@ -94,4 +103,24 @@ export function canAccessOperations(profile: Profile | undefined | null): boolea
     || hasCap(profile, 'canViewSchedules')
     || hasCap(profile, 'canViewAudit')
     || hasCap(profile, 'canViewMaintenance');
+}
+
+/** Proxmox/platform inventory is deliberately separate from managed hosts. */
+export function canAccessInfrastructure(profile: Profile | undefined | null): boolean {
+  return hasCap(profile, 'canViewInfrastructure') || hasCap(profile, 'canManageDeploymentPlatforms');
+}
+
+/** IPAM/network inventory has its own scope instead of inheriting host visibility. */
+export function canAccessNetworks(profile: Profile | undefined | null): boolean {
+  return hasCap(profile, 'canViewNetworks') || hasCap(profile, 'canEditNetworks');
+}
+
+/** Whether operational live events are useful and permitted for this session. */
+export function canViewActivity(profile: Profile | undefined | null): boolean {
+  return canAccessDeployments(profile)
+    || hasCap(profile, 'canViewSchedules')
+    || hasCap(profile, 'canViewPlaybooks')
+    || hasCap(profile, 'canViewUpdates')
+    || hasCap(profile, 'canViewDocker')
+    || hasCap(profile, 'canViewCustomUpdates');
 }

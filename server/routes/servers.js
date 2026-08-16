@@ -168,9 +168,9 @@ function accessibleGroupsForEnvironment(permissions, environmentId) {
 router.get('/', guard('canViewServers'), (req, res) => {
   try {
     const perms = getPermissions(req.user);
-    const environmentId = String(req.query.environment_id || '').trim();
+    const environmentId = req.environmentId || String(req.query.environment_id || '').trim() || 'default';
     const servers = filterServers(db.servers.getAll(), perms)
-      .filter(server => !environmentId || String(server.environment_id || 'default') === environmentId);
+      .filter(server => String(server.environment_id || 'default') === environmentId);
     res.json(servers.map(parseServer));
   } catch (error) {
     serverError(res, error, 'list servers');
@@ -181,7 +181,8 @@ router.get('/', guard('canViewServers'), (req, res) => {
 router.get('/export', guard('canExportImportServers'), (req, res) => {
   try {
     const perms = getPermissions(req.user);
-    const servers = filterServers(db.servers.getAll(), perms).map(s => ({
+    const environmentId = req.environmentId || 'default';
+    const servers = filterServers(db.servers.getAll(environmentId), perms).map(s => ({
       name:        s.name,
       hostname:    s.hostname,
       ip_address:  s.ip_address,
@@ -234,8 +235,9 @@ router.post('/import', guard('canExportImportServers'), (req, res) => {
       return res.status(400).json({ error: 'No server data found' });
     }
 
-    const allGroups = db.serverGroups.getAll();
-    const existingAll = db.servers.getAll();
+    const environmentId = req.environmentId || 'default';
+    const allGroups = db.serverGroups.getAll(environmentId);
+    const existingAll = db.servers.getAll(environmentId);
     const existing    = new Set(existingAll.map(s => s.name));
     const existingIPs = new Set(existingAll.map(s => s.ip_address));
     const results  = { created: 0, skipped: 0, errors: [] };
@@ -262,6 +264,7 @@ router.post('/import', guard('canExportImportServers'), (req, res) => {
           services:  Array.isArray(s.services) ? s.services : [],
           links:     normalizeServerLinks(s.links || []),
           storage_mounts: normalizeStorageMounts(s.storage_mounts || []),
+          environment_id: environmentId,
         });
         const autoGroupId = resolveGroupIdByTags(normalizedTags, allGroups);
         if (autoGroupId) db.serverGroups.setServerGroup(created.id, autoGroupId);
@@ -284,7 +287,7 @@ router.post('/import', guard('canExportImportServers'), (req, res) => {
 // GET /api/servers/groups — only return groups the user can see
 router.get('/groups', guard('canViewServers'), (req, res) => {
   const perms = getPermissions(req.user);
-  const environmentId = String(req.query.environment_id || '').trim() || null;
+  const environmentId = req.environmentId || String(req.query.environment_id || '').trim() || 'default';
   const allGroups = db.serverGroups.getAll(environmentId);
   if (!perms || perms.full || perms.servers === 'all') return res.json(allGroups);
 
@@ -317,7 +320,7 @@ router.get('/groups', guard('canViewServers'), (req, res) => {
 // POST /api/servers/groups
 router.post('/groups', guard('canEditServers'), (req, res) => {
   const { name, color, parent_id } = req.body;
-  const environmentId = String(req.body?.environment_id || 'default').trim() || 'default';
+  const environmentId = req.environmentId || String(req.body?.environment_id || 'default').trim() || 'default';
   if (!name?.trim()) return res.status(400).json({ error: 'Name required' });
   if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Umgebung nicht gefunden.' });
   const parent = parent_id ? db.db.prepare('SELECT * FROM server_groups WHERE id = ?').get(String(parent_id)) : null;
@@ -377,6 +380,9 @@ router.put('/group/bulk', guard('canEditServers'), (req, res) => {
   const placeholders = serverIds.map(() => '?').join(',');
   const servers = db.db.prepare(`SELECT * FROM servers WHERE id IN (${placeholders})`).all(...serverIds);
   if (servers.length !== serverIds.length) return res.status(404).json({ error: 'Mindestens ein Host wurde nicht gefunden.' });
+  if (req.environmentId && servers.some(server => String(server.environment_id || 'default') !== req.environmentId)) {
+    return res.status(404).json({ error: 'Mindestens ein Host wurde nicht gefunden.' });
+  }
   const permissions = getPermissions(req.user);
   if (filterServers(servers, permissions).length !== servers.length) return res.status(403).json({ error: 'Mindestens ein Host liegt außerhalb deiner Berechtigung.' });
 
@@ -412,8 +418,9 @@ router.put('/:id/group', guardServerAccess, guard('canEditServers'), (req, res) 
 router.post('/auto-group-by-tags', guard('canEditServers'), (req, res) => {
   try {
     const perms = getPermissions(req.user);
-    const allGroups = db.serverGroups.getAll().filter(group => canAccessServerGroup(perms, group));
-    const servers = filterServers(db.servers.getAll(), perms);
+    const environmentId = req.environmentId || 'default';
+    const allGroups = db.serverGroups.getAll(environmentId).filter(group => canAccessServerGroup(perms, group));
+    const servers = filterServers(db.servers.getAll(environmentId), perms);
     let matched = 0;
     let moved = 0;
 
@@ -460,7 +467,7 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
     const normalizedLinks = normalizeServerLinks(links || []);
     const normalizedStorageMounts = normalizeStorageMounts(storage_mounts || []);
     const normalizedTags = Array.isArray(tags) ? tags.filter(t => typeof t === 'string').map(t => t.slice(0, 100)) : [];
-    const environmentId = environment_id || 'default';
+    const environmentId = req.environmentId || environment_id || 'default';
     if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found' });
     const permissions = getPermissions(req.user);
     if (!canAccessEnvironment(permissions, environmentId)) return res.status(403).json({ error: 'Environment access denied' });
@@ -791,7 +798,7 @@ router.get('/:id/updates', guardServerAccess, guard('canViewUpdates'), async (re
 });
 
 // GET /api/servers/:id/history - Get update history + scheduled playbook runs
-router.get('/:id/history', guardServerAccess, guard('canViewServers'), (req, res) => {
+router.get('/:id/history', guardServerAccess, guard('canViewServerHistory'), (req, res) => {
   try {
     const server = req.server;
     const manualHistory = db.updateHistory.getByServer(req.params.id);
@@ -892,22 +899,22 @@ router.get('/:id/docker/:container/logs', guardServerAccess, guard('canViewDocke
   const tail = Math.max(1, Math.min(Number.isFinite(tailRaw) ? tailRaw : 200, 2000));
 
   try {
-    const result = await ansibleRunner.runAdHoc(
-      server.name,
-      'shell',
-      `$(command -v docker 2>/dev/null || command -v podman 2>/dev/null) logs --tail "${tail}" --timestamps -- "${container}" 2>&1`,
-      () => {},
-      { become: true }
-    );
-    if (!result.success) {
-      return res.status(500).json({ error: 'Failed to get container logs' });
+    // A single-host read should not depend on a locally installed Ansible
+    // binary. Use the same trusted SSH connection as Files and Terminal, then
+    // elevate non-interactively only when the SSH user cannot access Docker.
+    const command = [
+      'runtime="$(command -v docker 2>/dev/null || command -v podman 2>/dev/null)"',
+      'if [ -z "$runtime" ]; then echo "Docker or Podman is not installed" >&2; exit 127; fi',
+      `if [ "$(id -u)" -eq 0 ] || "$runtime" info >/dev/null 2>&1; then "$runtime" logs --tail ${tail} --timestamps -- '${container}' 2>&1`,
+      `elif command -v sudo >/dev/null 2>&1; then sudo -n "$runtime" logs --tail ${tail} --timestamps -- '${container}' 2>&1`,
+      'else echo "Docker access denied and sudo is unavailable" >&2; exit 126; fi',
+    ].join('; ');
+    const result = await sshManager.execCommand(server, command);
+    if (result.code !== 0) {
+      const detail = String(result.stdout || result.stderr || 'Failed to get container logs').trim().slice(-2000);
+      return res.status(502).json({ error: detail || 'Failed to get container logs' });
     }
-    let logs = result.stdout || '';
-    const match = logs.match(/rc=\d+\s*>>\n([\s\S]*)/);
-    if (match) {
-      logs = match[1];
-    }
-    res.json({ logs });
+    res.json({ logs: result.stdout || '' });
   } catch (error) {
     serverError(res, error, 'get container logs');
   }
@@ -923,7 +930,13 @@ router.get('/:id/docker/image-updates/cached', guardServerAccess, guard('canPull
 router.get('/:id/docker/image-updates', guardServerAccess, guard('canPullDocker'), async (req, res) => {
   const server = req.server;
   try {
-    const result = await ansibleRunner.runPlaybook('check-image-updates.yml', server.name);
+    const result = await ansibleRunner.runPlaybook(
+      'check-image-updates.yml',
+      server.name,
+      {},
+      null,
+      { environmentId: server.environment_id || 'default' },
+    );
     const report = parseImageUpdateReport(result.stdout);
     if (!result.success || !report.complete) {
       log.warn({ server: server.name, exitCode: result.code }, 'Image update check returned no complete result');
@@ -958,7 +971,7 @@ router.get('/:id/docker/compose', guardServerAccess, guard('canManageDockerCompo
       'command',
       `cat '${safePath}/docker-compose.yml'`,
       () => {}, // silence output
-      { become: true }
+      { become: true, environmentId: server.environment_id || 'default' }
     );
 
     if (result.success) {

@@ -368,14 +368,14 @@ test('IPAM dialogs remain usable inside a mobile viewport', async ({ page }) => 
   await reservationDialog.getByRole('button', { name: 'Add IP address' }).click();
   await expect(page.getByText('e2e-mobile-ipam', { exact: true }).first()).toBeVisible();
   await page.goto('/networks');
-  await page.getByRole('button', { name: 'Sources' }).click();
-  const sources = page.getByRole('dialog', { name: 'IPAM sources' });
+  await page.getByRole('link', { name: 'Sources' }).click();
+  await expect(page).toHaveURL(/\/networks\/sources$/);
+  const sources = page.locator('[data-ipam-sources]');
   await expect(sources).toBeVisible();
   const sourceBox = await sources.boundingBox();
   expect(sourceBox).not.toBeNull();
   expect(sourceBox!.x).toBeGreaterThanOrEqual(0);
   expect(sourceBox!.x + sourceBox!.width).toBeLessThanOrEqual(390);
-  await sources.getByRole('button', { name: 'Close', exact: true }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
@@ -490,10 +490,14 @@ test('the inventory tree moves a selected Fleet host without drag and drop', asy
 
 test('IPAM sources can be configured and synced through the browser', async ({ page }) => {
   const inventory = http.createServer((request, response) => {
-    expect(request.url).toBe('/api/v2/status/dhcp_leases');
-    expect(request.headers.authorization).toBe('Bearer e2e-pfsense-token');
+    expect(request.url).toBe('/api/v2/status/dhcp_server/leases');
+    expect(request.headers['x-api-key']).toBe('e2e-pfsense-token');
+    expect(request.headers.authorization).toBeUndefined();
     response.setHeader('content-type', 'application/json');
-    response.end(JSON.stringify({ data: [{ id: 'e2e-lease', ip_address: '10.199.0.20', hostname: 'e2e-dhcp', mac_address: '02:00:00:00:00:20' }] }));
+    response.end(JSON.stringify({ data: [
+      { id: 'e2e-lease', ip_address: '10.199.0.20', hostname: 'e2e-dhcp', mac_address: '02:00:00:00:00:20' },
+      { id: 'e2e-observation', ip_address: '10.199.0.35', hostname: 'e2e-static', mac_address: '02:00:00:00:00:35' },
+    ] }));
   });
   await new Promise<void>(resolve => inventory.listen(0, '127.0.0.1', resolve));
   const address = inventory.address();
@@ -506,14 +510,18 @@ test('IPAM sources can be configured and synced through the browser', async ({ p
     const prefixDialog = page.getByRole('dialog', { name: 'Add prefix' });
     await prefixDialog.getByPlaceholder('Production network').fill('E2E DHCP');
     await prefixDialog.getByPlaceholder('10.20.10.0/24').fill('10.199.0.0/24');
+    await prefixDialog.getByText('Advanced network configuration', { exact: true }).click();
+    await prefixDialog.getByLabel('DHCP start').fill('10.199.0.10');
+    await prefixDialog.getByLabel('DHCP end').fill('10.199.0.30');
     await prefixDialog.getByRole('button', { name: 'Add prefix', exact: true }).click();
 
-    await page.getByRole('button', { name: 'Sources' }).click();
-    const sources = page.getByRole('dialog', { name: 'IPAM sources' });
+    await page.getByRole('link', { name: 'Sources' }).click();
+    await expect(page).toHaveURL(/\/networks\/sources$/);
+    const sources = page.locator('[data-ipam-sources]');
     await sources.getByRole('button', { name: 'Add source' }).click();
     await sources.locator('select').first().selectOption('pfsense');
-    await sources.getByPlaceholder('UniFi Produktion').fill('E2E pfSense');
-    await sources.getByPlaceholder('https://unifi.example.local').fill(`http://127.0.0.1:${address.port}`);
+    await sources.getByPlaceholder('pfSense production').fill('E2E pfSense');
+    await sources.getByPlaceholder('https://pfsense.example.local').fill(`http://127.0.0.1:${address.port}`);
     await sources.locator('input[type="password"]').fill('e2e-pfsense-token');
     await sources.getByRole('button', { name: 'Save source' }).click();
     await expect(sources.getByText('E2E pfSense', { exact: true })).toBeVisible();
@@ -527,7 +535,7 @@ test('IPAM sources can be configured and synced through the browser', async ({ p
     await expect(testReport).toContainText('10.199.0.20');
     await expect(testReport).toContainText(/did not change any IPAM data/i);
     await testReport.getByRole('button', { name: 'Done' }).click();
-    await sources.getByRole('button', { name: 'Synchronize E2E pfSense' }).click();
+    await sources.getByRole('button', { name: 'Sync E2E pfSense' }).click();
     const syncConfirmation = page.getByRole('dialog', { name: 'Synchronize source completely?' });
     await expect(syncConfirmation).toContainText(/no longer reported/i);
     await Promise.all([
@@ -535,9 +543,11 @@ test('IPAM sources can be configured and synced through the browser', async ({ p
       syncConfirmation.getByRole('button', { name: 'Sync now' }).click(),
     ]);
     await expect(sources.getByText('Synchronized', { exact: true })).toBeVisible();
-    await sources.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.getByRole('link', { name: 'Back to IPAM' }).click();
+    await expect(page).toHaveURL(/\/networks$/);
 
     const prefixRow = page.getByRole('row').filter({ hasText: '10.199.0.0/24' });
+    await expect(prefixRow).toContainText('10.199.0.10 – 10.199.0.30');
     const prefixPositionBefore = await prefixRow.boundingBox();
     await prefixRow.getByRole('checkbox').check();
     await expect(page.getByText('1 selected', { exact: true })).toBeVisible();
@@ -547,22 +557,45 @@ test('IPAM sources can be configured and synced through the browser', async ({ p
     await page.getByRole('link', { name: /10\.199\.0\.0\/24/i }).first().click();
     await expect(page.getByRole('table').getByText('10.199.0.20', { exact: true })).toBeVisible();
     await expect(page.getByRole('table').getByText('e2e-dhcp', { exact: true })).toBeVisible();
+    await expect(page.getByRole('table').getByText('02:00:00:00:00:20', { exact: true })).toBeVisible();
+    await expect(page.getByText('10.199.0.10 – 10.199.0.30 (21 addresses)', { exact: true })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Source', exact: true })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Type', exact: true })).toHaveCount(0);
     const allocationRow = page.getByRole('row').filter({ hasText: '10.199.0.20' });
-    const allocationPositionBefore = await allocationRow.boundingBox();
-    await allocationRow.getByRole('checkbox').check();
-    await expect(page.getByRole('button', { name: 'Release 1', exact: true })).toBeVisible();
-    const allocationPositionAfter = await allocationRow.boundingBox();
-    expect(allocationPositionAfter?.y).toBe(allocationPositionBefore?.y);
-    await allocationRow.getByRole('checkbox').uncheck();
-    await page.getByRole('button', { name: 'Reserve address' }).click();
+    await expect(allocationRow.getByText('DHCP', { exact: true })).toBeVisible();
+    await expect(allocationRow.getByText('Managed by pfSense', { exact: true })).toBeVisible();
+    await expect(allocationRow.getByRole('checkbox')).toBeDisabled();
+    await expect(page.getByLabel('Edit 10.199.0.20')).toHaveCount(0);
+    await expect(page.getByLabel('Release 10.199.0.20')).toHaveCount(0);
+    const outsideDhcpRow = page.getByRole('row').filter({ hasText: '10.199.0.35' });
+    await expect(outsideDhcpRow.getByText('Active', { exact: true })).toBeVisible();
+    await expect(outsideDhcpRow.getByText('DHCP', { exact: true })).toHaveCount(0);
+
+    const addressTable = page.getByRole('table');
+    await addressTable.getByRole('button', { name: 'Reserve first IP', exact: true }).first().click();
     const reservationDialog = page.getByRole('dialog', { name: 'Reserve address space' });
+    await expect(reservationDialog.getByLabel('IP address')).toHaveValue('10.199.0.1');
+    await page.keyboard.press('Escape');
+
+    await addressTable.getByRole('button', { name: 'Reserve range', exact: true }).first().click();
+    await expect(reservationDialog.getByLabel('First address')).toHaveValue('10.199.0.1');
+    await expect(reservationDialog.getByLabel('Last address')).toHaveValue('10.199.0.19');
+    await page.keyboard.press('Escape');
+
+    await page.getByRole('button', { name: 'Reserve address' }).click();
+    await expect(reservationDialog.getByLabel('Status').locator('option[value="dhcp"]')).toHaveCount(0);
     await reservationDialog.getByLabel('IP address').fill('10.199.0.21');
     await reservationDialog.getByLabel('Hostname').fill('e2e-manual');
     await reservationDialog.getByLabel('Description').fill('Manual browser test');
     await reservationDialog.getByRole('button', { name: 'Add IP address' }).click();
     await expect(page.getByRole('table').getByText('10.199.0.21', { exact: true })).toBeVisible();
+    const manualAllocationRow = page.getByRole('row').filter({ hasText: '10.199.0.21' });
+    await expect(manualAllocationRow.getByText('Manual', { exact: true })).toBeVisible();
+    await expect(manualAllocationRow.getByText('DHCP', { exact: true })).toBeVisible();
+    await expect(manualAllocationRow.getByRole('checkbox')).toBeEnabled();
     await page.getByLabel('Edit 10.199.0.21').click();
     const editDialog = page.getByRole('dialog', { name: 'Edit IP address' });
+    await expect(editDialog).toContainText('This address is shown as DHCP because it lies inside the configured prefix range.');
     await editDialog.getByLabel('Hostname').fill('e2e-manual-edited');
     await editDialog.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByRole('table').getByText('e2e-manual-edited', { exact: true })).toBeVisible();

@@ -493,11 +493,11 @@ export function ScheduleDialog({
         )
       : [...checked].filter((v) => v !== "all").join(",");
     if (!targets) {
-      showToast("Select at least one target. All servers must be selected explicitly.", "error");
+      showToast("Select at least one target. All managed hosts must be selected explicitly.", "error");
       return;
     }
     if (allChecked && !allConfirmed) {
-      showToast("Confirm the all-server target before saving this schedule.", "error");
+      showToast("Confirm the all-host target before saving this schedule.", "error");
       return;
     }
     let parsedExtraVars: Record<string, unknown> = {};

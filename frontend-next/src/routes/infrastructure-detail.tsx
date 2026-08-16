@@ -103,7 +103,7 @@ export function InfrastructureDetailPage() {
     return (
       <EmptyState
         icon={<Database className="h-5 w-5" />}
-        title="Infrastructure object not found"
+        title="Virtual infrastructure object not found"
         description="The platform was removed, is in a different environment, or the inventory changed."
         action={
           <Button asChild variant="outline">

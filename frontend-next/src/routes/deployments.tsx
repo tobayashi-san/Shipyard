@@ -369,7 +369,7 @@ export function DeploymentsPage() {
             <div className="console-object-summary-main">
                 <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
                   <Boxes className="h-4 w-4 text-muted-foreground" />
-                  Deployment inventory
+                  Provisioning capacity
                 </div>
                 <div className="console-object-info-grid grid-cols-1 sm:grid-cols-3">
                   <DeploymentFact
@@ -402,11 +402,10 @@ export function DeploymentsPage() {
               <div>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Workflow className="h-4 w-4" />
-                  Deployment inventory
+                  Deployments
                 </CardTitle>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  OpenTofu workspaces, managed VM capacity, and current run
-                  status.
+                  Desired-state definitions, managed VM capacity, and current run status.
                 </p>
               </div>
               {selectedWorkspaceCount > 0 && (
@@ -657,7 +656,7 @@ export function DeploymentsPage() {
             ? "Remove deployment from Fleet"
             : `Remove ${selectedWorkspaceCount} deployments from Fleet`
         }
-        description="Only the Fleet registration and run history are removed. Workspace files and provisioned infrastructure remain unchanged."
+        description="Only the deployment registration and run history are removed. OpenTofu files and provisioned infrastructure remain unchanged."
         confirmLabel="Remove from Fleet"
         confirmTextValue={
           selectedWorkspaceCount > 0

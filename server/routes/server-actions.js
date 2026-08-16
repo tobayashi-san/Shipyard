@@ -91,7 +91,8 @@ function createServerActionsRouter({ broadcast } = {}) {
         {},
         (type, data) => {
           emit({ type: 'update_output', serverId, historyId, stream: type, data });
-        }
+        },
+        { environmentId: server.environment_id || 'default' }
       );
 
       const status = result.success ? 'success' : 'failed';
@@ -118,7 +119,8 @@ function createServerActionsRouter({ broadcast } = {}) {
     req.permissions = perms;
     next();
   }, async (req, res) => {
-    const allServers = db.servers.getAll();
+    const environmentId = req.environmentId || 'default';
+    const allServers = db.servers.getAll(environmentId);
     const scopedServers = req.permissions.full || req.permissions.servers === 'all'
       ? allServers
       : filterServers(allServers, req.permissions);
@@ -128,7 +130,12 @@ function createServerActionsRouter({ broadcast } = {}) {
       ? 'all'
       : scopedServers.map(s => s.name).join(',');
 
-    const historyId = db.updateHistory.create('bulk_update', 'system_update_all', req.user?.username || null);
+    const resolvedTargets = scopedServers.map(server => server.name).join(',');
+    const historyId = db.scheduleHistory.create(null, 'Bulk system update', 'update.yml', resolvedTargets, {
+      environmentId,
+      triggeredBy: req.user?.username || null,
+    });
+    const outputLines = [];
     res.json({ historyId, status: 'started' });
 
     try {
@@ -137,32 +144,34 @@ function createServerActionsRouter({ broadcast } = {}) {
         targets,
         {},
         (type, data) => {
-          emit({ type: 'bulk_update_output', historyId, stream: type, data });
-        }
+          outputLines.push(data);
+          db.scheduleHistory.appendOutput(historyId, data);
+          emit({ type: 'bulk_update_output', historyId, runId: historyId, environmentId, stream: type, data });
+        },
+        { environmentId }
       );
 
       const status = result.success ? 'success' : 'failed';
-      db.updateHistory.updateStatus(historyId, status, result.stdout + result.stderr);
+      const output = outputLines.join('') || result.stdout + result.stderr;
+      db.scheduleHistory.complete(historyId, status, output);
       db.auditLog.write('server.update_all', `targets=${targets} status=${status}`, req.ip, result.success, req.user?.username);
       // Invalidate updates cache for all servers so the dashboard reflects the new state.
       if (result.success) {
         for (const s of scopedServers) {
           try { db.updatesCache.delete(s.id); } catch {}
         }
-        if (targets === 'all') resourceAlerts.evaluateAll();
-        else scopedServers.forEach(s => resourceAlerts.evaluateServer(s.id));
-        emit({ type: 'cache_updated', scope: 'updates' });
+        scopedServers.forEach(s => resourceAlerts.evaluateServer(s.id));
+        emit({ type: 'cache_updated', scope: 'updates', environmentId });
         // Refresh system info for every server so reboot_required reflects
         // the post-update state. Background, fire-and-forget.
         for (const s of scopedServers) refreshServerInfo(s);
       }
-      emit({ type: 'bulk_update_complete', historyId, success: result.success });
+      emit({ type: 'bulk_update_complete', historyId, runId: historyId, environmentId, success: result.success });
     } catch (error) {
-      db.updateHistory.updateStatus(historyId, 'failed', error.message);
+      db.scheduleHistory.complete(historyId, 'failed', outputLines.join('') + (outputLines.length ? '\n' : '') + error.message);
       db.auditLog.write('server.update_all', `targets=${targets} error=${error.message}`, req.ip, false, req.user?.username);
-      if (targets === 'all') resourceAlerts.evaluateAll();
-      else scopedServers.forEach(s => resourceAlerts.evaluateServer(s.id));
-      emit({ type: 'bulk_update_error', historyId, error: error.message });
+      scopedServers.forEach(s => resourceAlerts.evaluateServer(s.id));
+      emit({ type: 'bulk_update_error', historyId, runId: historyId, environmentId, error: error.message });
       if (db.settings.get('notify_update_failed') !== '0') notify('Bulk update failed', error.message, false).catch(() => {});
     }
   });
@@ -189,7 +198,7 @@ function createServerActionsRouter({ broadcast } = {}) {
         },
         // The reboot module must run with elevated privileges. Without become
         // it fails for the common non-root SSH users that Shipyard supports.
-        { become: true }
+        { become: true, environmentId: server.environment_id || 'default' }
       );
 
       const status = result.success ? 'success' : 'failed';
@@ -236,7 +245,7 @@ function createServerActionsRouter({ broadcast } = {}) {
         (type, data) => {
           emit({ type: 'update_output', serverId, historyId, stream: type, data });
         },
-        { become: true }
+        { become: true, environmentId: server.environment_id || 'default' }
       );
 
       db.updateHistory.updateStatus(historyId, result.success ? 'success' : 'failed', result.stdout + result.stderr);
@@ -307,7 +316,7 @@ function createServerActionsRouter({ broadcast } = {}) {
         ops.ensureDir.module,
         ops.ensureDir.args,
         () => {},
-        { become: true }
+        { become: true, environmentId: server.environment_id || 'default' }
       );
       if (!ensureDir.success) {
         return res.status(500).json({ error: 'Failed to create compose directory', details: ensureDir.stderr || ensureDir.stdout });
@@ -318,7 +327,7 @@ function createServerActionsRouter({ broadcast } = {}) {
         ops.copyFile.module,
         ops.copyFile.args,
         () => {},
-        { become: true }
+        { become: true, environmentId: server.environment_id || 'default' }
       );
 
       if (copyResult.success) {
@@ -368,7 +377,7 @@ function createServerActionsRouter({ broadcast } = {}) {
         (type, data) => {
           emit({ type: 'update_output', serverId, historyId, stream: type, data });
         },
-        { become: true }
+        { become: true, environmentId: server.environment_id || 'default' }
       );
 
       db.updateHistory.updateStatus(historyId, result.success ? 'success' : 'failed', result.stdout + result.stderr);

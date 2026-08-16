@@ -46,15 +46,20 @@ test('runAdHoc appends --become when requested', async () => {
   const originalGenerateInventory = ansibleRunner.generateInventory;
 
   let capturedArgs = null;
+  let capturedEnvironment = null;
   ansibleRunner._resolveSshKey = () => ({ keyPath: '/tmp/test-key', cleanup: () => {} });
-  ansibleRunner.generateInventory = () => '/tmp/test-inventory.ini';
+  ansibleRunner.generateInventory = (_keyPath, environmentId) => {
+    capturedEnvironment = environmentId;
+    return '/tmp/test-inventory.ini';
+  };
   ansibleRunner._spawnProcess = async (_binary, args) => {
     capturedArgs = args;
     return { success: true, stdout: '', stderr: '', code: 0 };
   };
 
   try {
-    await ansibleRunner.runAdHoc('ubuntu-server-01', 'command', 'whoami', null, { become: true });
+    await ansibleRunner.runAdHoc('ubuntu-server-01', 'command', 'whoami', null, { become: true, environmentId: 'runner-staging' });
+    assert.equal(capturedEnvironment, 'runner-staging');
     assert.deepEqual(capturedArgs, [
       '-i', '/tmp/test-inventory.ini',
       'ubuntu-server-01',

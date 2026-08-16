@@ -19,16 +19,29 @@ const resetLimiter = rateLimit({
 
 const PLAYBOOKS_DIR = path.join(__dirname, '..', 'playbooks');
 
-function deleteServerTables() {
-  db.db.prepare('DELETE FROM server_info').run();
-  db.db.prepare('DELETE FROM update_history').run();
-  db.db.prepare('DELETE FROM docker_containers').run();
-  db.db.prepare('DELETE FROM compose_projects').run();
-  db.db.prepare('DELETE FROM server_updates_cache').run();
-  db.db.prepare('DELETE FROM docker_image_updates_cache').run();
-  db.db.prepare('DELETE FROM custom_update_tasks').run();
-  db.db.prepare('DELETE FROM servers').run();
-  db.db.prepare('DELETE FROM server_groups').run();
+function deleteServerTables(environmentId = null) {
+  if (!environmentId) {
+    db.db.prepare('DELETE FROM server_info').run();
+    db.db.prepare('DELETE FROM update_history').run();
+    db.db.prepare('DELETE FROM docker_containers').run();
+    db.db.prepare('DELETE FROM compose_projects').run();
+    db.db.prepare('DELETE FROM server_updates_cache').run();
+    db.db.prepare('DELETE FROM docker_image_updates_cache').run();
+    db.db.prepare('DELETE FROM custom_update_tasks').run();
+    db.db.prepare('DELETE FROM servers').run();
+    db.db.prepare('DELETE FROM server_groups').run();
+    return;
+  }
+  const serverIds = db.db.prepare('SELECT id FROM servers WHERE environment_id = ?').all(environmentId).map(row => row.id);
+  if (serverIds.length) {
+    const placeholders = serverIds.map(() => '?').join(',');
+    for (const table of ['server_info', 'docker_containers', 'compose_projects', 'server_updates_cache', 'docker_image_updates_cache', 'custom_update_tasks']) {
+      db.db.prepare(`DELETE FROM ${table} WHERE server_id IN (${placeholders})`).run(...serverIds);
+    }
+  }
+  db.db.prepare('DELETE FROM update_history WHERE environment_id = ?').run(environmentId);
+  db.db.prepare('DELETE FROM servers WHERE environment_id = ?').run(environmentId);
+  db.db.prepare('DELETE FROM server_groups WHERE environment_id = ?').run(environmentId);
 }
 
 function deleteUserPlaybooks() {
@@ -43,8 +56,9 @@ function deleteUserPlaybooks() {
 // DELETE /api/reset/servers
 router.delete('/servers', resetLimiter, adminOnly, (req, res) => {
   try {
-    db.db.transaction(deleteServerTables)();
-    db.auditLog.write('reset.servers', 'All servers and related data deleted', req.ip, true, req.user?.username);
+    const environmentId = req.environmentId || 'default';
+    db.db.transaction(deleteServerTables)(environmentId);
+    db.auditLog.write('reset.servers', `All servers and related data deleted in environment=${environmentId}`, req.ip, true, req.user?.username);
     res.json({ success: true });
   } catch (e) {
     serverError(res, e, 'reset');
@@ -54,8 +68,10 @@ router.delete('/servers', resetLimiter, adminOnly, (req, res) => {
 // DELETE /api/reset/schedules
 router.delete('/schedules', resetLimiter, adminOnly, (req, res) => {
   try {
-    db.db.prepare('DELETE FROM schedules').run();
-    db.auditLog.write('reset.schedules', 'All schedules deleted', req.ip, true, req.user?.username);
+    const environmentId = req.environmentId || 'default';
+    db.db.prepare('DELETE FROM schedules WHERE environment_id = ?').run(environmentId);
+    db.db.prepare('DELETE FROM schedule_history WHERE environment_id = ?').run(environmentId);
+    db.auditLog.write('reset.schedules', `All schedules deleted in environment=${environmentId}`, req.ip, true, req.user?.username);
     res.json({ success: true });
   } catch (e) {
     serverError(res, e, 'reset');

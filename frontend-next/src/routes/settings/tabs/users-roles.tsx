@@ -5,6 +5,7 @@ import {
   Users, ShieldCheck, UserPlus, Pencil, KeyRound, Trash2, ShieldAlert,
   Plus, Lock, Server as ServerIcon, ArrowUp, Terminal, Clock, SlidersHorizontal,
   Puzzle, MoreHorizontal,
+  UserX, UserCheck, LogOut,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { showToast } from '@/lib/toast';
@@ -22,7 +23,9 @@ import {
 import { SkeletonRow } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useUi } from '@/lib/store';
 import { SettingsRow, SettingsSection } from '../_row';
+import { useUrlTab } from '@/lib/use-url-tab';
 
 // -------------------- types --------------------
 
@@ -33,6 +36,8 @@ interface UserRow {
   email?: string;
   role: string;
   totp_enabled?: boolean;
+  disabled?: boolean;
+  last_login_at?: string | null;
 }
 
 interface RoleRow {
@@ -56,10 +61,13 @@ interface PlaybookRow { filename: string }
 
 // -------------------- root --------------------
 
+const USER_ROLE_TABS = ['users', 'roles'] as const;
+
 export function UsersRolesTab() {
   const { t } = useTranslation();
+  const userRoleTabs = useUrlTab('users', USER_ROLE_TABS);
   return (
-    <Tabs defaultValue="users" className="space-y-4">
+    <Tabs value={userRoleTabs.value} onValueChange={userRoleTabs.onValueChange} className="space-y-4">
       <TabsList>
         <TabsTrigger value="users">
           <Users className="mr-2 h-4 w-4" /> {t('set.userManagement')}
@@ -95,6 +103,8 @@ function UsersPanel() {
   const [resetTarget, setResetTarget] = useState<UserRow | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<UserRow | null>(null);
   const [confirm2fa, setConfirm2fa] = useState<UserRow | null>(null);
+  const [statusTarget, setStatusTarget] = useState<UserRow | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<UserRow | null>(null);
 
   const users = usersQ.data || [];
   const roles = rolesQ.data || [];
@@ -143,13 +153,19 @@ function UsersPanel() {
                   {initial}
                 </span>
                 <span className="flex flex-col">
-                  <span>{shown}</span>
+                  <span className={cn(u.disabled && 'text-muted-foreground line-through')}>{shown}</span>
                   <span className="font-mono text-[11px] text-muted-foreground">@{u.username}</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {u.last_login_at
+                      ? t('set.lastLogin', { date: new Date(`${u.last_login_at}Z`).toLocaleString() })
+                      : t('set.neverLoggedIn')}
+                  </span>
                 </span>
               </span>
             }
           >
             <StatusBadge tone={u.role === 'admin' ? 'info' : 'neutral'}>{roleName}</StatusBadge>
+            {u.disabled && <StatusBadge tone="danger">{t('set.disabled')}</StatusBadge>}
             <div className="flex gap-1">
               <Button variant="ghost" size="icon" title={t('common.edit')} onClick={() => setEditing(u)}>
                 <Pencil className="h-4 w-4" />
@@ -162,10 +178,20 @@ function UsersPanel() {
                   <ShieldAlert className="h-4 w-4 text-amber-500" />
                 </Button>
               )}
+              <Button variant="ghost" size="icon" title={t('set.revokeSessions')} onClick={() => setRevokeTarget(u)}>
+                <LogOut className="h-4 w-4" />
+              </Button>
               {!isSelf && (
-                <Button variant="ghost" size="icon" title={t('common.delete')} onClick={() => setConfirmDelete(u)}>
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
+                <>
+                  <Button variant="ghost" size="icon" title={u.disabled ? t('set.enableUser') : t('set.disableUser')} onClick={() => setStatusTarget(u)}>
+                    {u.disabled
+                      ? <UserCheck className="h-4 w-4 text-emerald-500" />
+                      : <UserX className="h-4 w-4 text-amber-500" />}
+                  </Button>
+                  <Button variant="ghost" size="icon" title={t('common.delete')} onClick={() => setConfirmDelete(u)}>
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </>
               )}
             </div>
           </SettingsRow>
@@ -188,7 +214,61 @@ function UsersPanel() {
       {confirmDelete && (
         <DeleteUserDialog user={confirmDelete} onClose={() => setConfirmDelete(null)} />
       )}
+      {statusTarget && (
+        <UserStatusDialog user={statusTarget} onClose={() => setStatusTarget(null)} />
+      )}
+      {revokeTarget && (
+        <RevokeSessionsDialog user={revokeTarget} onClose={() => setRevokeTarget(null)} />
+      )}
     </SettingsSection>
+  );
+}
+
+function UserStatusDialog({ user, onClose }: { user: UserRow; onClose: () => void }) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const disabling = !user.disabled;
+  const m = useMutation({
+    mutationFn: () => api.setUserDisabled(user.id, disabling),
+    onSuccess: () => {
+      showToast(t(disabling ? 'set.userDisabled' : 'set.userEnabled') as string, 'success');
+      qc.invalidateQueries({ queryKey: ['users'] });
+      onClose();
+    },
+    onError: (e) => showToast((e as Error).message, 'error'),
+  });
+  return (
+    <ConfirmDialog
+      open
+      onOpenChange={(open) => { if (!open) onClose(); }}
+      title={t(disabling ? 'set.disableUser' : 'set.enableUser')}
+      description={t(disabling ? 'set.disableUserConfirm' : 'set.enableUserConfirm', { username: user.username })}
+      confirmLabel={t(disabling ? 'set.disableUser' : 'set.enableUser')}
+      variant={disabling ? 'destructive' : 'warning'}
+      onConfirm={() => m.mutate()}
+      isPending={m.isPending}
+    />
+  );
+}
+
+function RevokeSessionsDialog({ user, onClose }: { user: UserRow; onClose: () => void }) {
+  const { t } = useTranslation();
+  const m = useMutation({
+    mutationFn: () => api.revokeUserSessions(user.id),
+    onSuccess: () => { showToast(t('set.sessionsRevoked') as string, 'success'); onClose(); },
+    onError: (e) => showToast((e as Error).message, 'error'),
+  });
+  return (
+    <ConfirmDialog
+      open
+      onOpenChange={(open) => { if (!open) onClose(); }}
+      title={t('set.revokeSessions')}
+      description={t('set.revokeSessionsConfirm', { username: user.username })}
+      confirmLabel={t('set.revokeSessions')}
+      variant="destructive"
+      onConfirm={() => m.mutate()}
+      isPending={m.isPending}
+    />
   );
 }
 
@@ -511,7 +591,10 @@ const SERVER_CAPS: CapDef[] = [
   { key: 'canAddServers', label: 'Add' },
   { key: 'canEditServers', label: 'Edit' },
   { key: 'canDeleteServers', label: 'Delete' },
+  { key: 'canViewServerHistory', label: 'View host history' },
   { key: 'canUseTerminal', label: 'SSH Terminal' },
+  { key: 'canViewFiles', label: 'View & download files' },
+  { key: 'canManageFiles', label: 'Upload & transfer files' },
   { key: 'canViewNotes', label: 'View Notes' },
   { key: 'canEditNotes', label: 'Edit Notes' },
   { key: 'canExportImportServers', label: 'Export / Import' },
@@ -551,6 +634,9 @@ const VAR_CAPS: CapDef[] = [
   { key: 'canDeleteVars', label: 'Delete' },
 ];
 const OTHER_CAPS: CapDef[] = [
+  { key: 'canViewInfrastructure', label: 'View virtual infrastructure and platforms' },
+  { key: 'canViewNetworks', label: 'View networks and IPAM' },
+  { key: 'canEditNetworks', label: 'Manage networks and IPAM' },
   { key: 'canViewDeployments', label: 'Deployments ansehen' },
   { key: 'canEditDeployments', label: 'Edit deployment definitions' },
   { key: 'canPlanDeployments', label: 'Create deployment plans' },
@@ -569,6 +655,7 @@ const ALL_CAPS = [
 
 const DANGEROUS_CAPS = new Set([
   'canUseTerminal',
+  'canManageFiles',
   'canDeleteServers',
   'canManageDockerCompose',
   'canRunUpdates',
@@ -588,6 +675,7 @@ const DANGEROUS_CAPS = new Set([
   'canApplyDeployments',
   'canDestroyDeployments',
   'canManageDeploymentPlatforms',
+  'canEditNetworks',
   'canViewAudit',
 ]);
 
@@ -634,12 +722,13 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
   const { t } = useTranslation();
   const qc = useQueryClient();
   const isEdit = !!role;
+  const environmentId = useUi((state) => state.environmentId);
 
-  const serversQ = useQuery<ServerRow[]>({ queryKey: ['servers'], queryFn: () => api.getServers() as unknown as Promise<ServerRow[]> });
+  const serversQ = useQuery<ServerRow[]>({ queryKey: ['servers', environmentId], queryFn: () => api.getServers(environmentId) as unknown as Promise<ServerRow[]> });
   // Keep the folder inventory on the same invalidation family as the
   // infrastructure tree and resource list. This dialog deliberately reads
   // all folders, while environment-specific views use a second key segment.
-  const groupsQ = useQuery<GroupRow[]>({ queryKey: ['server-groups', 'all'], queryFn: () => api.getServerGroups() as unknown as Promise<GroupRow[]> });
+  const groupsQ = useQuery<GroupRow[]>({ queryKey: ['server-groups', environmentId], queryFn: () => api.getServerGroups(environmentId) as unknown as Promise<GroupRow[]> });
   const pluginsQ = useQuery<PluginRow[]>({ queryKey: ['plugins'], queryFn: () => api.getPlugins() as unknown as Promise<PluginRow[]> });
   const playbooksQ = useQuery<PlaybookRow[]>({ queryKey: ['playbooks'], queryFn: () => api.getPlaybooks() as unknown as Promise<PlaybookRow[]> });
 
@@ -948,7 +1037,7 @@ function RolePreview({
         </Badge>
       </div>
       <div className="grid gap-2 sm:grid-cols-3">
-        <PreviewMetric label="Servers" value={serverScope} />
+        <PreviewMetric label="Managed hosts" value={serverScope} />
         <PreviewMetric label="Playbooks" value={resourceSummary(pbMode, playbooksSelected, 'playbooks')} />
         <PreviewMetric label="Plugins" value={resourceSummary(plMode, pluginsSelected, 'plugins')} />
       </div>

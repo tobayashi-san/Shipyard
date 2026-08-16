@@ -147,13 +147,16 @@ function normalizeResourceKey(resource) {
   return address ? `resource:${address}` : null;
 }
 
-function extractProxmoxGuestIpv4s(payload) {
+function extractProxmoxGuestNetworkRecords(payload) {
   const interfaces = Array.isArray(payload)
     ? payload
     : (Array.isArray(payload?.result) ? payload.result : []);
   const result = [];
   for (const iface of interfaces) {
     if (!iface || String(iface.name || '').toLowerCase() === 'lo') continue;
+    const compactMac = String(iface['hardware-address'] || iface.hardware_address || iface.mac_address || iface.mac || '')
+      .toLowerCase().replace(/[^a-f0-9]/g, '');
+    const macAddress = compactMac.length === 12 ? compactMac.match(/.{2}/g).join(':') : '';
     const addresses = Array.isArray(iface['ip-addresses'])
       ? iface['ip-addresses']
       : (Array.isArray(iface.ip_addresses) ? iface.ip_addresses : []);
@@ -161,10 +164,14 @@ function extractProxmoxGuestIpv4s(payload) {
       const type = String(address?.['ip-address-type'] || address?.ip_address_type || '').toLowerCase();
       const ip = normalizeIp(address?.['ip-address'] || address?.ip_address || address?.address);
       if (!ip || net.isIP(ip) !== 4 || ip.startsWith('127.') || ip.startsWith('169.254.')) continue;
-      if ((!type || type === 'ipv4') && !result.includes(ip)) result.push(ip);
+      if ((!type || type === 'ipv4') && !result.some(record => record.address === ip))
+        result.push({ address: ip, mac_address: macAddress });
     }
   }
   return result;
+}
+function extractProxmoxGuestIpv4s(payload) {
+  return extractProxmoxGuestNetworkRecords(payload).map(record => record.address);
 }
 function extractProxmoxGuestIpv4(payload) { return extractProxmoxGuestIpv4s(payload)[0] || null; }
 function ipv4Number(value) {
@@ -266,7 +273,9 @@ module.exports = {
   buildProxmoxResourceOverview,
   extractProxmoxGuestIpv4,
   extractProxmoxGuestIpv4s,
+  extractProxmoxGuestNetworkRecords,
   getProxmoxStateResources,
+  ipv4Number,
   normalizeProxmoxVm,
   normalizeProxmoxVmTemplate,
   renderProxmoxVmHcl,

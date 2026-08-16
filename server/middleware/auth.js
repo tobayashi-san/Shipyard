@@ -52,6 +52,7 @@ const authMiddleware = function authMiddleware(req, res, next) {
 
   const user = db.users.getById(payload.userId);
   if (!user) return res.status(401).json({ error: 'User not found' });
+  if (user.disabled) return res.status(401).json({ error: 'Account disabled' });
   // Reject tokens issued before a password change
   if (payload.tv !== undefined && payload.tv !== (user.token_version || 0)) {
     return res.status(401).json({ error: 'Token revoked' });

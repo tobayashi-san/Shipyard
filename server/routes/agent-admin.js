@@ -12,9 +12,9 @@ const { serverError } = require('../utils/http-error');
 
 const router = express.Router();
 
-function requireServer(id, res) {
+function requireServer(id, res, environmentId = null) {
   const server = db.servers.getById(id);
-  if (!server) {
+  if (!server || (environmentId && String(server.environment_id || 'default') !== environmentId)) {
     res.status(404).json({ error: 'Server not found' });
     return null;
   }
@@ -69,6 +69,17 @@ function getAgentToken(cfg) {
     throw err;
   }
   return { token: stored, generated: false };
+}
+
+function getRotationToken(cfg) {
+  if (cfg?.pending_token) {
+    const pending = decrypt(cfg.pending_token);
+    if (pending && !String(pending).startsWith('enc:')) {
+      return { token: pending, encryptedToken: cfg.pending_token };
+    }
+  }
+  const token = crypto.randomBytes(32).toString('hex');
+  return { token, encryptedToken: encrypt(token) };
 }
 
 function normalizeCaPem(input) {
@@ -143,7 +154,7 @@ router.use((req, res, next) => {
 });
 
 router.get('/servers/:id/agent/status', (req, res) => {
-  const server = requireServer(req.params.id, res);
+  const server = requireServer(req.params.id, res, req.environmentId);
   if (!server) return;
 
   const cfg = db.agentConfig.getByServerId(server.id);
@@ -166,7 +177,7 @@ router.get('/servers/:id/agent/status', (req, res) => {
 
 router.post('/servers/:id/agent/install', async (req, res) => {
   if (!ansibleBackendPrecheck(res)) return;
-  const server = requireServer(req.params.id, res);
+  const server = requireServer(req.params.id, res, req.environmentId);
   if (!server) return;
 
   const requestedMode = String(req.body?.mode || 'auto');
@@ -195,6 +206,8 @@ router.post('/servers/:id/agent/install', async (req, res) => {
         agent_interval: interval,
         shipyard_ca_cert_pem: caPem,
       },
+      null,
+      { environmentId: server.environment_id || 'default' },
     );
 
     if (!result.success) {
@@ -220,10 +233,13 @@ router.post('/servers/:id/agent/install', async (req, res) => {
 
 router.post('/servers/:id/agent/update', async (req, res) => {
   if (!ansibleBackendPrecheck(res)) return;
-  const server = requireServer(req.params.id, res);
+  const server = requireServer(req.params.id, res, req.environmentId);
   if (!server) return;
   try {
-    const result = await ansibleRunner.runPlaybook('system/agent/agent-update.yml', server.name, {});
+    const result = await ansibleRunner.runPlaybook(
+      'system/agent/agent-update.yml', server.name, {}, null,
+      { environmentId: server.environment_id || 'default' },
+    );
     if (!result.success) return res.status(500).json({ error: 'Agent update failed', stderr: result.stderr });
     db.auditLog.write('agent.update', `Agent updated on ${server.name}`, req.ip, true, req.user?.username);
     res.json({ success: true });
@@ -235,7 +251,7 @@ router.post('/servers/:id/agent/update', async (req, res) => {
 
 router.put('/servers/:id/agent/config', async (req, res) => {
   if (!ansibleBackendPrecheck(res)) return;
-  const server = requireServer(req.params.id, res);
+  const server = requireServer(req.params.id, res, req.environmentId);
   if (!server) return;
 
   const cfg = db.agentConfig.getByServerId(server.id);
@@ -264,10 +280,13 @@ router.put('/servers/:id/agent/config', async (req, res) => {
         agent_interval: interval,
         shipyard_ca_cert_pem: caPem,
       },
+      null,
+      { environmentId: server.environment_id || 'default' },
     );
     if (!result.success) return res.status(500).json({ error: 'Agent reconfigure failed', stderr: result.stderr });
     db.agentConfig.updateModeInterval(server.id, mode, interval, shipyardUrl);
     if (generated) db.agentConfig.setToken(server.id, encrypt(token));
+    else db.agentConfig.clearPendingToken(server.id);
     db.auditLog.write('agent.configure', `Agent configured on ${server.name} (${mode}/${interval}s)`, req.ip, true, req.user?.username);
     res.json({ success: true, mode, interval });
   } catch (e) {
@@ -279,7 +298,7 @@ router.put('/servers/:id/agent/config', async (req, res) => {
 
 router.post('/servers/:id/agent/token-rotate', async (req, res) => {
   if (!ansibleBackendPrecheck(res)) return;
-  const server = requireServer(req.params.id, res);
+  const server = requireServer(req.params.id, res, req.environmentId);
   if (!server) return;
 
   const cfg = db.agentConfig.getByServerId(server.id);
@@ -295,9 +314,13 @@ router.post('/servers/:id/agent/token-rotate', async (req, res) => {
   }
   try { caPem = await resolveCaPemForDeployment(shipyardUrl, caPem); } catch (e) { return res.status(400).json({ error: `Could not validate Shipyard TLS certificate: ${e.message}` }); }
 
-  const token = crypto.randomBytes(32).toString('hex');
+  const { token, encryptedToken } = getRotationToken(cfg);
   try {
-    db.agentConfig.setToken(server.id, encrypt(token));
+    // Keep the current token active while the replacement is deployed. Agent
+    // authentication accepts both values during this pending phase, so an
+    // ambiguous remote failure cannot lock the host out. Retrying reuses the
+    // same pending token and converges on one value.
+    db.agentConfig.beginTokenRotation(server.id, encryptedToken);
     const result = await ansibleRunner.runPlaybook(
       'system/agent/agent-configure.yml',
       server.name,
@@ -308,8 +331,12 @@ router.post('/servers/:id/agent/token-rotate', async (req, res) => {
         agent_interval: interval,
         shipyard_ca_cert_pem: caPem,
       },
+      null,
+      { environmentId: server.environment_id || 'default' },
     );
     if (!result.success) return res.status(500).json({ error: 'Agent token rotate failed', stderr: result.stderr });
+    const committed = db.agentConfig.commitTokenRotation(server.id, encryptedToken);
+    if (committed.changes !== 1) return res.status(409).json({ error: 'Agent token rotation was superseded. Retry the operation.' });
     db.auditLog.write('agent.token.rotate', `Agent token rotated on ${server.name}`, req.ip, true, req.user?.username);
     res.json({ success: true });
   } catch (e) {
@@ -320,10 +347,13 @@ router.post('/servers/:id/agent/token-rotate', async (req, res) => {
 
 router.delete('/servers/:id/agent', async (req, res) => {
   if (!ansibleBackendPrecheck(res)) return;
-  const server = requireServer(req.params.id, res);
+  const server = requireServer(req.params.id, res, req.environmentId);
   if (!server) return;
   try {
-    const result = await ansibleRunner.runPlaybook('system/agent/agent-remove.yml', server.name, {});
+    const result = await ansibleRunner.runPlaybook(
+      'system/agent/agent-remove.yml', server.name, {}, null,
+      { environmentId: server.environment_id || 'default' },
+    );
     if (!result.success) return res.status(500).json({ error: 'Agent remove failed', stderr: result.stderr });
     db.agentConfig.delete(server.id);
     db.auditLog.write('agent.remove', `Agent removed from ${server.name}`, req.ip, true, req.user?.username);

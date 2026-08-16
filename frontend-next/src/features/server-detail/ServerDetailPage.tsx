@@ -115,6 +115,7 @@ import { ServerOverviewTabs } from "./ServerOverviewTabs";
 import { ServerDockerTab } from "./ServerDockerTab";
 import { ServerUpdatesTab } from "./ServerUpdatesTab";
 import { ServerOperationsTabs } from "./ServerOperationsTabs";
+import { ServerFilesTab } from "./ServerFilesTab";
 import { useUrlTab } from "@/lib/use-url-tab";
 
 const SshTerminal = lazy(() =>
@@ -277,9 +278,10 @@ export function ServerDetailPage() {
       hasCap(profile, "canDeleteCustomUpdates")
     )
       values.push("updates");
-    values.push("history");
+    if (hasCap(profile, "canViewServerHistory")) values.push("history");
     if (agentEnabled && profile?.role === "admin") values.push("agent");
     if (hasCap(profile, "canViewNotes")) values.push("notes");
+    if (hasCap(profile, "canViewFiles")) values.push("files");
     return values;
   }, [agentEnabled, profile, server?.docker_enabled]);
   const serverTabs = useUrlTab("overview", availableTabs);
@@ -508,7 +510,7 @@ export function ServerDetailPage() {
               confirmLabel={t("common.delete")}
               variant="destructive"
               confirmTextValue={server.name}
-              confirmInputLabel="Confirm server name"
+              confirmInputLabel="Confirm managed host name"
               onConfirm={() => deleteServerMut.mutate()}
               isPending={deleteServerMut.isPending}
             />
@@ -529,7 +531,7 @@ export function ServerDetailPage() {
               confirmLabel={t("det.agentRemove")}
               variant="destructive"
               confirmTextValue={server.name}
-              confirmInputLabel="Confirm server name"
+              confirmInputLabel="Confirm managed host name"
               onConfirm={() => agentRemoveMut.mutate()}
               isPending={agentRemoveMut.isPending}
             />
@@ -580,7 +582,12 @@ export function ServerDetailPage() {
             hasCap(profile, "canDeleteCustomUpdates")) && (
             <TabsTrigger value="updates">{t("det.tabUpdates")}</TabsTrigger>
           )}
-          <TabsTrigger value="history">{t("det.tabHistory")}</TabsTrigger>
+          {hasCap(profile, "canViewFiles") && (
+            <TabsTrigger value="files">Files</TabsTrigger>
+          )}
+          {hasCap(profile, "canViewServerHistory") && (
+            <TabsTrigger value="history">{t("det.tabHistory")}</TabsTrigger>
+          )}
           {agentEnabled && profile?.role === "admin" && (
             <TabsTrigger value="agent">{t("det.tabAgent")}</TabsTrigger>
           )}
@@ -598,6 +605,11 @@ export function ServerDetailPage() {
         <ServerOverviewTabs controller={controller} />
         <ServerDockerTab controller={controller} />
         <ServerUpdatesTab controller={controller} />
+        {hasCap(profile, "canViewFiles") && (
+          <TabsContent value="files" className="space-y-4">
+            <ServerFilesTab serverId={id} profile={profile} />
+          </TabsContent>
+        )}
         <ServerOperationsTabs controller={controller} />
       </Tabs>
 

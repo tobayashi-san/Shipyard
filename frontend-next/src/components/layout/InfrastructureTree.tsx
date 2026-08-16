@@ -45,6 +45,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { showToast } from "@/lib/toast";
+import { canAccessInfrastructure, useProfile } from "@/lib/queries";
 
 const STORAGE_KEY = "fleet.console.infrastructure-tree.collapsed";
 const SERVER_GROUP_QUERY_KEY = "server-groups";
@@ -124,7 +125,7 @@ interface ProxmoxCluster {
   nodes?: ProxmoxNode[];
   // The tree deliberately never renders individual Proxmox VMs.  Keeping the
   // inventory count here still gives an operator the useful vCenter-like
-  // "where are my workloads" context without duplicating Fleet hosts.
+  // "where are my workloads" context without duplicating managed hosts.
   vms?: ProxmoxInventoryVm[];
 }
 interface InfrastructureResponse {
@@ -136,6 +137,8 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
   const path = useRouterState({ select: (state) => state.location.pathname });
   const environmentId = useUi((state) => state.environmentId);
   const queryClient = useQueryClient();
+  const { data: profile } = useProfile();
+  const canViewInfrastructure = canAccessInfrastructure(profile);
   const [collapsed, setCollapsed] = useState<Set<string>>(initialCollapsed);
   const [folderOpen, setFolderOpen] = useState(false);
   const [folderName, setFolderName] = useState("");
@@ -155,8 +158,8 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
   const [moveTargetId, setMoveTargetId] = useState("");
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const { data: rawServers } = useQuery({
-    queryKey: ["servers"],
-    queryFn: () => api.getServers() as Promise<Record<string, unknown>[]>,
+    queryKey: ["servers", environmentId],
+    queryFn: () => api.getServers(environmentId) as Promise<Record<string, unknown>[]>,
     staleTime: 30_000,
   });
   const { data: rawGroups } = useQuery({
@@ -176,6 +179,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
       ),
     staleTime: 30_000,
     retry: false,
+    enabled: canViewInfrastructure,
   });
 
   const servers = useMemo(
@@ -761,6 +765,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
   return (
     <div className="space-y-1">
       <div>
+        {canViewInfrastructure && <>
         <div className="flex items-center gap-2 px-2 py-1.5">
           <Link
             to="/infrastructure"
@@ -798,9 +803,11 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
         ) : (
           clusters.map((cluster) => clusterNode(cluster))
         )}
+        </>}
         <div
           className={cn(
-            "mt-3 border-t pt-2 transition-colors",
+            "transition-colors",
+            canViewInfrastructure && "mt-3 border-t pt-2",
             dropTargetId === "__root__" &&
               "rounded-sm bg-primary/10 ring-1 ring-inset ring-primary/50",
           )}
@@ -839,7 +846,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
               )}
             >
               <FolderTree className="h-3.5 w-3.5 shrink-0" />{" "}
-              <span className="truncate">Fleet hosts</span>{" "}
+              <span className="truncate">Managed hosts</span>{" "}
               <span className="rounded bg-muted px-1.5 py-0.5 normal-case tracking-normal">
                 {servers.length}
               </span>
@@ -903,7 +910,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
         {groupTree.map((group) => groupNode(group))}
         {!servers.length && (
           <p className="px-2 py-2 text-xs text-muted-foreground">
-            No Fleet hosts in this environment yet.
+            No managed hosts in this environment yet.
           </p>
         )}
       </div>
@@ -912,7 +919,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
           <DialogHeader>
             <DialogTitle>Create folder</DialogTitle>
             <DialogDescription>
-              Organize VMs and Fleet hosts in a vCenter-like tree view.
+              Organize VMs and managed hosts in a vCenter-like tree view.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -1024,13 +1031,13 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                 Resources in this folder
               </div>
               <p className="text-xs text-muted-foreground">
-                Select Fleet hosts. Adopted Proxmox VMs appear here as Fleet
+                Select managed hosts. Adopted Proxmox VMs appear here as managed
                 hosts.
               </p>
               <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
                 {servers.length === 0 ? (
                   <p className="py-2 text-xs text-muted-foreground">
-                    No Fleet hosts in this environment.
+                    No managed hosts in this environment.
                   </p>
                 ) : (
                   servers.map((server) => (

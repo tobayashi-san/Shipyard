@@ -32,6 +32,7 @@ function validateScheduleScope(req, playbook, targets, environmentId = 'default'
 }
 
 function canAccessSchedule(req, schedule) {
+  if (req.environmentId && String(schedule.environment_id || 'default') !== req.environmentId) return false;
   return !validateScheduleScope(req, schedule.playbook, schedule.targets, schedule.environment_id || 'default');
 }
 
@@ -51,7 +52,7 @@ function validExtraVars(value) {
 
 // GET /api/schedules — list all
 router.get('/', requireScheduleCapability('canViewSchedules'), (req, res) => {
-  const environmentId = String(req.query.environment_id || 'default').trim() || 'default';
+  const environmentId = req.environmentId || String(req.query.environment_id || 'default').trim() || 'default';
   if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found' });
   if (!canAccessEnvironment(getPermissions(req.user), environmentId)) return res.status(403).json({ error: 'Environment access denied' });
   const schedules = db.schedules.getAll(environmentId).filter(schedule => canAccessSchedule(req, schedule));
@@ -69,7 +70,7 @@ router.get('/:id', requireScheduleCapability('canViewSchedules'), (req, res) => 
 // POST /api/schedules — create
 router.post('/', requireScheduleCapability('canAddSchedules'), (req, res) => {
   const { name, playbook, targets, cronExpression, extraVars, checkMode, forks } = req.body;
-  const environmentId = String(req.body.environment_id || 'default').trim() || 'default';
+  const environmentId = req.environmentId || String(req.body.environment_id || 'default').trim() || 'default';
   if (!name || !playbook || !cronExpression || !normalizeScheduleTargets(targets)) {
     return res.status(400).json({ error: 'name, playbook, targets, and cronExpression are required' });
   }

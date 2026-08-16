@@ -42,6 +42,27 @@ test('auditLog.query still does prefix-matching on action', () => {
   assert.ok(rows.every(r => r.action.startsWith('login')));
 });
 
+test('auditLog.count uses the same filters as paginated queries', () => {
+  assert.equal(db.auditLog.count(), 4);
+  assert.equal(db.auditLog.count({ action: 'login' }), 2);
+  assert.equal(db.auditLog.count({ user: 'alice', success: '1' }), 3);
+  assert.equal(db.auditLog.count({ action: '%' }), 0);
+});
+
+test('auditLog date upper bound includes the complete selected calendar day', (t) => {
+  const id = db.uuidv4();
+  db.db.prepare(`INSERT INTO audit_log
+    (id, environment_id, action, detail, user, ip, success, created_at)
+    VALUES (?, 'default', 'date.boundary', '', 'alice', '', 1, '2026-08-16 18:30:00')`)
+    .run(id);
+  t.after(() => db.db.prepare('DELETE FROM audit_log WHERE id = ?').run(id));
+
+  const filters = { action: 'date.boundary', from: '2026-08-16', to: '2026-08-16' };
+  const rows = db.auditLog.query(filters);
+  assert.equal(rows.some(row => row.id === id), true);
+  assert.equal(db.auditLog.count(filters), 1);
+});
+
 test('auditLog.query escapes wildcards in ip filter', () => {
   const rows = db.auditLog.query({ ip: '%' });
   assert.equal(rows.length, 0);

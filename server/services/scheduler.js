@@ -491,6 +491,9 @@ async function pollImageUpdates() {
           const result = await ansibleRunner.runPlaybook(
             "check-image-updates.yml",
             server.name,
+            {},
+            null,
+            { environmentId: server.environment_id || "default" },
           );
           const report = parseImageUpdateReport(result.stdout);
           if (!result.success || !report.complete) {

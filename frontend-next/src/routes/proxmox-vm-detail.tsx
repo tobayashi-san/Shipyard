@@ -43,6 +43,7 @@ import {
 import { hasCap, useProfile } from "@/lib/queries";
 import { useUi } from "@/lib/store";
 import { showToast } from "@/lib/toast";
+import { useUrlTab } from "@/lib/use-url-tab";
 
 interface Vm {
   name: string;
@@ -465,7 +466,7 @@ function VmObjectSummary({
             <ObjectInfo label="Platform" value={platformName} />
             <ObjectInfo
               label="Management"
-              value={vm.fleet_server_id ? "Fleet host" : "Inventory only"}
+              value={vm.fleet_server_id ? "Managed host" : "Inventory only"}
             />
             <ObjectInfo
               label="Operating system"
@@ -612,7 +613,7 @@ function VmTaskRows({
         <table data-density="compact" className="w-full min-w-[760px] text-sm">
           <thead>
             <tr>
-              <th>Zeitpunkt</th>
+              <th>Time</th>
               <th>Task</th>
               <th>Details</th>
               <th>Run by</th>
@@ -776,7 +777,11 @@ export function ProxmoxVmDetailPage() {
     "start" | "shutdown" | "reboot" | "stop" | null
   >(null);
   const [deleteSnapshot, setDeleteSnapshot] = useState<Snapshot | null>(null);
-  const [tab, setTab] = useState("overview");
+  const availableTabs = useMemo(
+    () => ["overview", "configuration", "snapshots", ...(hasCap(profile, "canViewAudit") ? ["tasks"] : [])],
+    [profile],
+  );
+  const vmTabs = useUrlTab("overview", availableTabs);
   const inventory = useQuery({
     queryKey: ["opentofu", "infrastructure", environmentId],
     queryFn: () =>
@@ -818,7 +823,7 @@ export function ProxmoxVmDetailPage() {
   const adoptedServer =
     context.data?.adopted_server ||
     (vm?.fleet_server_id
-      ? { id: vm.fleet_server_id, name: "Fleet host adopted" }
+      ? { id: vm.fleet_server_id, name: "Managed host adopted" }
       : null);
   const configuration = useQuery({
     queryKey: ["proxmox-vm-configuration", connectionId, nodeName, vmId],
@@ -835,7 +840,7 @@ export function ProxmoxVmDetailPage() {
   const canControl = Boolean(apiRoot) && canPower;
   const canManageSnapshots = Boolean(apiRoot) && canEdit;
   const audit = useQuery({
-    queryKey: ["audit-log", "proxmox-vm", vmId, nodeName],
+    queryKey: ["audit-log", "proxmox-vm", environmentId, vmId, nodeName],
     queryFn: () => apiFetch<AuditEvent[]>("/system/audit?limit=100"),
     enabled: canViewAudit,
     staleTime: 15_000,
@@ -977,7 +982,7 @@ export function ProxmoxVmDetailPage() {
               to="/infrastructure"
               className="hover:text-foreground hover:underline"
             >
-              Infrastructure
+              Virtual infrastructure
             </Link>
             <span aria-hidden="true">/</span>
             <Link
@@ -1004,7 +1009,7 @@ export function ProxmoxVmDetailPage() {
             asChild
             variant="ghost"
             size="icon"
-            aria-label={`Zu Node ${vm.node_name}`}
+            aria-label={`Back to node ${vm.node_name}`}
           >
             <Link
               to="/infrastructure/$clusterId/nodes/$nodeName"
@@ -1093,7 +1098,7 @@ export function ProxmoxVmDetailPage() {
         configuration={configuration.data}
         loading={configuration.isLoading}
       />
-      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+      <Tabs value={vmTabs.value} onValueChange={vmTabs.onValueChange} className="space-y-4">
         <TabsList aria-label="VM sections" className="console-tabs">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="configuration">
@@ -1144,7 +1149,7 @@ export function ProxmoxVmDetailPage() {
                       <div className="mt-2 text-sm font-medium">
                         {adoptedServer
                           ? adoptedServer.name
-                          : "Not adopted as a Fleet host"}
+                          : "Not adopted as a managed host"}
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {adoptedServer
@@ -1162,7 +1167,7 @@ export function ProxmoxVmDetailPage() {
                             to="/servers/$id"
                             params={{ id: adoptedServer.id }}
                           >
-                            Open Fleet host
+                            Open managed host
                           </Link>
                         </Button>
                       )}

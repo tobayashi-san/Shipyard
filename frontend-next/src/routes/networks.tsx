@@ -1,4 +1,4 @@
-import { cloneElement, isValidElement, useId, useMemo, useState } from "react";
+import { cloneElement, isValidElement, useDeferredValue, useEffect, useId, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -32,12 +32,18 @@ import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
+import { TablePagination } from "@/components/ui/table-pagination";
+import i18n from "@/lib/i18n";
+import { hasCap, useProfile } from "@/lib/queries";
 
 interface Prefix {
   id: string;
   name: string;
   cidr: string;
   gateway?: string;
+  dhcp_start?: string;
+  dhcp_end?: string;
+  dhcp_address_count?: number;
   vlan_id?: number | null;
   bridge?: string;
   description?: string;
@@ -71,6 +77,8 @@ interface SyncSource {
   last_test_status?: string;
   last_test_error?: string;
   inventory_count?: number;
+  record_count?: number;
+  ignored_count?: number;
   conflict_count?: number;
 }
 interface SourceTestResult {
@@ -83,11 +91,42 @@ interface SourceTestResult {
     mac_address?: string | null;
   }>;
 }
+interface Paginated<T> {
+  items: T[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+}
+interface PrefixPage extends Paginated<Prefix> {
+  summary: {
+    prefix_count: number;
+    child_prefix_count: number;
+    usable_address_count: number;
+    used_address_count: number;
+    free_address_count: number;
+    reservation_count: number;
+    range_count: number;
+  };
+}
+interface SearchResult {
+  id: string;
+  kind: "prefix" | "address" | "range";
+  label: string;
+  secondary: string;
+  subnet_id: string;
+  subnet_cidr: string;
+  status: string;
+  description?: string;
+  server_id?: string | null;
+}
+const tr = (key: string, options?: Record<string, unknown>) =>
+  String(i18n.t(`ipam.${key}`, options));
 const statusLabel: Record<string, string> = {
-  active: "Active",
-  container: "Container",
-  reserved: "Reserved",
-  deprecated: "Deprecated",
+  active: tr("active"),
+  container: tr("container"),
+  reserved: tr("reserved"),
+  deprecated: tr("deprecated"),
 };
 const statusVariant = (
   status: string,
@@ -103,39 +142,25 @@ const capacityTone = (usage: number): "healthy" | "warning" | "critical" =>
 
 export function NetworksPage() {
   const environmentId = useUi((state) => state.environmentId);
+  const { data: profile } = useProfile();
+  const canEdit = hasCap(profile, "canEditServers");
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
-  const [sourceOpen, setSourceOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [status, setStatus] = useState("all");
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const query = useQuery({
-    queryKey: ["ipam", "subnets", environmentId],
+    queryKey: ["ipam", "subnets", environmentId, page, deferredSearch, status],
     queryFn: () =>
-      apiFetch<Prefix[]>(
-        `/ipam/subnets?environment_id=${encodeURIComponent(environmentId)}`,
+      apiFetch<PrefixPage>(
+        `/ipam/subnets?environment_id=${encodeURIComponent(environmentId)}&paginated=1&page=${page}&page_size=${pageSize}&status=${encodeURIComponent(status === "all-including-deprecated" ? "all" : status === "all" ? "current" : status)}&q=${encodeURIComponent(deferredSearch)}`,
       ),
   });
-  const prefixes = Array.isArray(query.data) ? query.data : [];
-  const rows = useMemo(
-    () =>
-      prefixes
-        .filter(
-          (prefix) =>
-            (status === "all"
-              ? prefix.status !== "deprecated"
-              : status === "all-including-deprecated" ||
-                prefix.status === status) &&
-            `${prefix.name} ${prefix.cidr} ${prefix.description || ""}`
-              .toLowerCase()
-              .includes(search.toLowerCase()),
-        )
-        .sort((a, b) =>
-          a.cidr.localeCompare(b.cidr, undefined, { numeric: true }),
-        ),
-    [prefixes, search, status],
-  );
+  const rows = Array.isArray(query.data?.items) ? query.data.items : [];
   const hierarchicalRows = useMemo(() => {
     const byParent = new Map<string | null, Prefix[]>();
     rows.forEach((prefix) => {
@@ -162,24 +187,12 @@ export function NetworksPage() {
   }, [rows]);
   // Only top-level prefixes belong in the environment total. Child prefixes
   // already consume capacity inside their parent and must not be counted twice.
-  const rootPrefixes = prefixes.filter((prefix) => !prefix.parent_id);
-  const totalAddresses = rootPrefixes.reduce(
-    (sum, prefix) => sum + prefix.usable_address_count,
-    0,
-  );
-  const usedAddresses = rootPrefixes.reduce(
-    (sum, prefix) => sum + prefix.used_address_count,
-    0,
-  );
-  const freeAddresses = Math.max(0, totalAddresses - usedAddresses);
-  const reservationCount = rootPrefixes.reduce(
-    (sum, prefix) => sum + prefix.reservation_count,
-    0,
-  );
-  const rangeCount = rootPrefixes.reduce(
-    (sum, prefix) => sum + prefix.range_count,
-    0,
-  );
+  const summary = query.data?.summary;
+  const totalAddresses = summary?.usable_address_count || 0;
+  const usedAddresses = summary?.used_address_count || 0;
+  const freeAddresses = summary?.free_address_count || 0;
+  const reservationCount = summary?.reservation_count || 0;
+  const rangeCount = summary?.range_count || 0;
   const usagePercent = totalAddresses
     ? Math.round((usedAddresses / totalAddresses) * 100)
     : 0;
@@ -188,6 +201,13 @@ export function NetworksPage() {
   const allSelected =
     visibleIds.length > 0 && selectedCount === visibleIds.length;
   const someSelected = selectedCount > 0 && !allSelected;
+  useEffect(() => {
+    setPage(1);
+    setSelectedIds(new Set());
+  }, [deferredSearch, environmentId, status]);
+  useEffect(() => {
+    if (query.data && page > query.data.total_pages) setPage(query.data.total_pages);
+  }, [page, query.data]);
   const updateStatus = useMutation({
     mutationFn: ({ ids, value }: { ids: string[]; value: string }) =>
       Promise.all(
@@ -201,7 +221,10 @@ export function NetworksPage() {
     onSuccess: (_result, variables) => {
       setSelectedIds(new Set());
       showToast(
-        `${variables.ids.length} prefix${variables.ids.length === 1 ? "" : "es"} marked as “${statusLabel[variables.value] || variables.value}”.`,
+        tr("prefixesMarked", {
+          count: variables.ids.length,
+          status: statusLabel[variables.value] || variables.value,
+        }),
         "success",
       );
       void queryClient.invalidateQueries({
@@ -210,7 +233,7 @@ export function NetworksPage() {
     },
     onError: (error: Error) =>
       showToast(
-        error.message || "The prefix status could not be changed.",
+        error.message || tr("prefixStatusFailed"),
         "error",
       ),
   });
@@ -226,8 +249,8 @@ export function NetworksPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="IP address management"
-        description="Address spaces, reservations, and network assignments for the active environment."
+        title={tr("title")}
+        description={tr("description")}
         actions={
           <div className="flex flex-wrap justify-end gap-2">
             <Button
@@ -238,30 +261,30 @@ export function NetworksPage() {
               <RefreshCw
                 className={query.isFetching ? "animate-spin" : undefined}
               />
-              Refresh
+              {tr("refresh")}
             </Button>
-            <Button variant="outline" onClick={() => setSourceOpen(true)}>
-              <DatabaseZap />
-              Sources
+            <Button variant="outline" asChild>
+              <Link to="/networks/sources"><DatabaseZap />{tr("sources")}</Link>
             </Button>
-            <Button onClick={() => setCreateOpen(true)}>
+            {canEdit && <Button onClick={() => setCreateOpen(true)}>
               <Plus />
-              Add prefix
-            </Button>
+              {tr("addPrefix")}
+            </Button>}
           </div>
         }
       />
+      <GlobalIpamSearch environmentId={environmentId} />
       {query.isError ? (
         <Card>
           <EmptyState
             compact
             icon={<AlertTriangle className="h-5 w-5" />}
-            title="Prefixes could not be loaded"
-            description="IPAM data is currently unavailable. Your existing data has not been changed."
+            title={tr("loadError")}
+            description={tr("loadErrorDescription")}
             action={
               <Button variant="outline" onClick={() => void query.refetch()}>
                 <RefreshCw />
-                Try again
+                {tr("tryAgain")}
               </Button>
             }
           />
@@ -273,46 +296,46 @@ export function NetworksPage() {
               <div className="console-object-summary-main">
                 <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
                   <Network className="h-4 w-4 text-brand" />
-                  Network inventory
+                  {tr("inventory")}
                 </div>
                 <div className="console-object-info-grid grid-cols-2 lg:grid-cols-4">
                   <NetworkFact
-                    label="Prefixes"
-                    value={rootPrefixes.length}
+                    label={tr("prefixes")}
+                    value={summary?.prefix_count || 0}
                     detail={
-                      prefixes.length === rootPrefixes.length
-                        ? "No child prefixes"
-                        : `${prefixes.length - rootPrefixes.length} child prefixes`
+                      !summary?.child_prefix_count
+                        ? tr("noChildren")
+                        : tr("childCount", { count: summary.child_prefix_count })
                     }
                   />
                   <NetworkFact
-                    label="Usable IPs"
+                    label={tr("usableIps")}
                     value={totalAddresses}
-                    detail={`${usedAddresses} assigned`}
+                    detail={tr("assignedCount", { count: usedAddresses })}
                   />
                   <NetworkFact
-                    label="Free"
+                    label={tr("free")}
                     value={freeAddresses}
-                    detail={`${Math.max(0, 100 - usagePercent)}% available`}
+                    detail={tr("availablePercent", { count: Math.max(0, 100 - usagePercent) })}
                     tone="success"
                   />
                   <NetworkFact
-                    label="Reservations"
+                    label={tr("reservations")}
                     value={reservationCount}
-                    detail={`${rangeCount} reserved ranges`}
+                    detail={tr("rangeCount", { count: rangeCount })}
                   />
                 </div>
               </div>
               <div className="console-object-capacity">
                 <div className="mb-3 flex items-center justify-between gap-3 text-sm font-semibold">
-                  <span>Address space usage</span>
+                  <span>{tr("usage")}</span>
                   <span className="font-mono text-muted-foreground">
                     {usagePercent} %
                   </span>
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3 text-xs">
-                    <span>Used</span>
+                    <span>{tr("used")}</span>
                     <span className="font-mono text-muted-foreground">
                       {usedAddresses} / {totalAddresses}
                     </span>
@@ -324,8 +347,7 @@ export function NetworksPage() {
                     />
                   </div>
                   <p className="pt-1 text-xs leading-relaxed text-muted-foreground">
-                    Child prefixes are included in their parent address space and
-                    are not counted twice.
+                    {tr("childNoDoubleCount")}
                   </p>
                 </div>
               </div>
@@ -337,21 +359,20 @@ export function NetworksPage() {
                 <div>
                   <CardTitle className="flex items-center gap-2 text-base">
                     <Network className="h-4 w-4" />
-                    Prefixes{" "}
+                    {tr("prefixes")}{" "}
                     <span className="rounded bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
                       {rows.length}
                     </span>
                   </CardTitle>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Review address spaces hierarchically, select them, and manage
-                    them in bulk.
+                    {tr("prefixInventoryDescription")}
                   </p>
                 </div>
                 <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-                  {selectedCount > 0 && (
+                  {canEdit && selectedCount > 0 && (
                     <>
                       <span className="whitespace-nowrap text-xs font-medium tabular-nums">
-                        {selectedCount} selected
+                        {tr("selected", { count: selectedCount })}
                       </span>
                       <Button
                         size="sm"
@@ -364,7 +385,7 @@ export function NetworksPage() {
                           })
                         }
                       >
-                        Active
+                        {tr("active")}
                       </Button>
                       <Button
                         size="sm"
@@ -377,7 +398,7 @@ export function NetworksPage() {
                           })
                         }
                       >
-                        Deprecated
+                        {tr("deprecated")}
                       </Button>
                     </>
                   )}
@@ -387,8 +408,8 @@ export function NetworksPage() {
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
                       className="pl-8"
-                      placeholder="Search prefixes…"
-                      aria-label="Search prefixes"
+                      placeholder={tr("searchPrefixes")}
+                      aria-label={tr("searchPrefixes")}
                     />
                   </label>
                   <Button
@@ -397,7 +418,7 @@ export function NetworksPage() {
                     onClick={() => setFiltersOpen((open) => !open)}
                   >
                     <Settings2 />
-                    Filter{status !== "all" ? ": 1" : ""}
+                    {status !== "all" ? tr("filterCount", { count: 1 }) : tr("filter")}
                   </Button>
                 </div>
               </div>
@@ -407,7 +428,7 @@ export function NetworksPage() {
                     htmlFor="prefix-status-filter"
                     className="text-xs text-muted-foreground"
                   >
-                    Status
+                    {tr("status")}
                   </Label>
                   <select
                     id="prefix-status-filter"
@@ -415,9 +436,9 @@ export function NetworksPage() {
                     onChange={(event) => setStatus(event.target.value)}
                     className="h-9 rounded-md border bg-background px-2 text-sm"
                   >
-                    <option value="all">Current statuses</option>
+                    <option value="all">{tr("currentStatuses")}</option>
                     <option value="all-including-deprecated">
-                      All statuses (including deprecated)
+                      {tr("allStatusesDeprecated")}
                     </option>
                     {Object.entries(statusLabel).map(([value, label]) => (
                       <option key={value} value={value}>
@@ -432,7 +453,7 @@ export function NetworksPage() {
                       variant="ghost"
                       onClick={() => setStatus("all")}
                     >
-                      Reset
+                      {tr("reset")}
                     </Button>
                   )}
                 </div>
@@ -440,10 +461,10 @@ export function NetworksPage() {
             </CardHeader>
             <CardContent className="p-0">
               {query.isPending ? (
-                <EmptyState compact title="Loading prefixes…" />
+                <EmptyState compact title={tr("loadingPrefixes")} />
               ) : hierarchicalRows.length === 0 ? (
                 <p className="p-10 text-sm text-muted-foreground">
-                  No prefixes found.
+                  {tr("noPrefixes")}
                 </p>
               ) : (
                 <>
@@ -455,6 +476,7 @@ export function NetworksPage() {
                         depth={depth}
                         checked={selectedIds.has(prefix.id)}
                         onToggle={() => toggle(prefix.id)}
+                        canSelect={canEdit}
                       />
                     ))}
                   </div>
@@ -465,10 +487,10 @@ export function NetworksPage() {
                     >
                       <thead>
                         <tr>
-                          <th className="w-11 px-3">
+                          {canEdit && <th className="w-11 px-3">
                             <input
                               type="checkbox"
-                              aria-label="Select all visible prefixes"
+                              aria-label={tr("selectAllPrefixes")}
                               checked={allSelected}
                               ref={(input) => {
                                 if (input) input.indeterminate = someSelected;
@@ -479,14 +501,14 @@ export function NetworksPage() {
                                 )
                               }
                             />
-                          </th>
-                          <th className="px-3">Prefix</th>
-                          <th className="px-3">Status</th>
-                          <th className="px-3">VLAN / Bridge</th>
-                          <th className="px-3">Usage</th>
-                          <th className="px-3">Description</th>
+                          </th>}
+                          <th className="px-3">{tr("prefixNameColumn")}</th>
+                          <th className="px-3">{tr("status")}</th>
+                          <th className="px-3">{tr("vlanBridge")}</th>
+                          <th className="px-3">{tr("usage")}</th>
+                          <th className="px-3">{tr("descriptionLabel")}</th>
                           <th className="w-10 px-3">
-                            <span className="sr-only">Open</span>
+                            <span className="sr-only">{tr("open")}</span>
                           </th>
                         </tr>
                       </thead>
@@ -498,6 +520,7 @@ export function NetworksPage() {
                             depth={depth}
                             checked={selectedIds.has(prefix.id)}
                             onToggle={() => toggle(prefix.id)}
+                            canSelect={canEdit}
                           />
                         ))}
                       </tbody>
@@ -506,33 +529,105 @@ export function NetworksPage() {
                 </>
               )}
             </CardContent>
+            <TablePagination
+              page={page}
+              pageSize={pageSize}
+              totalItems={query.data?.total || 0}
+              onPageChange={setPage}
+              disabled={query.isFetching}
+              itemLabel={tr("prefixesPagination")}
+            />
           </Card>
         </>
       )}
-      <CreatePrefixDialog
+      {canEdit && <CreatePrefixDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
         environmentId={environmentId}
-      />
-      <IpamSourcesDialog
-        open={sourceOpen}
-        onOpenChange={setSourceOpen}
-        environmentId={environmentId}
-      />
+      />}
     </div>
   );
 }
 
-function IpamSourcesDialog({
-  open,
-  onOpenChange,
+function GlobalIpamSearch({ environmentId }: { environmentId: string }) {
+  const [value, setValue] = useState("");
+  const deferredValue = useDeferredValue(value.trim());
+  const results = useQuery({
+    queryKey: ["ipam", "global-search", environmentId, deferredValue],
+    queryFn: () => apiFetch<Paginated<SearchResult>>(
+      `/ipam/search?environment_id=${encodeURIComponent(environmentId)}&q=${encodeURIComponent(deferredValue)}&page=1&page_size=12`,
+    ),
+    enabled: deferredValue.length > 0,
+  });
+  const rows = results.data?.items || [];
+  return (
+    <Card className="relative z-20">
+      <CardContent className="p-3">
+        <label className="relative block">
+          <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            className="pl-9"
+            placeholder={tr("globalSearch")}
+            aria-label={tr("globalSearchLabel")}
+          />
+        </label>
+        {deferredValue && (
+          <div className="mt-3 overflow-hidden rounded-md border">
+            {results.isPending ? (
+              <p className="p-3 text-sm text-muted-foreground">{tr("searching")}</p>
+            ) : results.isError ? (
+              <p className="p-3 text-sm text-destructive">{tr("searchFailed")}</p>
+            ) : rows.length === 0 ? (
+              <p className="p-3 text-sm text-muted-foreground">{tr("searchEmpty")}</p>
+            ) : (
+              <div className="divide-y">
+                {rows.map((row) => (
+                  <Link
+                    key={`${row.kind}:${row.id}`}
+                    to="/networks/$id"
+                    params={{ id: row.subnet_id }}
+                    className="flex items-center justify-between gap-4 px-3 py-2.5 hover:bg-muted/30"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline">{row.kind}</Badge>
+                        <span className="truncate font-mono text-sm font-medium">{row.label}</span>
+                      </div>
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">{row.secondary}</p>
+                    </div>
+                    <span className="shrink-0 font-mono text-xs text-muted-foreground">{row.subnet_cidr}</span>
+                  </Link>
+                ))}
+                {(results.data?.total || 0) > rows.length && (
+                  <p className="bg-muted/15 px-3 py-2 text-xs text-muted-foreground">
+                    {tr("searchMore", { shown: rows.length, total: results.data?.total })}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function IpamSourcesDialog({
+  open = true,
+  onOpenChange = () => undefined,
   environmentId,
+  embedded = false,
 }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   environmentId: string;
+  embedded?: boolean;
 }) {
   const queryClient = useQueryClient();
+  const { data: profile } = useProfile();
+  const canEdit = hasCap(profile, "canEditServers");
   const [creating, setCreating] = useState(false);
   const [editingSource, setEditingSource] = useState<SyncSource | null>(null);
   const [type, setType] = useState<"unifi" | "pfsense">("unifi");
@@ -557,7 +652,7 @@ function IpamSourcesDialog({
       apiFetch<SyncSource[]>(
         `/ipam/sources?environment_id=${encodeURIComponent(environmentId)}`,
       ),
-    enabled: open,
+    enabled: open || embedded,
   });
   const sources = Array.isArray(query.data) ? query.data : [];
   const refresh = () =>
@@ -616,7 +711,7 @@ function IpamSourcesDialog({
       resetForm();
       refresh();
       showToast(
-        wasEditing ? "IPAM source updated." : "IPAM source saved.",
+        wasEditing ? tr("sourceUpdated") : tr("sourceSaved"),
         "success",
       );
     },
@@ -632,7 +727,7 @@ function IpamSourcesDialog({
       refresh();
       setTestReport({ source, result });
       showToast(
-        `Connection successful: ${result.records} records checked.`,
+        tr("connectionSuccess", { count: result.records }),
         result.matching_prefixes ? "success" : "warning",
       );
     },
@@ -654,15 +749,15 @@ function IpamSourcesDialog({
       refresh();
       void queryClient.invalidateQueries({ queryKey: ["ipam"] });
       const changes = [
-        `${result.created} neu`,
-        `${result.updated} updated`,
+        tr("syncCreated", { count: result.created }),
+        tr("syncUpdated", { count: result.updated }),
       ];
-      if (result.removed) changes.push(`${result.removed} released`);
-      if (result.conflicts) changes.push(`${result.conflicts} conflicts`);
+      if (result.removed) changes.push(tr("syncReleased", { count: result.removed }));
+      if (result.conflicts) changes.push(tr("syncConflicts", { count: result.conflicts }));
       if (result.ignored)
-        changes.push(`${result.ignored} outside existing prefixes`);
+        changes.push(tr("syncOutside", { count: result.ignored }));
       showToast(
-        `Synchronized: ${changes.join(", ")}.`,
+        tr("syncResult", { changes: changes.join(", ") }),
         result.conflicts ? "warning" : "success",
       );
     },
@@ -679,7 +774,7 @@ function IpamSourcesDialog({
       refresh();
       void queryClient.invalidateQueries({ queryKey: ["ipam"] });
       showToast(
-        "Source and its synchronized lease records removed.",
+        tr("sourceRemoved"),
         "success",
       );
     },
@@ -697,7 +792,11 @@ function IpamSourcesDialog({
     setEndpoint(source.endpoint);
     setToken("");
     setSite(source.site || "default");
-    setPath(source.path || "");
+    setPath(
+      source.type === "pfsense" && source.path === "/api/v2/status/dhcp_leases"
+        ? "/api/v2/status/dhcp_server/leases"
+        : source.path || "",
+    );
     setInsecure(source.insecure);
     setEnabled(source.enabled);
     setAutoSync(source.auto_sync !== false);
@@ -707,39 +806,34 @@ function IpamSourcesDialog({
   const defaultPath =
     type === "unifi"
       ? `/proxy/network/api/s/${encodeURIComponent(site || "default")}/stat/sta`
-      : "/api/v2/status/dhcp_leases";
-  return (
+      : "/api/v2/status/dhcp_server/leases";
+  const endpointPlaceholder =
+    type === "pfsense"
+      ? tr("pfsenseEndpointPlaceholder")
+      : tr("sourceEndpointPlaceholder");
+  const content = (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-h-[calc(100dvh-2rem)] min-w-0 max-w-3xl overflow-x-hidden overflow-y-auto p-0">
-          <DialogHeader className="min-w-0 border-b px-4 py-4 text-left sm:px-5">
-            <DialogTitle className="flex items-center gap-2">
-              <DatabaseZap className="h-5 w-5" />
-              IPAM sources
-            </DialogTitle>
-            <DialogDescription>
-              Controllers provide observed inventory. Active sources are
-              synchronized automatically into existing prefixes; manual
-              reservations remain authoritative.
-            </DialogDescription>
-          </DialogHeader>
+          {!embedded && (
+            <DialogHeader className="min-w-0 border-b px-4 py-4 text-left sm:px-5">
+              <DialogTitle className="flex items-center gap-2">
+                <DatabaseZap className="h-5 w-5" />
+                {tr("sourceTitle")}
+              </DialogTitle>
+              <DialogDescription>{tr("sourceDescription")}</DialogDescription>
+            </DialogHeader>
+          )}
           <div className="min-w-0 space-y-4 p-3 sm:p-5">
             <div className="rounded-sm border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-              <strong className="text-foreground">Automatic maintenance:</strong>{" "}
-              Fleet checks active sources on their interval and imports the
-              current lease inventory.{" "}
-              <strong className="text-foreground">Test</strong> remains available
-              without changing data. Source leases that are no longer reported are
-              released; collisions are never overwritten.
+              <strong className="text-foreground">{tr("automaticMaintenance")}</strong>{" "}
+              {tr("automaticMaintenanceDescription")}
             </div>
             {query.isError ? (
               <div className="rounded-md border border-destructive/40 bg-destructive/[0.04] p-4 text-sm">
                 <div className="font-medium text-destructive">
-                  Sources could not be loaded
+                  {tr("sourcesLoadFailed")}
                 </div>
                 <p className="mt-1 text-muted-foreground">
-                  Check the connection and try again before editing existing
-                  sources.
+                  {tr("sourcesLoadFailedDescription")}
                 </p>
                 <Button
                   type="button"
@@ -749,12 +843,12 @@ function IpamSourcesDialog({
                   onClick={() => void query.refetch()}
                 >
                   <RefreshCw />
-                  Try again
+                  {tr("tryAgain")}
                 </Button>
               </div>
             ) : query.isPending ? (
               <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                Loading sources…
+                {tr("loadingSources")}
               </div>
             ) : (
               <>
@@ -766,31 +860,31 @@ function IpamSourcesDialog({
                       const testStatus =
                         source.last_test_status === "success"
                           ? {
-                              label: "Connection verified",
+                              label: tr("connectionVerified"),
                               variant: "success" as const,
                             }
                           : source.last_test_status === "failed"
                             ? {
-                                label: "Connection failed",
+                                label: tr("connectionFailed"),
                                 variant: "destructive" as const,
                               }
                             : {
-                                label: "Not checked yet",
+                                label: tr("notChecked"),
                                 variant: "outline" as const,
                               };
                       const syncStatus =
                         source.last_status === "failed"
                           ? {
-                              label: "Last sync failed",
+                              label: tr("lastSyncFailed"),
                               variant: "destructive" as const,
                             }
                           : source.last_synced_at
                             ? {
-                                label: "Synchronized",
+                                label: tr("synchronized"),
                                 variant: "success" as const,
                               }
                             : {
-                                label: "Not synchronized yet",
+                                label: tr("notSynchronized"),
                                 variant: "outline" as const,
                               };
 
@@ -809,7 +903,7 @@ function IpamSourcesDialog({
                                     : "pfSense"}
                                 </Badge>
                                 {!source.enabled && (
-                                  <Badge variant="muted">Disabled</Badge>
+                                  <Badge variant="muted">{tr("disabled")}</Badge>
                                 )}
                               </div>
                               <p
@@ -820,12 +914,12 @@ function IpamSourcesDialog({
                                 {source.path || ""}
                               </p>
                             </div>
-                            <div className="ipam-source-actions">
+                            {canEdit && <div className="ipam-source-actions">
                               <Button
                                 type="button"
                                 variant="outline"
                                 size="sm"
-                                aria-label={`Test ${source.name}`}
+                                aria-label={`${tr("test")} ${source.name}`}
                                 disabled={testing || !source.enabled}
                                 className="w-full min-w-0 max-w-full overflow-hidden px-2 text-xs sm:w-auto sm:px-3 sm:text-sm"
                                 onClick={() => test.mutate(source)}
@@ -837,27 +931,27 @@ function IpamSourcesDialog({
                                       : "hidden h-4 w-4 sm:mr-1.5 sm:block"
                                   }
                                 />
-                                <span className="sm:hidden">Test</span>
-                                <span className="hidden sm:inline">Test connection</span>
+                                <span className="sm:hidden">{tr("test")}</span>
+                                <span className="hidden sm:inline">{tr("testConnection")}</span>
                               </Button>
                               <Button
                                 type="button"
                                 size="sm"
-                                aria-label={`Synchronize ${source.name}`}
+                                aria-label={`${tr("sync")} ${source.name}`}
                                 disabled={syncing || !source.enabled}
                                 className="w-full min-w-0 max-w-full overflow-hidden px-2 text-xs sm:w-auto sm:px-3 sm:text-sm"
                                 onClick={() => setSourceToSync(source)}
                               >
                                 <DatabaseZap className="hidden h-4 w-4 sm:mr-1.5 sm:block" />
-                                <span className="sm:hidden">Sync</span>
-                                <span className="hidden sm:inline">Sync now</span>
+                                <span className="sm:hidden">{tr("sync")}</span>
+                                <span className="hidden sm:inline">{tr("syncNow")}</span>
                               </Button>
                               <Button
                                 type="button"
                                 size="icon"
                                 variant="ghost"
-                                title="Edit source"
-                                aria-label={`Edit ${source.name}`}
+                                title={tr("editSource")}
+                                aria-label={`${tr("editSource")} ${source.name}`}
                                 onClick={() => beginEdit(source)}
                               >
                                 <Pencil className="h-4 w-4" />
@@ -866,20 +960,20 @@ function IpamSourcesDialog({
                                 type="button"
                                 size="icon"
                                 variant="ghost"
-                                title="Remove source"
-                                aria-label={`Remove ${source.name}`}
+                                title={tr("removeSource")}
+                                aria-label={`${tr("removeSource")} ${source.name}`}
                                 className="text-destructive hover:text-destructive"
                                 onClick={() => setSourceToRemove(source)}
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
-                            </div>
+                            </div>}
                           </div>
 
                           <div className="grid border-t bg-muted/[0.18] sm:grid-cols-3">
                             <div className="border-b px-4 py-3 sm:border-b-0 sm:border-r">
                               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                                Connection
+                                {tr("connection")}
                               </p>
                               <div className="mt-1.5">
                                 <Badge variant={testStatus.variant}>
@@ -888,8 +982,8 @@ function IpamSourcesDialog({
                               </div>
                               <p className="mt-1 text-xs text-muted-foreground">
                                 {source.last_tested_at
-                                  ? `Getestet: ${new Date(source.last_tested_at).toLocaleString()}`
-                                  : "No connection test yet"}
+                                  ? tr("testedAt", { date: new Date(source.last_tested_at).toLocaleString() })
+                                  : tr("noConnectionTest")}
                               </p>
                               {source.last_test_error && (
                                 <p
@@ -902,7 +996,7 @@ function IpamSourcesDialog({
                             </div>
                             <div className="border-b px-4 py-3 sm:border-b-0 sm:border-r">
                               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                                Synchronization
+                                {tr("synchronization")}
                               </p>
                               <div className="mt-1.5">
                                 <Badge variant={syncStatus.variant}>
@@ -911,38 +1005,41 @@ function IpamSourcesDialog({
                               </div>
                               <p className="mt-1 text-xs text-muted-foreground">
                                 {source.last_synced_at
-                                  ? `Last sync: ${new Date(source.last_synced_at).toLocaleString()}`
-                                  : "No import yet"}
+                                  ? tr("lastSyncAt", { date: new Date(source.last_synced_at).toLocaleString() })
+                                  : tr("noImport")}
                               </p>
                               <p className="mt-1 text-xs text-muted-foreground">
                                 {source.auto_sync !== false
-                                  ? `Automatic · every ${source.sync_interval_min || 15} minutes`
-                                  : "Automatic synchronization disabled"}
+                                  ? tr("automaticInterval", { count: source.sync_interval_min || 15 })
+                                  : tr("automaticDisabled")}
                               </p>
                             </div>
                             <div className="px-4 py-3">
                               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                                Beobachteter Bestand
+                                {tr("observedInventory")}
                               </p>
                               <div className="mt-1.5 flex items-baseline gap-2">
                                 <span className="text-lg font-semibold tabular-nums">
-                                  {source.inventory_count || 0}
+                                  {source.record_count || 0}
                                 </span>
                                 <span className="text-sm text-muted-foreground">
-                                  IP addresses
+                                  {tr("ipAddresses")}
                                 </span>
                               </div>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {tr("sourceInventoryBreakdown", {
+                                  imported: source.inventory_count || 0,
+                                  outside: source.ignored_count || 0,
+                                })}
+                              </p>
                               <div className="mt-1">
                                 {source.conflict_count ? (
                                   <Badge variant="destructive">
-                                    {source.conflict_count}{" "}
-                                    {source.conflict_count === 1
-                                      ? "Konflikt"
-                                      : "Conflicts"}
+                                    {tr("conflictCount", { count: source.conflict_count })}
                                   </Badge>
                                 ) : (
                                   <Badge variant="secondary">
-                                    No conflicts
+                                    {tr("noConflicts")}
                                   </Badge>
                                 )}
                               </div>
@@ -955,13 +1052,12 @@ function IpamSourcesDialog({
                 )}
                 {sources.length === 0 && !creating && (
                   <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                    No external source configured yet. Add a UniFi controller or
-                    pfSense firewall to import its lease inventory in a controlled way.
+                    {tr("noSources")}
                   </div>
                 )}
               </>
             )}
-            {creating ? (
+            {canEdit && (creating ? (
               <form
                 className="space-y-4 rounded-md border bg-muted/15 p-4"
                 onSubmit={(event) => {
@@ -973,13 +1069,13 @@ function IpamSourcesDialog({
                   <div>
                     <h3 className="text-sm font-semibold">
                       {editingSource
-                        ? "Edit source"
-                        : "Add source"}
+                        ? tr("editSource")
+                        : tr("addSource")}
                     </h3>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {editingSource
-                        ? "Leave the token empty to keep the existing token."
-                        : "Credentials are stored encrypted and never displayed in the browser."}
+                        ? tr("tokenKeepHint")
+                        : tr("credentialsHint")}
                     </p>
                   </div>
                   <Button
@@ -988,11 +1084,11 @@ function IpamSourcesDialog({
                     variant="ghost"
                     onClick={resetForm}
                   >
-                    Cancel
+                    {tr("cancel")}
                   </Button>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="System">
+                  <Field label={tr("system")}>
                     <select
                       value={type}
                       onChange={(event) =>
@@ -1000,31 +1096,65 @@ function IpamSourcesDialog({
                       }
                       className="h-8 w-full rounded-sm border bg-background px-2.5 text-[13px]"
                     >
-                      <option value="unifi">UniFi Network</option>
-                      <option value="pfsense">pfSense</option>
+                      <option value="unifi">{tr("unifiNetwork")}</option>
+                      <option value="pfsense">{tr("pfsense")}</option>
                     </select>
                   </Field>
-                  <Field label="Anzeigename">
+                  <Field label={tr("displayName")}>
                     <Input
                       required
                       value={name}
                       onChange={(event) => setName(event.target.value)}
-                      placeholder="UniFi Produktion"
+                      placeholder={
+                        type === "pfsense"
+                          ? tr("pfsenseProductionExample")
+                          : tr("unifiProductionExample")
+                      }
                     />
                   </Field>
                   <div className="sm:col-span-2">
-                    <Field label="Controller or firewall URL">
+                    <Field label={tr("controllerUrl")}>
                       <Input
                         required
                         type="url"
                         value={endpoint}
                         onChange={(event) => setEndpoint(event.target.value)}
-                        placeholder="https://unifi.example.local"
+                        placeholder={endpointPlaceholder}
                       />
                     </Field>
                   </div>
+                  {type === "pfsense" && (
+                    <div className="sm:col-span-2 rounded-md border bg-background p-3 text-xs text-muted-foreground">
+                      <p className="font-medium text-foreground">{tr("pfsenseSetupTitle")}</p>
+                      <ol className="mt-1.5 list-decimal space-y-1 pl-4">
+                        <li>{tr("pfsenseSetupInstall")}</li>
+                        <li>{tr("pfsenseSetupKey")}</li>
+                        <li>{tr("pfsenseSetupAccess")}</li>
+                      </ol>
+                      <p className="mt-2">{tr("pfsenseReadOnlyHint")}</p>
+                      <p className="mt-2">
+                        <a
+                          className="underline underline-offset-2 hover:text-foreground"
+                          href="https://pfrest.org/INSTALL_AND_CONFIG/"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {tr("pfsenseInstallDocs")}
+                        </a>
+                        {" · "}
+                        <a
+                          className="underline underline-offset-2 hover:text-foreground"
+                          href="https://pfrest.org/AUTHENTICATION_AND_AUTHORIZATION/"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {tr("pfsenseAuthDocs")}
+                        </a>
+                      </p>
+                    </div>
+                  )}
                   <Field
-                    label={editingSource ? "API token (optional)" : "API token"}
+                    label={editingSource ? tr("apiTokenOptional") : tr("apiToken")}
                   >
                     <Input
                       required={!editingSource}
@@ -1035,21 +1165,21 @@ function IpamSourcesDialog({
                     />
                   </Field>
                   {type === "unifi" && (
-                    <Field label="UniFi-Site">
+                    <Field label={tr("unifiSite")}>
                       <Input
                         value={site}
                         onChange={(event) => setSite(event.target.value)}
-                        placeholder="default"
+                        placeholder={tr("defaultSitePlaceholder")}
                       />
                     </Field>
                   )}
                   <div className="sm:col-span-2">
                     <details>
                       <summary className="cursor-pointer text-sm text-muted-foreground">
-                        Advanced connection settings
+                        {tr("advancedConnection")}
                       </summary>
                       <div className="mt-3 grid gap-3 border-t pt-3 sm:grid-cols-2">
-                        <Field label="API-Pfad">
+                        <Field label={tr("apiPath")}>
                           <Input
                             value={path}
                             onChange={(event) => setPath(event.target.value)}
@@ -1064,7 +1194,7 @@ function IpamSourcesDialog({
                               setInsecure(event.target.checked)
                             }
                           />
-                          Do not verify TLS certificate
+                          {tr("skipTls")}
                         </label>
                         <label className="flex items-center gap-2 text-sm">
                           <input
@@ -1074,7 +1204,7 @@ function IpamSourcesDialog({
                               setEnabled(event.target.checked)
                             }
                           />
-                          Source active
+                          {tr("sourceActive")}
                         </label>
                         <label className="flex items-center gap-2 text-sm">
                           <input
@@ -1084,9 +1214,9 @@ function IpamSourcesDialog({
                               setAutoSync(event.target.checked)
                             }
                           />
-                          Synchronize automatically
+                          {tr("autoSync")}
                         </label>
-                        <Field label="Synchronization interval (minutes)">
+                        <Field label={tr("syncInterval")}>
                           <Input
                             type="number"
                             min="5"
@@ -1104,52 +1234,54 @@ function IpamSourcesDialog({
                 </div>
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="outline" onClick={resetForm}>
-                    Cancel
+                    {tr("cancel")}
                   </Button>
                   <Button type="submit" disabled={save.isPending}>
                     <Settings2 />
                     {editingSource
-                      ? "Update source"
-                      : "Save source"}
+                      ? tr("updateSource")
+                      : tr("saveSource")}
                   </Button>
                 </div>
               </form>
             ) : (
               <Button type="button" variant="outline" onClick={beginCreate}>
                 <Plus />
-                Add source
+                {tr("addSource")}
               </Button>
-            )}
+            ))}
           </div>
-          <DialogFooter className="border-t px-5 py-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-            >
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          {!embedded && (
+            <DialogFooter className="border-t px-5 py-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+              >
+                {tr("close")}
+              </Button>
+            </DialogFooter>
+          )}
+    </>
+  );
+  return (
+    <>
+      {embedded ? (
+        <Card data-ipam-sources className="min-w-0 overflow-hidden">{content}</Card>
+      ) : (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+          <DialogContent className="max-h-[calc(100dvh-2rem)] min-w-0 max-w-3xl overflow-x-hidden overflow-y-auto p-0">
+            {content}
+          </DialogContent>
+        </Dialog>
+      )}
       <ConfirmDialog
         open={Boolean(sourceToSync)}
         onOpenChange={(nextOpen) => !nextOpen && setSourceToSync(null)}
-        title="Synchronize source completely?"
-        description={
-          sourceToSync ? (
-            <>
-              Fleet imports the current lease inventory from{" "}
-              <strong>{sourceToSync.name}</strong>. Managed IPs no longer reported
-              by this source will be released. Manual reservations and data from
-              other sources remain unchanged.
-            </>
-          ) : (
-            ""
-          )
-        }
-        confirmLabel="Sync now"
-        cancelLabel="Cancel"
+        title={tr("confirmSyncTitle")}
+        description={sourceToSync ? tr("confirmSyncDescription", { name: sourceToSync.name }) : ""}
+        confirmLabel={tr("syncNow")}
+        cancelLabel={tr("cancel")}
         variant="warning"
         onConfirm={() => sourceToSync && sync.mutate(sourceToSync.id)}
         isPending={sync.isPending}
@@ -1157,21 +1289,13 @@ function IpamSourcesDialog({
       <ConfirmDialog
         open={Boolean(sourceToRemove)}
         onOpenChange={(nextOpen) => !nextOpen && setSourceToRemove(null)}
-        title="Remove IPAM source?"
-        description={
-          sourceToRemove ? (
-            <>
-              The source <strong>{sourceToRemove.name}</strong> and its{" "}
-              <strong>{sourceToRemove.inventory_count || 0}</strong>{" "}
-              synchronized lease records will be removed. Manual reservations,
-              Proxmox syncs, and other sources remain unchanged.
-            </>
-          ) : (
-            ""
-          )
-        }
-        confirmLabel="Remove source"
-        cancelLabel="Cancel"
+        title={tr("confirmRemoveSource")}
+        description={sourceToRemove ? tr("confirmRemoveSourceDescription", {
+          name: sourceToRemove.name,
+          count: sourceToRemove.inventory_count || 0,
+        }) : ""}
+        confirmLabel={tr("removeSource")}
+        cancelLabel={tr("cancel")}
         variant="destructive"
         onConfirm={() => sourceToRemove && remove.mutate(sourceToRemove.id)}
         isPending={remove.isPending}
@@ -1182,13 +1306,10 @@ function IpamSourcesDialog({
       >
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Source checked</DialogTitle>
+            <DialogTitle>{tr("sourceChecked")}</DialogTitle>
             <DialogDescription>
               {testReport && (
-                <>
-                  <strong>{testReport.source.name}</strong> is reachable. The test
-                  did not change any IPAM data.
-                </>
+                tr("sourceReachable", { name: testReport.source.name })
               )}
             </DialogDescription>
           </DialogHeader>
@@ -1196,28 +1317,27 @@ function IpamSourcesDialog({
             <div className="space-y-4">
               <div className="grid grid-cols-3 overflow-hidden rounded-md border">
                 <SourceTestFact
-                  label="Detected"
+                  label={tr("detected")}
                   value={testReport.result.records}
                 />
                 <SourceTestFact
-                  label="In IPAM"
+                  label={tr("inIpam")}
                   value={testReport.result.matching_prefixes}
                 />
                 <SourceTestFact
-                  label="Outside"
+                  label={tr("outside")}
                   value={testReport.result.outside_prefixes}
                 />
               </div>
               {testReport.result.outside_prefixes > 0 && (
                 <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
-                  These addresses are not within a configured prefix. They will
-                  not be imported until a matching prefix exists.
+                  {tr("outsidePrefixWarning")}
                 </div>
               )}
               {testReport.result.samples?.length ? (
                 <div className="rounded-md border">
                   <div className="border-b px-3 py-2 text-xs font-medium text-muted-foreground">
-                    Sample detected leases
+                    {tr("sampleLeases")}
                   </div>
                   <ul className="divide-y">
                     {testReport.result.samples
@@ -1230,10 +1350,15 @@ function IpamSourcesDialog({
                           <span className="font-mono">
                             {sample.address || "—"}
                           </span>
-                          <span className="truncate text-muted-foreground">
-                            {sample.hostname ||
-                              sample.mac_address ||
-                              "No hostname"}
+                          <span className="min-w-0 text-right text-muted-foreground">
+                            <span className="block truncate">
+                              {sample.hostname || tr("noHostname")}
+                            </span>
+                            {sample.mac_address && (
+                              <span className="block truncate font-mono text-xs">
+                                {sample.mac_address}
+                              </span>
+                            )}
                           </span>
                         </li>
                       ))}
@@ -1241,19 +1366,17 @@ function IpamSourcesDialog({
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  The source was reachable but returned no usable IPv4 leases.
+                  {tr("noUsableLeases")}
                 </p>
               )}
               <p className="text-xs leading-relaxed text-muted-foreground">
-                Review the matches, then start a complete synchronization. Only
-                source leases from this source are updated; manual reservations
-                remain unchanged.
+                {tr("reviewSyncHint")}
               </p>
             </div>
           )}
           <DialogFooter>
             <Button type="button" onClick={() => setTestReport(null)}>
-              Done
+              {tr("done")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1280,11 +1403,13 @@ function PrefixRow({
   depth,
   checked,
   onToggle,
+  canSelect,
 }: {
   prefix: Prefix;
   depth: number;
   checked: boolean;
   onToggle: () => void;
+  canSelect: boolean;
 }) {
   const usage = prefix.usable_address_count
     ? Math.min(
@@ -1296,14 +1421,14 @@ function PrefixRow({
     : 0;
   return (
     <tr data-selected={checked || undefined}>
-      <td className="px-3">
+      {canSelect && <td className="px-3">
         <input
           type="checkbox"
-          aria-label={`Select ${prefix.cidr}`}
+          aria-label={tr("selectPrefix", { cidr: prefix.cidr })}
           checked={checked}
           onChange={onToggle}
         />
-      </td>
+      </td>}
       <td className="px-3">
         <Link
           to="/networks/$id"
@@ -1312,13 +1437,21 @@ function PrefixRow({
           style={{ paddingLeft: `${Math.min(depth, 6) * 20}px` }}
         >
           <Network className="h-4 w-4 shrink-0 text-brand" />
-          <span className="shrink-0 font-mono font-medium">{prefix.cidr}</span>
-          {prefix.child_prefix_count > 0 && (
-            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-              {prefix.child_prefix_count} child prefixes
+          <span className="min-w-0">
+            <span className="block truncate text-[15px] font-semibold text-foreground">
+              {prefix.name || prefix.cidr}
             </span>
-          )}
-          <span className="truncate text-muted-foreground">{prefix.name}</span>
+            <span className="mt-0.5 flex flex-wrap items-center gap-2">
+              <span className="font-mono text-xs text-muted-foreground">
+                {prefix.cidr}
+              </span>
+              {prefix.child_prefix_count > 0 && (
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  {tr("childCount", { count: prefix.child_prefix_count })}
+                </span>
+              )}
+            </span>
+          </span>
         </Link>
       </td>
       <td className="px-3">
@@ -1338,11 +1471,19 @@ function PrefixRow({
         <span className="ml-1.5 font-mono text-xs text-muted-foreground">
           {prefix.bridge || "—"}
         </span>
+        {prefix.dhcp_start && prefix.dhcp_end && (
+          <div className="mt-1 flex items-center gap-1.5 text-xs">
+            <Badge variant="outline">{tr("dhcp")}</Badge>
+            <span className="font-mono text-muted-foreground">
+              {prefix.dhcp_start} – {prefix.dhcp_end}
+            </span>
+          </div>
+        )}
       </td>
       <td className="px-3">
         <div className="min-w-[160px]">
           <div className="flex justify-between text-xs tabular-nums">
-            <span>{prefix.free_address_count} free</span>
+            <span>{tr("freeCount", { count: prefix.free_address_count })}</span>
             <span className="text-muted-foreground">{usage}%</span>
           </div>
           <div className="console-capacity-track mt-1">
@@ -1352,9 +1493,9 @@ function PrefixRow({
             />
           </div>
           <div className="mt-0.5 text-[11px] text-muted-foreground">
-            {prefix.reservation_count} IPs · {prefix.range_count} ranges
+            {tr("ipCount", { count: prefix.reservation_count })} · {tr("rangesCount", { count: prefix.range_count })}
             {prefix.child_prefix_address_count
-              ? ` · ${prefix.child_prefix_address_count} in child prefixes`
+              ? ` · ${tr("inChildren", { count: prefix.child_prefix_address_count })}`
               : ""}
           </div>
         </div>
@@ -1368,7 +1509,7 @@ function PrefixRow({
         <Link
           to="/networks/$id"
           params={{ id: prefix.id }}
-          aria-label={`Open ${prefix.cidr}`}
+          aria-label={tr("openPrefix", { cidr: prefix.cidr })}
           className="inline-flex text-muted-foreground hover:text-foreground"
         >
           <ChevronRight className="h-4 w-4" />
@@ -1383,11 +1524,13 @@ function PrefixMobileRow({
   depth,
   checked,
   onToggle,
+  canSelect,
 }: {
   prefix: Prefix;
   depth: number;
   checked: boolean;
   onToggle: () => void;
+  canSelect: boolean;
 }) {
   const usage = prefix.usable_address_count
     ? Math.min(
@@ -1403,13 +1546,13 @@ function PrefixMobileRow({
         className="flex items-start gap-3"
         style={{ paddingLeft: `${Math.min(depth, 4) * 12}px` }}
       >
-        <input
+        {canSelect && <input
           className="mt-1"
           type="checkbox"
-          aria-label={`Select ${prefix.cidr}`}
+          aria-label={tr("selectPrefix", { cidr: prefix.cidr })}
           checked={checked}
           onChange={onToggle}
-        />
+        />}
         <Link
           to="/networks/$id"
           params={{ id: prefix.id }}
@@ -1418,12 +1561,19 @@ function PrefixMobileRow({
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
               <Network className="h-4 w-4 shrink-0 text-brand" />
-              <span className="font-mono font-medium">{prefix.cidr}</span>
+              <span className="truncate text-base font-semibold text-foreground">
+                {prefix.name || prefix.cidr}
+              </span>
             </div>
             <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
           </div>
-          <div className="mt-1 truncate text-sm text-muted-foreground">
-            {prefix.name || prefix.description || "No description"}
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span className="font-mono">{prefix.cidr}</span>
+            {prefix.child_prefix_count > 0 && (
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">
+                {tr("childCount", { count: prefix.child_prefix_count })}
+              </span>
+            )}
           </div>
         </Link>
       </div>
@@ -1432,14 +1582,20 @@ function PrefixMobileRow({
           {statusLabel[prefix.status] || prefix.status}
         </Badge>
         <span className="text-xs text-muted-foreground">
-          {prefix.vlan_id ? `VLAN ${prefix.vlan_id}` : "No VLAN"} ·{" "}
+          {prefix.vlan_id ? `VLAN ${prefix.vlan_id}` : tr("noVlan")} ·{" "}
           <span className="font-mono">{prefix.bridge || "—"}</span>
         </span>
+        {prefix.dhcp_start && prefix.dhcp_end && (
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Badge variant="outline">{tr("dhcp")}</Badge>
+            <span className="font-mono">{prefix.dhcp_start} – {prefix.dhcp_end}</span>
+          </span>
+        )}
       </div>
       <div className="ml-7 mt-3">
         <div className="flex justify-between text-xs tabular-nums">
-          <span>{prefix.free_address_count} free</span>
-          <span className="text-muted-foreground">{usage}% used</span>
+          <span>{tr("freeCount", { count: prefix.free_address_count })}</span>
+          <span className="text-muted-foreground">{tr("usedPercent", { count: usage })}</span>
         </div>
         <div className="console-capacity-track mt-1">
           <span
@@ -1448,9 +1604,9 @@ function PrefixMobileRow({
           />
         </div>
         <div className="mt-1 text-[11px] text-muted-foreground">
-          {prefix.reservation_count} IPs · {prefix.range_count} ranges
+          {tr("ipCount", { count: prefix.reservation_count })} · {tr("rangesCount", { count: prefix.range_count })}
           {prefix.child_prefix_count
-            ? ` · ${prefix.child_prefix_count} child prefixes`
+            ? ` · ${tr("childCount", { count: prefix.child_prefix_count })}`
             : ""}
         </div>
       </div>
@@ -1471,6 +1627,8 @@ function CreatePrefixDialog({
   const [name, setName] = useState("");
   const [cidr, setCidr] = useState("");
   const [gateway, setGateway] = useState("");
+  const [dhcpStart, setDhcpStart] = useState("");
+  const [dhcpEnd, setDhcpEnd] = useState("");
   const [dns, setDns] = useState("");
   const [vlan, setVlan] = useState("");
   const [bridge, setBridge] = useState("");
@@ -1486,6 +1644,8 @@ function CreatePrefixDialog({
           name,
           cidr,
           gateway,
+          dhcp_start: dhcpStart,
+          dhcp_end: dhcpEnd,
           vlan_id: vlan,
           bridge,
           description,
@@ -1498,7 +1658,7 @@ function CreatePrefixDialog({
         },
       }),
     onSuccess: () => {
-      showToast("Prefix created.", "success");
+      showToast(tr("prefixCreated"), "success");
       onOpenChange(false);
       void queryClient.invalidateQueries({ queryKey: ["ipam"] });
     },
@@ -1508,10 +1668,9 @@ function CreatePrefixDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>Add prefix</DialogTitle>
+          <DialogTitle>{tr("addPrefix")}</DialogTitle>
           <DialogDescription>
-            Only name and CIDR are required. Child prefixes are assigned
-            automatically based on their CIDR.
+            {tr("addPrefixDescription")}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -1522,15 +1681,15 @@ function CreatePrefixDialog({
           }}
         >
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Name">
+            <Field label={tr("name")}>
               <Input
                 required
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="Production network"
+                placeholder={tr("productionNetworkPlaceholder")}
               />
             </Field>
-            <Field label="IPv4 prefix">
+            <Field label={tr("ipv4Prefix")}>
               <Input
                 required
                 value={cidr}
@@ -1541,10 +1700,10 @@ function CreatePrefixDialog({
           </div>
           <details className="rounded-md border bg-muted/15">
             <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground">
-              Advanced network configuration
+              {tr("advancedNetwork")}
             </summary>
             <div className="grid gap-4 border-t p-3 sm:grid-cols-2">
-              <Field label="Status">
+              <Field label={tr("status")}>
                 <select
                   value={status}
                   onChange={(event) => setStatus(event.target.value)}
@@ -1557,28 +1716,47 @@ function CreatePrefixDialog({
                   ))}
                 </select>
               </Field>
-              <Field label="Role">
+              <Field label={tr("role")}>
                 <Input
                   value={role}
                   onChange={(event) => setRole(event.target.value)}
-                  placeholder="e.g. production"
+                  placeholder={tr("productionRoleExample")}
                 />
               </Field>
-              <Field label="Gateway">
+              <Field label={tr("gateway")}>
                 <Input
                   value={gateway}
                   onChange={(event) => setGateway(event.target.value)}
                   placeholder="10.20.10.1"
                 />
               </Field>
-              <Field label="DNS-Server">
+              <Field label={tr("dhcpStart")}>
+                <Input
+                  value={dhcpStart}
+                  onChange={(event) => setDhcpStart(event.target.value)}
+                  placeholder="10.20.10.100"
+                  inputMode="decimal"
+                />
+              </Field>
+              <Field label={tr("dhcpEnd")}>
+                <Input
+                  value={dhcpEnd}
+                  onChange={(event) => setDhcpEnd(event.target.value)}
+                  placeholder="10.20.10.200"
+                  inputMode="decimal"
+                />
+              </Field>
+              <p className="sm:col-span-2 rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                {tr("dhcpRangeHint")}
+              </p>
+              <Field label={tr("dnsServers")}>
                 <Input
                   value={dns}
                   onChange={(event) => setDns(event.target.value)}
                   placeholder="10.20.10.10, 10.20.10.11"
                 />
               </Field>
-              <Field label="VLAN-ID">
+              <Field label={tr("vlanId")}>
                 <Input
                   value={vlan}
                   onChange={(event) => setVlan(event.target.value)}
@@ -1586,19 +1764,19 @@ function CreatePrefixDialog({
                   placeholder="2010"
                 />
               </Field>
-              <Field label="Bridge">
+              <Field label={tr("bridge")}>
                 <Input
                   value={bridge}
                   onChange={(event) => setBridge(event.target.value)}
-                  placeholder="vmbr0"
+                  placeholder={tr("bridgePlaceholder")}
                 />
               </Field>
               <div className="sm:col-span-2">
-                <Field label="Description">
+                <Field label={tr("descriptionLabel")}>
                   <Input
                     value={description}
                     onChange={(event) => setDescription(event.target.value)}
-                    placeholder="Production application network"
+                    placeholder={tr("productionNetworkExample")}
                   />
                 </Field>
               </div>
@@ -1610,10 +1788,10 @@ function CreatePrefixDialog({
               variant="outline"
               onClick={() => onOpenChange(false)}
             >
-              Cancel
+              {tr("cancel")}
             </Button>
             <Button type="submit" disabled={create.isPending}>
-              Add prefix
+              {tr("addPrefix")}
             </Button>
           </DialogFooter>
         </form>

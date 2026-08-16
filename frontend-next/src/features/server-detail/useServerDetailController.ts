@@ -201,7 +201,7 @@ export function useServerDetailController() {
     queryKey: ["server", id, "ipam-reservations"],
     queryFn: () =>
       apiFetch(`/ipam/reservations?server_id=${encodeURIComponent(id)}`),
-    enabled: !!server,
+    enabled: !!server && hasCap(profile, "canViewNetworks"),
     staleTime: 30_000,
   });
   const ipamReservations = Array.isArray(ipamReservationData)
@@ -229,12 +229,12 @@ export function useServerDetailController() {
   const { data: history } = useQuery({
     queryKey: ["server", id, "history"],
     queryFn: () => api.getServerHistory(id) as unknown as Promise<HistoryRow[]>,
-    enabled: !!server,
+    enabled: !!server && hasCap(profile, "canViewServerHistory"),
   });
   const { data: notesData } = useQuery({
     queryKey: ["server", id, "notes"],
     queryFn: () => api.getServerNotes(id),
-    enabled: !!server,
+    enabled: !!server && hasCap(profile, "canViewNotes"),
   });
   const { data: customTasks } = useQuery({
     queryKey: ["server", id, "customTasks"],

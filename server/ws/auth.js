@@ -24,6 +24,7 @@ function verifyAndLoadUser(url) {
   if (!payload.userId) return null;
   const user = db.users.getById(payload.userId);
   if (!user) return null;
+  if (user.disabled) return null;
   if (payload.tv !== undefined && payload.tv !== (user.token_version || 0)) {
     return null;
   }

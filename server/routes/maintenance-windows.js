@@ -23,7 +23,7 @@ function stateFor(row, now = Date.now()) {
 }
 
 router.get('/', guard('canViewMaintenance'), (req, res) => {
-  const environmentId = String(req.query.environment_id || 'default').trim() || 'default';
+  const environmentId = req.environmentId || String(req.query.environment_id || 'default').trim() || 'default';
   if (!canAccessEnvironment(getPermissions(req.user), environmentId)) return res.status(403).json({ error: 'Umgebungszugriff verweigert.' });
   const rows = db.db.prepare('SELECT * FROM maintenance_windows WHERE environment_id = ? ORDER BY starts_at DESC').all(environmentId);
   res.json(rows.map(row => ({ ...row, state: stateFor(row) })));
@@ -31,7 +31,7 @@ router.get('/', guard('canViewMaintenance'), (req, res) => {
 
 router.post('/', guard('canEditMaintenance'), (req, res) => {
   try {
-    const environmentId = String(req.body?.environment_id || 'default').trim() || 'default';
+    const environmentId = req.environmentId || String(req.body?.environment_id || 'default').trim() || 'default';
     if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found.' });
     if (!canAccessEnvironment(getPermissions(req.user), environmentId)) return res.status(403).json({ error: 'Umgebungszugriff verweigert.' });
     const value = normalizeWindow(req.body);
@@ -46,6 +46,7 @@ router.post('/', guard('canEditMaintenance'), (req, res) => {
 router.put('/:id', guard('canEditMaintenance'), (req, res) => {
   const existing = db.db.prepare('SELECT * FROM maintenance_windows WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Maintenance window not found.' });
+  if (req.environmentId && existing.environment_id !== req.environmentId) return res.status(404).json({ error: 'Maintenance window not found.' });
   if (!canAccessEnvironment(getPermissions(req.user), existing.environment_id)) return res.status(403).json({ error: 'Umgebungszugriff verweigert.' });
   try {
     const value = normalizeWindow(req.body);
@@ -59,6 +60,7 @@ router.put('/:id', guard('canEditMaintenance'), (req, res) => {
 router.delete('/:id', guard('canEditMaintenance'), (req, res) => {
   const existing = db.db.prepare('SELECT * FROM maintenance_windows WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Maintenance window not found.' });
+  if (req.environmentId && existing.environment_id !== req.environmentId) return res.status(404).json({ error: 'Maintenance window not found.' });
   if (!canAccessEnvironment(getPermissions(req.user), existing.environment_id)) return res.status(403).json({ error: 'Umgebungszugriff verweigert.' });
   db.db.prepare('DELETE FROM maintenance_windows WHERE id = ?').run(existing.id);
   db.auditLog.write('maintenance_window.delete', `window=${existing.name}`, req.ip, true, req.user?.username);

@@ -103,6 +103,17 @@ test('legacy deployment umbrella migrates to explicit capabilities in memory', (
   assert.equal(perms.canManageDeploymentPlatforms, true);
 });
 
+test('plugin visibility never grants deployment capabilities', () => {
+  const role = db.roles.create('all-plugins-no-deployments', {
+    plugins: 'all',
+    canViewDeployments: false,
+  });
+  const perms = getPermissions({ role: role.id });
+  assert.equal(perms.canManageDeployments, false);
+  assert.equal(perms.canViewDeployments, false);
+  assert.equal(perms.canManageDeploymentPlatforms, false);
+});
+
 // ── filterServers() ───────────────────────────────────────────────────────────
 
 const sampleServers = [
@@ -207,5 +218,7 @@ test('ALLOWED_PERMISSION_KEYS includes capability keys', () => {
   assert.equal(ALLOWED_PERMISSION_KEYS.has('canViewServers'), true);
   assert.equal(ALLOWED_PERMISSION_KEYS.has('canDeleteServers'), true);
   assert.equal(ALLOWED_PERMISSION_KEYS.has('canRunPlaybooks'), true);
+  assert.equal(ALLOWED_PERMISSION_KEYS.has('canViewFiles'), true);
+  assert.equal(ALLOWED_PERMISSION_KEYS.has('canManageFiles'), true);
   assert.equal(ALLOWED_PERMISSION_KEYS.has('canViewAudit'), true);
 });

@@ -3,6 +3,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from './button';
 import { Input } from './input';
 import { Label } from './label';
+import { useEnvironments } from '@/lib/queries';
+import { useUi } from '@/lib/store';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -35,6 +37,10 @@ export function ConfirmDialog({
   confirmInputPlaceholder,
   confirmInputHelp,
 }: ConfirmDialogProps) {
+  const environmentId = useUi((state) => state.environmentId);
+  const { data: environments } = useEnvironments();
+  const environment = environments?.find((item) => String(item.id) === environmentId);
+  const environmentName = String(environment?.name || (environmentId === 'default' ? 'Default' : environmentId));
   const [typed, setTyped] = useState('');
   const confirmInputId = useId();
   const requiredValue = String(confirmTextValue ?? '');
@@ -54,6 +60,10 @@ export function ConfirmDialog({
             <div className="text-sm text-muted-foreground mt-1">{description}</div>
           </DialogDescription>
         </DialogHeader>
+        <div className="flex items-center justify-between gap-3 rounded-sm border border-border/80 bg-muted/25 px-3 py-2 text-xs">
+          <span className="text-muted-foreground">Active environment</span>
+          <span className="truncate font-medium" title={environmentName}>{environmentName}</span>
+        </div>
         {requiresText && (
           <div className="space-y-2">
             <Label htmlFor={confirmInputId}>{confirmInputLabel}</Label>

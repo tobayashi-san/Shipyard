@@ -6,6 +6,8 @@ import {
   Layers3, RefreshCw, Trash2, XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { canAccessOperations, canViewActivity, hasCap, useProfile } from '@/lib/queries';
+import { useUi } from '@/lib/store';
 import { ws } from '@/lib/ws';
 import { cn } from '@/lib/utils';
 
@@ -22,11 +24,15 @@ interface ActivityItem {
   lastLine?: string;
 }
 
-const ACTIVITY_STORAGE_KEY = 'fleet.activity.v1';
+const ACTIVITY_STORAGE_KEY = 'fleet.activity.v2';
 
-function loadActivities(): ActivityItem[] {
+function activityStorageKey(environmentId: string, viewerKey: string) {
+  return `${ACTIVITY_STORAGE_KEY}.${viewerKey}.${environmentId}`;
+}
+
+function loadActivities(environmentId: string, viewerKey: string): ActivityItem[] {
   try {
-    const stored = JSON.parse(localStorage.getItem(ACTIVITY_STORAGE_KEY) || '[]');
+    const stored = JSON.parse(localStorage.getItem(activityStorageKey(environmentId, viewerKey)) || '[]');
     if (!Array.isArray(stored)) return [];
     return stored.filter((item): item is ActivityItem => Boolean(item && typeof item.id === 'string' && typeof item.startedAt === 'number'))
       .slice(0, 30);
@@ -137,10 +143,20 @@ function formatAge(ts: number) {
   return `${Math.round(diff / 3_600_000)}h`;
 }
 
-export function ActivityCenter({ placement = 'floating' }: { placement?: 'floating' | 'header' }) {
+function EnvironmentActivityCenter({
+  environmentId,
+  viewerKey,
+  showOperationsLink,
+  placement,
+}: {
+  environmentId: string;
+  viewerKey: string;
+  showOperationsLink: boolean;
+  placement: 'floating' | 'header';
+}) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const [items, setItems] = useState<ActivityItem[]>(loadActivities);
+  const [items, setItems] = useState<ActivityItem[]>(() => loadActivities(environmentId, viewerKey));
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -178,10 +194,10 @@ export function ActivityCenter({ placement = 'floating' }: { placement?: 'floati
   }, [t]);
 
   // Keep the activity drawer useful after a page reload, but never retain an
-  // unbounded amount of operational data in the browser.
+  // unbounded amount of operational data in the browser or mix environments.
   useEffect(() => {
-    try { localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(items.slice(0, 30))); } catch { /* storage unavailable */ }
-  }, [items]);
+    try { localStorage.setItem(activityStorageKey(environmentId, viewerKey), JSON.stringify(items.slice(0, 30))); } catch { /* storage unavailable */ }
+  }, [environmentId, items, viewerKey]);
 
   useEffect(() => {
     if (!open) return;
@@ -261,11 +277,11 @@ export function ActivityCenter({ placement = 'floating' }: { placement?: 'floati
               ))
             )}
           </div>
-          <div className="border-t bg-muted/20 px-3 py-2">
+          {showOperationsLink && <div className="border-t bg-muted/20 px-3 py-2">
             <Link to="/operations" onClick={() => setOpen(false)} className="block rounded-sm px-1 py-1 text-xs font-medium text-primary hover:underline">
               Open all tasks & events
             </Link>
-          </div>
+          </div>}
         </div>
       )}
 
@@ -286,4 +302,18 @@ export function ActivityCenter({ placement = 'floating' }: { placement?: 'floati
       </Button>
     </div>
   );
+}
+
+export function ActivityCenter({ placement = 'floating' }: { placement?: 'floating' | 'header' }) {
+  const environmentId = useUi(state => state.environmentId);
+  const { data: profile } = useProfile();
+  if (!canViewActivity(profile)) return null;
+
+  const capabilityFingerprint = [
+    'canViewDeployments', 'canManageDeployments', 'canViewSchedules',
+    'canViewPlaybooks', 'canViewUpdates', 'canViewDocker', 'canViewCustomUpdates',
+  ].map(capability => hasCap(profile, capability) ? '1' : '0').join('');
+  const viewerKey = `${String(profile?.id ?? profile?.username ?? 'anonymous')}.${capabilityFingerprint}`;
+  const instanceKey = `${viewerKey}.${environmentId}`;
+  return <EnvironmentActivityCenter key={instanceKey} environmentId={environmentId} viewerKey={viewerKey} showOperationsLink={canAccessOperations(profile)} placement={placement} />;
 }

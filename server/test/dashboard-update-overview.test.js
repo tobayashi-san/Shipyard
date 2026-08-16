@@ -16,6 +16,7 @@ const { router: authRouter } = require('../routes/auth');
 const authMiddleware = require('../middleware/auth');
 const dashboardRouter = require('../routes/dashboard');
 const { testLimiter } = require('../utils/rate-limiters');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 app.use(express.json());
@@ -78,4 +79,27 @@ test('dashboard omits agent presentation data while the agent feature is hidden'
   assert.equal(visible.body.agentEnabled, true);
   const visibleHost = visible.body.servers.find((item) => item.id === server.id);
   assert.equal(visibleHost.agent_mode, 'push');
+});
+
+test('single-host minimal role receives no update, container, custom-state, or history metadata', async () => {
+  const allowed = db.servers.create({ name: 'minimal-allowed', hostname: 'minimal-allowed.local', ip_address: '10.0.0.60' });
+  db.servers.create({ name: 'minimal-hidden', hostname: 'minimal-hidden.local', ip_address: '10.0.0.61' });
+  const role = db.roles.create('Single host only', {
+    servers: { groups: [], servers: [allowed.id] },
+    canViewServers: true,
+  });
+  const user = db.users.create('single-host-only', '', 'unused', role.id, 'Single host only');
+  const restrictedToken = jwt.sign({ userId: user.id, tv: 0 }, process.env.JWT_SECRET, { expiresIn: '5m' });
+
+  const res = await request(app).get('/api/dashboard').set('Authorization', `Bearer ${restrictedToken}`);
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.servers.map(item => item.id), [allowed.id]);
+  const host = res.body.servers[0];
+  for (const field of [
+    'reboot_required', 'updates_count', 'containers_running', 'containers_total',
+    'image_updates_count', 'image_updates_checked_at', 'custom_updates_count', 'custom_update_tasks',
+  ]) {
+    assert.equal(field in host, false, field);
+  }
+  assert.deepEqual(res.body.recentHistory, []);
 });

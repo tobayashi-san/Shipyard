@@ -20,6 +20,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SkeletonRow } from '@/components/ui/skeleton';
+import { canAccessInfrastructure, hasCap, useProfile } from '@/lib/queries';
 
 // ---- types ----
 
@@ -145,8 +146,13 @@ export function DashboardPage() {
   const hour12 = timeFormat === '12h';
   useEffect(() => { sessionStorage.setItem('shipyard.lastNonDetailRoute', '/'); }, []);
   const qc = useQueryClient();
+  const { data: profile } = useProfile();
+  const canViewInfrastructure = canAccessInfrastructure(profile);
+  const canViewUpdates = hasCap(profile, 'canViewUpdates');
+  const canViewDocker = hasCap(profile, 'canViewDocker');
+  const canViewCustomUpdates = hasCap(profile, 'canViewCustomUpdates');
   const { data, isLoading, isFetching, isError, error, refetch } = useQuery<DashboardData>({
-    queryKey: ['dashboard'],
+    queryKey: ['dashboard', environmentId],
     queryFn: () => api.getDashboard() as unknown as Promise<DashboardData>,
     refetchInterval: 30_000,
   });
@@ -154,6 +160,7 @@ export function DashboardPage() {
     queryKey: ['opentofu', 'infrastructure', environmentId],
     queryFn: () => apiFetch<InfrastructureResponse>(`/opentofu/infrastructure?environment_id=${encodeURIComponent(environmentId)}`),
     staleTime: 30_000,
+    enabled: canViewInfrastructure,
   });
 
   // Backend broadcasts cache_updated whenever the updates cache changes
@@ -183,11 +190,11 @@ export function DashboardPage() {
       const results = await Promise.allSettled(
         onlineIds.flatMap(id => [
           api.getServerInfo(id, true),
-          api.getServerUpdates(id, true),
+          ...(canViewUpdates ? [api.getServerUpdates(id, true)] : []),
         ])
       );
       const failed = results.filter(r => r.status === 'rejected').length;
-      const total = onlineIds.length * 2;
+      const total = onlineIds.length * (canViewUpdates ? 2 : 1);
       if (failed > 0) {
         if (failed === total) {
           showToast(t('dash.refreshFailed', { n: onlineIds.length }), 'error');
@@ -199,7 +206,7 @@ export function DashboardPage() {
       await refetch();
       setRefreshing(false);
     }
-  }, [data?.servers, refetch, t]);
+  }, [canViewUpdates, data?.servers, refetch, t]);
 
   const isBusy = isFetching || refreshing;
   const agentEnabled = data?.agentEnabled === true;
@@ -278,7 +285,12 @@ export function DashboardPage() {
         </Card>
       )}
 
+      {activeAlerts.length > 0 && <ActiveAlertsCard alerts={activeAlerts} acknowledgingId={ackAlert.isPending ? ackAlert.variables : undefined} onAcknowledge={id => ackAlert.mutate(id)} />}
+
+      <RecentTasksPanel history={actionableHistory} t={t} />
+
       <EnvironmentOperatingState
+        showPlatforms={canViewInfrastructure}
         platforms={infrastructureHealth.platforms}
         unavailablePlatforms={infrastructureHealth.unavailablePlatforms}
         unavailableNodes={infrastructureHealth.unavailableNodes}
@@ -287,18 +299,23 @@ export function DashboardPage() {
         onlineHosts={summary.online}
         offlineHosts={summary.offline}
         hostState={isLoading ? 'loading' : isError ? 'error' : 'loaded'}
-        platformState={infrastructureQuery.isPending ? 'loading' : infrastructureQuery.isError ? 'error' : 'loaded'}
+        platformState={!canViewInfrastructure ? 'loaded' : infrastructureQuery.isPending ? 'loading' : infrastructureQuery.isError ? 'error' : 'loaded'}
       />
 
-      {data && !isError && <UpdateOverview servers={servers} />}
-
-      {activeAlerts.length > 0 && <ActiveAlertsCard alerts={activeAlerts} acknowledgingId={ackAlert.isPending ? ackAlert.variables : undefined} onAcknowledge={id => ackAlert.mutate(id)} />}
+      {data && !isError && (canViewUpdates || canViewCustomUpdates) && (
+        <UpdateOverview
+          servers={servers}
+          canViewUpdates={canViewUpdates}
+          canViewDocker={canViewDocker}
+          canViewCustomUpdates={canViewCustomUpdates}
+        />
+      )}
 
       {/* Hosts are ranked by attention. Full inventory and capacity live under
           infrastructure and resources, not in this operational cockpit. */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 border-b bg-muted/15 px-4 py-3">
-          <div className="flex min-w-0 items-center gap-2"><CardTitle className="flex items-center gap-2 text-base"><Server className="h-4 w-4 text-muted-foreground" />{attentionCount > 0 ? 'Hosts requiring attention' : 'Fleet hosts'}</CardTitle><span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">{visible.length}</span></div>
+          <div className="flex min-w-0 items-center gap-2"><CardTitle className="flex items-center gap-2 text-base"><Server className="h-4 w-4 text-muted-foreground" />{attentionCount > 0 ? 'Managed hosts requiring attention' : 'Managed hosts'}</CardTitle><span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">{visible.length}</span></div>
           {attentionCount > 0 && (
             <Button variant={attentionOnly ? 'default' : 'secondary'} size="sm"
               onClick={() => setAttentionOnly(!attentionOnly)}>
@@ -317,7 +334,7 @@ export function DashboardPage() {
               <EmptyState
                 icon={<Server className="h-5 w-5" />}
                 title="Host inventory unavailable"
-                description="Fleet hosts could not be loaded. Try refreshing the dashboard."
+                description="Managed hosts could not be loaded. Try refreshing the dashboard."
                 action={<Button variant="outline" size="sm" onClick={() => void refetch()}><RefreshCw />Try again</Button>}
               />
             ) : servers.length === 0 ? (
@@ -358,8 +375,6 @@ export function DashboardPage() {
             {servers.length > 0 && visible.length > dashboardHostLimit && !attentionOnly && <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/[0.08] px-4 py-2.5"><span className="text-xs text-muted-foreground">{showAllHosts ? `${visible.length} hosts shown.` : `${dashboardHostLimit} of ${visible.length} hosts shown.`}</span><div className="flex items-center gap-2"><Button size="sm" variant="ghost" onClick={() => setShowAllHosts(open => !open)}>{showAllHosts ? 'Show less' : 'Show all'}</Button><Button size="sm" variant="outline" asChild><Link to="/servers">Open resource list</Link></Button></div></div>}
         </CardContent>
       </Card>
-
-      <RecentTasksPanel history={actionableHistory} t={t} />
     </div>
   );
 }
@@ -435,15 +450,16 @@ function RecentTaskCard({ item }: { item: HistoryEntry }) {
 // where the condition can be inspected.
 type DataState = 'loading' | 'error' | 'loaded';
 
-function EnvironmentOperatingState({ platforms, unavailablePlatforms, unavailableNodes, constrainedDatastores, totalHosts, onlineHosts, offlineHosts, hostState, platformState }: {
+function EnvironmentOperatingState({ showPlatforms, platforms, unavailablePlatforms, unavailableNodes, constrainedDatastores, totalHosts, onlineHosts, offlineHosts, hostState, platformState }: {
+  showPlatforms: boolean;
   platforms: number; unavailablePlatforms: number; unavailableNodes: number; constrainedDatastores: number;
   totalHosts: number; onlineHosts: number; offlineHosts: number; hostState: DataState; platformState: DataState;
 }) {
   const platformIssues = unavailablePlatforms + unavailableNodes + constrainedDatastores;
   const hostIssues = offlineHosts;
-  const loading = hostState === 'loading' || platformState === 'loading';
-  const unavailable = hostState === 'error' || platformState === 'error';
-  const hasResources = platforms > 0 || totalHosts > 0;
+  const loading = hostState === 'loading' || (showPlatforms && platformState === 'loading');
+  const unavailable = hostState === 'error' || (showPlatforms && platformState === 'error');
+  const hasResources = (showPlatforms && platforms > 0) || totalHosts > 0;
   const ready = !loading && !unavailable && hasResources && platformIssues === 0 && hostIssues === 0;
   const badge = unavailable
     ? { tone: 'danger' as const, label: 'Status unavailable' }
@@ -459,9 +475,9 @@ function EnvironmentOperatingState({ platforms, unavailablePlatforms, unavailabl
       <div><CardTitle className="flex items-center gap-2 text-base"><Activity className="h-4 w-4 text-muted-foreground" />Operating state</CardTitle><p className="mt-0.5 text-xs text-muted-foreground">Connectivity and platform availability.</p></div>
       <StatusBadge tone={badge.tone} dot>{badge.label}</StatusBadge>
     </CardHeader>
-    <CardContent className="grid p-0 md:grid-cols-2">
-      <OperatingStateCell icon={<Database className="h-4 w-4" />} label="Platforms" detail={platformState === 'loading' ? 'Loading platform state…' : platformState === 'error' ? 'Platform state is unavailable' : platformIssues ? `${platformIssues} deviation${platformIssues === 1 ? '' : 's'} across platforms, nodes, or ZFS` : platforms === 0 ? 'No platforms connected' : `${platforms} platform${platforms === 1 ? '' : 's'} without reported deviations`} tone={platformState === 'error' || platformIssues ? 'danger' : platformState === 'loading' || platforms === 0 ? 'muted' : 'success'} action="Open infrastructure" to="/infrastructure" />
-      <OperatingStateCell icon={<Server className="h-4 w-4" />} label="Fleet hosts" detail={hostState === 'loading' ? 'Loading host state…' : hostState === 'error' ? 'Host state is unavailable' : hostIssues ? `${offlineHosts} unreachable · ${onlineHosts} / ${totalHosts} reachable` : totalHosts === 0 ? 'No hosts connected' : `${onlineHosts} / ${totalHosts} hosts reachable`} tone={hostState === 'error' || hostIssues ? 'danger' : hostState === 'loading' || totalHosts === 0 ? 'muted' : 'success'} action="Review hosts" to="/servers" bordered />
+    <CardContent className={cn('grid p-0', showPlatforms && 'md:grid-cols-2')}>
+      {showPlatforms && <OperatingStateCell icon={<Database className="h-4 w-4" />} label="Platforms" detail={platformState === 'loading' ? 'Loading platform state…' : platformState === 'error' ? 'Platform state is unavailable' : platformIssues ? `${platformIssues} deviation${platformIssues === 1 ? '' : 's'} across platforms, nodes, or ZFS` : platforms === 0 ? 'No platforms connected' : `${platforms} platform${platforms === 1 ? '' : 's'} without reported deviations`} tone={platformState === 'error' || platformIssues ? 'danger' : platformState === 'loading' || platforms === 0 ? 'muted' : 'success'} action="Open infrastructure" to="/infrastructure" />}
+      <OperatingStateCell icon={<Server className="h-4 w-4" />} label="Managed hosts" detail={hostState === 'loading' ? 'Loading host state…' : hostState === 'error' ? 'Host state is unavailable' : hostIssues ? `${offlineHosts} unreachable · ${onlineHosts} / ${totalHosts} reachable` : totalHosts === 0 ? 'No hosts connected' : `${onlineHosts} / ${totalHosts} hosts reachable`} tone={hostState === 'error' || hostIssues ? 'danger' : hostState === 'loading' || totalHosts === 0 ? 'muted' : 'success'} action="Review hosts" to="/servers" bordered={showPlatforms} />
     </CardContent>
   </Card>;
 }
@@ -473,8 +489,10 @@ function OperatingStateCell({ icon, label, detail, tone, action, to, bordered = 
 /** Central, vCenter-like update workspace. The host inventory below remains
  * about reachability; every deviation from the desired software state lives
  * here exactly once. */
-function UpdateOverview({ servers }: { servers: ServerInfo[] }) {
-  const affected = servers.filter(server => server.reboot_required || (server.updates_count ?? 0) > 0 || (server.image_updates_count ?? 0) > 0 || (server.custom_updates_count ?? 0) > 0);
+function UpdateOverview({ servers, canViewUpdates, canViewDocker, canViewCustomUpdates }: { servers: ServerInfo[]; canViewUpdates: boolean; canViewDocker: boolean; canViewCustomUpdates: boolean }) {
+  const affected = servers.filter(server =>
+    (canViewUpdates && (server.reboot_required || (server.updates_count ?? 0) > 0 || (canViewDocker && (server.image_updates_count ?? 0) > 0)))
+    || (canViewCustomUpdates && (server.custom_updates_count ?? 0) > 0));
   const osUpdates = servers.reduce((sum, server) => sum + (server.updates_count ?? 0), 0);
   const imageUpdates = servers.reduce((sum, server) => sum + (server.image_updates_count ?? 0), 0);
   const customUpdates = servers.reduce((sum, server) => sum + (server.custom_updates_count ?? 0), 0);
@@ -486,16 +504,16 @@ function UpdateOverview({ servers }: { servers: ServerInfo[] }) {
       <StatusBadge tone={servers.length === 0 ? 'muted' : affected.length ? 'warning' : 'success'} dot>{servers.length === 0 ? 'No hosts connected' : affected.length ? `${affected.length} host${affected.length === 1 ? '' : 's'} requiring attention` : 'All desired states met'}</StatusBadge>
     </CardHeader>
     <CardContent className="p-0">
-      <div className="grid divide-y border-b md:grid-cols-4 md:divide-x md:divide-y-0">
-        <UpdateMetric icon={<PackagePlus className="h-4 w-4" />} label="System packages" value={osUpdates} detail="pending package updates" tone={osUpdates ? 'warning' : 'success'} />
-        <UpdateMetric icon={<Container className="h-4 w-4" />} label="Container images" value={imageUpdates} detail="new image versions" tone={imageUpdates ? 'warning' : 'success'} />
-        <UpdateMetric icon={<RotateCcw className="h-4 w-4" />} label="Reboots" value={reboots} detail="required after update" tone={reboots ? 'warning' : 'success'} />
-        <UpdateMetric icon={<Cog className="h-4 w-4" />} label="Custom desired state" value={customUpdates} detail="version deviations" tone={customUpdates ? 'warning' : 'success'} />
+      <div className="grid divide-y border-b md:grid-flow-col md:auto-cols-fr md:divide-x md:divide-y-0">
+        {canViewUpdates && <UpdateMetric icon={<PackagePlus className="h-4 w-4" />} label="System packages" value={osUpdates} detail="pending package updates" tone={osUpdates ? 'warning' : 'success'} />}
+        {canViewDocker && canViewUpdates && <UpdateMetric icon={<Container className="h-4 w-4" />} label="Container images" value={imageUpdates} detail="new image versions" tone={imageUpdates ? 'warning' : 'success'} />}
+        {canViewUpdates && <UpdateMetric icon={<RotateCcw className="h-4 w-4" />} label="Reboots" value={reboots} detail="required after update" tone={reboots ? 'warning' : 'success'} />}
+        {canViewCustomUpdates && <UpdateMetric icon={<Cog className="h-4 w-4" />} label="Custom desired state" value={customUpdates} detail="version deviations" tone={customUpdates ? 'warning' : 'success'} />}
       </div>
-      {servers.length === 0 ? <div className="px-4 py-3 text-sm text-muted-foreground">Connect a Fleet host to evaluate its desired state.</div> : affected.length === 0 ? <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground"><CheckCircle2 className="h-4 w-4 text-success" />No action required. All reported desired states match.</div> : <div className="table-scroll">
+      {servers.length === 0 ? <div className="px-4 py-3 text-sm text-muted-foreground">Connect a managed host to evaluate its desired state.</div> : affected.length === 0 ? <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground"><CheckCircle2 className="h-4 w-4 text-success" />No action required. All reported desired states match.</div> : <div className="table-scroll">
         <table className="w-full min-w-[720px] text-sm" data-density="compact">
-          <thead><tr className="border-b bg-muted/20 text-left text-xs text-muted-foreground"><th className="px-4 py-2.5">Host</th><th className="px-3 py-2.5">System</th><th className="px-3 py-2.5">Containers</th><th className="px-3 py-2.5">Reboot</th><th className="px-4 py-2.5">Custom desired state</th></tr></thead>
-          <tbody className="divide-y">{affected.map(server => <UpdateOverviewRow key={server.id} server={server} />)}</tbody>
+          <thead><tr className="border-b bg-muted/20 text-left text-xs text-muted-foreground"><th className="px-4 py-2.5">Host</th>{canViewUpdates && <th className="px-3 py-2.5">System</th>}{canViewUpdates && canViewDocker && <th className="px-3 py-2.5">Containers</th>}{canViewUpdates && <th className="px-3 py-2.5">Reboot</th>}{canViewCustomUpdates && <th className="px-4 py-2.5">Custom desired state</th>}</tr></thead>
+          <tbody className="divide-y">{affected.map(server => <UpdateOverviewRow key={server.id} server={server} canViewUpdates={canViewUpdates} canViewDocker={canViewDocker} canViewCustomUpdates={canViewCustomUpdates} />)}</tbody>
         </table>
       </div>}
     </CardContent>
@@ -506,14 +524,14 @@ function UpdateMetric({ icon, label, value, detail, tone }: { icon: React.ReactN
   return <div className="p-3.5"><div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{icon}{label}</div><div className={cn('mt-1.5 font-mono text-xl font-semibold', tone === 'warning' && 'text-warning')}>{value}</div><div className="mt-0.5 text-xs text-muted-foreground">{detail}</div></div>;
 }
 
-function UpdateOverviewRow({ server }: { server: ServerInfo }) {
+function UpdateOverviewRow({ server, canViewUpdates, canViewDocker, canViewCustomUpdates }: { server: ServerInfo; canViewUpdates: boolean; canViewDocker: boolean; canViewCustomUpdates: boolean }) {
   const taskDeviations = (server.custom_update_tasks || []).filter(task => task.has_update);
   return <tr className="hover:bg-muted/35">
     <td className="px-4 py-3"><Link to="/servers/$id" params={{ id: String(server.id) }} className="font-medium hover:text-primary hover:underline">{server.name}</Link><div className="mt-0.5 font-mono text-[11px] text-muted-foreground">{server.ip_address || '—'}</div></td>
-    <td className="px-3 py-3"><UpdateState value={server.updates_count ?? 0} label="package update" /></td>
-    <td className="px-3 py-3"><UpdateState value={server.image_updates_count ?? 0} label="image update" /></td>
-    <td className="px-3 py-3">{server.reboot_required ? <StatusBadge tone="warning"><RotateCcw className="mr-1 h-3 w-3" />Pending</StatusBadge> : <span className="text-xs text-muted-foreground">Not required</span>}</td>
-    <td className="px-4 py-3">{taskDeviations.length ? <div className="flex flex-wrap gap-1">{taskDeviations.map(task => <span key={task.id} title={`${task.current_version || '—'} → ${task.type === 'trigger' ? task.trigger_output || '—' : task.last_version || '—'}`}><StatusBadge tone="warning"><Cog className="mr-1 h-3 w-3" />{task.name}</StatusBadge></span>)}</div> : (server.custom_updates_count ?? 0) > 0 ? <StatusBadge tone="warning">{server.custom_updates_count} deviation{server.custom_updates_count === 1 ? '' : 's'}</StatusBadge> : <span className="text-xs text-muted-foreground">Current</span>}</td>
+    {canViewUpdates && <td className="px-3 py-3"><UpdateState value={server.updates_count ?? 0} label="package update" /></td>}
+    {canViewUpdates && canViewDocker && <td className="px-3 py-3"><UpdateState value={server.image_updates_count ?? 0} label="image update" /></td>}
+    {canViewUpdates && <td className="px-3 py-3">{server.reboot_required ? <StatusBadge tone="warning"><RotateCcw className="mr-1 h-3 w-3" />Pending</StatusBadge> : <span className="text-xs text-muted-foreground">Not required</span>}</td>}
+    {canViewCustomUpdates && <td className="px-4 py-3">{taskDeviations.length ? <div className="flex flex-wrap gap-1">{taskDeviations.map(task => <span key={task.id} title={`${task.current_version || '—'} → ${task.type === 'trigger' ? task.trigger_output || '—' : task.last_version || '—'}`}><StatusBadge tone="warning"><Cog className="mr-1 h-3 w-3" />{task.name}</StatusBadge></span>)}</div> : (server.custom_updates_count ?? 0) > 0 ? <StatusBadge tone="warning">{server.custom_updates_count} deviation{server.custom_updates_count === 1 ? '' : 's'}</StatusBadge> : <span className="text-xs text-muted-foreground">Current</span>}</td>}
   </tr>;
 }
 
@@ -601,11 +619,16 @@ function ServerCard({ s, t, agentEnabled }: { s: ServerInfo; t: (k: string) => s
 
 function UpdatesChips({ s }: { s: ServerInfo }) {
   const { t } = useTranslation();
+  const { data: profile } = useProfile();
+  const canViewUpdates = hasCap(profile, 'canViewUpdates');
+  const canViewDocker = hasCap(profile, 'canViewDocker');
+  const canViewCustomUpdates = hasCap(profile, 'canViewCustomUpdates');
+  if (!canViewUpdates && !canViewCustomUpdates) return null;
   const chips: React.ReactNode[] = [];
-  if (s.reboot_required) chips.push(<StatusBadge key="rb" tone="warning"><RotateCcw className="mr-1 h-3 w-3" />{t('dash.needsReboot')}</StatusBadge>);
-  if ((s.updates_count ?? 0) > 0) chips.push(<StatusBadge key="u" tone="warning"><PackagePlus className="mr-1 h-3 w-3" />{s.updates_count} {t('dash.colUpdates')}</StatusBadge>);
-  if ((s.image_updates_count ?? 0) > 0) chips.push(<StatusBadge key="i" tone="warning"><Container className="mr-1 h-3 w-3" />{s.image_updates_count} {t('dash.colImageUpdates')}</StatusBadge>);
-  if ((s.custom_updates_count ?? 0) > 0) chips.push(<StatusBadge key="c" tone="warning"><Cog className="mr-1 h-3 w-3" />{s.custom_updates_count} {t('dash.colCustomUpdates')}</StatusBadge>);
+  if (canViewUpdates && s.reboot_required) chips.push(<StatusBadge key="rb" tone="warning"><RotateCcw className="mr-1 h-3 w-3" />{t('dash.needsReboot')}</StatusBadge>);
+  if (canViewUpdates && (s.updates_count ?? 0) > 0) chips.push(<StatusBadge key="u" tone="warning"><PackagePlus className="mr-1 h-3 w-3" />{s.updates_count} {t('dash.colUpdates')}</StatusBadge>);
+  if (canViewUpdates && canViewDocker && (s.image_updates_count ?? 0) > 0) chips.push(<StatusBadge key="i" tone="warning"><Container className="mr-1 h-3 w-3" />{s.image_updates_count} {t('dash.colImageUpdates')}</StatusBadge>);
+  if (canViewCustomUpdates && (s.custom_updates_count ?? 0) > 0) chips.push(<StatusBadge key="c" tone="warning"><Cog className="mr-1 h-3 w-3" />{s.custom_updates_count} {t('dash.colCustomUpdates')}</StatusBadge>);
   if (chips.length === 0) return <StatusBadge tone="success"><CheckCircle2 className="mr-1 h-3 w-3" />{t('dash.allClear')}</StatusBadge>;
   return <>{chips}</>;
 }

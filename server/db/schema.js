@@ -45,6 +45,7 @@ function applySchema(db) {
     CREATE TABLE IF NOT EXISTS update_history (
       id TEXT PRIMARY KEY,
       server_id TEXT NOT NULL,
+      environment_id TEXT NOT NULL DEFAULT 'default',
       action TEXT NOT NULL,
       status TEXT DEFAULT 'pending',
       output TEXT,
@@ -138,6 +139,8 @@ function applySchema(db) {
       name TEXT NOT NULL,
       cidr TEXT NOT NULL,
       gateway TEXT DEFAULT '',
+      dhcp_start TEXT DEFAULT '',
+      dhcp_end TEXT DEFAULT '',
       dns_servers TEXT DEFAULT '[]',
       vlan_id INTEGER,
       bridge TEXT DEFAULT '',
@@ -180,6 +183,45 @@ function applySchema(db) {
     CREATE INDEX IF NOT EXISTS idx_ipam_reservations_subnet ON ipam_reservations(subnet_id);
     CREATE INDEX IF NOT EXISTS idx_ipam_ranges_subnet ON ipam_ip_ranges(subnet_id);
 
+    -- Repair legacy cross-environment links and enforce the boundary for every
+    -- writer, not only the HTTP route validation.
+    UPDATE ipam_reservations
+    SET server_id = NULL
+    WHERE server_id IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM servers s
+        JOIN ipam_subnets n ON n.id = ipam_reservations.subnet_id
+        WHERE s.id = ipam_reservations.server_id
+          AND s.environment_id = n.environment_id
+      );
+    CREATE TRIGGER IF NOT EXISTS ipam_reservation_server_environment_insert
+    BEFORE INSERT ON ipam_reservations
+    WHEN NEW.server_id IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM servers s
+        JOIN ipam_subnets n ON n.id = NEW.subnet_id
+        WHERE s.id = NEW.server_id
+          AND s.environment_id = n.environment_id
+      )
+    BEGIN
+      SELECT RAISE(ABORT, 'Managed host and IPAM prefix must belong to the same environment');
+    END;
+    CREATE TRIGGER IF NOT EXISTS ipam_reservation_server_environment_update
+    BEFORE UPDATE OF server_id, subnet_id ON ipam_reservations
+    WHEN NEW.server_id IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM servers s
+        JOIN ipam_subnets n ON n.id = NEW.subnet_id
+        WHERE s.id = NEW.server_id
+          AND s.environment_id = n.environment_id
+      )
+    BEGIN
+      SELECT RAISE(ABORT, 'Managed host and IPAM prefix must belong to the same environment');
+    END;
+
     -- External inventory sources deliberately live separately from prefixes.
     -- A source can contribute addresses to several prefixes, while its
     -- credential remains encrypted and is never exposed through the API.
@@ -202,6 +244,8 @@ function applySchema(db) {
       last_tested_at TEXT,
       last_test_status TEXT DEFAULT '',
       last_test_error TEXT DEFAULT '',
+      last_record_count INTEGER NOT NULL DEFAULT 0,
+      last_ignored_count INTEGER NOT NULL DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE
@@ -230,6 +274,46 @@ function applySchema(db) {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_ipam_sync_conflicts_source_address ON ipam_sync_conflicts(source_id, address);
     CREATE INDEX IF NOT EXISTS idx_ipam_sync_conflicts_subnet ON ipam_sync_conflicts(subnet_id);
 
+    -- Keep every controller observation even when several sources describe
+    -- the same machine. The reservation remains the canonical IPAM object;
+    -- observations provide provenance and safe source lifecycle handling.
+    CREATE TABLE IF NOT EXISTS ipam_source_observations (
+      id TEXT PRIMARY KEY,
+      environment_id TEXT NOT NULL,
+      subnet_id TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      source_ref TEXT NOT NULL,
+      reservation_id TEXT,
+      address TEXT NOT NULL,
+      hostname TEXT DEFAULT '',
+      mac_address TEXT DEFAULT '',
+      last_seen_at TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE,
+      FOREIGN KEY (subnet_id) REFERENCES ipam_subnets(id) ON DELETE CASCADE,
+      FOREIGN KEY (source_id) REFERENCES ipam_sync_sources(id) ON DELETE CASCADE,
+      FOREIGN KEY (reservation_id) REFERENCES ipam_reservations(id) ON DELETE SET NULL,
+      UNIQUE(source_id, source_ref)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ipam_source_observations_reservation ON ipam_source_observations(reservation_id);
+    CREATE INDEX IF NOT EXISTS idx_ipam_source_observations_source ON ipam_source_observations(source_id);
+    INSERT OR IGNORE INTO ipam_source_observations (
+      id, environment_id, subnet_id, source_id, source_ref, reservation_id,
+      address, hostname, mac_address, last_seen_at
+    )
+    SELECT
+      lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' ||
+        substr(lower(hex(randomblob(2))), 2) || '-a' || substr(lower(hex(randomblob(2))), 2) || '-' ||
+        lower(hex(randomblob(6))),
+      subnet.environment_id, reservation.subnet_id, source.id,
+      reservation.source_ref, reservation.id, reservation.address,
+      reservation.hostname, reservation.mac_address,
+      COALESCE(reservation.last_synced_at, reservation.created_at, datetime('now'))
+    FROM ipam_reservations reservation
+    JOIN ipam_subnets subnet ON subnet.id = reservation.subnet_id
+    JOIN ipam_sync_sources source ON reservation.source_ref LIKE source.id || ':%'
+    WHERE reservation.source_ref != '';
+
     -- Proxmox connections are not external IPAM sources, but their guest
     -- agent inventory can report a competing address as well.  Keep those
     -- observations separately so the foreign-key lifecycle of API sources
@@ -241,6 +325,7 @@ function applySchema(db) {
       connection_id TEXT NOT NULL,
       address TEXT NOT NULL,
       hostname TEXT DEFAULT '',
+      mac_address TEXT DEFAULT '',
       reason TEXT NOT NULL,
       existing_reservation_id TEXT,
       last_seen_at TEXT NOT NULL,
@@ -316,6 +401,7 @@ function applySchema(db) {
       server_id TEXT PRIMARY KEY,
       mode TEXT NOT NULL DEFAULT 'legacy',
       token TEXT,
+      pending_token TEXT,
       shipyard_url TEXT,
       interval INTEGER DEFAULT 30,
       installed_at TEXT,
@@ -400,6 +486,7 @@ function applySchema(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS audit_log (
       id TEXT PRIMARY KEY,
+      environment_id TEXT NOT NULL DEFAULT 'default',
       action TEXT NOT NULL,
       detail TEXT,
       user TEXT,
@@ -414,6 +501,13 @@ function applySchema(db) {
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action);`,
   );
+  // Legacy databases receive environment_id in the migration phase below.
+  // Creating this index here is therefore best-effort until that phase ran.
+  try {
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_audit_log_environment_created ON audit_log(environment_id, created_at DESC);`,
+    );
+  } catch {}
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS schedule_history (
@@ -472,6 +566,8 @@ function applySchema(db) {
       totp_secret_pending TEXT DEFAULT '',
       token_version INTEGER DEFAULT 0,
       display_name TEXT DEFAULT '',
+      disabled INTEGER NOT NULL DEFAULT 0,
+      last_login_at TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
   `);

@@ -69,6 +69,22 @@ test('agent manifest endpoint accepts trusted proxy https and token', async () =
   assert.equal(Array.isArray(res.body.collectors), true);
 });
 
+test('agent authentication accepts both current and pending rotation tokens', async () => {
+  wipeDb();
+  const app = makeApp({ trustProxy: true });
+  const server = db.servers.create({ name: 'rotation-auth', hostname: 'rotation-auth', ip_address: '10.0.0.15' });
+  db.agentConfig.upsert({ server_id: server.id, mode: 'push', token: encrypt('current-token'), interval: 30 });
+  db.agentConfig.beginTokenRotation(server.id, encrypt('pending-token'));
+
+  for (const token of ['current-token', 'pending-token']) {
+    const res = await request(app)
+      .get('/api/v1/agent/manifest')
+      .set('X-Forwarded-Proto', 'https')
+      .set('Authorization', `Bearer ${token}`);
+    assert.equal(res.status, 200, token);
+  }
+});
+
 test('agent bearer token parser is bounded and accepts whitespace variants', async () => {
   wipeDb();
   const app = makeApp({ trustProxy: true });

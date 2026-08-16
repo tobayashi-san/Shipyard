@@ -14,8 +14,10 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { SkeletonRow } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { QueryErrorState } from "@/components/ui/query-error-state";
+import { TablePagination } from "@/components/ui/table-pagination";
 import { asArray } from "@/lib/utils";
-import { SettingsSection } from "../_row";
+import { SettingsSection } from "@/routes/settings/_row";
+import { useUi } from "@/lib/store";
 
 interface AuditMeta {
   actions?: string[];
@@ -43,9 +45,9 @@ interface Filters {
   success: "" | "0" | "1";
   from: string;
   to: string;
-  limit: number;
-  offset: number;
 }
+
+const AUDIT_PAGE_SIZE = 25;
 
 const initialFilters: Filters = {
   action: "",
@@ -53,66 +55,78 @@ const initialFilters: Filters = {
   success: "",
   from: "",
   to: "",
-  limit: 100,
-  offset: 0,
 };
 
-export function AuditTab() {
+function buildFilterParams(filters: Filters): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (filters.action) out.action = filters.action;
+  if (filters.user) out.user = filters.user;
+  if (filters.success !== "") out.success = filters.success;
+  if (filters.from) out.from = filters.from;
+  if (filters.to) out.to = filters.to;
+  return out;
+}
+
+export function AuditLogPanel() {
   const { t } = useTranslation();
+  const environmentId = useUi((state) => state.environmentId);
   const [filters, setFilters] = useState<Filters>(initialFilters);
-  const [allRows, setAllRows] = useState<AuditRow[]>([]);
+  const [page, setPage] = useState(1);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const filterParams = buildFilterParams(filters);
 
   const metaQ = useQuery<AuditMeta>({
-    queryKey: ["audit-meta"],
-    queryFn: () => api.getAuditMeta() as unknown as Promise<AuditMeta>,
-    staleTime: 60_000,
-  });
-
-  // Build a stable params object excluding empty values
-  const buildParams = (f: Filters): Record<string, string | number> => {
-    const out: Record<string, string | number> = {
-      limit: f.limit,
-      offset: f.offset,
-    };
-    if (f.action) out.action = f.action;
-    if (f.user) out.user = f.user;
-    if (f.success !== "") out.success = f.success;
-    if (f.from) out.from = f.from;
-    if (f.to) out.to = f.to;
-    return out;
-  };
-
-  const rowsQ = useQuery<AuditRow[]>({
     queryKey: [
-      "audit-log",
+      "audit-meta",
+      environmentId,
       filters.action,
       filters.user,
       filters.success,
       filters.from,
       filters.to,
-      filters.limit,
-      filters.offset,
     ],
     queryFn: () =>
-      api.getAuditLog(buildParams(filters)) as unknown as Promise<AuditRow[]>,
+      api.getAuditMeta({ ...filterParams, environment_id: environmentId }) as unknown as Promise<AuditMeta>,
+    staleTime: 60_000,
   });
 
-  useEffect(() => {
-    if (!rowsQ.data) return;
-    const rows = asArray<AuditRow>(rowsQ.data);
-    if (filters.offset === 0) setAllRows(rows);
-    else setAllRows((prev) => [...prev, ...rows]);
-  }, [rowsQ.data, filters.offset]);
+  const rowsQ = useQuery<AuditRow[]>({
+    queryKey: [
+      "audit-log",
+      environmentId,
+      filters.action,
+      filters.user,
+      filters.success,
+      filters.from,
+      filters.to,
+      page,
+    ],
+    queryFn: () =>
+      api.getAuditLog({
+        ...filterParams,
+        environment_id: environmentId,
+        limit: AUDIT_PAGE_SIZE,
+        offset: (page - 1) * AUDIT_PAGE_SIZE,
+      }) as unknown as Promise<AuditRow[]>,
+  });
 
-  // Reset accumulator when filters (except offset) change
   const resetAndSet = (patch: Partial<Filters>) => {
-    setAllRows([]);
-    setFilters((f) => ({ ...f, ...patch, offset: 0 }));
+    setPage(1);
+    setFilters((current) => ({ ...current, ...patch }));
   };
 
   const meta = metaQ.data || { actions: [], users: [], count: 0 };
-  const hasMore = allRows.length < (meta.count || 0);
+  const rows = asArray<AuditRow>(rowsQ.data);
+  const total = meta.count || 0;
+  const totalPages = Math.max(1, Math.ceil(total / AUDIT_PAGE_SIZE));
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [environmentId]);
 
   return (
     <SettingsSection
@@ -132,16 +146,14 @@ export function AuditTab() {
           >
             <Settings2 className="h-4 w-4" />
             Filter
-            {Object.values(filters).some(
-              (value, index) => index < 5 && value !== "",
-            )
-              ? ": aktiv"
+            {Object.values(filters).some((value) => value !== "")
+              ? ": active"
               : ""}
           </Button>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => void api.exportAuditLog(buildParams(filters))}
+            onClick={() => void api.exportAuditLog(filterParams)}
           >
             <Download className="h-4 w-4" />
             Export
@@ -150,8 +162,6 @@ export function AuditTab() {
             variant="outline"
             size="sm"
             onClick={() => {
-              setAllRows([]);
-              setFilters((f) => ({ ...f, offset: 0 }));
               void rowsQ.refetch();
               void metaQ.refetch();
             }}
@@ -223,7 +233,7 @@ export function AuditTab() {
               variant="ghost"
               size="sm"
               onClick={() => {
-                setAllRows([]);
+                setPage(1);
                 setFilters(initialFilters);
               }}
             >
@@ -233,7 +243,7 @@ export function AuditTab() {
         </div>
       )}
 
-      {rowsQ.isLoading && allRows.length === 0 ? (
+      {rowsQ.isLoading ? (
         <div className="py-2">
           <SkeletonRow cols={4} />
           <SkeletonRow cols={4} />
@@ -249,7 +259,7 @@ export function AuditTab() {
           }}
           title="Audit log could not be loaded"
         />
-      ) : allRows.length === 0 ? (
+      ) : rows.length === 0 ? (
         <EmptyState
           compact
           icon={<ClipboardList className="h-5 w-5" />}
@@ -258,7 +268,7 @@ export function AuditTab() {
       ) : (
         <div>
           <div className="divide-y md:hidden">
-            {allRows.map((r, i) => (
+            {rows.map((r, i) => (
               <AuditMobileRow
                 key={`${r.created_at ?? ""}-${r.action ?? ""}-${r.user ?? ""}-${i}`}
                 row={r}
@@ -275,13 +285,13 @@ export function AuditTab() {
                   <th>Action</th>
                   <th>Details</th>
                   <th>Triggered by</th>
-                  <th>Objekt</th>
-                  <th>Zeitpunkt</th>
+                  <th>Object</th>
+                  <th>Time</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody>
-                {allRows.map((r, i) => (
+                {rows.map((r, i) => (
                   <AuditTableRow
                     key={`${r.created_at ?? ""}-${r.action ?? ""}-${r.user ?? ""}-${i}`}
                     row={r}
@@ -291,20 +301,14 @@ export function AuditTab() {
             </table>
           </div>
 
-          {hasMore && (
-            <div className="py-3 text-center">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() =>
-                  setFilters((f) => ({ ...f, offset: allRows.length }))
-                }
-                disabled={rowsQ.isFetching}
-              >
-                {t("set.auditShowMore")}
-              </Button>
-            </div>
-          )}
+          <TablePagination
+            page={page}
+            pageSize={AUDIT_PAGE_SIZE}
+            totalItems={total}
+            onPageChange={setPage}
+            disabled={rowsQ.isFetching}
+            itemLabel="audit entries"
+          />
         </div>
       )}
     </SettingsSection>

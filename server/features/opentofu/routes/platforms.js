@@ -5,7 +5,7 @@ const { randomUUID } = require('crypto');
 const log = require('../../../utils/logger').child('features:opentofu:platforms');
 const cryptoUtil = require('../../../utils/crypto');
 const { can, filterServers, getPermissions } = require('../../../utils/permissions');
-const { PROXMOX_IDENTIFIER_RE, extractProxmoxGuestIpv4, subnetContainsIpv4 } = require('../proxmox-blueprints');
+const { PROXMOX_IDENTIFIER_RE, extractProxmoxGuestIpv4, extractProxmoxGuestNetworkRecords, ipv4Number, subnetContainsIpv4 } = require('../proxmox-blueprints');
 const { createProxmoxConnection, requestProxmoxApi } = require('../proxmox-client');
 const { removeOrphanedServerMappings } = require('../managed-servers');
 
@@ -323,11 +323,11 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
       const mappedServers = new Map(db.db.prepare('SELECT server_id, node_name, vm_id FROM proxmox_inventory_servers WHERE connection_id = ?').all(source.id).map(row => [`${row.node_name}:${row.vm_id}`, row.server_id]));
       const occupiedRanges = db.db.prepare('SELECT start_address, end_address FROM ipam_ip_ranges WHERE subnet_id = ?').all(subnet.id).map(row => ({ start: ipv4Number(row.start_address), end: ipv4Number(row.end_address) }));
       const getReservation = db.db.prepare('SELECT * FROM ipam_reservations WHERE subnet_id = ? AND address = ?');
-      const insertReservation = db.db.prepare('INSERT INTO ipam_reservations (id, subnet_id, address, hostname, server_id, status, role, description, source_type, source_ref, last_synced_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime(\'now\'))');
-      const updateReservation = db.db.prepare('UPDATE ipam_reservations SET hostname = ?, server_id = ?, status = ?, source_ref = ?, last_synced_at = datetime(\'now\') WHERE id = ?');
+      const insertReservation = db.db.prepare('INSERT INTO ipam_reservations (id, subnet_id, address, hostname, server_id, mac_address, status, role, description, source_type, source_ref, last_synced_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime(\'now\'))');
+      const updateReservation = db.db.prepare('UPDATE ipam_reservations SET hostname = ?, server_id = ?, mac_address = ?, status = ?, source_ref = ?, last_synced_at = datetime(\'now\') WHERE id = ?');
       const clearConflicts = db.db.prepare('DELETE FROM ipam_proxmox_sync_conflicts WHERE connection_id = ? AND subnet_id = ?');
-      const insertConflict = db.db.prepare(`INSERT INTO ipam_proxmox_sync_conflicts (id, environment_id, subnet_id, connection_id, address, hostname, reason, existing_reservation_id, last_seen_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`);
+      const insertConflict = db.db.prepare(`INSERT INTO ipam_proxmox_sync_conflicts (id, environment_id, subnet_id, connection_id, address, hostname, mac_address, reason, existing_reservation_id, last_seen_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`);
       const stats = { discovered: 0, created: 0, updated: 0, conflicts: 0, skipped: 0, failed: 0 };
       clearConflicts.run(source.id, subnet.id);
       for (const vm of vms) {
@@ -336,8 +336,10 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
         if (!nodeName || !Number.isInteger(vmId)) { stats.skipped += 1; continue; }
         try {
           const payload = await requestProxmoxApi(connection, `/nodes/${encodeURIComponent(nodeName)}/qemu/${vmId}/agent/network-get-interfaces`);
-          const addresses = extractProxmoxGuestIpv4s(payload).filter(address => subnetContainsIpv4(subnet.cidr, address));
-          for (const address of addresses) {
+          const records = extractProxmoxGuestNetworkRecords(payload).filter(record => subnetContainsIpv4(subnet.cidr, record.address));
+          for (const record of records) {
+            const address = record.address;
+            const macAddress = record.mac_address;
             stats.discovered += 1;
             const number = ipv4Number(address);
             if (number === null || occupiedRanges.some(range => range.start !== null && range.end !== null && number >= range.start && number <= range.end)) { stats.skipped += 1; continue; }
@@ -345,14 +347,26 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
             const existing = getReservation.get(subnet.id, address);
             const hostname = String(vm?.name || `VM ${vmId}`).slice(0, 100);
             const serverId = mappedServers.get(`${nodeName}:${vmId}`) || null;
+            if (number === ipv4Number(subnet.gateway)) {
+              insertConflict.run(randomUUID(), source.environment_id, subnet.id, source.id, address, hostname, macAddress, 'Address is configured as the prefix gateway', null);
+              stats.conflicts += 1;
+              continue;
+            }
             if (!existing) {
-              insertReservation.run(randomUUID(), subnet.id, address, hostname, serverId, 'active', '', `Aus Proxmox ${source.name} synchronisiert`, 'proxmox', sourceRef);
+              insertReservation.run(randomUUID(), subnet.id, address, hostname, serverId, macAddress, 'active', '', '', 'proxmox', sourceRef);
               stats.created += 1;
             } else if (existing.source_type === 'proxmox' && String(existing.source_ref || '').startsWith(`${source.id}:`)) {
-              updateReservation.run(hostname, serverId, 'active', sourceRef, existing.id);
+              updateReservation.run(hostname, serverId, macAddress, 'active', sourceRef, existing.id);
+              stats.updated += 1;
+            } else if (macAddress && String(existing.mac_address || '').toLowerCase().replace(/[^a-f0-9]/g, '') === macAddress.replace(/:/g, '')) {
+              // The same interface can be observed by Proxmox and a DHCP
+              // controller. Equal MAC identity means this is corroboration,
+              // not an address collision.
+              db.db.prepare("UPDATE ipam_reservations SET mac_address = CASE WHEN mac_address = '' THEN ? ELSE mac_address END, last_synced_at = datetime('now') WHERE id = ?")
+                .run(macAddress, existing.id);
               stats.updated += 1;
             } else {
-              insertConflict.run(randomUUID(), source.environment_id, subnet.id, source.id, address, hostname, `Address is already reserved ${existing.source_type === 'manual' ? 'manually' : 'by another source'}${existing.hostname ? ` (${existing.hostname})` : ''}`, existing.id);
+              insertConflict.run(randomUUID(), source.environment_id, subnet.id, source.id, address, hostname, macAddress, `Address is already reserved ${existing.source_type === 'manual' ? 'manually' : 'by another source'}${existing.hostname ? ` (${existing.hostname})` : ''}`, existing.id);
               stats.conflicts += 1;
             }
           }

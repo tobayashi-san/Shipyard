@@ -90,14 +90,15 @@ function extractMarkedContainerLines(output) {
 
 async function refreshDockerCache(server) {
   try {
+    const environmentId = String(server.environment_id || 'default');
     // The direct Ansible command has a predictable, marker-prefixed output
     // and avoids coupling runtime discovery to Ansible's human callback
     // format. The playbook remains a compatibility fallback for custom
     // Ansible wrappers.
-    const direct = await ansibleRunner.runAdHoc(server.name, 'shell', DOCKER_INVENTORY_COMMAND, null, { become: true });
+    const direct = await ansibleRunner.runAdHoc(server.name, 'shell', DOCKER_INVENTORY_COMMAND, null, { become: true, environmentId });
     let lines = direct.success ? extractMarkedContainerLines(direct.stdout) : null;
     if (lines === null) {
-      const result = await ansibleRunner.runPlaybook('gather-docker.yml', server.name);
+      const result = await ansibleRunner.runPlaybook('gather-docker.yml', server.name, {}, null, { environmentId });
       if (!result.success) return false;
       lines = extractContainerLines(result.stdout);
       if (!lines) return false;

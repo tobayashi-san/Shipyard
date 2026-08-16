@@ -3,6 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
+const { pipeline } = require('stream/promises');
+const { PassThrough, Transform } = require('stream');
 const { NodeSSH } = require('node-ssh');
 const db = require('../db');
 const log = require('../utils/logger').child('ssh-manager');
@@ -600,6 +602,219 @@ class SSHManager {
         });
       });
     });
+  }
+
+  /**
+   * Run an operation against a server's SFTP subsystem while keeping the
+   * pooled SSH connection pinned for the complete lifetime of the operation.
+   */
+  async withSftp(server, operation) {
+    const key = this._connectionKey(server);
+    const ssh = await this.getConnection(server);
+    this._refInc(key);
+    try {
+      const sftp = await ssh.requestSFTP();
+      return await operation(sftp);
+    } finally {
+      this._refDec(key);
+    }
+  }
+
+  async listFiles(server, remotePath = null) {
+    return this.withSftp(server, async sftp => {
+      const requested = remotePath || '.';
+      const resolvedPath = await new Promise((resolve, reject) => {
+        sftp.realpath(requested, (error, value) => error ? reject(error) : resolve(value));
+      });
+      const entries = await new Promise((resolve, reject) => {
+        sftp.readdir(resolvedPath, (error, value) => error ? reject(error) : resolve(value || []));
+      });
+      return {
+        path: resolvedPath,
+        entries: entries.map(entry => ({
+          name: entry.filename,
+          type: entry.attrs?.isDirectory?.() ? 'directory' : entry.attrs?.isSymbolicLink?.() ? 'symlink' : 'file',
+          size: Number(entry.attrs?.size || 0),
+          modified_at: Number(entry.attrs?.mtime || 0),
+          permissions: Number(entry.attrs?.mode || 0) & 0o7777,
+        })),
+      };
+    });
+  }
+
+  async remoteFileExists(server, remotePath) {
+    return this.withSftp(server, sftp => new Promise(resolve => {
+      sftp.stat(remotePath, error => resolve(!error));
+    }));
+  }
+
+  async createReadStream(server, remotePath) {
+    const key = this._connectionKey(server);
+    const ssh = await this.getConnection(server);
+    this._refInc(key);
+    try {
+      const sftp = await ssh.requestSFTP();
+      const stream = sftp.createReadStream(remotePath);
+      let released = false;
+      const release = () => {
+        if (released) return;
+        released = true;
+        this._refDec(key);
+      };
+      stream.once('close', release);
+      stream.once('error', release);
+      return stream;
+    } catch (error) {
+      this._refDec(key);
+      throw error;
+    }
+  }
+
+  /** Stream a remote directory as gzip-compressed tar without staging it. */
+  async createDirectoryArchiveStream(server, remotePath) {
+    const key = this._connectionKey(server);
+    const ssh = await this.getConnection(server);
+    this._refInc(key);
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      this._refDec(key);
+    };
+    try {
+      const sftp = await ssh.requestSFTP();
+      const attributes = await new Promise((resolve, reject) => {
+        sftp.stat(remotePath, (error, value) => error ? reject(error) : resolve(value));
+      });
+      if (!attributes?.isDirectory?.()) {
+        throw Object.assign(new Error('The requested path is not a directory'), { statusCode: 400 });
+      }
+    } catch (error) {
+      release();
+      throw error;
+    }
+
+    const output = new PassThrough();
+    let channel = null;
+    const shellQuote = value => `'${String(value).replace(/'/g, `'"'"'`)}'`;
+    const parent = path.posix.dirname(remotePath);
+    const name = path.posix.basename(remotePath) || '.';
+    // Force stable English diagnostics so the narrowly-scoped warning handling
+    // below works independently of the remote host locale.
+    const command = `LC_ALL=C tar -C ${shellQuote(parent)} -czf - -- ${shellQuote(name)}`;
+
+    const onlyChangedWhileReadingWarnings = detail => {
+      const lines = String(detail || '').split('\n').map(line => line.trim()).filter(Boolean);
+      if (!lines.length) return false;
+      return lines.every(line => (
+        /^tar: .*: file changed as we read it$/.test(line)
+        || line === 'tar: Exiting with failure status due to previous errors'
+      ));
+    };
+
+    output.once('close', () => {
+      if (channel && !channel.destroyed) channel.destroy();
+      release();
+    });
+
+    try {
+      ssh.connection.exec(command, (error, stream) => {
+        if (error) {
+          release();
+          output.destroy(error);
+          return;
+        }
+        channel = stream;
+        if (output.destroyed) {
+          stream.destroy();
+          return;
+        }
+        const stderr = [];
+        let stderrBytes = 0;
+        let exitCode = null;
+        stream.stderr.on('data', chunk => {
+          if (stderrBytes >= 8192) return;
+          const buffer = Buffer.from(chunk);
+          stderr.push(buffer.subarray(0, 8192 - stderrBytes));
+          stderrBytes += buffer.length;
+        });
+        // ssh2 normally exposes the remote status on both `exit` and `close`,
+        // but several SSH server implementations only provide it on `exit`.
+        // Keep it separately so a successful archive is not rejected merely
+        // because `close` has no arguments.
+        stream.on('exit', code => {
+          if (Number.isInteger(code)) exitCode = code;
+        });
+        stream.on('error', streamError => output.destroy(streamError));
+        stream.on('close', code => {
+          const finalCode = Number.isInteger(code) ? code : exitCode;
+          const detail = Buffer.concat(stderr).toString('utf8').trim();
+          // GNU tar returns 1 when a live file changes during archiving. The
+          // emitted tar.gz is still readable, so do not discard an otherwise
+          // successful directory download for this warning alone.
+          if (finalCode === null || finalCode === 0 || (finalCode === 1 && onlyChangedWhileReadingWarnings(detail))) {
+            output.end();
+          } else {
+            output.destroy(Object.assign(new Error(detail || `Remote tar exited with code ${finalCode}`), { statusCode: 502 }));
+          }
+        });
+        stream.pipe(output, { end: false });
+      });
+      return output;
+    } catch (error) {
+      release();
+      output.destroy(error);
+      throw error;
+    }
+  }
+
+  async uploadStream(server, remotePath, input) {
+    return this.withSftp(server, async sftp => {
+      await pipeline(input, sftp.createWriteStream(remotePath, { flags: 'w', mode: 0o600 }));
+    });
+  }
+
+  async transferFile(sourceServer, sourcePath, targetServer, targetPath, maximumBytes = Infinity) {
+    const sourceKey = this._connectionKey(sourceServer);
+    const targetKey = this._connectionKey(targetServer);
+    const sourceSsh = await this.getConnection(sourceServer);
+    this._refInc(sourceKey);
+    let targetPinned = false;
+    try {
+      // Pin the source before acquiring the second pooled connection. Otherwise
+      // an at-capacity pool could evict the just-acquired source as its LRU slot.
+      const targetSsh = await this.getConnection(targetServer);
+      this._refInc(targetKey);
+      targetPinned = true;
+      const [sourceSftp, targetSftp] = await Promise.all([
+        sourceSsh.requestSFTP(),
+        targetSsh.requestSFTP(),
+      ]);
+      const sourceAttributes = await new Promise((resolve, reject) => {
+        sourceSftp.stat(sourcePath, (error, attributes) => error ? reject(error) : resolve(attributes));
+      });
+      if (!sourceAttributes?.isFile?.()) {
+        throw Object.assign(new Error('Only regular files can be transferred'), { statusCode: 400 });
+      }
+      if (Number(sourceAttributes.size || 0) > maximumBytes) {
+        throw Object.assign(new Error('File exceeds the configured transfer limit'), { statusCode: 413 });
+      }
+      let transferred = 0;
+      const limiter = new Transform({
+        transform(chunk, encoding, callback) {
+          transferred += chunk.length;
+          if (transferred > maximumBytes) {
+            return callback(Object.assign(new Error('File exceeds the configured transfer limit'), { statusCode: 413 }));
+          }
+          callback(null, chunk);
+        },
+      });
+      await pipeline(sourceSftp.createReadStream(sourcePath), limiter, targetSftp.createWriteStream(targetPath, { flags: 'w', mode: 0o600 }));
+      return transferred;
+    } finally {
+      this._refDec(sourceKey);
+      if (targetPinned) this._refDec(targetKey);
+    }
   }
 
   /**

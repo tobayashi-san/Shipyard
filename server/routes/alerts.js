@@ -8,7 +8,7 @@ const router = express.Router();
 
 function visibleServerIds(req) {
   const perms = getPermissions(req.user);
-  return filterServers(db.servers.getAll(), perms).map(server => server.id);
+  return filterServers(db.servers.getAll(req.environmentId || 'default'), perms).map(server => server.id);
 }
 
 function normalizeStatuses(value) {

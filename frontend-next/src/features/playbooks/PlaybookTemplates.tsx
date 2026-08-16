@@ -348,7 +348,7 @@ export function TemplatesTab({ onRun }: { onRun: (filename: string) => void }) {
           <CardContent className="flex min-h-[22rem] items-center justify-center p-6">
             <EmptyState
               icon={<Terminal className="h-5 w-5" />}
-              title="Select a workspace"
+              title="Select a deployment"
               description="Select a template on the left to edit its contents or run it on specific hosts."
               action={
                 hasCap(profile, "canEditPlaybooks") ? (
@@ -541,10 +541,11 @@ export function TemplateRunPanel({
 }) {
   const { t } = useTranslation();
   const { data: profile } = useProfile();
+  const environmentId = useUi((state) => state.environmentId);
   const servers = useQuery<Record<string, unknown>[]>({
-    queryKey: ["servers"],
+    queryKey: ["servers", environmentId],
     queryFn: () =>
-      api.getServers() as unknown as Promise<Record<string, unknown>[]>,
+      api.getServers(environmentId) as unknown as Promise<Record<string, unknown>[]>,
   });
   const srvList = asArray<Record<string, unknown>>(servers.data);
 

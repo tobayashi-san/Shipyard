@@ -429,7 +429,7 @@ export function DeploymentDetailPage() {
       ),
     onSuccess: () => {
       showToast(
-        "VM destroy started. The Fleet host remains as an independent inventory record.",
+        "VM destroy started. The managed host remains as an independent inventory record.",
         "success",
       );
       setVmToDestroy(null);
@@ -645,7 +645,7 @@ export function DeploymentDetailPage() {
           <EmptyState
             icon={<Workflow className="h-5 w-5" />}
             title="Deployment not found"
-            description="The workspace was deleted or is not available to your role."
+            description="The deployment was deleted or is not available to your role."
             action={
               <Button asChild variant="outline">
                 <Link to="/deployments">{t("deploy.title")}</Link>
@@ -1433,12 +1433,12 @@ export function DeploymentDetailPage() {
                                 params={{ id: resource.fleet_server_id }}
                               >
                                 {resource.fleet_server_name ||
-                                  "Open Fleet host"}
+                                  "Open managed host"}
                               </Link>
                             </Button>
                           ) : (
                             <span className="text-xs text-muted-foreground">
-                              Not imported as a Fleet host
+                              Not imported as a managed host
                             </span>
                           )}
                         </div>
@@ -1497,7 +1497,7 @@ export function DeploymentDetailPage() {
                                     params={{ id: resource.fleet_server_id }}
                                   >
                                     {resource.fleet_server_name ||
-                                      "Open Fleet host"}
+                                      "Open managed host"}
                                   </Link>
                                 </Button>
                               ) : (
@@ -2164,7 +2164,7 @@ export function DeploymentDetailPage() {
             <>
               OpenTofu will destroy <strong>{vmToDestroy.name}</strong> specifically
               in Proxmox and then remove only this VM from the deployment. Any
-              Fleet host remains as an inventory record.
+              The managed host remains as an inventory record.
             </>
           ) : (
             ""

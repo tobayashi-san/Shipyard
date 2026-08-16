@@ -1,5 +1,6 @@
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useParams } from '@tanstack/react-router';
+import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { Lock } from 'lucide-react';
 import { useProfile, useSettings } from '@/lib/queries';
 import { cn } from '@/lib/utils';
@@ -14,7 +15,6 @@ import { NotificationsTab } from './settings/tabs/notifications';
 import { GitTab } from './settings/tabs/git';
 import { PluginsTab } from './settings/tabs/plugins';
 import { UsersRolesTab } from './settings/tabs/users-roles';
-import { AuditTab } from './settings/tabs/audit';
 import { DangerTab } from './settings/tabs/danger';
 
 interface TabDef {
@@ -36,7 +36,6 @@ const TABS: TabDef[] = [
   { id: 'git',            i18nKey: 'git.title',            Component: GitTab, section: 'Integrations' },
   { id: 'plugins',        i18nKey: 'set.tabPlugins',       Component: PluginsTab, section: 'Integrations' },
   { id: 'notifications',  i18nKey: 'set.notifications',    Component: NotificationsTab, section: 'Integrations' },
-  { id: 'audit',          i18nKey: 'set.tabAudit',         Component: AuditTab, section: 'Operations & system' },
   { id: 'danger',         i18nKey: 'set.danger',           Component: DangerTab, section: 'Operations & system' },
 ];
 
@@ -70,6 +69,7 @@ export function SettingsPage() {
 
 function AdminSettingsPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const params = useParams({ strict: false }) as { tab?: string };
   const { data: settings } = useSettings();
 
@@ -81,6 +81,10 @@ function AdminSettingsPage() {
   const activeId = visibleTabs.find((tab) => tab.id === params.tab)?.id ?? visibleTabs[0]?.id;
   const ActiveComponent = visibleTabs.find((tab) => tab.id === activeId)?.Component;
   const sections = ['Console', 'Access & security', 'Integrations', 'Operations & system'] as const;
+
+  useEffect(() => {
+    if (params.tab === 'audit') void navigate({ to: '/operations', replace: true });
+  }, [navigate, params.tab]);
 
   return (
     <div className="space-y-5">

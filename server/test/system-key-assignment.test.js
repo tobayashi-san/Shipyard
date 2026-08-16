@@ -81,10 +81,10 @@ test('SSH-key assignments are target-validated, environment-scoped and auditable
 
 test('audit entries expose safe links to their current Fleet host and deployment', async () => {
   const auth = { Authorization: `Bearer ${token}` };
-  db.auditLog.write('ssh.assignment.upsert', `key=fleet type=server target=${host.id}`, '127.0.0.1', true, 'admin');
-  db.auditLog.write('tofu.apply', 'workspace=Deployment A vm=app-a status=success', '127.0.0.1', true, 'admin');
+  db.auditLog.write('ssh.assignment.upsert', `key=fleet type=server target=${host.id}`, '127.0.0.1', true, 'admin', envA);
+  db.auditLog.write('tofu.apply', 'workspace=Deployment A vm=app-a status=success', '127.0.0.1', true, 'admin', envA);
 
-  const response = await request(app).get('/api/system/audit?limit=20').set(auth);
+  const response = await request(app).get(`/api/system/audit?limit=20&environment_id=${envA}`).set(auth);
   assert.equal(response.status, 200);
   const serverEvent = response.body.find(row => row.detail === `key=fleet type=server target=${host.id}`);
   const deploymentEvent = response.body.find(row => row.detail === 'workspace=Deployment A vm=app-a status=success');

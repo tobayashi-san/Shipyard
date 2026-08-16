@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   useMutation,
-  useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -16,6 +15,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Search,
   Trash2,
   TriangleAlert,
   Workflow,
@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TablePagination } from "@/components/ui/table-pagination";
 import {
   canAccessDeployments,
   hasCap,
@@ -44,36 +45,11 @@ import {
   useProfile,
 } from "@/lib/queries";
 import { useUi } from "@/lib/store";
+import { AuditLogPanel } from "@/features/operations/AuditLogPanel";
 
 interface Workspace {
   id: string;
   name: string;
-}
-interface DeploymentRun {
-  id: string;
-  action?: string;
-  status?: string;
-  started_at?: string;
-  completed_at?: string;
-}
-interface RunsResponse {
-  items?: DeploymentRun[];
-}
-interface ScheduleRun {
-  id?: number | string;
-  schedule_name?: string;
-  playbook?: string;
-  targets?: string;
-  status?: string;
-  started_at?: string;
-  completed_at?: string;
-}
-interface AuditRow {
-  action?: string;
-  user?: string;
-  detail?: string;
-  success?: boolean | 0 | 1;
-  created_at?: string;
 }
 interface OperationRow {
   id: string;
@@ -84,9 +60,20 @@ interface OperationRow {
   status: string;
   statusTone: StatusTone;
   time?: string;
-  href?: "/deployments/$id" | "/playbooks" | "/settings/$tab";
+  href?: "/deployments/$id" | "/playbooks";
   params?: Record<string, string>;
 }
+
+interface OperationsResponse {
+  items: OperationRow[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  counts: { all: number; active: number; failed: number };
+}
+
+const OPERATIONS_PAGE_SIZE = 10;
 interface MaintenanceWindow {
   id: string;
   environment_id: string;
@@ -95,22 +82,6 @@ interface MaintenanceWindow {
   ends_at: string;
   description?: string;
   state?: "scheduled" | "active" | "completed";
-}
-
-function tone(status?: string): StatusTone {
-  switch (String(status || "").toLowerCase()) {
-    case "success":
-    case "completed":
-      return "success";
-    case "failed":
-    case "error":
-      return "danger";
-    case "running":
-    case "queued":
-      return "info";
-    default:
-      return "muted";
-  }
 }
 
 function readableTime(value?: string) {
@@ -182,6 +153,11 @@ export function OperationsPage() {
   const [taskScope, setTaskScope] = useState<"all" | "active" | "failed">(
     "all",
   );
+  const [sourceFilter, setSourceFilter] = useState<"all" | "Deployment" | "Workflow" | "Audit">("all");
+  const [targetFilter, setTargetFilter] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [operationsPage, setOperationsPage] = useState(1);
   const [selectedOperationId, setSelectedOperationId] = useState<string | null>(
     null,
   );
@@ -202,29 +178,24 @@ export function OperationsPage() {
   const workspaces = Array.isArray(workspaceQuery.data)
     ? workspaceQuery.data
     : [];
-  const deploymentRunQueries = useQueries({
-    queries: workspaces.map((workspace) => ({
-      queryKey: ["opentofu", "workspace", workspace.id, "runs", "operations"],
-      queryFn: () =>
-        apiFetch<RunsResponse>(
-          `/opentofu/workspaces/${encodeURIComponent(workspace.id)}/runs?page_size=5`,
-        ),
-      staleTime: 10_000,
-    })),
-  });
-  const scheduleQuery = useQuery({
-    queryKey: ["schedule-history", "operations"],
-    queryFn: () =>
-      api.getScheduleHistory(12) as unknown as Promise<ScheduleRun[]>,
-    enabled: canViewSchedules,
-    staleTime: 15_000,
-  });
-  const auditQuery = useQuery({
-    queryKey: ["audit-log", "operations"],
-    queryFn: () =>
-      api.getAuditLog({ limit: 12 }) as unknown as Promise<AuditRow[]>,
-    enabled: canViewAudit,
-    staleTime: 15_000,
+  const operationsQuery = useQuery({
+    queryKey: [
+      "operations", environmentId, taskScope, sourceFilter, targetFilter,
+      fromDate, toDate, operationsPage,
+    ],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        scope: taskScope,
+        page: String(operationsPage),
+        page_size: String(OPERATIONS_PAGE_SIZE),
+      });
+      if (sourceFilter !== "all") params.set("source", sourceFilter);
+      if (targetFilter.trim()) params.set("q", targetFilter.trim());
+      if (fromDate) params.set("from", fromDate);
+      if (toDate) params.set("to", toDate);
+      return apiFetch<OperationsResponse>(`/operations?${params}`);
+    },
+    staleTime: 10_000,
   });
   const maintenanceQuery = useQuery({
     queryKey: ["maintenance-windows", environmentId],
@@ -235,27 +206,6 @@ export function OperationsPage() {
     enabled: canViewMaintenance,
     staleTime: 15_000,
   });
-  const deploymentRuns = useMemo(
-    () =>
-      workspaces
-        .flatMap((workspace, index) =>
-          (Array.isArray(deploymentRunQueries[index]?.data?.items)
-            ? deploymentRunQueries[index].data!.items!
-            : []
-          ).map((run) => ({ ...run, workspace })),
-        )
-        .sort((left, right) =>
-          String(right.completed_at || right.started_at || "").localeCompare(
-            String(left.completed_at || left.started_at || ""),
-          ),
-        )
-        .slice(0, 12),
-    [deploymentRunQueries, workspaces],
-  );
-  const scheduleRuns = Array.isArray(scheduleQuery.data)
-    ? scheduleQuery.data
-    : [];
-  const auditRows = Array.isArray(auditQuery.data) ? auditQuery.data : [];
   const maintenanceWindows = Array.isArray(maintenanceQuery.data)
     ? maintenanceQuery.data
     : [];
@@ -267,115 +217,41 @@ export function OperationsPage() {
     .sort((left, right) =>
       String(left.starts_at).localeCompare(String(right.starts_at)),
     )[0];
-  const running = deploymentRuns.filter((run) =>
-    ["running", "queued"].includes(String(run.status).toLowerCase()),
-  ).length;
-  const failed =
-    deploymentRuns.filter((run) =>
-      ["failed", "error"].includes(String(run.status).toLowerCase()),
-    ).length +
-    scheduleRuns.filter((run) => String(run.status).toLowerCase() === "failed")
-      .length;
-  const operationRows = useMemo<OperationRow[]>(
-    () =>
-      [
-        ...deploymentRuns.map((run) => ({
-          id: `deployment-${run.id}`,
-          source: "Deployment" as const,
-          name: run.action || "OpenTofu run",
-          target: run.workspace.name,
-          initiator: "OpenTofu",
-          status: run.status || "unknown",
-          statusTone: tone(run.status),
-          time: run.completed_at || run.started_at,
-          href: "/deployments/$id" as const,
-          params: { id: run.workspace.id },
-        })),
-        ...scheduleRuns.map((run, index) => ({
-          id: `workflow-${run.id || index}-${run.started_at || ""}`,
-          source: "Workflow" as const,
-          name: run.schedule_name || run.playbook || "Scheduled task",
-          target: run.targets || "Defined hosts",
-          initiator: "Scheduler",
-          status: run.status || "unknown",
-          statusTone: tone(run.status),
-          time: run.completed_at || run.started_at,
-          href: "/playbooks" as const,
-        })),
-        ...(canViewAudit
-          ? auditRows.map((row, index) => {
-              const failed = row.success === false || row.success === 0;
-              const succeeded = row.success === true || row.success === 1;
-              return {
-                id: `audit-${row.created_at || ""}-${index}`,
-                source: "Audit" as const,
-                name: row.action || "Audit event",
-                target: row.detail || "Fleet console",
-                initiator: row.user || "System",
-                status: failed
-                  ? "failed"
-                  : succeeded
-                    ? "successful"
-                    : "recorded",
-                statusTone: failed
-                  ? ("danger" as const)
-                  : succeeded
-                    ? ("success" as const)
-                    : ("muted" as const),
-                time: row.created_at,
-                href: "/settings/$tab" as const,
-                params: { tab: "audit" },
-              };
-            })
-          : []),
-      ]
-        .sort((left, right) => {
-          const priority = (row: OperationRow) =>
-            ["running", "queued"].includes(row.status.toLowerCase()) ? 0 : 1;
-          return (
-            priority(left) - priority(right) ||
-            String(right.time || "").localeCompare(String(left.time || ""))
-          );
-        })
-        .slice(0, 30),
-    [auditRows, canViewAudit, deploymentRuns, scheduleRuns],
-  );
-  const activeOperationCount = operationRows.filter((row) =>
-    ["running", "queued"].includes(row.status.toLowerCase()),
-  ).length;
-  const failedOperationCount = operationRows.filter(
-    (row) => row.statusTone === "danger",
-  ).length;
-  const visibleOperationRows =
-    taskScope === "active"
-      ? operationRows.filter((row) =>
-          ["running", "queued"].includes(row.status.toLowerCase()),
-        )
-      : taskScope === "failed"
-        ? operationRows.filter((row) => row.statusTone === "danger")
-        : operationRows;
+  const operationRows = Array.isArray(operationsQuery.data?.items)
+    ? operationsQuery.data.items
+    : [];
+  const operationCounts = operationsQuery.data?.counts || { all: 0, active: 0, failed: 0 };
+  const activeOperationCount = operationCounts.active;
+  const failedOperationCount = operationCounts.failed;
+  const operationsTotalPages = operationsQuery.data?.total_pages || 1;
+  const safeOperationsPage = operationsQuery.data?.page || operationsPage;
   const selectedOperation =
-    visibleOperationRows.find((row) => row.id === selectedOperationId) ||
-    visibleOperationRows[0] ||
+    operationRows.find((row) => row.id === selectedOperationId) ||
+    operationRows[0] ||
     null;
+  useEffect(() => {
+    setOperationsPage(1);
+  }, [taskScope, sourceFilter, targetFilter, fromDate, toDate]);
+  useEffect(() => {
+    if (operationsPage > operationsTotalPages)
+      setOperationsPage(operationsTotalPages);
+  }, [operationsPage, operationsTotalPages]);
   useEffect(() => {
     if (
       selectedOperationId &&
-      !visibleOperationRows.some((row) => row.id === selectedOperationId)
+      !operationRows.some((row) => row.id === selectedOperationId)
     )
       setSelectedOperationId(null);
-  }, [selectedOperationId, visibleOperationRows]);
+  }, [operationRows, selectedOperationId]);
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["opentofu"] });
-    void queryClient.invalidateQueries({ queryKey: ["schedule-history"] });
+    void queryClient.invalidateQueries({ queryKey: ["operations"] });
     void queryClient.invalidateQueries({ queryKey: ["audit-log"] });
     void queryClient.invalidateQueries({ queryKey: ["maintenance-windows"] });
   };
   const isRefreshing =
     workspaceQuery.isFetching ||
-    deploymentRunQueries.some((query) => query.isFetching) ||
-    scheduleQuery.isFetching ||
-    auditQuery.isFetching ||
+    operationsQuery.isFetching ||
     maintenanceQuery.isFetching;
   return (
     <div className="space-y-5">
@@ -392,8 +268,8 @@ export function OperationsPage() {
       <OperationsContext
         active={activeMaintenance}
         next={nextMaintenance}
-        activeOperations={activeOperationCount || running}
-        failedOperations={failedOperationCount || failed}
+        activeOperations={activeOperationCount}
+        failedOperations={failedOperationCount}
         onShowFailures={() => {
           setTaskScope("failed");
           setSelectedOperationId(null);
@@ -408,7 +284,7 @@ export function OperationsPage() {
             <div>
               <CardTitle className="flex items-center gap-2 text-base">
                 <ClipboardList className="h-4 w-4" />
-                Recent tasks
+                Tasks & events
               </CardTitle>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 Running tasks appear first. Select a task to review its context.
@@ -431,41 +307,14 @@ export function OperationsPage() {
                   </Link>
                 </Button>
               )}
-              {canViewAudit && (
-                <Button asChild size="sm" variant="ghost">
-                  <Link to="/settings/$tab" params={{ tab: "audit" }}>
-                    Audit
-                    <ExternalLink />
-                  </Link>
-                </Button>
-              )}
+              {canViewAudit && <Button asChild size="sm" variant="ghost"><a href="#audit-log">Audit log</a></Button>}
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            {(canViewDeployments && workspaceQuery.isLoading) ||
-            (canViewSchedules && scheduleQuery.isLoading) ||
-            (canViewAudit && auditQuery.isLoading) ? (
+            {operationsQuery.isLoading ? (
               <div className="p-5 text-sm text-muted-foreground">
                 Loading tasks…
               </div>
-            ) : operationRows.length === 0 ? (
-              <EmptyState
-                compact
-                icon={<ClipboardList className="h-5 w-5" />}
-                title="No tasks or events yet"
-                description="OpenTofu runs, playbook workflows, and changes appear here automatically."
-                action={
-                  canViewDeployments ? (
-                    <Button asChild size="sm" variant="outline">
-                      <Link to="/deployments">Open deployments</Link>
-                    </Button>
-                  ) : canViewSchedules ? (
-                    <Button asChild size="sm" variant="outline">
-                      <Link to="/playbooks">Open workflows</Link>
-                    </Button>
-                  ) : undefined
-                }
-              />
             ) : (
               <>
                 <div className="flex items-center gap-1 border-b bg-muted/10 px-3 py-2">
@@ -473,7 +322,7 @@ export function OperationsPage() {
                     active={taskScope === "all"}
                     onClick={() => setTaskScope("all")}
                   >
-                    All <span>{operationRows.length}</span>
+                    All <span>{operationCounts.all}</span>
                   </TaskScopeButton>
                   <TaskScopeButton
                     active={taskScope === "active"}
@@ -488,15 +337,42 @@ export function OperationsPage() {
                     Failed <span>{failedOperationCount}</span>
                   </TaskScopeButton>
                 </div>
-                {visibleOperationRows.length ? (
-                  <div className="grid xl:grid-cols-[minmax(30rem,1.2fr)_minmax(22rem,.8fr)]">
-                    <OperationList
-                      rows={visibleOperationRows}
-                      selectedId={selectedOperation?.id}
-                      onSelect={setSelectedOperationId}
+                <div className="grid gap-2 border-b bg-background/60 px-3 py-2.5 sm:grid-cols-2 xl:grid-cols-[12rem_minmax(14rem,1fr)_10rem_10rem_auto]">
+                  <label className="space-y-1 text-xs text-muted-foreground">
+                    <span>Source</span>
+                    <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value as typeof sourceFilter)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground">
+                      <option value="all">All sources</option>
+                      <option value="Deployment">Deployments</option>
+                      <option value="Workflow">Playbooks</option>
+                      {canViewAudit && <option value="Audit">Audit</option>}
+                    </select>
+                  </label>
+                  <label className="space-y-1 text-xs text-muted-foreground">
+                    <span>Target, task, or initiator</span>
+                    <span className="relative block"><Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4" /><Input value={targetFilter} onChange={(event) => setTargetFilter(event.target.value)} className="pl-8" placeholder="Filter operations…" /></span>
+                  </label>
+                  <label className="space-y-1 text-xs text-muted-foreground"><span>From</span><input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground" /></label>
+                  <label className="space-y-1 text-xs text-muted-foreground"><span>To</span><input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground" /></label>
+                  <div className="flex items-end"><Button type="button" size="sm" variant="ghost" disabled={sourceFilter === "all" && !targetFilter && !fromDate && !toDate} onClick={() => { setSourceFilter("all"); setTargetFilter(""); setFromDate(""); setToDate(""); }}>Reset</Button></div>
+                </div>
+                {operationRows.length ? (
+                  <>
+                    <div className="grid xl:grid-cols-[minmax(30rem,1.2fr)_minmax(22rem,.8fr)]">
+                      <OperationList
+                        rows={operationRows}
+                        selectedId={selectedOperation?.id}
+                        onSelect={setSelectedOperationId}
+                      />
+                      <OperationDetail row={selectedOperation} />
+                    </div>
+                    <TablePagination
+                      page={safeOperationsPage}
+                      pageSize={OPERATIONS_PAGE_SIZE}
+                      totalItems={operationsQuery.data?.total || 0}
+                      onPageChange={setOperationsPage}
+                      itemLabel="tasks"
                     />
-                    <OperationDetail row={selectedOperation} />
-                  </div>
+                  </>
                 ) : (
                   <div className="p-6 text-center text-sm text-muted-foreground">
                     There are no entries for this view.
@@ -516,6 +392,7 @@ export function OperationsPage() {
             onDelete={setWindowToDelete}
           />
         )}
+        {canViewAudit && <div id="audit-log" className="scroll-mt-16"><AuditLogPanel /></div>}
       </div>
       <MaintenanceWindowDialog
         key={
@@ -1170,16 +1047,6 @@ function OperationLink({
       <Link
         to={row.href}
         params={row.params as { id: string }}
-        className="hover:text-primary hover:underline"
-      >
-        {children}
-      </Link>
-    );
-  if (row.href === "/settings/$tab")
-    return (
-      <Link
-        to={row.href}
-        params={row.params as { tab: string }}
         className="hover:text-primary hover:underline"
       >
         {children}

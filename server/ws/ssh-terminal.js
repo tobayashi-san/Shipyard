@@ -1,7 +1,7 @@
 const { Client: SshClient } = require('ssh2');
 const db = require('../db');
 const sshManager = require('../services/ssh-manager');
-const { getPermissions, filterServers, can } = require('../utils/permissions');
+const { getPermissions, filterServers, can, canAccessEnvironment } = require('../utils/permissions');
 const log = require('../utils/logger');
 const { verifyWsAuth, getWsUser } = require('./auth');
 
@@ -11,16 +11,17 @@ function attachSshTerminal(wssSsh) {
     if (!verifyWsAuth(ws, url)) return;
 
     const wsUser = getWsUser(url);
-    if (!can(getPermissions(wsUser), 'canUseTerminal')) {
+    const perms = getPermissions(wsUser);
+    const environmentId = String(url.searchParams.get('environment') || 'default').trim() || 'default';
+    if (!can(perms, 'canUseTerminal') || !canAccessEnvironment(perms, environmentId)) {
       ws.close(4003, 'Permission denied');
       return;
     }
 
     const serverId = url.searchParams.get('serverId');
     const server = db.servers.getById(serverId);
-    if (!server) { ws.close(4004, 'Server not found'); return; }
+    if (!server || String(server.environment_id || 'default') !== environmentId) { ws.close(4004, 'Server not found'); return; }
 
-    const perms = getPermissions(wsUser);
     if (perms && !perms.full) {
       const allowed = filterServers([server], perms);
       if (allowed.length === 0) { ws.close(4003, 'Server access denied'); return; }

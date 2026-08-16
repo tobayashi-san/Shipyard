@@ -188,6 +188,10 @@ router.post('/login', loginLimiter, async (req, res) => {
     db.auditLog.write('auth.login', `Failed login attempt for ${user.username}`, req.ip, false, user.username);
     return res.status(401).json({ error: 'Incorrect credentials' });
   }
+  if (user.disabled) {
+    db.auditLog.write('auth.login', `Login blocked for disabled account: ${user.username}`, req.ip, false, user.username);
+    return res.status(401).json({ error: 'Account disabled' });
+  }
 
   // If 2FA is enabled for this user, issue a short-lived temp token
   if (user.totp_enabled) {
@@ -198,6 +202,7 @@ router.post('/login', loginLimiter, async (req, res) => {
     return res.json({ requires2FA: true, tempToken });
   }
 
+  db.users.markLogin(user.id);
   db.auditLog.write('auth.login', `Successful login: ${user.username}`, req.ip, true, user.username);
   res.json({ token: makeToken(user) });
 });
@@ -245,6 +250,7 @@ router.post('/totp/login', loginLimiter, (req, res) => {
     db.users.getById(payload.userId)?.username || ''
   );
   if (!user) return res.status(401).json({ error: 'User not found' });
+  if (user.disabled) return res.status(401).json({ error: 'Account disabled' });
   if (!user.totp_enabled || payload.tv !== (user.token_version || 0)) {
     return res.status(401).json({ error: 'Invalid or expired session. Please log in again.' });
   }
@@ -254,6 +260,7 @@ router.post('/totp/login', loginLimiter, (req, res) => {
     db.auditLog.write('auth.totp', 'Invalid TOTP code', req.ip, false, user.username);
     return res.status(401).json({ error: 'Invalid authenticator code' });
   }
+  db.users.markLogin(user.id);
   db.auditLog.write('auth.login', `Successful login (2FA): ${user.username}`, req.ip, true, user.username);
   res.json({ token: makeToken(user) });
 });

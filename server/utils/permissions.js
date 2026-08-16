@@ -11,6 +11,12 @@ const USER_DEFAULTS = {
   canAddServers:     true,
   canEditServers:    true,
   canDeleteServers:  true,
+  canViewServerHistory: true,
+  // Product areas are independent from the managed-host inventory. A role
+  // that can see one host must not implicitly see Proxmox or IPAM metadata.
+  canViewInfrastructure: true,
+  canViewNetworks:       true,
+  canEditNetworks:       true,
   // Playbooks
   canViewPlaybooks:   true,
   canEditPlaybooks:   true,
@@ -30,6 +36,8 @@ const USER_DEFAULTS = {
   // Server actions
   canUseTerminal:          true,
   canExportImportServers:  true,
+  canViewFiles:            true,
+  canManageFiles:          true,
   // Docker
   canViewDocker:           true,
   canPullDocker:           true,
@@ -86,12 +94,6 @@ function getPermissions(user) {
     const { full, ...clean } = p;
     if (role.is_system && full) return FULL;
     const defaults = role.is_system ? USER_DEFAULTS : DENY_DEFAULTS;
-    // Existing installations expressed deployment access through the former
-    // OpenTofu plugin assignment. Preserve that access once while exposing a
-    // first-class capability from now on.
-    if (clean.canManageDeployments === undefined && (clean.plugins === 'all' || (Array.isArray(clean.plugins) && clean.plugins.includes('opentofu')))) {
-      clean.canManageDeployments = true;
-    }
     // Migrate legacy roles in memory without silently widening newer roles.
     // Saving the role in Settings persists the explicit capability set.
     if (clean.canManageDeployments === true) {
@@ -195,6 +197,9 @@ function canAccessEnvironment(permissions, environmentId) {
 function guardServerGroupAccess(req, res, next) {
   const group = db.db.prepare('SELECT * FROM server_groups WHERE id = ?').get(req.params.groupId);
   if (!group) return res.status(404).json({ error: 'Ordner nicht gefunden.' });
+  if (req.environmentId && String(group.environment_id || 'default') !== req.environmentId) {
+    return res.status(404).json({ error: 'Ordner nicht gefunden.' });
+  }
   const permissions = getPermissions(req.user);
   if (!canAccessServerGroup(permissions, group)) return res.status(403).json({ error: 'Ordnerzugriff verweigert.' });
   req.serverGroup = group;
@@ -229,6 +234,9 @@ function can(permissions, capability) {
 function guardServerAccess(req, res, next) {
   const server = db.servers.getById(req.params.id);
   if (!server) return res.status(404).json({ error: 'Server not found' });
+  if (req.environmentId && String(server.environment_id || 'default') !== req.environmentId) {
+    return res.status(404).json({ error: 'Server not found' });
+  }
   const perms = getPermissions(req.user);
   if (!perms) return res.status(403).json({ error: 'Permission denied' });
   if (!perms.full) {

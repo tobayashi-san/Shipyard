@@ -298,7 +298,8 @@ class AnsibleRunner {
     const { keyPath, cleanup } = this._resolveSshKey();
     let inventoryPath;
     try {
-      inventoryPath = this.generateInventory(keyPath);
+      const environmentId = options.environmentId || 'default';
+      inventoryPath = this.generateInventory(keyPath, environmentId);
       const cmdArgs = ['-i', inventoryPath, targets, '-m', module];
       if (args) cmdArgs.push('-a', args);
       if (options.become) cmdArgs.push('--become');

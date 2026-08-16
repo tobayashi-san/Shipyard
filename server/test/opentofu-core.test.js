@@ -24,6 +24,7 @@ const {
   upsertManagedShipyardOutputs,
   applyFleetProxmoxBlueprintMetadata,
   extractProxmoxGuestIpv4,
+  extractProxmoxGuestNetworkRecords,
   pruneWorkspaceRuns,
   moveWorkspaceDirectory,
   destroyConfirmationPhrase,
@@ -291,6 +292,13 @@ test('extractProxmoxGuestIpv4 ignores loopback and link-local addresses', () => 
       { 'ip-address-type': 'ipv4', 'ip-address': '10.20.30.40' },
     ] },
   ] }), '10.20.30.40');
+});
+
+test('Proxmox guest network records retain normalized interface MAC addresses', () => {
+  assert.deepEqual(extractProxmoxGuestNetworkRecords({ result: [{
+    name: 'ens18', 'hardware-address': 'AA-BB-CC-DD-EE-FF',
+    'ip-addresses': [{ 'ip-address-type': 'ipv4', 'ip-address': '10.20.30.40' }],
+  }] }), [{ address: '10.20.30.40', mac_address: 'aa:bb:cc:dd:ee:ff' }]);
 });
 
 test('upsertManagedShipyardOutputs replaces only the managed section', () => {

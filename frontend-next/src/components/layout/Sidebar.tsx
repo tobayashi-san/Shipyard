@@ -16,6 +16,8 @@ import { useUi } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import {
   canAccessDeployments,
+  canAccessInfrastructure,
+  canAccessNetworks,
   canAccessOperations,
   canSeePlugin,
   hasCap,
@@ -88,6 +90,8 @@ export function Sidebar({
   const canViewPlaybooks = hasCap(profile, "canViewPlaybooks");
   const canManageConsole = profile?.role === "admin";
   const canViewDeployments = canAccessDeployments(profile);
+  const canViewInfrastructure = canAccessInfrastructure(profile);
+  const canViewNetworks = canAccessNetworks(profile);
   const canViewOperations = canAccessOperations(profile);
   const otherPlugins = plugins.filter(
     (plugin) =>
@@ -123,7 +127,7 @@ export function Sidebar({
         </button>
       </div>
       <nav className="min-h-0 flex-1 space-y-3.5 overflow-y-auto p-2 md:flex md:flex-col md:gap-3.5 md:space-y-0 md:overflow-hidden">
-        <section className="shrink-0 space-y-1">
+        {canViewServers && <section className="shrink-0 space-y-1">
           {!collapsed && (
             <div className="section-label px-2.5 pb-1">Overview</div>
           )}
@@ -135,7 +139,7 @@ export function Sidebar({
             collapsed={collapsed}
             onNavigate={onMobileClose}
           />
-        </section>
+        </section>}
         <section
           className={cn(
             "border-y border-border-strong/60 bg-muted/25 -mx-2 px-3 py-2",
@@ -144,7 +148,7 @@ export function Sidebar({
           )}
         >
           {!collapsed && (
-            <div className="section-label px-1 pb-1">Browse resources</div>
+            <div className="section-label px-1 pb-1">Resources</div>
           )}
           {canViewServers && (
             <div
@@ -159,21 +163,21 @@ export function Sidebar({
           {canViewServers && collapsed && (
             <Link
               to="/servers"
-              title="Browse resources"
+              title="Resources"
               className="flex h-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
             >
               <Boxes className="h-4 w-4" />
             </Link>
           )}
         </section>
-        <section className="shrink-0 space-y-1">
+        {(canViewServers || canViewPlaybooks || canViewOperations) && <section className="shrink-0 space-y-1">
           {!collapsed && (
             <div className="section-label px-2.5 pb-1">Operate</div>
           )}
           {canViewServers && (
             <NavItem
               to="/servers"
-              label="Manage hosts"
+              label="Managed hosts"
               icon={Boxes}
               active={path === "/servers" || path.startsWith("/servers/")}
               collapsed={collapsed}
@@ -183,7 +187,7 @@ export function Sidebar({
           {canViewPlaybooks && (
             <NavItem
               to="/playbooks"
-              label="Playbook workflows"
+              label="Playbooks"
               icon={FileCode2}
               active={path === "/playbooks"}
               collapsed={collapsed}
@@ -200,7 +204,7 @@ export function Sidebar({
               onNavigate={onMobileClose}
             />
           )}
-        </section>
+        </section>}
 
         {otherPlugins.length > 0 && (
           <section className="shrink-0 space-y-1">
@@ -222,14 +226,14 @@ export function Sidebar({
           </section>
         )}
 
-        <section className="shrink-0 space-y-1">
+        {(canViewInfrastructure || canViewDeployments || canViewNetworks) && <section className="shrink-0 space-y-1">
           {!collapsed && (
             <div className="section-label px-2.5 pb-1">Provision</div>
           )}
-          {canViewServers && (
+          {canViewInfrastructure && (
             <NavItem
               to="/infrastructure"
-              label="Manage platforms"
+              label="Virtual infrastructure"
               icon={Database}
               active={path === "/infrastructure" || path.startsWith("/infrastructure/")}
               collapsed={collapsed}
@@ -246,17 +250,17 @@ export function Sidebar({
               onNavigate={onMobileClose}
             />
           )}
-          {canViewServers && (
+          {canViewNetworks && (
             <NavItem
               to="/networks"
-              label="Networks & IPAM"
+              label="Networks"
               icon={Network}
               active={path === "/networks" || path.startsWith("/networks/")}
               collapsed={collapsed}
               onNavigate={onMobileClose}
             />
           )}
-        </section>
+        </section>}
 
         {canManageConsole && (
           <section className="shrink-0 space-y-1">

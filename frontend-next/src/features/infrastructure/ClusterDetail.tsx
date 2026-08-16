@@ -22,6 +22,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { CreateServerDialog } from "@/components/CreateServerDialog";
 import { useUi } from "@/lib/store";
 import { showToast } from "@/lib/toast";
+import { useUrlTab } from "@/lib/use-url-tab";
 import {
   type AuditTask,
   type Cluster,
@@ -71,7 +72,12 @@ export function ClusterPage({
   // not turn its title into a comma-separated duplicate in breadcrumbs,
   // headings and the infrastructure tree.
   const title = cluster.connections?.[0]?.name || "Proxmox platform";
-  const [tab, setTab] = useState("overview");
+  const hasAuditTasks = Boolean(auditTasks);
+  const availableTabs = useMemo(
+    () => ["overview", "configuration", "nodes", "vms", "datastores", "updates", ...(hasAuditTasks ? ["tasks"] : [])],
+    [hasAuditTasks],
+  );
+  const clusterTabs = useUrlTab("overview", availableTabs);
   return (
     <div className="space-y-5">
       <PageHeader
@@ -89,7 +95,7 @@ export function ClusterPage({
               to="/infrastructure"
               className="hover:text-foreground hover:underline"
             >
-              Infrastructure
+              Virtual infrastructure
             </Link>
             <span aria-hidden="true">/</span>
             <span className="text-foreground">{title}</span>
@@ -128,7 +134,7 @@ export function ClusterPage({
           </>
         }
       />
-      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+      <Tabs value={clusterTabs.value} onValueChange={clusterTabs.onValueChange} className="space-y-4">
         <TabsList aria-label="Platform sections" className="console-tabs">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="configuration">
@@ -177,9 +183,9 @@ export function ClusterPage({
           <ClusterOverview
             cluster={cluster}
             auditTasks={auditTasks}
-            onOpenNodes={() => setTab("nodes")}
-            onOpenVms={() => setTab("vms")}
-            onOpenDatastores={() => setTab("datastores")}
+            onOpenNodes={() => clusterTabs.onValueChange("nodes")}
+            onOpenVms={() => clusterTabs.onValueChange("vms")}
+            onOpenDatastores={() => clusterTabs.onValueChange("datastores")}
           />
         </TabsContent>
         <TabsContent value="configuration" className="mt-0">

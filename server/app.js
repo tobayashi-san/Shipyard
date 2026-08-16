@@ -5,6 +5,7 @@ const log = require('./utils/logger');
 const db = require('./db');
 const pluginLoader = require('./services/plugin-loader');
 const authMiddleware = require('./middleware/auth');
+const environmentContext = require('./middleware/environment-context');
 const { createCorsOriginValidator, parseAllowedOrigins } = require('./utils/allowed-origins');
 const { apiLimiter, authenticatedApiLimiter, fileReadLimiter } = require('./utils/rate-limiters');
 const { serverError } = require('./utils/http-error');
@@ -32,7 +33,9 @@ const pluginsAdminRouter = require('./routes/plugins-admin');
 const agentAdminRouter = require('./routes/agent-admin');
 const ipamRouter = require('./routes/ipam');
 const maintenanceWindowsRouter = require('./routes/maintenance-windows');
+const operationsRouter = require('./routes/operations');
 const alertsRouter = require('./routes/alerts');
+const fileTransfersRouter = require('./routes/file-transfers');
 const { createOpenTofuRouter } = require('./routes/opentofu');
 
 const PLUGIN_UI_CONTENT_TYPES = {
@@ -161,6 +164,7 @@ function createApp({ isHttps = false } = {}) {
 
   app.use('/api', authMiddleware);
   app.use('/api', authenticatedApiLimiter);
+  app.use('/api', environmentContext);
 
   app.get('/api/ping', (req, res) => res.json({ ok: true, ts: Date.now() }));
 
@@ -169,10 +173,12 @@ function createApp({ isHttps = false } = {}) {
   app.use('/api/environments', environmentsRouter);
   app.use('/api/ipam', ipamRouter);
   app.use('/api/maintenance-windows', maintenanceWindowsRouter);
+  app.use('/api/operations', operationsRouter);
   app.use('/api/alerts', alertsRouter);
   app.use('/api/opentofu', createOpenTofuRouter({ broadcast: emit }));
   app.use('/api/ansible', createAnsibleRouter({ broadcast: emit }));
   app.use('/api/servers/:id/custom-updates', customUpdatesRouter);
+  app.use('/api/servers', fileTransfersRouter);
   app.use('/api/servers', createServerActionsRouter({ broadcast: emit }));
   app.use('/api/servers', serversRouter);
   app.use('/api/system', systemRouter);

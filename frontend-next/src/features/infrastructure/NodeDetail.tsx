@@ -32,6 +32,7 @@ import { Label } from "@/components/ui/label";
 import { useUi } from "@/lib/store";
 import { asArray } from "@/lib/utils";
 import { showToast } from "@/lib/toast";
+import { useUrlTab } from "@/lib/use-url-tab";
 import { NodeUpdatesCard } from "./ClusterDetail";
 import {
   DatastoresCard,
@@ -84,7 +85,12 @@ export function NodePage({
 }) {
   const vms = cluster.vms.filter((vm) => vm.node_name === node.name);
   const platformName = cluster.connections?.[0]?.name || "Proxmox";
-  const [tab, setTab] = useState("overview");
+  const hasAuditTasks = Boolean(auditTasks);
+  const availableTabs = useMemo(
+    () => ["overview", "configuration", "vms", "datastores", "updates", ...(hasAuditTasks ? ["tasks"] : [])],
+    [hasAuditTasks],
+  );
+  const nodeTabs = useUrlTab("overview", availableTabs);
   return (
     <div className="space-y-5">
       <PageHeader
@@ -102,7 +108,7 @@ export function NodePage({
               to="/infrastructure"
               className="hover:text-foreground hover:underline"
             >
-              Infrastructure
+              Virtual infrastructure
             </Link>
             <span aria-hidden="true">/</span>
             <Link
@@ -152,7 +158,7 @@ export function NodePage({
           </>
         }
       />
-      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+      <Tabs value={nodeTabs.value} onValueChange={nodeTabs.onValueChange} className="space-y-4">
         <TabsList aria-label="Node sections" className="console-tabs">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="configuration">
@@ -195,7 +201,7 @@ export function NodePage({
             cluster={cluster}
             node={node}
             auditTasks={auditTasks}
-            onOpenVms={() => setTab("vms")}
+            onOpenVms={() => nodeTabs.onValueChange("vms")}
           />
         </TabsContent>
         <TabsContent value="configuration" className="mt-0">

@@ -42,18 +42,19 @@ test('capture populated IPAM pages for visual review', async ({ page }) => {
 
   await page.screenshot({ path: 'test-results/visual-review/ipam-overview-populated.png', fullPage: true });
 
-  await page.getByRole('button', { name: 'Sources' }).click();
-  const sources = page.getByRole('dialog', { name: 'IPAM sources' });
+  await page.getByRole('link', { name: 'Sources' }).click();
+  const sources = page.locator('[data-ipam-sources]');
   await sources.getByRole('button', { name: 'Add source' }).click();
-  await sources.getByPlaceholder('UniFi Produktion').fill('UniFi Produktion');
+  await sources.getByPlaceholder('UniFi production').fill('UniFi Produktion');
   await sources.getByPlaceholder('https://unifi.example.local').fill('https://unifi.example.invalid');
   await sources.locator('input[type="password"]').fill('visual-source-token');
   await sources.getByRole('button', { name: 'Save source' }).click();
   await expect(sources.getByText('UniFi Produktion', { exact: true })).toBeVisible();
-  await sources.screenshot({ path: 'test-results/visual-review/ipam-sources-dialog.png' });
-  await sources.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.screenshot({ path: 'test-results/visual-review/ipam-sources-page.png', fullPage: true });
+  await page.getByRole('link', { name: 'Back to IPAM' }).click();
 
   await page.getByRole('link', { name: /10\.20\.1\.0\/24/i }).first().click();
+  await expect(page.locator('table').getByText('254 free IPs', { exact: true })).toBeVisible();
   await page.getByRole('tab', { name: /child prefixes/i }).click();
   await expect(page).toHaveURL(/#tab=children$/);
   await page.reload();
@@ -64,14 +65,20 @@ test('capture populated IPAM pages for visual review', async ({ page }) => {
   const reservation = page.getByRole('dialog', { name: 'Reserve address space' });
   await reservation.getByLabel('IP address').fill('10.20.1.30');
   await reservation.getByLabel('Hostname').fill('app-erp');
+  await reservation.getByLabel('MAC address').fill('02:00:00:00:01:30');
   await reservation.getByRole('button', { name: 'Add IP address' }).click();
   await expect(reservation).toBeHidden();
   await expect(page.locator('tbody').getByText('app-erp', { exact: true })).toBeVisible();
   await page.screenshot({ path: 'test-results/visual-review/ipam-prefix-populated.png', fullPage: true });
 
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await expect(page.getByText('29 free IPs', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('02:00:00:00:01:30', { exact: true }).first()).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: 'test-results/visual-review/ipam-prefix-mobile.png', fullPage: true });
   await page.goto('/networks');
   await page.screenshot({ path: 'test-results/visual-review/ipam-overview-mobile.png', fullPage: true });
-  await page.getByRole('button', { name: 'Sources' }).click();
-  await page.getByRole('dialog', { name: 'IPAM sources' }).screenshot({ path: 'test-results/visual-review/ipam-sources-mobile.png' });
+  await page.getByRole('link', { name: 'Sources' }).click();
+  await page.screenshot({ path: 'test-results/visual-review/ipam-sources-mobile.png', fullPage: true });
 });

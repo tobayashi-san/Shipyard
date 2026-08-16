@@ -10,10 +10,14 @@ const MAX_VAL_LEN = 10000;
 const MAX_VARS    = 500;
 
 function requestedEnvironment(req) {
-  return String(req.body?.environment_id || req.query?.environment_id || 'default').trim() || 'default';
+  return req.environmentId || String(req.body?.environment_id || req.query?.environment_id || 'default').trim() || 'default';
 }
 
 function ensureEnvironmentAccess(req, res, environmentId) {
+  if (req.environmentId && environmentId !== req.environmentId) {
+    res.status(404).json({ error: 'Variable not found' });
+    return false;
+  }
   if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) {
     res.status(400).json({ error: 'Environment not found' });
     return false;

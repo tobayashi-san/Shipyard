@@ -63,6 +63,7 @@ import { useProfile, hasCap } from "@/lib/queries";
 import { showToast } from "@/lib/toast";
 import { ws } from "@/lib/ws";
 import { useNavigate } from "@tanstack/react-router";
+import { useUrlTab } from "@/lib/use-url-tab";
 import {
   buildAllExceptTargets,
   cronToSelectors,
@@ -99,12 +100,12 @@ export function PlaybooksPage() {
   const isAdmin = profile?.role === "admin";
   const [runPreset, setRunPreset] = useState("");
 
-  const tabs: {
+  const tabs = useMemo<{
     value: string;
     label: string;
     icon: React.ReactNode;
     cap?: string;
-  }[] = [
+  }[]>(() => [
     {
       value: "templates",
       label: "Playbooks",
@@ -127,15 +128,16 @@ export function PlaybooksPage() {
       icon: <Clock className="h-4 w-4" />,
       cap: "canViewSchedules",
     },
-  ];
-  const allowed = tabs.filter((tb) => !tb.cap || hasCap(profile, tb.cap));
-  const [tab, setTab] = useState(allowed[0]?.value ?? "templates");
+  ], [t]);
+  const allowed = useMemo(() => tabs.filter((tb) => !tb.cap || hasCap(profile, tb.cap)), [profile, tabs]);
+  const allowedValues = useMemo(() => allowed.map((item) => item.value), [allowed]);
+  const playbookTabs = useUrlTab(allowed[0]?.value ?? "templates", allowedValues);
 
   // Ensure tab is still allowed after profile changes
   useEffect(() => {
-    if (!allowed.find((a) => a.value === tab))
-      setTab(allowed[0]?.value ?? "templates");
-  }, [allowed, tab]);
+    if (!allowed.find((a) => a.value === playbookTabs.value))
+      playbookTabs.onValueChange(allowed[0]?.value ?? "templates");
+  }, [allowedValues, playbookTabs.value, playbookTabs.onValueChange]);
 
   return (
     <div className="space-y-5">
@@ -150,7 +152,7 @@ export function PlaybooksPage() {
         }
       />
 
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={playbookTabs.value} onValueChange={playbookTabs.onValueChange}>
         <TabsList className="console-tabs">
           {allowed.map((tb) => (
             <TabsTrigger key={tb.value} value={tb.value} className="gap-1.5">
@@ -160,7 +162,7 @@ export function PlaybooksPage() {
         </TabsList>
 
         <TabsContent value="templates">
-          <TemplatesTab onRun={(filename) => { setRunPreset(filename); setTab("runs"); }} />
+          <TemplatesTab onRun={(filename) => { setRunPreset(filename); playbookTabs.onValueChange("runs"); }} />
         </TabsContent>
         <TabsContent value="runs">
           <RunsTab initialPlaybook={runPreset} />

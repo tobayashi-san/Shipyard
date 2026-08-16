@@ -364,8 +364,8 @@ export function ServersPage() {
     error: serversError,
     refetch: refetchServers,
   } = useQuery({
-    queryKey: ["servers"],
-    queryFn: () => api.getServers() as Promise<Record<string, unknown>[]>,
+    queryKey: ["servers", environmentId],
+    queryFn: () => api.getServers(environmentId) as Promise<Record<string, unknown>[]>,
   });
   const { data: rawGroups } = useQuery({
     // The infrastructure tree and the resource list are two views of the
@@ -1735,7 +1735,7 @@ export function ServersPage() {
               onRetry={() => {
                 void refetchServers();
               }}
-              title="Servers could not be loaded"
+              title="Managed hosts could not be loaded"
             />
           ) : servers.length === 0 ? (
             <EmptyState
@@ -2267,7 +2267,7 @@ export function ServersPage() {
         confirmLabel={t("common.delete")}
         variant="destructive"
         confirmTextValue={confirmDeleteServer?.name || ""}
-        confirmInputLabel="Confirm server name"
+        confirmInputLabel="Confirm managed host name"
         onConfirm={() => {
           if (!confirmDeleteServer) return;
           deleteMut.mutate(confirmDeleteServer.id);
@@ -2286,7 +2286,7 @@ export function ServersPage() {
         title={`Delete ${selectedIds.size} hosts?`}
         description={
           <>
-            The selected Fleet hosts will be removed from Fleet. External
+            The selected managed hosts will be removed from Fleet. External
             virtual machines or platforms are <strong>not</strong> deleted.
           </>
         }
@@ -2300,7 +2300,7 @@ export function ServersPage() {
             <span className="font-mono text-foreground">
               DELETE {selectedIds.size}
             </span>
-            to remove these Fleet hosts.
+            to remove these managed hosts.
           </>
         }
         onConfirm={() => bulkDeleteMut.mutate([...selectedIds])}

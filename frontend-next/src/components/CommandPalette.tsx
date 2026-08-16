@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { api } from '@/lib/api';
-import { canAccessDeployments, canAccessOperations, useProfile, usePlugins, hasCap, canSeePlugin } from '@/lib/queries';
+import { canAccessDeployments, canAccessInfrastructure, canAccessOperations, useProfile, usePlugins, hasCap, canSeePlugin } from '@/lib/queries';
 import { useUi } from '@/lib/store';
 import { setToken } from '@/lib/auth';
 import { asArray, cn } from '@/lib/utils';
@@ -24,8 +24,10 @@ export function CommandPalette() {
   const { data: plugins = [] } = usePlugins();
   const availablePlugins = asArray<typeof plugins[number]>(plugins);
   const openTofuAvailable = canAccessDeployments(profile);
+  const infrastructureAvailable = canAccessInfrastructure(profile);
   const canViewOperations = canAccessOperations(profile);
   const setTheme = useUi(s => s.setTheme);
+  const environmentId = useUi(s => s.environmentId);
   const [open, setOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
 
@@ -48,7 +50,7 @@ export function CommandPalette() {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
-  // Lightweight g-prefix navigation: g s, g d, g p, g i, g b
+  // Lightweight g-prefix navigation: g s, g d, g p, g i, g e, g o
   useEffect(() => {
     let prefix = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -60,9 +62,9 @@ export function CommandPalette() {
         if (e.key === 's' && hasCap(profile, 'canViewServers')) navigate({ to: '/servers' });
         else if (e.key === 'd') navigate({ to: '/' });
         else if (e.key === 'p' && hasCap(profile, 'canViewPlaybooks')) navigate({ to: '/playbooks' });
-        else if (e.key === 'i' && hasCap(profile, 'canViewServers')) navigate({ to: '/infrastructure' });
-        else if (e.key === 'o' && openTofuAvailable) navigate({ to: '/deployments' });
-        else if (e.key === 'b' && canViewOperations) navigate({ to: '/operations' });
+        else if (e.key === 'i' && infrastructureAvailable) navigate({ to: '/infrastructure' });
+        else if (e.key === 'e' && openTofuAvailable) navigate({ to: '/deployments' });
+        else if (e.key === 'o' && canViewOperations) navigate({ to: '/operations' });
         else if (e.key === ',' && profile?.role === 'admin') navigate({ to: '/settings' });
         prefix = false;
         return;
@@ -75,12 +77,12 @@ export function CommandPalette() {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [canViewOperations, navigate, openTofuAvailable, profile]);
+  }, [canViewOperations, infrastructureAvailable, navigate, openTofuAvailable, profile]);
 
   // Fetch search data only when open
   const { data: servers = [] } = useQuery({
-    queryKey: ['servers'],
-    queryFn: () => api.getServers() as unknown as Promise<ServerListItem[]>,
+    queryKey: ['servers', environmentId],
+    queryFn: () => api.getServers(environmentId) as unknown as Promise<ServerListItem[]>,
     enabled: open && hasCap(profile, 'canViewServers'),
     staleTime: 30_000,
   });
@@ -130,9 +132,9 @@ export function CommandPalette() {
 
                 <Command.Group heading={t('cmd.navigate')} className="text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
                   <PaletteItem icon={<LayoutDashboard className="h-4 w-4" />} label={t('nav.dashboard')} shortcut="g d" onSelect={() => go('/')} />
-                  {hasCap(profile, 'canViewServers') && <PaletteItem icon={<Database className="h-4 w-4" />} label="Infrastructure" shortcut="g i" onSelect={() => go('/infrastructure')} />}
+                  {infrastructureAvailable && <PaletteItem icon={<Database className="h-4 w-4" />} label="Virtual infrastructure" shortcut="g i" onSelect={() => go('/infrastructure')} />}
                   {hasCap(profile, 'canViewServers') && <PaletteItem icon={<Server className="h-4 w-4" />} label={t('nav.servers')} shortcut="g s" onSelect={() => go('/servers')} />}
-                  {openTofuAvailable && <PaletteItem icon={<Workflow className="h-4 w-4" />} label={t('deploy.title')} shortcut="g o" onSelect={() => go('/deployments')} />}
+                  {openTofuAvailable && <PaletteItem icon={<Workflow className="h-4 w-4" />} label={t('deploy.title')} shortcut="g e" onSelect={() => go('/deployments')} />}
                   {canViewOperations && <PaletteItem icon={<ClipboardList className="h-4 w-4" />} label="Operations" shortcut="g o" onSelect={() => go('/operations')} />}
                   {hasCap(profile, 'canViewPlaybooks') && <PaletteItem icon={<FileCode2 className="h-4 w-4" />} label={t('nav.playbooks')} shortcut="g p" onSelect={() => go('/playbooks')} />}
                   <PaletteItem icon={<User className="h-4 w-4" />} label={t('profile.settings')} onSelect={() => go('/profile')} />

@@ -35,6 +35,7 @@ const {
   buildProxmoxResourceOverview,
   extractProxmoxGuestIpv4,
   extractProxmoxGuestIpv4s,
+  extractProxmoxGuestNetworkRecords,
   getProxmoxStateResources,
   normalizeProxmoxVm,
   normalizeProxmoxVmTemplate,
@@ -1200,8 +1201,10 @@ override.tf.json
     const pathname = req.path || '/';
     if (pathname === '/install') return 'canManageDeploymentPlatforms';
     if (/^\/proxmox-connections(?:\/[^/]+)?$/.test(pathname) && req.method !== 'GET') return 'canManageDeploymentPlatforms';
+    if (pathname === '/infrastructure') return 'canViewInfrastructure';
+    if (/^\/proxmox-connections(?:\/|$)/.test(pathname)) return 'canViewInfrastructure';
     // Node/VM operational actions have their own server/update/power guards.
-    if (/^\/proxmox-connections\/[^/]+\//.test(pathname) || /^\/managed-servers\//.test(pathname)) return 'canViewDeployments';
+    if (/^\/managed-servers\//.test(pathname)) return 'canViewServers';
     if (/\/promote-proxmox-connection$/.test(pathname)) return 'canManageDeploymentPlatforms';
     if (/\/proxmox-connection$/.test(pathname) && req.method !== 'GET') return 'canManageDeploymentPlatforms';
     if (/\/post-deploy\/retry$/.test(pathname)) return 'canApplyDeployments';
@@ -1234,6 +1237,11 @@ override.tf.json
         .get(decodeURIComponent(connectionMatch[1]));
       return source ? String(source.environment_id || 'default') : null;
     }
+    const managedServerMatch = pathname.match(/^\/managed-servers\/([^/]+)/);
+    if (managedServerMatch) {
+      const server = db.servers.getById(decodeURIComponent(managedServerMatch[1]));
+      return server ? String(server.environment_id || 'default') : null;
+    }
     if (pathname === '/workspaces' || pathname === '/proxmox-connections') {
       return String(req.method === 'GET' ? req.query.environment_id || '' : req.body?.environment_id || '').trim() || undefined;
     }
@@ -1251,6 +1259,9 @@ override.tf.json
     try { environmentId = requestedDeploymentEnvironment(req); }
     catch { return res.status(400).json({ error: 'Invalid resource ID.' }); }
     if (environmentId === undefined) return res.status(400).json({ error: 'environment_id is required' });
+    if (environmentId && req.environmentId && environmentId !== req.environmentId) {
+      return res.status(404).json({ error: 'Deployment resource not found.' });
+    }
     if (environmentId && !canAccessEnvironment(permissions, environmentId)) {
       return res.status(404).json({ error: 'Deployment resource not found.' });
     }
@@ -1740,6 +1751,7 @@ module.exports = {
     applyFleetProxmoxBlueprintMetadata,
     extractProxmoxGuestIpv4,
     extractProxmoxGuestIpv4s,
+    extractProxmoxGuestNetworkRecords,
     subnetContainsIpv4,
     pruneWorkspaceRuns,
     moveWorkspaceDirectory,

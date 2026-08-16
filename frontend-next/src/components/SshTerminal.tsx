@@ -18,6 +18,7 @@ interface SshTerminalProps {
 export function SshTerminal({ server, onClose }: SshTerminalProps) {
   const { t } = useTranslation();
   const theme = useUi((state) => state.theme);
+  const environmentId = useUi((state) => state.environmentId);
   const isDark = theme === 'dark' || (theme === 'system' && typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   const containerRef = useRef<HTMLDivElement>(null);
   const statusRef = useRef<HTMLSpanElement>(null);
@@ -85,6 +86,7 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
         const token = getToken();
         const wsUrl = `${protocol}//${location.host}/ws/ssh`
           + `?serverId=${encodeURIComponent(String(server.id))}`
+          + `&environment=${encodeURIComponent(environmentId)}`
           + `&cols=${cols}&rows=${rows}`
           + (token ? `&token=${encodeURIComponent(token)}` : '');
 
@@ -160,7 +162,7 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
         try { previouslyFocused.focus(); } catch { /* ignore */ }
       }
     };
-  }, [isDark]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [environmentId, isDark]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const userLabel = (server.ssh_user as string) || 'root';
   const serverName = (server.name as string) || '';

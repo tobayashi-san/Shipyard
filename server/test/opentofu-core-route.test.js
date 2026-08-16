@@ -98,13 +98,15 @@ test('OpenTofu enforces granular capabilities and persisted environment scope', 
   assert.equal(omitted.status, 400);
   const foreign = await request(app).get('/api/opentofu/workspaces?environment_id=tofu-env-b').set(auth);
   assert.equal(foreign.status, 404);
-  const foreignById = await request(app).get('/api/opentofu/workspaces/tofu-ws-b/runs').set(auth);
+  const foreignById = await request(app).get('/api/opentofu/workspaces/tofu-ws-b/runs')
+    .set({ ...auth, 'X-Shipyard-Environment': 'tofu-env-a' });
   assert.equal(foreignById.status, 404);
 
-  const editDenied = await request(app).patch('/api/opentofu/workspaces/tofu-ws-a/metadata').set(auth).send({ name: 'safe-a', description: 'x' });
+  const scopedAuth = { ...auth, 'X-Shipyard-Environment': 'tofu-env-a' };
+  const editDenied = await request(app).patch('/api/opentofu/workspaces/tofu-ws-a/metadata').set(scopedAuth).send({ name: 'safe-a', description: 'x' });
   assert.equal(editDenied.status, 403);
   assert.equal(editDenied.body.capability, 'canEditDeployments');
-  const planDenied = await request(app).post('/api/opentofu/workspaces/tofu-ws-a/run').set(auth).send({ action: 'plan' });
+  const planDenied = await request(app).post('/api/opentofu/workspaces/tofu-ws-a/run').set(scopedAuth).send({ action: 'plan' });
   assert.equal(planDenied.status, 403);
   assert.equal(planDenied.body.capability, 'canPlanDeployments');
 });

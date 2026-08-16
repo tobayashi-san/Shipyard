@@ -403,7 +403,7 @@ export function CreateServerDialog({
           </FieldRow>
           <FieldRow
             label="Environment"
-            hint="Controls which console environment this server appears in."
+            hint="Controls which console environment this managed host appears in."
             htmlFor="server-environment"
           >
             <select

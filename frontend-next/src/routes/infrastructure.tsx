@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   useMutation,
-  useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -172,8 +171,8 @@ export function InfrastructurePage() {
     ? inventoryQuery.data!.clusters!
     : [];
   const hostsQuery = useQuery({
-    queryKey: ["servers"],
-    queryFn: () => api.getServers() as unknown as Promise<FleetHost[]>,
+    queryKey: ["servers", environmentId],
+    queryFn: () => api.getServers(environmentId) as unknown as Promise<FleetHost[]>,
     staleTime: 30_000,
   });
   const hosts = useMemo(
@@ -184,7 +183,7 @@ export function InfrastructurePage() {
     [environmentId, hostsQuery.data],
   );
   // An adopted VM already belongs to the Proxmox inventory below. Rendering it
-  // again as a Fleet host makes the console look as if it contained two
+  // again as a managed host makes the console look as if it contained two
   // resources. Keep this section exclusively for standalone VPS/bare-metal
   // hosts, just as vCenter separates inventory objects from external hosts.
   const adoptedFleetHostIds = useMemo(
@@ -200,14 +199,6 @@ export function InfrastructurePage() {
     () => hosts.filter((host) => !adoptedFleetHostIds.has(host.id)),
     [adoptedFleetHostIds, hosts],
   );
-  const hostInfoQueries = useQueries({
-    queries: standaloneHosts.map((host) => ({
-      queryKey: ["servers", host.id, "info"],
-      queryFn: () =>
-        api.getServerInfo(host.id) as unknown as Promise<FleetHostInfo>,
-      staleTime: 30_000,
-    })),
-  });
   const totals = useMemo(
     () =>
       clusters.reduce(
@@ -228,8 +219,7 @@ export function InfrastructurePage() {
   );
   const refreshing =
     inventoryQuery.isFetching ||
-    hostsQuery.isFetching ||
-    hostInfoQueries.some((query) => query.isFetching);
+    hostsQuery.isFetching;
   const refresh = () => {
     void queryClient.invalidateQueries({
       queryKey: ["opentofu", "infrastructure", environmentId],
@@ -242,10 +232,10 @@ export function InfrastructurePage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Infrastructure"
+        title="Virtual infrastructure"
         description={
           clusters.length
-            ? `${totals.clusters} platform${totals.clusters === 1 ? "" : "s"} · ${totals.onlineNodes} / ${totals.nodes} nodes reachable · ${totals.online} / ${totals.vms} virtual machines running${standaloneHosts.length ? ` · ${standaloneHosts.length} external Fleet hosts` : ""}`
+            ? `${totals.clusters} platform${totals.clusters === 1 ? "" : "s"} · ${totals.onlineNodes} / ${totals.nodes} nodes reachable · ${totals.online} / ${totals.vms} virtual machines running${standaloneHosts.length ? ` · ${standaloneHosts.length} external managed hosts` : ""}`
             : "Read-only platform inventory for connected clusters, nodes, datastores, and virtual machines."
         }
         actions={
@@ -266,7 +256,7 @@ export function InfrastructurePage() {
                 onClick={() => setConnectionsOpen(true)}
               >
                 <Settings2 />
-                Manage platforms
+                Platform connections
               </Button>
             )}
           </>
@@ -298,8 +288,8 @@ export function InfrastructurePage() {
             <Card>
               <EmptyState
                 icon={<TriangleAlert className="h-5 w-5" />}
-                title="Infrastructure could not be loaded"
-                description="Check the connected platforms or Fleet hosts and try again."
+                title="Virtual infrastructure could not be loaded"
+                description="Check the connected platforms or managed hosts and try again."
               />
             </Card>
           ) : clusters.length === 0 && hosts.length === 0 ? (
@@ -307,7 +297,7 @@ export function InfrastructurePage() {
               <EmptyState
                 icon={<Database className="h-5 w-5" />}
                 title="No infrastructure connected yet"
-                description="Add a Fleet host or create a Proxmox connection in this environment."
+                description="Add a managed host or create a Proxmox connection in this environment."
                 action={
                   isAdmin ? (
                     <Button
@@ -331,12 +321,7 @@ export function InfrastructurePage() {
           ) : (
             <>
               {clusters.length > 0 && <PlatformInventory clusters={clusters} />}
-              {standaloneHosts.length > 0 && (
-                <FleetHostsCard
-                  hosts={standaloneHosts}
-                  infos={hostInfoQueries.map((query) => query.data)}
-                />
-              )}
+              {standaloneHosts.length > 0 && <ManagedHostsReference count={standaloneHosts.length} />}
             </>
           )}
         </>
@@ -519,8 +504,8 @@ function ProxmoxConnectionsCard({
                           dot
                         >
                           {connection.api_token_configured
-                            ? "Zugang eingerichtet"
-                            : "Token fehlt"}
+                            ? "Access configured"
+                            : "Token missing"}
                         </StatusBadge>
                       </td>
                       <td className="px-3 text-xs text-muted-foreground">
@@ -544,7 +529,7 @@ function ProxmoxConnectionsCard({
                               variant="ghost"
                               className="text-destructive hover:text-destructive"
                               onClick={() => onDelete(connection)}
-                              aria-label={`${connection.name} entfernen`}
+                              aria-label={`Remove ${connection.name}`}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -623,6 +608,21 @@ function ConfirmDeleteConnection({
   );
 }
 
+function ManagedHostsReference({ count }: { count: number }) {
+  return (
+    <Card>
+      <CardContent className="flex flex-wrap items-center gap-3 p-4">
+        <Server className="h-5 w-5 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold">{count} external managed host{count === 1 ? "" : "s"}</div>
+          <p className="mt-0.5 text-xs text-muted-foreground">Host health, updates, access, and bulk administration live in Managed hosts.</p>
+        </div>
+        <Button asChild size="sm" variant="outline"><Link to="/servers">Open managed hosts</Link></Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 function FleetHostsCard({
   hosts,
   infos,
@@ -636,7 +636,7 @@ function FleetHostsCard({
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <Server className="h-4 w-4" />
-            Fleet hosts
+            Managed hosts
           </CardTitle>
           <p className="mt-1 text-xs text-muted-foreground">
             Individual VPS instances, bare-metal servers, and hosts managed by
@@ -860,7 +860,7 @@ function PlatformInventory({ clusters }: { clusters: Cluster[] }) {
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <Database className="h-4 w-4" />
-            Infrastructure inventory &amp; capacity
+            Virtual infrastructure inventory &amp; capacity
           </CardTitle>
           <p className="mt-1 text-xs text-muted-foreground">
             Environment platforms with capacity and direct object paths.

@@ -95,6 +95,7 @@ Current screenshots are captured from a seeded local demo instance. Primary asse
 - **Docker & Compose** — container overview, logs, restart, edit and run Compose stacks
 - **Ansible** — built-in YAML editor, version history, cron scheduler, live output
 - **SSH Terminal** — browser-based, resizable, ANSI-aware, with live session status
+- **SFTP File Transfer** — browse, upload, download, and stream files between managed hosts
 - **SSH Key Management** — auto-generate Ed25519, deploy via UI, AES-256-GCM encryption at rest
 - **Notifications** — webhooks (Discord, Slack) and SMTP email alerts
 - **Auth & Security** — JWT, RBAC with custom roles, TOTP/2FA, audit log, rate limiting, HTTPS

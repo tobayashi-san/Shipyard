@@ -1,16 +1,18 @@
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 6;
 
 const REQUIRED_COLUMNS = {
   servers: ['id', 'name', 'hostname', 'ip_address', 'environment_id', 'host_fingerprint', 'docker_enabled'],
   server_info: ['server_id', 'storage_mount_metrics', 'cpu_usage_pct', 'zfs_pools'],
   server_groups: ['id', 'environment_id'],
   custom_update_tasks: ['id', 'trigger_output', 'latest_command'],
-  audit_log: ['id', 'user'],
+  audit_log: ['id', 'environment_id', 'user'],
+  update_history: ['id', 'environment_id', 'server_id'],
+  agent_config: ['server_id', 'token', 'pending_token'],
   environments: ['id', 'name'],
-  ipam_subnets: ['id', 'environment_id', 'status', 'role'],
+  ipam_subnets: ['id', 'environment_id', 'status', 'role', 'dhcp_start', 'dhcp_end'],
   ipam_reservations: ['id', 'subnet_id', 'status', 'role', 'source_type'],
   ipam_ip_ranges: ['id', 'subnet_id', 'start_address', 'end_address'],
-  ipam_sync_sources: ['id', 'environment_id', 'auto_sync', 'sync_interval_min'],
+  ipam_sync_sources: ['id', 'environment_id', 'auto_sync', 'sync_interval_min', 'last_record_count', 'last_ignored_count'],
   maintenance_windows: ['id', 'environment_id', 'starts_at', 'ends_at'],
   ssh_key_assignments: ['id', 'key_name', 'target_type', 'target_id', 'environment_id'],
   server_alert_settings: ['server_id', 'enabled', 'thresholds_json'],
@@ -18,6 +20,7 @@ const REQUIRED_COLUMNS = {
   schedules: ['id', 'environment_id', 'extra_vars', 'check_mode', 'forks'],
   schedule_history: ['id', 'environment_id', 'triggered_by', 'check_mode'],
   ansible_vars: ['id', 'environment_id', 'key', 'value', 'is_secret'],
+  users: ['id', 'username', 'role', 'disabled', 'last_login_at', 'token_version'],
 };
 
 function validateMigratedSchema(db) {
@@ -44,6 +47,12 @@ function applyMigrations(db) {
     db.exec(
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_nocase ON users(username COLLATE NOCASE)",
     );
+  } catch {}
+  try {
+    db.exec("ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0");
+  } catch {}
+  try {
+    db.exec("ALTER TABLE users ADD COLUMN last_login_at TEXT");
   } catch {}
   try {
     db.exec("ALTER TABLE agent_config ADD COLUMN shipyard_url TEXT");
@@ -134,6 +143,21 @@ function applyMigrations(db) {
   try {
     db.exec("ALTER TABLE update_history ADD COLUMN triggered_by TEXT");
   } catch {}
+  try {
+    db.exec("ALTER TABLE update_history ADD COLUMN environment_id TEXT NOT NULL DEFAULT 'default'");
+  } catch {}
+  try {
+    db.exec("CREATE INDEX IF NOT EXISTS idx_update_history_environment_started ON update_history(environment_id, started_at DESC)");
+  } catch {}
+  try {
+    db.exec("ALTER TABLE audit_log ADD COLUMN environment_id TEXT NOT NULL DEFAULT 'default'");
+  } catch {}
+  try {
+    db.exec("ALTER TABLE agent_config ADD COLUMN pending_token TEXT");
+  } catch {}
+  try {
+    db.exec("CREATE INDEX IF NOT EXISTS idx_audit_log_environment_created ON audit_log(environment_id, created_at DESC)");
+  } catch {}
   // NetBox-style IPAM metadata. These additive migrations preserve all early
   // Fleet subnet and reservation data.
   try {
@@ -143,6 +167,12 @@ function applyMigrations(db) {
   } catch {}
   try {
     db.exec("ALTER TABLE ipam_subnets ADD COLUMN role TEXT DEFAULT ''");
+  } catch {}
+  try {
+    db.exec("ALTER TABLE ipam_subnets ADD COLUMN dhcp_start TEXT DEFAULT ''");
+  } catch {}
+  try {
+    db.exec("ALTER TABLE ipam_subnets ADD COLUMN dhcp_end TEXT DEFAULT ''");
   } catch {}
   try {
     db.exec(
@@ -165,6 +195,12 @@ function applyMigrations(db) {
   try {
     db.exec("ALTER TABLE ipam_reservations ADD COLUMN last_synced_at TEXT");
   } catch {}
+  // DHCP is defined by the prefix pool. Older source imports marked every
+  // observed address as DHCP, so remove that legacy claim before deriving the
+  // effective status from dhcp_start/dhcp_end.
+  try {
+    db.exec("UPDATE ipam_reservations SET status = 'active' WHERE status = 'dhcp'");
+  } catch {}
   try {
     db.exec(
       "CREATE TABLE IF NOT EXISTS ipam_ip_ranges (id TEXT PRIMARY KEY, subnet_id TEXT NOT NULL, start_address TEXT NOT NULL, end_address TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'reserved', role TEXT DEFAULT '', description TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now')), FOREIGN KEY (subnet_id) REFERENCES ipam_subnets(id) ON DELETE CASCADE)",
@@ -183,7 +219,8 @@ function applyMigrations(db) {
       enabled INTEGER NOT NULL DEFAULT 1, auto_sync INTEGER NOT NULL DEFAULT 1,
       sync_interval_min INTEGER NOT NULL DEFAULT 15, last_synced_at TEXT, last_status TEXT DEFAULT '',
       last_error TEXT DEFAULT '', last_tested_at TEXT, last_test_status TEXT DEFAULT '',
-      last_test_error TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now')),
+      last_test_error TEXT DEFAULT '', last_record_count INTEGER NOT NULL DEFAULT 0,
+      last_ignored_count INTEGER NOT NULL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE
     )`);
@@ -217,6 +254,27 @@ function applyMigrations(db) {
     );
   } catch {}
   try {
+    db.exec(
+      "ALTER TABLE ipam_sync_sources ADD COLUMN last_record_count INTEGER NOT NULL DEFAULT 0",
+    );
+  } catch {}
+  try {
+    db.exec(
+      "ALTER TABLE ipam_sync_sources ADD COLUMN last_ignored_count INTEGER NOT NULL DEFAULT 0",
+    );
+  } catch {}
+  // Source ownership is exposed separately in the IPAM UI. Remove only the
+  // generated legacy descriptions so the description field contains actual
+  // operator/controller metadata instead of a duplicate source label.
+  try {
+    db.exec(`
+      UPDATE ipam_reservations
+      SET description = ''
+      WHERE (source_type IN ('unifi', 'pfsense') AND description LIKE 'Synchronisiert aus %')
+         OR (source_type = 'proxmox' AND description LIKE 'Aus Proxmox % synchronisiert')
+    `);
+  } catch {}
+  try {
     db.exec(`CREATE TABLE IF NOT EXISTS ipam_sync_conflicts (
       id TEXT PRIMARY KEY, environment_id TEXT NOT NULL, subnet_id TEXT NOT NULL,
       source_id TEXT NOT NULL, address TEXT NOT NULL, hostname TEXT DEFAULT '',
@@ -234,9 +292,24 @@ function applyMigrations(db) {
     );
   } catch {}
   try {
+    db.exec(`CREATE TABLE IF NOT EXISTS ipam_source_observations (
+      id TEXT PRIMARY KEY, environment_id TEXT NOT NULL, subnet_id TEXT NOT NULL,
+      source_id TEXT NOT NULL, source_ref TEXT NOT NULL, reservation_id TEXT,
+      address TEXT NOT NULL, hostname TEXT DEFAULT '', mac_address TEXT DEFAULT '',
+      last_seen_at TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE,
+      FOREIGN KEY (subnet_id) REFERENCES ipam_subnets(id) ON DELETE CASCADE,
+      FOREIGN KEY (source_id) REFERENCES ipam_sync_sources(id) ON DELETE CASCADE,
+      FOREIGN KEY (reservation_id) REFERENCES ipam_reservations(id) ON DELETE SET NULL,
+      UNIQUE(source_id, source_ref)
+    )`);
+    db.exec("CREATE INDEX IF NOT EXISTS idx_ipam_source_observations_reservation ON ipam_source_observations(reservation_id)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_ipam_source_observations_source ON ipam_source_observations(source_id)");
+  } catch {}
+  try {
     db.exec(`CREATE TABLE IF NOT EXISTS ipam_proxmox_sync_conflicts (
       id TEXT PRIMARY KEY, environment_id TEXT NOT NULL, subnet_id TEXT NOT NULL,
-      connection_id TEXT NOT NULL, address TEXT NOT NULL, hostname TEXT DEFAULT '',
+      connection_id TEXT NOT NULL, address TEXT NOT NULL, hostname TEXT DEFAULT '', mac_address TEXT DEFAULT '',
       reason TEXT NOT NULL, existing_reservation_id TEXT, last_seen_at TEXT NOT NULL,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE,
@@ -250,6 +323,7 @@ function applyMigrations(db) {
       "CREATE INDEX IF NOT EXISTS idx_ipam_proxmox_conflicts_subnet ON ipam_proxmox_sync_conflicts(subnet_id)",
     );
   } catch {}
+  try { db.exec("ALTER TABLE ipam_proxmox_sync_conflicts ADD COLUMN mac_address TEXT DEFAULT ''"); } catch {}
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS maintenance_windows (
       id TEXT PRIMARY KEY, environment_id TEXT NOT NULL DEFAULT 'default', name TEXT NOT NULL,

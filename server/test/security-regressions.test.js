@@ -437,7 +437,7 @@ test('server reboot uses become-enabled Ansible execution', async () => {
       target: 'reboot-target',
       module: 'reboot',
       args: '',
-      options: { become: true },
+      options: { become: true, environmentId: 'default' },
     });
   } finally {
     ansibleRunner.runAdHoc = originalRunAdHoc;
@@ -475,6 +475,38 @@ test('ansible entrypoints reject unknown or option-like targets for all-scope ro
     .set('Authorization', `Bearer ${token}`)
     .send({ playbook: 'deploy.yml', targets: 'localhost' });
   assert.equal(playbookLocalhost.status, 400);
+});
+
+test('manual playbook runs use persisted workflow history and pass the environment to Ansible', async () => {
+  wipeDb();
+  await setupAdmin();
+  const token = await login('admin', 'testpass12345');
+  db.servers.create({ name: 'manual-run-host', hostname: 'manual-run-host', ip_address: '10.0.0.12', tags: [], services: [] });
+
+  const originalRunPlaybook = ansibleRunner.runPlaybook;
+  let capturedOptions = null;
+  ansibleRunner.runPlaybook = async (_playbook, _targets, _vars, _output, options) => {
+    capturedOptions = options;
+    return { success: true, stdout: 'ok', stderr: '' };
+  };
+  try {
+    const res = await request(app)
+      .post('/api/ansible/run')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ playbook: 'update.yml', targets: 'manual-run-host' });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.historyId, res.body.runId);
+    await new Promise(resolve => setImmediate(resolve));
+
+    const workflow = db.scheduleHistory.getById(res.body.runId);
+    assert.equal(workflow.environment_id, 'default');
+    assert.equal(workflow.targets, 'manual-run-host');
+    assert.equal(workflow.status, 'success');
+    assert.equal(db.db.prepare('SELECT 1 FROM update_history WHERE id = ?').get(res.body.historyId), undefined);
+    assert.equal(capturedOptions.environmentId, 'default');
+  } finally {
+    ansibleRunner.runPlaybook = originalRunPlaybook;
+  }
 });
 
 test('playbook whitelist is enforced for restricted roles', async () => {
@@ -622,8 +654,8 @@ test('bulk update-all is scoped to servers visible to restricted role', async ()
 
   const calls = [];
   const originalRunPlaybook = ansibleRunner.runPlaybook;
-  ansibleRunner.runPlaybook = async (playbook, targets) => {
-    calls.push({ playbook, targets });
+  ansibleRunner.runPlaybook = async (playbook, targets, _vars, _onOutput, options) => {
+    calls.push({ playbook, targets, options });
     return { success: false, stdout: '', stderr: '' };
   };
 
@@ -632,7 +664,10 @@ test('bulk update-all is scoped to servers visible to restricted role', async ()
       .post('/api/servers/update-all')
       .set('Authorization', `Bearer ${token}`);
     assert.equal(res.status, 200);
-    assert.deepEqual(calls, [{ playbook: 'update.yml', targets: 'web-1' }]);
+    assert.deepEqual(calls, [{ playbook: 'update.yml', targets: 'web-1', options: { environmentId: 'default' } }]);
+    const history = db.scheduleHistory.getById(res.body.historyId);
+    assert.equal(history.environment_id, 'default');
+    assert.equal(history.targets, 'web-1');
   } finally {
     ansibleRunner.runPlaybook = originalRunPlaybook;
   }
@@ -684,10 +719,10 @@ test('docker logs accepts dotted container names and rejects option-like names',
   const token = await login('dockerlogs', 'dockerlogspass12345');
 
   const commands = [];
-  const originalRunAdHoc = ansibleRunner.runAdHoc;
-  ansibleRunner.runAdHoc = async (_target, _module, command) => {
+  const originalExecCommand = sshManager.execCommand;
+  sshManager.execCommand = async (_server, command) => {
     commands.push(command);
-    return { success: true, stdout: 'hello\n', stderr: '' };
+    return { code: 0, stdout: 'hello\n', stderr: '' };
   };
 
   try {
@@ -695,14 +730,14 @@ test('docker logs accepts dotted container names and rejects option-like names',
       .get(`/api/servers/${srv.id}/docker/project.app-1/logs`)
       .set('Authorization', `Bearer ${token}`);
     assert.equal(dotted.status, 200);
-    assert.equal(commands[0], '$(command -v docker 2>/dev/null || command -v podman 2>/dev/null) logs --tail "200" --timestamps -- "project.app-1" 2>&1');
+    assert.match(commands[0], /logs --tail 200 --timestamps -- 'project\.app-1'/);
 
     const optionLike = await request(app)
       .get(`/api/servers/${srv.id}/docker/-bad/logs`)
       .set('Authorization', `Bearer ${token}`);
     assert.equal(optionLike.status, 400);
   } finally {
-    ansibleRunner.runAdHoc = originalRunAdHoc;
+    sshManager.execCommand = originalExecCommand;
   }
 });
 
@@ -741,6 +776,79 @@ test('admin can disable another user\'s 2FA from user management', async () => {
   assert.equal(after.totp_secret, '');
   assert.equal(after.totp_secret_pending, '');
   assert.equal(after.token_version, 1);
+});
+
+test('user management prevents an administrator from changing their own role', async () => {
+  wipeDb();
+  await setupAdmin();
+  const admin = db.users.getByUsername('admin');
+  const adminToken = await login('admin', 'testpass12345');
+
+  const res = await request(app)
+    .put(`/api/users/${admin.id}`)
+    .set('Authorization', `Bearer ${adminToken}`)
+    .send({ role: 'user' });
+
+  assert.equal(res.status, 400);
+  assert.equal(db.users.getById(admin.id).role, 'admin');
+});
+
+test('disabling a user immediately revokes API sessions and blocks login', async () => {
+  wipeDb();
+  await setupAdmin();
+  const created = db.users.create('suspend-me', '', await bcrypt.hash('viewerpass12345', 12), 'user');
+  const userToken = await login('suspend-me', 'viewerpass12345');
+  assert.ok(db.users.getById(created.id).last_login_at);
+
+  const adminToken = await login('admin', 'testpass12345');
+  const disabled = await request(app)
+    .put(`/api/users/${created.id}/status`)
+    .set('Authorization', `Bearer ${adminToken}`)
+    .send({ disabled: true });
+  assert.equal(disabled.status, 200);
+  assert.equal(disabled.body.disabled, 1);
+
+  const staleSession = await request(app)
+    .get('/api/auth/profile')
+    .set('Authorization', `Bearer ${userToken}`);
+  assert.equal(staleSession.status, 401);
+
+  const blockedLogin = await request(app)
+    .post('/api/auth/login')
+    .send({ username: 'suspend-me', password: 'viewerpass12345' });
+  assert.equal(blockedLogin.status, 401);
+  assert.equal(blockedLogin.body.error, 'Account disabled');
+
+  const enabled = await request(app)
+    .put(`/api/users/${created.id}/status`)
+    .set('Authorization', `Bearer ${adminToken}`)
+    .send({ disabled: false });
+  assert.equal(enabled.status, 200);
+  assert.equal(enabled.body.disabled, 0);
+
+  const stillStale = await request(app)
+    .get('/api/auth/profile')
+    .set('Authorization', `Bearer ${userToken}`);
+  assert.equal(stillStale.status, 401);
+  assert.ok(await login('suspend-me', 'viewerpass12345'));
+});
+
+test('administrator can explicitly revoke all sessions for a user', async () => {
+  wipeDb();
+  await setupAdmin();
+  const created = db.users.create('revoke-me', '', await bcrypt.hash('viewerpass12345', 12), 'user');
+  const userToken = await login('revoke-me', 'viewerpass12345');
+  const adminToken = await login('admin', 'testpass12345');
+
+  const revoked = await request(app)
+    .post(`/api/users/${created.id}/revoke-sessions`)
+    .set('Authorization', `Bearer ${adminToken}`);
+  assert.equal(revoked.status, 200);
+
+  const staleSession = await request(app)
+    .get('/api/auth/profile')
+    .set('Authorization', `Bearer ${userToken}`);
+  assert.equal(staleSession.status, 401);
 });
 
 test('2FA intermediate tokens are invalidated when 2FA is disabled', async () => {

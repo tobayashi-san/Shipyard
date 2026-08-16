@@ -193,7 +193,7 @@ export function ObjectInventoryPreview({
                             params={{ id: vm.fleet_server_id }}
                             className="text-xs font-medium text-primary hover:underline"
                           >
-                            Open Fleet host
+                            Open managed host
                           </Link>
                         ) : (
                           <span className="text-xs text-muted-foreground">
@@ -666,7 +666,7 @@ export function ObjectTasksCard({ tasks }: { tasks: AuditTask[] }) {
               >
                 <thead>
                   <tr>
-                    <th>Zeitpunkt</th>
+                    <th>Time</th>
                     <th>Task</th>
                     <th>Details</th>
                     <th>Run by</th>
@@ -877,7 +877,7 @@ export function VmTable({
     vm.fleet_server_id ? (
       <Button asChild size="sm" variant="outline">
         <Link to="/servers/$id" params={{ id: vm.fleet_server_id }}>
-          Open Fleet host
+          Open managed host
         </Link>
       </Button>
     ) : canImportVm && cluster.connections?.[0]?.id ? (
@@ -1175,7 +1175,7 @@ export function BulkImportProxmoxVmsDialog({
         );
       else
         showToast(
-          `${succeeded} VMs were adopted as Fleet hosts.`,
+          `${succeeded} VMs were adopted as managed hosts.`,
           "success",
         );
       onOpenChange(false);

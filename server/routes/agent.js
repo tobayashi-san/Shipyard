@@ -65,9 +65,11 @@ function authenticateAgent(req) {
 
   const rows = db.agentConfig.getAll();
   for (const row of rows) {
-    if (!row.token) continue;
-    const stored = decrypt(row.token);
-    if (stored && secureEqual(stored, token)) return row;
+    for (const encryptedToken of [row.token, row.pending_token]) {
+      if (!encryptedToken) continue;
+      const stored = decrypt(encryptedToken);
+      if (stored && secureEqual(stored, token)) return row;
+    }
   }
   return null;
 }

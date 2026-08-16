@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { useProfile, useSettings } from '@/lib/queries';
 import { showToast as pushToast } from '@/lib/toast';
+import { useUi } from '@/lib/store';
 
 interface PluginInfo {
   id: string;
@@ -152,14 +153,15 @@ export function PluginHostPage() {
   const [loading, setLoading] = useState(true);
   const { data: profile } = useProfile();
   const { data: settings } = useSettings();
+  const environmentId = useUi((state) => state.environmentId);
 
   const { data: plugins } = useQuery<PluginInfo[]>({
     queryKey: ['plugins'],
     queryFn: async () => asArray<PluginInfo>(await api.getPlugins()),
   });
   const { data: servers } = useQuery<unknown[]>({
-    queryKey: ['servers'],
-    queryFn: async () => asArray(await api.getServers()),
+    queryKey: ['servers', environmentId],
+    queryFn: async () => asArray(await api.getServers(environmentId)),
   });
   // Plugin UIs own transient state such as their active workspace or editor.
   // Keep their mount stable when React Query refreshes data in the background.

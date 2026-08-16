@@ -83,6 +83,11 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
   if (!options.skipAuth) {
     const tok = getToken();
     if (tok) headers['Authorization'] = `Bearer ${tok}`;
+    try {
+      headers['X-Shipyard-Environment'] = localStorage.getItem('shipyard_environment') || 'default';
+    } catch {
+      headers['X-Shipyard-Environment'] = 'default';
+    }
   }
 
   const init: RequestInit = { ...options, headers } as RequestInit;
@@ -123,10 +128,22 @@ export async function apiFetchArray<T = unknown>(path: string, options: RequestO
 /** Download helper for binary endpoints (e.g. server export). */
 export async function apiDownload(path: string, filename: string): Promise<void> {
   const tok = getToken();
+  let environmentId = 'default';
+  try { environmentId = localStorage.getItem('shipyard_environment') || 'default'; } catch { /* use default */ }
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: tok ? { Authorization: `Bearer ${tok}` } : undefined,
+    headers: {
+      ...(tok ? { Authorization: `Bearer ${tok}` } : {}),
+      'X-Shipyard-Environment': environmentId,
+    },
   });
-  if (!res.ok) throw new ApiError(`Download failed: ${res.status}`, res.status);
+  if (!res.ok) {
+    let message = `Download failed: ${res.status}`;
+    try {
+      const payload = await res.json() as { error?: unknown };
+      if (typeof payload?.error === 'string' && payload.error.trim()) message = payload.error;
+    } catch { /* keep the status fallback for non-JSON proxy errors */ }
+    throw new ApiError(message, res.status);
+  }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -134,6 +151,40 @@ export async function apiDownload(path: string, filename: string): Promise<void>
   a.download = filename;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Upload a binary file without buffering it into JSON, with browser progress events. */
+export function apiUploadFile(
+  path: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('PUT', `${API_BASE}${path}`);
+    const token = getToken();
+    if (token) request.setRequestHeader('Authorization', `Bearer ${token}`);
+    try {
+      request.setRequestHeader('X-Shipyard-Environment', localStorage.getItem('shipyard_environment') || 'default');
+    } catch {
+      request.setRequestHeader('X-Shipyard-Environment', 'default');
+    }
+    request.setRequestHeader('Content-Type', 'application/octet-stream');
+    request.upload.onprogress = event => {
+      if (event.lengthComputable && onProgress) onProgress(Math.round((event.loaded / event.total) * 100));
+    };
+    request.onerror = () => reject(new ApiError('Upload failed', 0));
+    request.onload = () => {
+      let payload: unknown = null;
+      try { payload = request.responseText ? JSON.parse(request.responseText) : null; } catch { payload = request.responseText; }
+      if (request.status >= 200 && request.status < 300) return resolve(payload);
+      const message = payload && typeof payload === 'object' && 'error' in payload
+        ? String((payload as { error: unknown }).error)
+        : `Upload failed: ${request.status}`;
+      reject(new ApiError(message, request.status));
+    };
+    request.send(file);
+  });
 }
 
 // ─────────────────────────── Typed API surface ──────────────────────────────
@@ -195,7 +246,11 @@ export const api = {
     for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') q.set(k, String(v));
     return apiFetch<AnyObj>(`/system/audit?${q}`);
   },
-  getAuditMeta:      () => apiFetch<AnyObj>('/system/audit/meta'),
+  getAuditMeta:      (params: Record<string, string | number | undefined> = {}) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') q.set(k, String(v));
+    return apiFetch<AnyObj>(`/system/audit/meta?${q}`);
+  },
   exportAuditLog:    (params: Record<string, string | number | undefined> = {}) => {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') q.set(k, String(v));
@@ -295,6 +350,8 @@ export const api = {
   updateUser:        (id: string | number, data: AnyObj) => apiFetch(`/users/${id}`, { method: 'PUT', body: data }),
   resetUserPassword: (id: string | number, password: string) => apiFetch(`/users/${id}/password`, { method: 'PUT', body: { password } }),
   disableUserTotp:   (id: string | number) => apiFetch(`/users/${id}/totp-disable`, { method: 'PUT', body: {} }),
+  setUserDisabled:   (id: string | number, disabled: boolean) => apiFetch(`/users/${id}/status`, { method: 'PUT', body: { disabled } }),
+  revokeUserSessions:(id: string | number) => apiFetch(`/users/${id}/revoke-sessions`, { method: 'POST' }),
   deleteUser:        (id: string | number) => apiFetch(`/users/${id}`, { method: 'DELETE' }),
 
   getRoles:          () => apiFetch<AnyObj[]>('/roles'),

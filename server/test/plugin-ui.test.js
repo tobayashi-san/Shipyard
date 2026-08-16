@@ -211,8 +211,10 @@ test('plugin API requires role access to the enabled plugin', async () => {
   pluginLoader.loadAll({});
 
   const { app } = createApp();
+  db.db.prepare("INSERT OR IGNORE INTO server_groups (id, environment_id, name) VALUES ('plugin-api-default', 'default', 'Plugin API')").run();
   const limitedRole = db.roles.create('plugin-api-limited', {
     plugins: [],
+    servers: { groups: ['plugin-api-default'], servers: [] },
     canViewServers: true,
   });
   const limitedHash = await bcrypt.hash('pluginlimitedpass123', 12);
