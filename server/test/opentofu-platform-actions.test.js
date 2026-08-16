@@ -33,6 +33,7 @@ app.use('/api/opentofu', openTofuRouter);
 const calls = [];
 const originalRequest = https.request;
 let inventory = [{ type: 'qemu', node: 'pve001', vmid: 101, name: 'app-01' }];
+let lxcInterfacesAvailable = true;
 
 function installProxmoxMock() {
   https.request = (url, options, callback) => {
@@ -61,6 +62,16 @@ function installProxmoxMock() {
           ipconfig0: 'ip=10.20.1.42/24,gw=10.20.1.1', ciuser: 'ubuntu',
           cipassword: 'must-never-leave-proxmox',
         }
+        : parsed.pathname.endsWith('/nodes/pve001/lxc/202/config') ? {
+          cores: 1, memory: 1024, ostype: 'debian', arch: 'amd64', unprivileged: 1,
+          rootfs: 'local-zfs:subvol-202-disk-0,size=8G',
+          net0: 'name=eth0,bridge=vmbr0,hwaddr=02:00:00:00:02:02,ip=10.20.1.52/24,gw=10.20.1.1,type=veth,tag=20',
+        }
+        : parsed.pathname.endsWith('/nodes/pve001/lxc/202/interfaces') && lxcInterfacesAvailable ? [
+          { name: 'lo', inet: '127.0.0.1/8' },
+          { name: 'eth0', inet: '10.20.1.52/24', hwaddr: '02:00:00:00:02:02' },
+        ]
+        : parsed.pathname.endsWith('/nodes/pve001/lxc/202/interfaces') ? []
         : parsed.pathname.endsWith('/agent/network-get-interfaces') ? {
           result: [{ name: 'lo', 'ip-addresses': [{ 'ip-address': '127.0.0.1', 'ip-address-type': 'ipv4' }] }, { name: 'ens18', 'hardware-address': 'AA:BB:CC:DD:EE:FF', 'ip-addresses': [{ 'ip-address': '10.20.1.42', 'ip-address-type': 'ipv4' }] }],
         }
@@ -144,6 +155,64 @@ test('Proxmox power and snapshot routes resolve the current inventory target bef
     'GET /api2/json/cluster/resources?type=vm',
     'DELETE /api2/json/nodes/pve001/qemu/101/snapshot/before-update',
   ]);
+});
+
+test('LXC guests use container API paths for configuration, snapshots, power and adoption', async () => {
+  calls.length = 0;
+  inventory = [{ type: 'lxc', node: 'pve001', vmid: 202, name: 'web-ct' }];
+  const ctPath = `/api/opentofu/proxmox-connections/${connectionId}/vms/pve001/202`;
+
+  const configuration = await request(app).get(`${ctPath}/configuration`).set('Authorization', `Bearer ${token}`);
+  assert.equal(configuration.status, 200, JSON.stringify(configuration.body));
+  assert.equal(configuration.body.guest_type, 'lxc');
+  assert.equal(configuration.body.hardware.agent_enabled, null);
+  assert.deepEqual(configuration.body.disks, [{ bus: 'rootfs', storage: 'local-zfs:subvol-202-disk-0', size: '8G', format: null, discard: false }]);
+  assert.deepEqual(configuration.body.networks, [{ interface: 'net0', model: 'veth', bridge: 'vmbr0', vlan_id: '20', mac_address: '02:00:00:00:02:02', firewall: false }]);
+
+  calls.length = 0;
+  const power = await request(app).post(`${ctPath}/power`).set('Authorization', `Bearer ${token}`).send({ action: 'reboot' });
+  assert.equal(power.status, 202, JSON.stringify(power.body));
+  assert.ok(calls.some(call => call.path.endsWith('/nodes/pve001/lxc/202/status/reboot')));
+
+  calls.length = 0;
+  const snapshot = await request(app).post(`${ctPath}/snapshots`).set('Authorization', `Bearer ${token}`).send({ name: 'before-update' });
+  assert.equal(snapshot.status, 202, JSON.stringify(snapshot.body));
+  assert.ok(calls.some(call => call.path.endsWith('/nodes/pve001/lxc/202/snapshot')));
+  assert.doesNotMatch(calls.at(-1).body, /vmstate=/);
+
+  calls.length = 0;
+  const imported = await request(app)
+    .post(`/api/opentofu/proxmox-connections/${connectionId}/import-vm`)
+    .set('Authorization', `Bearer ${token}`)
+    .send({ name: 'fleet-web-ct', node_name: 'pve001', vm_id: 202, ssh_user: 'root' });
+  assert.equal(imported.status, 201, JSON.stringify(imported.body));
+  assert.equal(imported.body.server.ip_address, '10.20.1.52');
+  assert.ok(calls.some(call => call.path.endsWith('/nodes/pve001/lxc/202/interfaces')));
+  const mapping = db.db.prepare('SELECT guest_type FROM proxmox_inventory_servers WHERE server_id = ?').get(imported.body.server.id);
+  assert.equal(mapping.guest_type, 'lxc');
+
+  calls.length = 0;
+  lxcInterfacesAvailable = false;
+  const stoppedIp = await request(app)
+    .get(`/api/opentofu/proxmox-connections/${connectionId}/guest-ip?node=pve001&vm_id=202`)
+    .set('Authorization', `Bearer ${token}`);
+  lxcInterfacesAvailable = true;
+  assert.equal(stoppedIp.status, 200, JSON.stringify(stoppedIp.body));
+  assert.equal(stoppedIp.body.ip_address, '10.20.1.52');
+  assert.ok(calls.some(call => call.path.endsWith('/nodes/pve001/lxc/202/config')));
+});
+
+test('infrastructure inventory includes QEMU VMs and LXC containers with their guest type', async () => {
+  inventory = [
+    { type: 'qemu', node: 'pve001', vmid: 101, name: 'app-01', status: 'running' },
+    { type: 'lxc', node: 'pve001', vmid: 202, name: 'web-ct', status: 'running' },
+  ];
+  const response = await request(app)
+    .get('/api/opentofu/infrastructure?environment_id=default')
+    .set('Authorization', `Bearer ${token}`);
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  const guests = response.body.clusters[0].vms;
+  assert.deepEqual(guests.map(guest => [guest.vm_id, guest.guest_type]), [[101, 'qemu'], [202, 'lxc']]);
 });
 
 test('Proxmox actions reject invalid or stale targets before an action endpoint is reached', async () => {

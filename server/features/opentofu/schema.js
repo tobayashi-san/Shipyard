@@ -36,7 +36,7 @@ function setupOpenTofuDatabase(database) {
       UNIQUE(environment_id, name)
     )
   `).run();
-  // Existing VMs can be adopted as Fleet hosts without becoming OpenTofu
+  // Existing Proxmox guests can be adopted as Fleet hosts without becoming OpenTofu
   // resources. The mapping keeps Proxmox-only actions such as snapshots
   // available while preserving the VM's current configuration.
   db.db.prepare(`
@@ -45,10 +45,12 @@ function setupOpenTofuDatabase(database) {
       connection_id TEXT NOT NULL,
       node_name     TEXT NOT NULL,
       vm_id         INTEGER NOT NULL,
+      guest_type    TEXT NOT NULL DEFAULT 'qemu',
       created_at    TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(connection_id, node_name, vm_id)
     )
   `).run();
+  try { db.db.prepare("ALTER TABLE proxmox_inventory_servers ADD COLUMN guest_type TEXT NOT NULL DEFAULT 'qemu'").run(); } catch {}
   // Existing Fleet installations get the same default environment as legacy
   // servers. The guards keep this migration safe for fresh and old databases.
   try { db.db.prepare("CREATE TABLE IF NOT EXISTS environments (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TEXT DEFAULT (datetime('now'))) ").run(); } catch {}

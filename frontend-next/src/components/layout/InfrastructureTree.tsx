@@ -690,7 +690,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
             activeOptions={{ exact: true }}
             onClick={onNavigate}
             aria-current={clusterCurrent ? "page" : undefined}
-            title={`${clusterName} · ${nodes.length} nodes · ${vms.length} inventory VMs`}
+            title={`${clusterName} · ${nodes.length} nodes · ${vms.length} inventory guests`}
             className={cn(
               "flex min-w-0 flex-1 items-center gap-2 rounded-sm px-1 py-1.5 pr-1 text-xs transition-colors",
               clusterCurrent
@@ -730,7 +730,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                     activeOptions={{ exact: true }}
                     onClick={onNavigate}
                     aria-current={nodeCurrent ? "page" : undefined}
-                    title={`${node.name} · ${vmCount} VMs`}
+                    title={`${node.name} · ${vmCount} guests`}
                     className={cn(
                       "flex min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-xs transition-colors",
                       nodeCurrent
@@ -919,7 +919,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
           <DialogHeader>
             <DialogTitle>Create folder</DialogTitle>
             <DialogDescription>
-              Organize VMs and managed hosts in a vCenter-like tree view.
+              Organize virtual guests and managed hosts in a vCenter-like tree view.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -1031,7 +1031,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                 Resources in this folder
               </div>
               <p className="text-xs text-muted-foreground">
-                Select managed hosts. Adopted Proxmox VMs appear here as managed
+                Select managed hosts. Adopted Proxmox guests appear here as managed
                 hosts.
               </p>
               <div className="max-h-40 space-y-1 overflow-y-auto pr-1">

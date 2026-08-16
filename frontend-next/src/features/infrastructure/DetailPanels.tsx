@@ -48,6 +48,7 @@ import {
   taskDate,
   tone,
   uptime,
+  guestKind,
 } from "./detail-model";
 
 export function ObjectInventoryPreview({
@@ -74,12 +75,12 @@ export function ObjectInventoryPreview({
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <Boxes className="h-4 w-4" />
-            {isNode ? "Virtual machines" : "Inventory"}
+            {isNode ? "Virtual guests" : "Inventory"}
           </CardTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {isNode
               ? `${running} running · ${stopped} stopped · ${managed} managed in Fleet`
-              : `${cluster.nodes.length} nodes · ${cluster.vms.length} virtual machines · ${managed} managed in Fleet`}
+              : `${cluster.nodes.length} nodes · ${cluster.vms.length} virtual guests · ${managed} managed in Fleet`}
           </p>
         </div>
         <Button
@@ -88,14 +89,14 @@ export function ObjectInventoryPreview({
           variant="outline"
           onClick={onOpenInventory}
         >
-          {isNode ? "Show all VMs" : "Show all nodes"}
+          {isNode ? "Show all guests" : "Show all nodes"}
         </Button>
       </CardHeader>
       <CardContent className="p-0">
         {preview.length === 0 ? (
           <div className="px-4 py-5 text-sm text-muted-foreground">
             {isNode
-              ? "No virtual machines on this node."
+              ? "No virtual guests on this node."
               : "No nodes in platform inventory."}
           </div>
         ) : isNode ? (
@@ -116,7 +117,7 @@ export function ObjectInventoryPreview({
                     <div className="min-w-0">
                       <div className="truncate font-medium">{vm.name}</div>
                       <div className="mt-0.5 font-mono text-xs text-muted-foreground">
-                        VM-ID {vm.vm_id} · {vm.maxcpu || "—"} vCPU
+                        {guestKind(vm)} {vm.vm_id} · {vm.maxcpu || "—"} vCPU
                       </div>
                     </div>
                     <StatusBadge tone={tone(vm.status)} dot>
@@ -148,8 +149,8 @@ export function ObjectInventoryPreview({
               >
                 <thead>
                   <tr>
-                    <th>VM</th>
-                    <th>VM-ID</th>
+                    <th>Guest</th>
+                    <th>ID</th>
                     <th>Status</th>
                     <th>vCPU</th>
                     <th>Memory</th>
@@ -241,7 +242,7 @@ export function ObjectInventoryPreview({
                         </b>
                       </span>
                       <span>
-                        VMs{" "}
+                        Guests{" "}
                         <b className="font-mono text-foreground">{vmCount}</b>
                       </span>
                       <span>
@@ -266,7 +267,7 @@ export function ObjectInventoryPreview({
                     <th>Status</th>
                     <th>CPU</th>
                     <th>Memory</th>
-                    <th>VMs</th>
+                    <th>Guests</th>
                     <th>Uptime</th>
                   </tr>
                 </thead>
@@ -314,7 +315,7 @@ export function ObjectInventoryPreview({
         )}
         {isNode && vms.length > preview.length && (
           <div className="border-t px-4 py-2 text-xs text-muted-foreground">
-            {vms.length - preview.length} more VMs in the complete inventory.
+            {vms.length - preview.length} more guests in the complete inventory.
           </div>
         )}
         {!isNode && cluster.nodes.length > preview.length && (
@@ -412,10 +413,10 @@ export function NodeConfiguration({ node, vms }: { node: Node; vms: Vm[] }) {
             <Property label="Node" value={statusLabel(node.status)} />
             <Property label="Uptime" value={uptime(node.uptime)} mono />
             <Property
-              label="VMs running"
+              label="Guests running"
               value={`${running} / ${vms.length}`}
             />
-            <Property label="VMs stopped" value={String(stopped)} />
+            <Property label="Guests stopped" value={String(stopped)} />
             <Property
               label="Snapshots"
               value="Manage on the individual VM"
@@ -914,10 +915,10 @@ export function VmTable({
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <Boxes className="h-4 w-4" />
-            Virtual machines
+            Virtual guests
           </CardTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Explicitly select inventory VMs and adopt them into Fleet with their
+            Explicitly select inventory VMs and CTs and adopt them into Fleet with their
             access details.
           </p>
         </div>
@@ -982,7 +983,7 @@ export function VmTable({
                       </b>
                     </span>
                     <span>
-                      VM-ID{" "}
+                      {guestKind(vm)} ID{" "}
                       <b className="ml-1 font-mono text-foreground">
                         {vm.vm_id}
                       </b>
@@ -1012,7 +1013,7 @@ export function VmTable({
             })
           ) : (
             <div className="p-6 text-center text-sm text-muted-foreground">
-              No virtual machines on this node.
+              No virtual guests on this node.
             </div>
           )}
         </div>
@@ -1027,7 +1028,7 @@ export function VmTable({
                   <th className="w-11">
                     <input
                       type="checkbox"
-                      aria-label="Select all adoptable VMs"
+                      aria-label="Select all adoptable guests"
                       checked={allSelected}
                       ref={(input) => {
                         if (input) input.indeterminate = someSelected;
@@ -1036,9 +1037,10 @@ export function VmTable({
                     />
                   </th>
                 )}
-                <th>VM</th>
+                <th>Guest</th>
                 <th>Node</th>
-                <th>VM-ID</th>
+                <th>Type</th>
+                <th>ID</th>
                 <th>Status</th>
                 <th>vCPU</th>
                 <th>Memory</th>
@@ -1071,6 +1073,7 @@ export function VmTable({
                       )}
                       <td>{name(vm)}</td>
                       <td className="font-mono text-xs">{vm.node_name}</td>
+                      <td>{guestKind(vm)}</td>
                       <td className="font-mono text-xs">{vm.vm_id}</td>
                       <td>
                         <StatusBadge tone={tone(vm.status)} dot>
@@ -1093,10 +1096,10 @@ export function VmTable({
               ) : (
                 <tr>
                   <td
-                    colSpan={canImportVm ? 9 : 8}
+                    colSpan={canImportVm ? 10 : 9}
                     className="py-7 text-center text-muted-foreground"
                   >
-                    No virtual machines on this node.
+                    No virtual guests on this node.
                   </td>
                 </tr>
               )}
@@ -1149,6 +1152,7 @@ export function BulkImportProxmoxVmsDialog({
                 name: vm.name,
                 node_name: vm.node_name,
                 vm_id: vm.vm_id,
+                guest_type: vm.guest_type || "qemu",
                 ssh_user: sshUser,
                 ssh_port: Number(sshPort),
                 group_id: groupId || undefined,
@@ -1170,12 +1174,12 @@ export function BulkImportProxmoxVmsDialog({
       });
       if (failed.length)
         showToast(
-          `${succeeded} VMs adopted; ${failed.length} could not be adopted. Check the guest agent, IP address, and duplicate hosts.`,
+          `${succeeded} guests adopted; ${failed.length} could not be adopted. Check the guest IP address and duplicate hosts.`,
           "warning",
         );
       else
         showToast(
-          `${succeeded} VMs were adopted as managed hosts.`,
+          `${succeeded} guests were adopted as managed hosts.`,
           "success",
         );
       onOpenChange(false);
@@ -1188,12 +1192,11 @@ export function BulkImportProxmoxVmsDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ServerCog className="h-5 w-5" />
-            Adopt {vms.length} VMs into Fleet
+            Adopt {vms.length} guests into Fleet
           </DialogTitle>
           <DialogDescription>
-            The VMs remain unchanged in Proxmox. Fleet only creates managed
-            hosts with shared access details and reads the IPv4 address through
-            the QEMU Guest Agent.
+            The VMs and CTs remain unchanged in Proxmox. Fleet only creates
+            managed hosts and reads their reported IPv4 addresses.
           </DialogDescription>
         </DialogHeader>
         <div className="rounded-md border bg-muted/20 p-3">
@@ -1247,7 +1250,8 @@ export function BulkImportProxmoxVmsDialog({
           </select>
         </div>
         <p className="rounded-md border border-amber-500/25 bg-amber-500/5 p-3 text-xs text-muted-foreground">
-          VMs without an enabled QEMU Guest Agent or IPv4 address are skipped.
+          Guests without a reported IPv4 address are skipped. QEMU VMs require
+          an enabled Guest Agent for automatic address detection.
           They can later be adopted individually with a manually entered IP.
         </p>
         <DialogFooter>

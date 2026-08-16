@@ -1046,26 +1046,28 @@ override.tf.json
       if (sourceIds.length) {
         const placeholders = sourceIds.map(() => '?').join(', ');
         const adopted = db.db.prepare(`
-          SELECT inventory.server_id, inventory.connection_id, inventory.node_name, inventory.vm_id
+          SELECT inventory.server_id, inventory.connection_id, inventory.node_name, inventory.vm_id, inventory.guest_type
           FROM proxmox_inventory_servers inventory
           JOIN servers ON servers.id = inventory.server_id
           WHERE inventory.connection_id IN (${placeholders})
         `).all(...sourceIds);
         for (const item of adopted) {
-          adoptedByVm.set(`${item.connection_id}:${item.node_name}:${item.vm_id}`, {
+          adoptedByVm.set(`${item.connection_id}:${item.node_name}:${item.vm_id}:${item.guest_type || 'qemu'}`, {
             serverId: item.server_id,
             connectionId: item.connection_id,
           });
         }
       }
       const vms = (Array.isArray(resourcesResponse) ? resourcesResponse : [])
-        .filter(resource => String(resource?.type || '').toLowerCase() === 'qemu')
+        .filter(resource => ['qemu', 'lxc'].includes(String(resource?.type || '').toLowerCase()))
         .map(resource => {
           const nodeName = String(resource?.node || '').trim();
           const vmId = Number(resource?.vmid) || null;
-          const adopted = sourceIds.map(sourceId => adoptedByVm.get(`${sourceId}:${nodeName}:${vmId}`)).find(Boolean) || null;
+          const guestType = String(resource?.type || '').toLowerCase();
+          const adopted = sourceIds.map(sourceId => adoptedByVm.get(`${sourceId}:${nodeName}:${vmId}:${guestType}`)).find(Boolean) || null;
           return {
-            name: String(resource?.name || `VM ${resource?.vmid || '?'}`),
+            name: String(resource?.name || `${guestType === 'lxc' ? 'CT' : 'VM'} ${resource?.vmid || '?'}`),
+            guest_type: guestType,
             node_name: nodeName,
             vm_id: vmId,
             status: String(resource?.status || '').toLowerCase() || 'unknown',
@@ -1276,9 +1278,10 @@ override.tf.json
     db,
     router,
     listProxmoxConnectionRows,
-    loadProxmoxInfrastructure,
     publicProxmoxConnection,
     readSavedProxmoxConnection,
+    getProxmoxVms,
+    getLastRun,
   });
 
   registerWorkspaceRoutes({

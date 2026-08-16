@@ -654,7 +654,7 @@ test('a discovered Proxmox VM can be adopted through the browser without changin
     await expect(page.getByRole('heading', { name: 'E2E Inventory Platform' })).toBeVisible();
     // Adoption is an inventory action. The overview deliberately stays focused
     // on platform capacity and node health.
-    await page.getByRole('tab', { name: /virtual machines/i }).click();
+    await page.getByRole('tab', { name: /virtual guests/i }).click();
     await page.getByRole('button', { name: 'Manage in Fleet' }).click();
     const dialog = page.getByRole('dialog', { name: /adopt VM (?:into Fleet|as (?:a )?managed host)|VM in Fleet übernehmen/i });
     await expect(dialog).toBeVisible();
@@ -693,7 +693,10 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
       if (request.method === 'POST') return send('UPID:hierarchy-node:apt-update');
       return send([{ Package: 'pve-manager', Title: 'Proxmox VE Manager', Description: 'Proxmox VE management stack', Origin: 'Proxmox', OldVersion: '8.4.1', Version: '8.4.2', Priority: 'optional', Section: 'admin', Arch: 'amd64' }]);
     }
-    if (url.pathname === '/api2/json/cluster/resources') return send([{ type: 'qemu', node: 'hierarchy-node', vmid: 208, name: 'hierarchy-vm', status: 'running', maxcpu: 2, mem: 1024, maxmem: 2048 }]);
+    if (url.pathname === '/api2/json/cluster/resources') return send([
+      { type: 'qemu', node: 'hierarchy-node', vmid: 208, name: 'hierarchy-vm', status: 'running', maxcpu: 2, mem: 1024, maxmem: 2048 },
+      { type: 'lxc', node: 'hierarchy-node', vmid: 210, name: 'hierarchy-ct', status: 'running', maxcpu: 1, mem: 512, maxmem: 1024 },
+    ]);
     if (url.pathname === '/api2/json/nodes/hierarchy-node/storage') return send([]);
     response.statusCode = 404;
     response.end(JSON.stringify({ data: null }));
@@ -782,9 +785,12 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
       page.waitForResponse(response => response.url().includes('/updates/refresh') && response.request().method() === 'POST' && response.status() === 202),
       page.getByRole('button', { name: 'Refresh catalog' }).click(),
     ]);
-    await page.getByRole('tab', { name: /virtual machines/i }).click();
+    await page.getByRole('tab', { name: /virtual guests/i }).click();
     await expect(page.getByRole('link', { name: 'hierarchy-vm', exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Manage in Fleet' })).toBeVisible();
+    const ctRow = page.getByRole('row', { name: /hierarchy-ct/i });
+    await expect(ctRow).toBeVisible();
+    await expect(ctRow).toContainText('CT');
+    await expect(ctRow.getByRole('button', { name: 'Manage in Fleet' })).toBeVisible();
   } finally {
     if (fleetServerId) await page.evaluate(async (id) => {
       const token = localStorage.getItem('shipyard_token');
@@ -828,7 +834,7 @@ test('a Proxmox VM keeps configuration and tasks in distinct object tabs', async
 
     await page.goto('/infrastructure');
     await page.getByRole('link', { name: 'E2E Object Platform', exact: true }).click();
-    await page.getByRole('tab', { name: /virtual machines/i }).click();
+    await page.getByRole('tab', { name: /virtual guests/i }).click();
     await page.getByRole('link', { name: 'object-vm', exact: true }).click();
     await expect(page.getByText('Virtual machine', { exact: true }).first()).toBeVisible();
     await expect(page.getByRole('tab', { name: /configuration/i })).toBeVisible();

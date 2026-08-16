@@ -58,6 +58,7 @@ interface VmInfo {
   name: string;
   node_name: string;
   vm_id: number;
+  guest_type?: "qemu" | "lxc";
   status: string;
   mem: number;
   maxmem: number;
@@ -235,8 +236,8 @@ export function InfrastructurePage() {
         title="Virtual infrastructure"
         description={
           clusters.length
-            ? `${totals.clusters} platform${totals.clusters === 1 ? "" : "s"} · ${totals.onlineNodes} / ${totals.nodes} nodes reachable · ${totals.online} / ${totals.vms} virtual machines running${standaloneHosts.length ? ` · ${standaloneHosts.length} external managed hosts` : ""}`
-            : "Read-only platform inventory for connected clusters, nodes, datastores, and virtual machines."
+            ? `${totals.clusters} platform${totals.clusters === 1 ? "" : "s"} · ${totals.onlineNodes} / ${totals.nodes} nodes reachable · ${totals.online} / ${totals.vms} virtual guests running${standaloneHosts.length ? ` · ${standaloneHosts.length} external managed hosts` : ""}`
+            : "Read-only platform inventory for connected clusters, nodes, datastores, VMs, and LXC containers."
         }
         actions={
           <>
@@ -903,7 +904,7 @@ function PlatformInventory({ clusters }: { clusters: Cluster[] }) {
                     value={`${metrics.onlineNodes} / ${cluster.nodes.length} reachable`}
                   />
                   <InventoryValue
-                    label="VMs"
+                    label="Guests"
                     value={`${metrics.running} / ${cluster.vms.length} running`}
                   />
                   <InventoryValue
@@ -933,7 +934,7 @@ function PlatformInventory({ clusters }: { clusters: Cluster[] }) {
                 <th>Platform</th>
                 <th>Status</th>
                 <th>Nodes</th>
-                <th>Virtual machines</th>
+                <th>Virtual guests</th>
                 <th>CPU</th>
                 <th>Memory</th>
                 <th>ZFS-Datastore</th>

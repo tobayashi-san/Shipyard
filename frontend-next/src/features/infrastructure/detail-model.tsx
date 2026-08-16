@@ -52,6 +52,7 @@ export interface Vm {
   name: string;
   node_name: string;
   vm_id: number;
+  guest_type?: "qemu" | "lxc";
   status: string;
   maxcpu: number;
   mem: number;
@@ -59,6 +60,9 @@ export interface Vm {
   disk: number;
   maxdisk: number;
   fleet_server_id?: string | null;
+}
+export function guestKind(vm: Pick<Vm, "guest_type">) {
+  return vm.guest_type === "lxc" ? "CT" : "VM";
 }
 export interface Cluster {
   id: string;
@@ -401,4 +405,3 @@ export function ObjectInfo({
     </div>
   );
 }
-

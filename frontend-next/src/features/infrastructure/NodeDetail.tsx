@@ -167,7 +167,7 @@ export function NodePage({
           </TabsTrigger>
           <TabsTrigger value="vms">
             <Boxes className="h-4 w-4" />
-            Virtual machines{" "}
+            Virtual guests{" "}
             <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">
               {vms.length}
             </span>

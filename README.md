@@ -90,6 +90,7 @@ stale whenever the console design changes.
 - **SSH Key Management** — auto-generate Ed25519, deploy via UI, AES-256-GCM encryption at rest
 - **Notifications** — webhooks (Discord, Slack) and SMTP email alerts
 - **Auth & Security** — JWT, host- and capability-scoped RBAC, custom roles, TOTP/2FA, audit log, rate limiting, and HTTPS
+- **Proxmox inventory** — discover QEMU VMs and LXC containers, inspect configuration and snapshots, run power actions, and adopt either guest type as a managed Linux host
 - **Deployments** — environment-scoped OpenTofu plans, reviewed-plan Apply, drift checks, encrypted local-state recovery, run locking, and Proxmox VM blueprints
 - **Plugins** — hot-reloadable extensions with scoped UI and API integration
 - **UI** — English, light/dark/system theme, white-label support

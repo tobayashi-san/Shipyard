@@ -49,6 +49,7 @@ interface Vm {
   name: string;
   node_name: string;
   vm_id: number;
+  guest_type?: "qemu" | "lxc";
   status: string;
   cpu: number;
   maxcpu: number;
@@ -101,6 +102,7 @@ interface AuditEvent {
   user?: string;
 }
 interface VmConfiguration {
+  guest_type?: "qemu" | "lxc";
   hardware?: {
     sockets?: number;
     cores?: number;
@@ -109,7 +111,7 @@ interface VmConfiguration {
     bios?: string | null;
     machine?: string | null;
     scsi_controller?: string | null;
-    agent_enabled?: boolean;
+    agent_enabled?: boolean | null;
     boot_order?: string | null;
   };
   disks?: Array<{
@@ -444,6 +446,7 @@ function VmObjectSummary({
   const network = primaryNetwork
     ? `${primaryNetwork.bridge || "No bridge"}${primaryNetwork.vlan_id ? ` · VLAN ${primaryNetwork.vlan_id}` : ""}`
     : "Not reported";
+  const kind = vm.guest_type === "lxc" ? "CT" : "VM";
 
   return (
     <Card className="console-object-summary">
@@ -452,7 +455,7 @@ function VmObjectSummary({
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm font-semibold">
               <Server className="h-4 w-4 text-muted-foreground" />
-              Virtual machine
+              {vm.guest_type === "lxc" ? "LXC container" : "Virtual machine"}
             </div>
             {loading && (
               <span className="text-xs text-muted-foreground">
@@ -462,7 +465,7 @@ function VmObjectSummary({
           </div>
           <div className="console-object-info-grid">
             <ObjectInfo label="Node" value={vm.node_name} mono />
-            <ObjectInfo label="VM-ID" value={vm.vm_id} mono />
+            <ObjectInfo label={`${kind}-ID`} value={vm.vm_id} mono />
             <ObjectInfo label="Platform" value={platformName} />
             <ObjectInfo
               label="Management"
@@ -473,7 +476,7 @@ function VmObjectSummary({
               value={hardware?.os_type || "Not reported"}
               mono
             />
-            <ObjectInfo
+            {vm.guest_type !== "lxc" && <ObjectInfo
               label="QEMU-Agent"
               value={
                 hardware
@@ -482,7 +485,7 @@ function VmObjectSummary({
                     : "Not enabled"
                   : "Not reported"
               }
-            />
+            />}
             <ObjectInfo
               label="IP address"
               value={primaryIp?.ipv4 || "DHCP / not reported"}
@@ -879,12 +882,12 @@ export function ProxmoxVmDetailPage() {
     mutationFn: (action: string) => {
       if (!apiRoot)
         throw new Error(
-          "No platform connection is configured for this VM.",
+          "No platform connection is configured for this guest.",
         );
       return apiFetch(`${apiRoot}/power`, { method: "POST", body: { action } });
     },
     onSuccess: (_data, action) => {
-      showToast(`VM action “${action}” was sent to Proxmox.`, "success");
+      showToast(`${vm?.guest_type === "lxc" ? "CT" : "VM"} action “${action}” was sent to Proxmox.`, "success");
       setPowerAction(null);
       invalidate();
     },
@@ -894,7 +897,7 @@ export function ProxmoxVmDetailPage() {
     mutationFn: () => {
       if (!apiRoot)
         throw new Error(
-          "No platform connection is configured for this VM.",
+          "No platform connection is configured for this guest.",
         );
       return apiFetch(`${apiRoot}/snapshots`, {
         method: "POST",
@@ -914,7 +917,7 @@ export function ProxmoxVmDetailPage() {
     mutationFn: (snapshot: Snapshot) => {
       if (!apiRoot)
         throw new Error(
-          "No platform connection is configured for this VM.",
+          "No platform connection is configured for this guest.",
         );
       return apiFetch(
         `${apiRoot}/snapshots/${encodeURIComponent(snapshot.name)}`,
@@ -940,8 +943,8 @@ export function ProxmoxVmDetailPage() {
     return (
       <EmptyState
         icon={<Database className="h-5 w-5" />}
-        title="Proxmox VM not found"
-        description="The inventory changed or the virtual machine is no longer present on this platform."
+        title="Proxmox guest not found"
+        description="The inventory changed or the virtual guest is no longer present on this platform."
         action={
           <Button asChild variant="outline">
             <Link to="/infrastructure">
@@ -963,19 +966,20 @@ export function ProxmoxVmDetailPage() {
     stop: "Stop immediately",
   };
   const platformName = cluster.connections?.[0]?.name || "Proxmox";
+  const kind = vm.guest_type === "lxc" ? "CT" : "VM";
   const isRunning = vm.status === "running";
   const isStopped = vm.status === "stopped";
   return (
     <div className="space-y-5">
       <PageHeader
         title={vm.name}
-        eyebrow="Virtual machine"
+        eyebrow={vm.guest_type === "lxc" ? "LXC container" : "Virtual machine"}
         badge={
           <StatusBadge tone={tone(vm.status)} dot>
             {statusLabel(vm.status)}
           </StatusBadge>
         }
-        description={`${platformName} · ${vm.node_name} · VM-ID ${vm.vm_id}`}
+        description={`${platformName} · ${vm.node_name} · ${kind}-ID ${vm.vm_id}`}
         breadcrumbs={
           <>
             <Link
@@ -1051,7 +1055,7 @@ export function ProxmoxVmDetailPage() {
               </Button>
             )}
             {canControl && (
-              <OverflowMenu title="More VM actions" width="w-64">
+              <OverflowMenu title={`More ${kind} actions`} width="w-64">
                 <OverflowItem
                   icon={Square}
                   disabled={power.isPending || !isRunning}
@@ -1099,7 +1103,7 @@ export function ProxmoxVmDetailPage() {
         loading={configuration.isLoading}
       />
       <Tabs value={vmTabs.value} onValueChange={vmTabs.onValueChange} className="space-y-4">
-        <TabsList aria-label="VM sections" className="console-tabs">
+        <TabsList aria-label={`${kind} sections`} className="console-tabs">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="configuration">
             <Server className="h-4 w-4" />
@@ -1132,7 +1136,7 @@ export function ProxmoxVmDetailPage() {
                 </CardTitle>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Connections, declaration, and management for this virtual
-                  machine.
+                  guest.
                 </p>
               </CardHeader>
               <CardContent className="p-0">
@@ -1154,7 +1158,7 @@ export function ProxmoxVmDetailPage() {
                       <p className="mt-1 text-xs text-muted-foreground">
                         {adoptedServer
                           ? "SSH, updates, and playbooks are available through Fleet."
-                          : "The VM remains in platform inventory until it is explicitly adopted."}
+                          : `The ${kind} remains in platform inventory until it is explicitly adopted.`}
                       </p>
                       {adoptedServer && (
                         <Button
@@ -1208,7 +1212,7 @@ export function ProxmoxVmDetailPage() {
                         </div>
                       ) : (
                         <p className="mt-2 text-xs text-muted-foreground">
-                          No OpenTofu deployment defines this VM.
+                          {vm.guest_type === "lxc" ? "LXC containers are inventory-managed and are not OpenTofu VM deployments." : "No OpenTofu deployment defines this VM."}
                         </p>
                       )}
                     </section>
@@ -1374,11 +1378,11 @@ export function ProxmoxVmDetailPage() {
       <ConfirmDialog
         open={Boolean(powerAction)}
         onOpenChange={(open) => !open && setPowerAction(null)}
-        title={`${powerAction ? powerLabel[powerAction] : "VM action"}?`}
+        title={`${powerAction ? powerLabel[powerAction] : `${kind} action`}?`}
         description={
           powerAction === "stop" ? (
             <>
-              The VM <strong>{vm.name}</strong> will be powered off immediately.
+              The {kind} <strong>{vm.name}</strong> will be powered off immediately.
               Unsaved guest data may be lost.
             </>
           ) : (

@@ -4,13 +4,12 @@ const net = require('net');
 const { randomUUID } = require('crypto');
 const log = require('../../../utils/logger').child('features:opentofu:platforms');
 const cryptoUtil = require('../../../utils/crypto');
-const { can, filterServers, getPermissions } = require('../../../utils/permissions');
-const { PROXMOX_IDENTIFIER_RE, extractProxmoxGuestIpv4, extractProxmoxGuestNetworkRecords, ipv4Number, subnetContainsIpv4 } = require('../proxmox-blueprints');
+const { can, getPermissions } = require('../../../utils/permissions');
+const { PROXMOX_IDENTIFIER_RE, extractProxmoxGuestNetworkRecords, extractProxmoxLxcNetworkRecords, ipv4Number, subnetContainsIpv4 } = require('../proxmox-blueprints');
 const { createProxmoxConnection, requestProxmoxApi } = require('../proxmox-client');
-const { removeOrphanedServerMappings } = require('../managed-servers');
 
-/** Register platform sources, inventory actions, updates and VM adoption. */
-function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadProxmoxInfrastructure, publicProxmoxConnection, readSavedProxmoxConnection }) {
+/** Register platform sources, inventory actions, updates and guest adoption. */
+function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, publicProxmoxConnection, readSavedProxmoxConnection, getProxmoxVms, getLastRun }) {
   router.get('/proxmox-connections', (req, res) => {
     const environmentId = String(req.query.environment_id || '').trim();
     if (!environmentId) return res.status(400).json({ error: 'environment_id is required' });
@@ -109,9 +108,38 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
     } catch (error) { res.status(error.status || 502).json({ error: error.message || 'Could not refresh the Proxmox update catalog.' }); }
   });
   
-  // Resolve a VM from the live Proxmox inventory before running an operation.
+  const guestApiPath = (guest, suffix = '') => `/nodes/${encodeURIComponent(guest.node_name)}/${guest.guest_type}/${guest.vm_id}${suffix}`;
+
+  async function getGuestNetworkRecords(connection, guest) {
+    if (guest.guest_type === 'lxc') {
+      try {
+        const payload = await requestProxmoxApi(connection, guestApiPath(guest, '/interfaces'));
+        const records = extractProxmoxLxcNetworkRecords(payload);
+        if (records.length) return records;
+      } catch {
+        // A stopped CT has no live interfaces. Its static netX configuration
+        // can still provide a usable address without starting the guest.
+      }
+      const config = await requestProxmoxApi(connection, guestApiPath(guest, '/config'));
+      const interfaces = Object.entries(config && typeof config === 'object' ? config : {})
+        .filter(([key, value]) => /^net\d+$/.test(key) && typeof value === 'string')
+        .map(([name, value]) => {
+          const options = String(value).split(',').reduce((result, item) => {
+            const separator = item.indexOf('=');
+            if (separator > 0) result[item.slice(0, separator)] = item.slice(separator + 1);
+            return result;
+          }, {});
+          return { name: options.name || name, inet: options.ip || '', hwaddr: options.hwaddr || '' };
+        });
+      return extractProxmoxLxcNetworkRecords(interfaces);
+    }
+    const payload = await requestProxmoxApi(connection, guestApiPath(guest, '/agent/network-get-interfaces'));
+    return extractProxmoxGuestNetworkRecords(payload);
+  }
+
+  // Resolve a guest from the live Proxmox inventory before running an operation.
   // The browser never supplies a URL or credentials; it may only reference a
-  // configured connection, node and VM-ID.  Looking up the VM again prevents a
+  // configured connection, node and guest ID. Looking up the guest again prevents a
   // stale UI or handcrafted request from targeting a different object.
   async function getInventoryVmTarget(connectionId, nodeName, vmId, req, { requireEdit = false, requirePower = false } = {}) {
     const permissions = getPermissions(req.user);
@@ -125,16 +153,17 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
     const safeNodeName = String(nodeName || '').trim();
     const safeVmId = Number.parseInt(String(vmId || ''), 10);
     if (!safeConnectionId || !safeNodeName || !PROXMOX_IDENTIFIER_RE.test(safeNodeName) || !Number.isInteger(safeVmId) || safeVmId <= 0) {
-      const error = new Error('Verbindung, Node und VM-ID sind erforderlich.'); error.status = 400; throw error;
+      const error = new Error('Connection, node and guest ID are required.'); error.status = 400; throw error;
     }
     const { source, connection } = getProxmoxConnectionSource(safeConnectionId);
     const resources = await requestProxmoxApi(connection, '/cluster/resources?type=vm');
     const resource = (Array.isArray(resources) ? resources : []).find(item =>
-      String(item?.type || '').toLowerCase() === 'qemu' && String(item?.node || '') === safeNodeName && Number(item?.vmid) === safeVmId);
+      ['qemu', 'lxc'].includes(String(item?.type || '').toLowerCase()) && String(item?.node || '') === safeNodeName && Number(item?.vmid) === safeVmId);
     if (!resource) {
-      const error = new Error('The virtual machine was not found on this Proxmox platform.'); error.status = 404; throw error;
+      const error = new Error('The guest was not found on this Proxmox platform.'); error.status = 404; throw error;
     }
-    return { source, connection, vm: { name: String(resource.name || `VM ${safeVmId}`), node_name: safeNodeName, vm_id: safeVmId } };
+    const guestType = String(resource.type).toLowerCase();
+    return { source, connection, vm: { name: String(resource.name || `${guestType === 'lxc' ? 'CT' : 'VM'} ${safeVmId}`), node_name: safeNodeName, vm_id: safeVmId, guest_type: guestType } };
   }
   
   function snapshotNameOrError(value) {
@@ -148,8 +177,8 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
   router.get('/proxmox-connections/:connectionId/vms/:nodeName/:vmId/snapshots', async (req, res) => {
     try {
       const target = await getInventoryVmTarget(req.params.connectionId, req.params.nodeName, req.params.vmId, req);
-      const snapshots = await requestProxmoxApi(target.connection, `/nodes/${encodeURIComponent(target.vm.node_name)}/qemu/${target.vm.vm_id}/snapshot`);
-      res.json({ connection_id: target.source.id, node_name: target.vm.node_name, vm_id: target.vm.vm_id, snapshots: Array.isArray(snapshots) ? snapshots.filter(snapshot => snapshot?.name !== 'current') : [] });
+      const snapshots = await requestProxmoxApi(target.connection, guestApiPath(target.vm, '/snapshot'));
+      res.json({ connection_id: target.source.id, node_name: target.vm.node_name, vm_id: target.vm.vm_id, guest_type: target.vm.guest_type, snapshots: Array.isArray(snapshots) ? snapshots.filter(snapshot => snapshot?.name !== 'current') : [] });
     } catch (error) { res.status(error.status || 502).json({ error: error.message || 'Snapshots could not be loaded.' }); }
   });
   
@@ -171,7 +200,7 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
         WHERE proxmox_connection_id = ?
         ORDER BY name COLLATE NOCASE
       `).all(target.source.id);
-      const deployments = workspaces.flatMap(workspace => getProxmoxVms(workspace.id)
+      const deployments = target.vm.guest_type === 'lxc' ? [] : workspaces.flatMap(workspace => getProxmoxVms(workspace.id)
         .filter(vm => vm.node_name === target.vm.node_name && Number(vm.vm_id) === target.vm.vm_id)
         .map(vm => {
           const resourceKey = `resource:proxmox_virtual_environment_vm.${vm.name}`;
@@ -195,6 +224,7 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
         connection_id: target.source.id,
         node_name: target.vm.node_name,
         vm_id: target.vm.vm_id,
+        guest_type: target.vm.guest_type,
         adopted_server: adopted,
         deployments,
       });
@@ -208,7 +238,7 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
   router.get('/proxmox-connections/:connectionId/vms/:nodeName/:vmId/configuration', async (req, res) => {
     try {
       const target = await getInventoryVmTarget(req.params.connectionId, req.params.nodeName, req.params.vmId, req);
-      const config = await requestProxmoxApi(target.connection, `/nodes/${encodeURIComponent(target.vm.node_name)}/qemu/${target.vm.vm_id}/config`);
+      const config = await requestProxmoxApi(target.connection, guestApiPath(target.vm, '/config'));
       const source = config && typeof config === 'object' ? config : {};
       const parseOptions = (value) => String(value || '').split(',').reduce((result, item) => {
         const separator = item.indexOf('=');
@@ -216,7 +246,7 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
         return result;
       }, {});
       const disks = Object.entries(source)
-        .filter(([key, value]) => /^(scsi|virtio|sata|ide)\d+$/.test(key) && typeof value === 'string')
+        .filter(([key, value]) => (target.vm.guest_type === 'lxc' ? /^(rootfs|mp\d+)$/.test(key) : /^(scsi|virtio|sata|ide)\d+$/.test(key)) && typeof value === 'string')
         .map(([bus, value]) => {
           const options = parseOptions(value);
           const storage = String(value).split(',')[0] || '—';
@@ -228,15 +258,15 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
           const options = parseOptions(value);
           return {
             interface: interfaceName,
-            model: String(value).split(',')[0] || 'virtio',
+            model: target.vm.guest_type === 'lxc' ? (options.type || 'veth') : (String(value).split(',')[0] || 'virtio'),
             bridge: options.bridge || null,
             vlan_id: options.tag || null,
-            mac_address: options.virtio || options.e1000 || options.vmbr || null,
+            mac_address: options.virtio || options.e1000 || options.hwaddr || null,
             firewall: options.firewall === '1',
           };
         });
       const ipConfig = Object.entries(source)
-        .filter(([key, value]) => /^ipconfig\d+$/.test(key) && typeof value === 'string')
+        .filter(([key, value]) => (target.vm.guest_type === 'lxc' ? /^net\d+$/.test(key) : /^ipconfig\d+$/.test(key)) && typeof value === 'string')
         .map(([interfaceName, value]) => {
           const options = parseOptions(value);
           return { interface: interfaceName.replace('ipconfig', 'net'), ipv4: options.ip || null, gateway: options.gw || null };
@@ -245,6 +275,7 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
         connection_id: target.source.id,
         node_name: target.vm.node_name,
         vm_id: target.vm.vm_id,
+        guest_type: target.vm.guest_type,
         hardware: {
           sockets: Number(source.sockets || 1),
           cores: Number(source.cores || 0),
@@ -253,12 +284,12 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
           bios: source.bios || null,
           machine: source.machine || null,
           scsi_controller: source.scsihw || null,
-          agent_enabled: String(source.agent || '').includes('enabled=1') || String(source.agent || '') === '1',
+          agent_enabled: target.vm.guest_type === 'lxc' ? null : (String(source.agent || '').includes('enabled=1') || String(source.agent || '') === '1'),
           boot_order: source.boot || null,
         },
         disks,
         networks,
-        guest: { username: source.ciuser || null, ip_config: ipConfig },
+        guest: { username: target.vm.guest_type === 'lxc' ? null : (source.ciuser || null), ip_config: ipConfig },
       });
     } catch (error) { res.status(error.status || 502).json({ error: error.message || 'VM configuration could not be loaded.' }); }
   });
@@ -268,7 +299,9 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
       const name = snapshotNameOrError(req.body?.name);
       const description = String(req.body?.description || '').trim().slice(0, 512);
       const target = await getInventoryVmTarget(req.params.connectionId, req.params.nodeName, req.params.vmId, req, { requireEdit: true });
-      const task = await requestProxmoxApi(target.connection, `/nodes/${encodeURIComponent(target.vm.node_name)}/qemu/${target.vm.vm_id}/snapshot`, { method: 'POST', payload: { snapname: name, description, vmstate: 1 } });
+      const payload = { snapname: name, description };
+      if (target.vm.guest_type === 'qemu') payload.vmstate = 1;
+      const task = await requestProxmoxApi(target.connection, guestApiPath(target.vm, '/snapshot'), { method: 'POST', payload });
       db.auditLog.write('infrastructure.snapshot_create', `source=${target.source.name} vm=${target.vm.name} vm_id=${target.vm.vm_id} snapshot=${name}`, req.ip, true, req.user?.username || null);
       res.status(202).json({ success: true, task, name });
     } catch (error) { res.status(error.status || 502).json({ error: error.message || 'The snapshot could not be created.' }); }
@@ -278,7 +311,7 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
     try {
       const name = snapshotNameOrError(req.params.snapshotName);
       const target = await getInventoryVmTarget(req.params.connectionId, req.params.nodeName, req.params.vmId, req, { requireEdit: true });
-      const task = await requestProxmoxApi(target.connection, `/nodes/${encodeURIComponent(target.vm.node_name)}/qemu/${target.vm.vm_id}/snapshot/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      const task = await requestProxmoxApi(target.connection, guestApiPath(target.vm, `/snapshot/${encodeURIComponent(name)}`), { method: 'DELETE' });
       db.auditLog.write('infrastructure.snapshot_delete', `source=${target.source.name} vm=${target.vm.name} vm_id=${target.vm.vm_id} snapshot=${name}`, req.ip, true, req.user?.username || null);
       res.status(202).json({ success: true, task, name });
     } catch (error) { res.status(error.status || 502).json({ error: error.message || 'The snapshot could not be deleted.' }); }
@@ -289,7 +322,7 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
     if (!['start', 'shutdown', 'reboot', 'stop'].includes(action)) return res.status(400).json({ error: 'Invalid Proxmox action.' });
     try {
       const target = await getInventoryVmTarget(req.params.connectionId, req.params.nodeName, req.params.vmId, req, { requireEdit: true, requirePower: true });
-      const task = await requestProxmoxApi(target.connection, `/nodes/${encodeURIComponent(target.vm.node_name)}/qemu/${target.vm.vm_id}/status/${action}`, { method: 'POST' });
+      const task = await requestProxmoxApi(target.connection, guestApiPath(target.vm, `/status/${action}`), { method: 'POST' });
       db.auditLog.write('infrastructure.vm_power', `action=${action} source=${target.source.name} vm=${target.vm.name} vm_id=${target.vm.vm_id}`, req.ip, true, req.user?.username || null);
       res.status(202).json({ success: true, action, task });
     } catch (error) { res.status(error.status || 502).json({ error: error.message || 'The Proxmox action could not be started.' }); }
@@ -300,10 +333,9 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
     try {
       const nodeName = String(req.query.node || '').trim();
       const vmId = Number.parseInt(String(req.query.vm_id || ''), 10);
-      if (!nodeName || !PROXMOX_IDENTIFIER_RE.test(nodeName) || !Number.isInteger(vmId) || vmId <= 0) return res.status(400).json({ error: 'Node und VM-ID sind erforderlich.' });
-      const { connection } = getProxmoxConnectionSource(req.params.id);
-      const payload = await requestProxmoxApi(connection, `/nodes/${encodeURIComponent(nodeName)}/qemu/${vmId}/agent/network-get-interfaces`);
-      res.json({ ip_address: extractProxmoxGuestIpv4(payload) || null });
+      const target = await getInventoryVmTarget(req.params.id, nodeName, vmId, req);
+      const records = await getGuestNetworkRecords(target.connection, target.vm);
+      res.json({ ip_address: records[0]?.address || null, guest_type: target.vm.guest_type });
     } catch (error) { res.status(error.status || 502).json({ error: error.message || 'The guest IP could not be read.' }); }
   });
   
@@ -319,7 +351,7 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
       const { source, connection } = getProxmoxConnectionSource(req.params.id);
       if (source.environment_id !== subnet.environment_id) return res.status(400).json({ error: 'The Proxmox connection and IPAM prefix must belong to the same environment.' });
       const resources = await requestProxmoxApi(connection, '/cluster/resources?type=vm');
-      const vms = (Array.isArray(resources) ? resources : []).filter(resource => String(resource?.type || '').toLowerCase() === 'qemu');
+      const vms = (Array.isArray(resources) ? resources : []).filter(resource => ['qemu', 'lxc'].includes(String(resource?.type || '').toLowerCase()));
       const mappedServers = new Map(db.db.prepare('SELECT server_id, node_name, vm_id FROM proxmox_inventory_servers WHERE connection_id = ?').all(source.id).map(row => [`${row.node_name}:${row.vm_id}`, row.server_id]));
       const occupiedRanges = db.db.prepare('SELECT start_address, end_address FROM ipam_ip_ranges WHERE subnet_id = ?').all(subnet.id).map(row => ({ start: ipv4Number(row.start_address), end: ipv4Number(row.end_address) }));
       const getReservation = db.db.prepare('SELECT * FROM ipam_reservations WHERE subnet_id = ? AND address = ?');
@@ -333,10 +365,11 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
       for (const vm of vms) {
         const nodeName = String(vm?.node || '').trim();
         const vmId = Number(vm?.vmid);
+        const guestType = String(vm?.type || '').toLowerCase();
         if (!nodeName || !Number.isInteger(vmId)) { stats.skipped += 1; continue; }
         try {
-          const payload = await requestProxmoxApi(connection, `/nodes/${encodeURIComponent(nodeName)}/qemu/${vmId}/agent/network-get-interfaces`);
-          const records = extractProxmoxGuestNetworkRecords(payload).filter(record => subnetContainsIpv4(subnet.cidr, record.address));
+          const records = (await getGuestNetworkRecords(connection, { node_name: nodeName, vm_id: vmId, guest_type: guestType }))
+            .filter(record => subnetContainsIpv4(subnet.cidr, record.address));
           for (const record of records) {
             const address = record.address;
             const macAddress = record.mac_address;
@@ -345,7 +378,7 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
             if (number === null || occupiedRanges.some(range => range.start !== null && range.end !== null && number >= range.start && number <= range.end)) { stats.skipped += 1; continue; }
             const sourceRef = `${source.id}:${nodeName}:${vmId}`;
             const existing = getReservation.get(subnet.id, address);
-            const hostname = String(vm?.name || `VM ${vmId}`).slice(0, 100);
+            const hostname = String(vm?.name || `${guestType === 'lxc' ? 'CT' : 'VM'} ${vmId}`).slice(0, 100);
             const serverId = mappedServers.get(`${nodeName}:${vmId}`) || null;
             if (number === ipv4Number(subnet.gateway)) {
               insertConflict.run(randomUUID(), source.environment_id, subnet.id, source.id, address, hostname, macAddress, 'Address is configured as the prefix gateway', null);
@@ -391,15 +424,16 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
       const sshUser = String(body.ssh_user || 'root').trim().slice(0, 100) || 'root';
       const sshPort = Number.parseInt(String(body.ssh_port || 22), 10);
       const groupId = String(body.group_id || '').trim() || null;
-      if (!nodeName || !PROXMOX_IDENTIFIER_RE.test(nodeName) || !Number.isInteger(vmId) || vmId <= 0 || !name) return res.status(400).json({ error: 'Name, Node und VM-ID sind erforderlich.' });
+      if (!nodeName || !PROXMOX_IDENTIFIER_RE.test(nodeName) || !Number.isInteger(vmId) || vmId <= 0 || !name) return res.status(400).json({ error: 'Name, node and guest ID are required.' });
       if (!Number.isInteger(sshPort) || sshPort < 1 || sshPort > 65535) return res.status(400).json({ error: 'Invalid SSH port.' });
-      const { source, connection } = getProxmoxConnectionSource(req.params.id);
+      const target = await getInventoryVmTarget(req.params.id, nodeName, vmId, req, { requireEdit: true });
+      const { source, connection } = target;
       let ipAddress = String(body.ip_address || '').trim();
       if (!ipAddress) {
-        const payload = await requestProxmoxApi(connection, `/nodes/${encodeURIComponent(nodeName)}/qemu/${vmId}/agent/network-get-interfaces`);
-        ipAddress = extractProxmoxGuestIpv4(payload) || '';
+        const records = await getGuestNetworkRecords(connection, target.vm);
+        ipAddress = records[0]?.address || '';
       }
-      if (!ipAddress || net.isIP(ipAddress) !== 4) return res.status(400).json({ error: 'No usable IPv4 address was found. Enter one manually or enable the QEMU Guest Agent.' });
+      if (!ipAddress || net.isIP(ipAddress) !== 4) return res.status(400).json({ error: `No usable IPv4 address was found. Enter one manually${target.vm.guest_type === 'qemu' ? ' or enable the QEMU Guest Agent' : ''}.` });
       if (groupId) {
         const group = db.db.prepare('SELECT environment_id FROM server_groups WHERE id = ?').get(groupId);
         if (!group) return res.status(400).json({ error: 'The selected folder does not exist.' });
@@ -407,10 +441,10 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, loadPro
       }
       const existing = db.db.prepare('SELECT * FROM servers WHERE environment_id = ? AND (ip_address = ? OR name = ?)').get(source.environment_id, ipAddress, name);
       if (existing) return res.status(409).json({ error: `A Fleet host with this name or IP already exists (${existing.name}).` });
-      const server = db.servers.create({ name, hostname: name, ip_address: ipAddress, ssh_port: sshPort, ssh_user: sshUser, environment_id: source.environment_id, tags: ['proxmox', `proxmox:${source.name}`] });
+      const server = db.servers.create({ name, hostname: name, ip_address: ipAddress, ssh_port: sshPort, ssh_user: sshUser, environment_id: source.environment_id, tags: ['proxmox', target.vm.guest_type, `proxmox:${source.name}`] });
       if (groupId) db.serverGroups.setServerGroup(server.id, groupId);
-      db.db.prepare('INSERT INTO proxmox_inventory_servers (server_id, connection_id, node_name, vm_id) VALUES (?, ?, ?, ?)').run(server.id, source.id, nodeName, vmId);
-      db.auditLog.write('infrastructure.vm_import', `source=${source.name} node=${nodeName} vm=${vmId} server=${server.name}`, req.ip, true, req.user?.username);
+      db.db.prepare('INSERT INTO proxmox_inventory_servers (server_id, connection_id, node_name, vm_id, guest_type) VALUES (?, ?, ?, ?, ?)').run(server.id, source.id, nodeName, vmId, target.vm.guest_type);
+      db.auditLog.write('infrastructure.vm_import', `source=${source.name} node=${nodeName} type=${target.vm.guest_type} vm=${vmId} server=${server.name}`, req.ip, true, req.user?.username);
       res.status(201).json({ success: true, server: db.servers.getById(server.id) });
     } catch (error) { res.status(error.status || 400).json({ error: error.message || 'The VM could not be adopted into Fleet.' }); }
   });
