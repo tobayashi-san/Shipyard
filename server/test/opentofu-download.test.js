@@ -8,7 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { PassThrough } = require('node:stream');
 const { test } = require('node:test');
-const { downloadFile } = require('../features/opentofu/proxmox-client');
+const { downloadFile, fetchOpenTofuReleases } = require('../features/opentofu/proxmox-client');
 
 function fakeRequest(responseFactory) {
   const request = new EventEmitter();
@@ -58,5 +58,29 @@ test('OpenTofu downloads reject insecure redirects without leaving a partial fil
   } finally {
     https.get = originalGet;
     try { fs.unlinkSync(destination); } catch {}
+  }
+});
+
+test('OpenTofu resolves the latest stable version without the GitHub REST API', async () => {
+  const originalGet = https.get;
+  let requestedOptions;
+  https.get = (options, callback) => {
+    requestedOptions = options;
+    return fakeRequest(() => {
+      const response = new PassThrough();
+      response.statusCode = 302;
+      response.headers = { location: 'https://github.com/opentofu/opentofu/releases/tag/v1.12.5' };
+      callback(response);
+      response.end();
+    });
+  };
+
+  try {
+    assert.deepEqual(await fetchOpenTofuReleases(), ['1.12.5']);
+    assert.equal(requestedOptions.hostname, 'github.com');
+    assert.equal(requestedOptions.method, 'HEAD');
+    assert.equal(requestedOptions.path, '/opentofu/opentofu/releases/latest');
+  } finally {
+    https.get = originalGet;
   }
 });

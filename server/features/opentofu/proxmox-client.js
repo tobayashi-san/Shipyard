@@ -7,7 +7,6 @@ const fs = require('fs');
 const DOWNLOAD_TIMEOUT_MS = 60_000;
 const MAX_DOWNLOAD_BYTES = 256 * 1024 * 1024;
 const RELEASES_TIMEOUT_MS = 20_000;
-const MAX_RELEASE_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 /** @typedef {import('./types').ProxmoxConnection} ProxmoxConnection */
 
@@ -69,38 +68,22 @@ function _downloadFile(url, dest, redirects = 0) {
 async function _fetchGitHubReleases() {
   return new Promise((resolve, reject) => {
     const options = {
-      hostname: 'api.github.com',
-      path: '/repos/opentofu/opentofu/releases?per_page=15',
+      hostname: 'github.com',
+      path: '/opentofu/opentofu/releases/latest',
+      method: 'HEAD',
       headers: { 'User-Agent': 'shipyard-lab-manager' },
     };
     const request = https.get(options, (res) => {
-      let data = '';
-      let received = 0;
-      if (res.statusCode !== 200) {
-        res.resume();
-        reject(new Error(`GitHub release API returned HTTP ${res.statusCode}.`));
+      res.resume();
+      const location = String(res.headers.location || '');
+      let pathname = '';
+      try { pathname = new URL(location, 'https://github.com').pathname; } catch {}
+      const match = pathname.match(/^\/opentofu\/opentofu\/releases\/tag\/v(\d+\.\d+\.\d+)$/);
+      if (res.statusCode >= 300 && res.statusCode < 400 && match) {
+        resolve([match[1]]);
         return;
       }
-      res.on('data', d => {
-        received += d.length;
-        if (received > MAX_RELEASE_RESPONSE_BYTES) {
-          res.destroy(new Error('GitHub release response is larger than the allowed limit.'));
-          return;
-        }
-        data += d;
-      });
-      res.on('end', () => {
-        try {
-          const list = JSON.parse(data);
-          if (!Array.isArray(list)) { reject(new Error(list.message || 'GitHub API error')); return; }
-          const versions = list
-            .filter(r => !r.prerelease && !r.draft)
-            .map(r => r.tag_name.replace(/^v/, ''))
-            .filter(v => /^\d+\.\d+\.\d+$/.test(v));
-          resolve(versions);
-        } catch (e) { reject(e); }
-      });
-      res.on('error', reject);
+      reject(new Error(`GitHub latest release lookup returned HTTP ${res.statusCode || 'unknown'}.`));
     });
     request.setTimeout(RELEASES_TIMEOUT_MS, () => request.destroy(new Error('GitHub release request timed out.')));
     request.on('error', reject);

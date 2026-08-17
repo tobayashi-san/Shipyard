@@ -1699,7 +1699,7 @@ override.tf.json
       const releases = await _fetchGitHubReleases();
       res.json({ releases });
     } catch (e) {
-      res.status(500).json({ error: e.message });
+      res.status(502).json({ error: `OpenTofu release service unavailable: ${e.message}` });
     }
   });
 
