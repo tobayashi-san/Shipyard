@@ -1,6 +1,6 @@
 {
   "name": "shipyard-server",
-  "version": "3.0.2",
+  "version": "3.0.3",
   "description": "Shipyard Backend API",
   "main": "index.js",
   "scripts": {
