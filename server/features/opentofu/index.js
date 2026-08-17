@@ -896,6 +896,11 @@ override.tf.json
       insecure: Boolean(row.insecure),
       api_token_configured: Boolean(row.api_token),
       ssh_public_key_configured: Boolean(row.ssh_public_key),
+      auto_sync_ipam: row.auto_sync_ipam === undefined ? true : Boolean(row.auto_sync_ipam),
+      sync_interval_min: Math.min(1440, Math.max(5, Number.parseInt(row.sync_interval_min, 10) || 15)),
+      last_ipam_synced_at: row.last_ipam_synced_at || null,
+      last_ipam_status: row.last_ipam_status || '',
+      last_ipam_error: row.last_ipam_error || '',
       created_at: row.created_at,
       updated_at: row.updated_at,
     };

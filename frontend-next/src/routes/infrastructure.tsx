@@ -149,6 +149,7 @@ export function InfrastructurePage() {
   const [connectionToDelete, setConnectionToDelete] =
     useState<ProxmoxConnection | null>(null);
   const isAdmin = hasCap(profile, "canManageDeploymentPlatforms");
+  const canSyncIpam = hasCap(profile, "canEditServers");
   const inventoryQuery = useQuery({
     queryKey: ["opentofu", "infrastructure", environmentId],
     queryFn: () =>
@@ -340,6 +341,7 @@ export function InfrastructurePage() {
             <ProxmoxConnectionsCard
               connections={connections}
               isAdmin={isAdmin}
+              canSyncIpam={canSyncIpam}
               onAdd={() => {
                 setConnectionToEdit(null);
                 setConnectionDialogOpen(true);
@@ -374,16 +376,58 @@ export function InfrastructurePage() {
 function ProxmoxConnectionsCard({
   connections,
   isAdmin,
+  canSyncIpam,
   onAdd,
   onEdit,
   onDelete,
 }: {
   connections: ProxmoxConnection[];
   isAdmin: boolean;
+  canSyncIpam: boolean;
   onAdd: () => void;
   onEdit: (connection: ProxmoxConnection) => void;
   onDelete: (connection: ProxmoxConnection) => void;
 }) {
+  const queryClient = useQueryClient();
+  const syncIpam = useMutation({
+    mutationFn: (connection: ProxmoxConnection) =>
+      apiFetch<{
+        prefixes: number;
+        discovered: number;
+        created: number;
+        updated: number;
+        conflicts: number;
+      }>(
+        `/opentofu/proxmox-connections/${encodeURIComponent(connection.id)}/sync-ipam`,
+        { method: "POST", body: {} },
+      ),
+    onSuccess: (result, connection) => {
+      showToast(
+        `${connection.name}: ${result.prefixes} network${result.prefixes === 1 ? "" : "s"} synchronized, ${result.created} added, ${result.updated} updated, ${result.conflicts} conflict${result.conflicts === 1 ? "" : "s"}.`,
+        result.conflicts ? "warning" : "success",
+      );
+      void queryClient.invalidateQueries({ queryKey: ["ipam"] });
+      void queryClient.invalidateQueries({
+        queryKey: [
+          "opentofu",
+          "proxmox-connections",
+          connection.environment_id,
+        ],
+      });
+    },
+    onError: (error: Error) => showToast(error.message, "error"),
+  });
+  const syncLabel = (connection: ProxmoxConnection) =>
+    connection.auto_sync_ipam
+      ? `Automatic · every ${connection.sync_interval_min} min`
+      : "Manual only";
+  const lastSyncLabel = (connection: ProxmoxConnection) => {
+    if (!connection.last_ipam_synced_at) return "Not synchronized yet";
+    const value = new Date(connection.last_ipam_synced_at);
+    return Number.isNaN(value.getTime())
+      ? "Last synchronization unknown"
+      : `Last ${value.toLocaleString()}`;
+  };
   return (
     <Card>
       <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 border-b bg-muted/15 py-3">
@@ -436,34 +480,56 @@ function ProxmoxConnectionsCard({
                     </StatusBadge>
                   </div>
                   <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                    <span>API access</span>
-                    <span>
-                      {connection.api_token_configured
-                        ? "Configured"
-                        : "Not configured"}
+                    <span>IPAM sync</span>
+                    <span className="text-right">
+                      {syncLabel(connection)}
+                      <span className="block">{lastSyncLabel(connection)}</span>
                     </span>
                   </div>
-                  {isAdmin && (
+                  {(isAdmin || canSyncIpam) && (
                     <div className="flex justify-end gap-1">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => onEdit(connection)}
-                      >
-                        <Pencil />
-                        Edit
-                      </Button>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => onDelete(connection)}
-                        aria-label={`Remove ${connection.name}`}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {canSyncIpam && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={syncIpam.isPending}
+                          onClick={() => syncIpam.mutate(connection)}
+                        >
+                          <RefreshCw
+                            className={
+                              syncIpam.isPending &&
+                              syncIpam.variables?.id === connection.id
+                                ? "animate-spin"
+                                : ""
+                            }
+                          />
+                          Sync now
+                        </Button>
+                      )}
+                      {isAdmin && (
+                        <>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => onEdit(connection)}
+                          >
+                            <Pencil />
+                            Edit
+                          </Button>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => onDelete(connection)}
+                            aria-label={`Remove ${connection.name}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -479,8 +545,8 @@ function ProxmoxConnectionsCard({
                     <th className="px-3">Platform</th>
                     <th className="px-3">Endpoint</th>
                     <th className="px-3">Access status</th>
-                    <th className="px-3">Usage</th>
-                    <th className="w-24 px-3 text-right">Action</th>
+                    <th className="px-3">IPAM sync</th>
+                    <th className="w-32 px-3 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -510,30 +576,66 @@ function ProxmoxConnectionsCard({
                         </StatusBadge>
                       </td>
                       <td className="px-3 text-xs text-muted-foreground">
-                        Inventory and deployments
+                        <div>{syncLabel(connection)}</div>
+                        <div
+                          className={
+                            connection.last_ipam_status === "failed"
+                              ? "text-destructive"
+                              : ""
+                          }
+                          title={connection.last_ipam_error || undefined}
+                        >
+                          {connection.last_ipam_status === "failed"
+                            ? "Last synchronization failed"
+                            : lastSyncLabel(connection)}
+                        </div>
                       </td>
                       <td className="px-3 text-right">
-                        {isAdmin ? (
+                        {isAdmin || canSyncIpam ? (
                           <div className="flex justify-end gap-1">
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => onEdit(connection)}
-                              aria-label={`Edit ${connection.name}`}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() => onDelete(connection)}
-                              aria-label={`Remove ${connection.name}`}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            {canSyncIpam && (
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                disabled={syncIpam.isPending}
+                                onClick={() => syncIpam.mutate(connection)}
+                                aria-label={`Synchronize ${connection.name} with IPAM now`}
+                                title="Synchronize all matching networks now"
+                              >
+                                <RefreshCw
+                                  className={
+                                    syncIpam.isPending &&
+                                    syncIpam.variables?.id === connection.id
+                                      ? "h-4 w-4 animate-spin"
+                                      : "h-4 w-4"
+                                  }
+                                />
+                              </Button>
+                            )}
+                            {isAdmin && (
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => onEdit(connection)}
+                                aria-label={`Edit ${connection.name}`}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {isAdmin && (
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => onDelete(connection)}
+                                aria-label={`Remove ${connection.name}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
                           </div>
                         ) : (
                           "—"

@@ -23,6 +23,11 @@ export interface ProxmoxConnection {
   insecure: boolean;
   api_token_configured: boolean;
   ssh_public_key_configured: boolean;
+  auto_sync_ipam: boolean;
+  sync_interval_min: number;
+  last_ipam_synced_at?: string | null;
+  last_ipam_status?: string;
+  last_ipam_error?: string;
 }
 
 export function ProxmoxConnectionDialog({
@@ -42,6 +47,8 @@ export function ProxmoxConnectionDialog({
   const [apiToken, setApiToken] = useState("");
   const [sshKey, setSshKey] = useState("");
   const [insecure, setInsecure] = useState(false);
+  const [autoSyncIpam, setAutoSyncIpam] = useState(true);
+  const [syncIntervalMin, setSyncIntervalMin] = useState("15");
   useEffect(() => {
     if (!open) return;
     setName(connection?.name || "");
@@ -49,6 +56,8 @@ export function ProxmoxConnectionDialog({
     setApiToken("");
     setSshKey("");
     setInsecure(Boolean(connection?.insecure));
+    setAutoSyncIpam(connection?.auto_sync_ipam ?? true);
+    setSyncIntervalMin(String(connection?.sync_interval_min || 15));
   }, [connection, open]);
   const save = useMutation({
     mutationFn: () =>
@@ -65,6 +74,8 @@ export function ProxmoxConnectionDialog({
             api_token: apiToken,
             ssh_public_key: sshKey,
             insecure,
+            auto_sync_ipam: autoSyncIpam,
+            sync_interval_min: Number(syncIntervalMin),
           },
         },
       ),
@@ -169,6 +180,39 @@ export function ProxmoxConnectionDialog({
             <p className="text-xs text-muted-foreground">
               Passed on as the default for new VM definitions on this platform.
             </p>
+          </div>
+          <div className="space-y-3 rounded-md border p-3">
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={autoSyncIpam}
+                onChange={(event) => setAutoSyncIpam(event.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="font-medium">Automatically synchronize IPAM</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  Discover Proxmox VM and container addresses in every matching
+                  network. Manual synchronization remains available.
+                </span>
+              </span>
+            </label>
+            <div className="space-y-1.5 pl-5">
+              <Label htmlFor="platform-sync-interval">Interval in minutes</Label>
+              <Input
+                id="platform-sync-interval"
+                type="number"
+                min={5}
+                max={1440}
+                required={autoSyncIpam}
+                disabled={!autoSyncIpam}
+                value={syncIntervalMin}
+                onChange={(event) => setSyncIntervalMin(event.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Between 5 minutes and 24 hours.
+              </p>
+            </div>
           </div>
           <label className="flex items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 p-3 text-sm">
             <input

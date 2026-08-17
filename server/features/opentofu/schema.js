@@ -31,11 +31,21 @@ function setupOpenTofuDatabase(database) {
       api_token      TEXT NOT NULL,
       insecure       INTEGER NOT NULL DEFAULT 0,
       ssh_public_key TEXT NOT NULL DEFAULT '',
+      auto_sync_ipam INTEGER NOT NULL DEFAULT 1,
+      sync_interval_min INTEGER NOT NULL DEFAULT 15,
+      last_ipam_synced_at TEXT,
+      last_ipam_status TEXT NOT NULL DEFAULT '',
+      last_ipam_error TEXT NOT NULL DEFAULT '',
       created_at     TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(environment_id, name)
     )
   `).run();
+  try { db.db.prepare('ALTER TABLE tofu_proxmox_connections ADD COLUMN auto_sync_ipam INTEGER NOT NULL DEFAULT 1').run(); } catch {}
+  try { db.db.prepare('ALTER TABLE tofu_proxmox_connections ADD COLUMN sync_interval_min INTEGER NOT NULL DEFAULT 15').run(); } catch {}
+  try { db.db.prepare('ALTER TABLE tofu_proxmox_connections ADD COLUMN last_ipam_synced_at TEXT').run(); } catch {}
+  try { db.db.prepare("ALTER TABLE tofu_proxmox_connections ADD COLUMN last_ipam_status TEXT NOT NULL DEFAULT ''").run(); } catch {}
+  try { db.db.prepare("ALTER TABLE tofu_proxmox_connections ADD COLUMN last_ipam_error TEXT NOT NULL DEFAULT ''").run(); } catch {}
   // Existing Proxmox guests can be adopted as Fleet hosts without becoming OpenTofu
   // resources. The mapping keeps Proxmox-only actions such as snapshots
   // available while preserving the VM's current configuration.

@@ -10,6 +10,9 @@ const { resolveTargets } = require("../utils/validate");
 const pullModeManager = require("./pull-mode-manager");
 const resourceAlerts = require("./resource-alerts");
 const { syncIpamSource } = require("../routes/ipam");
+const {
+  syncProxmoxIpam,
+} = require("../features/opentofu/proxmox-ipam-sync");
 
 // In-memory map: scheduleId -> cron task
 const jobs = new Map();
@@ -47,10 +50,11 @@ const DEFAULTS = {
   poll_image_updates_interval_min: "360",
   poll_custom_updates_enabled: "1",
   poll_custom_updates_interval_min: "360",
-  // This is the scheduler check cadence. Every source also has its own
-  // interval, so different DHCP controllers can refresh independently.
+  // Check due sources every minute. Every source still has its own interval
+  // (minimum five minutes), so arbitrary values do not get rounded to a
+  // five-minute scheduler boundary.
   poll_ipam_sources_enabled: "1",
-  poll_ipam_sources_interval_min: "5",
+  poll_ipam_sources_interval_min: "1",
 };
 
 function getPollingConfig() {
@@ -78,7 +82,7 @@ function getPollingConfig() {
     },
     ipamSources: {
       enabled: g("poll_ipam_sources_enabled") !== "0",
-      intervalMs: safeMs("poll_ipam_sources_interval_min", 5),
+      intervalMs: safeMs("poll_ipam_sources_interval_min", 1),
     },
   };
 }
@@ -114,16 +118,63 @@ async function pollIpamSources() {
       const last = Date.parse(source.last_synced_at || "");
       return !Number.isFinite(last) || now - last >= interval;
     });
-    const results = await Promise.allSettled(
-      due.map((source) => syncIpamSource(source, { actor: "scheduler" })),
+    const proxmoxTableExists = Boolean(
+      db.db
+        .prepare(
+          `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tofu_proxmox_connections'`,
+        )
+        .get(),
     );
-    const failed = results.filter(
+    const proxmoxConnections = proxmoxTableExists
+      ? db.db
+          .prepare(
+            `SELECT id, sync_interval_min, last_ipam_synced_at
+               FROM tofu_proxmox_connections
+              WHERE COALESCE(auto_sync_ipam, 1) = 1`,
+          )
+          .all()
+      : [];
+    const dueProxmox = proxmoxConnections.filter((connection) => {
+      const interval =
+        Math.min(
+          1440,
+          Math.max(
+            5,
+            Number.parseInt(connection.sync_interval_min, 10) || 15,
+          ),
+        ) *
+        60 *
+        1000;
+      const last = Date.parse(connection.last_ipam_synced_at || "");
+      return !Number.isFinite(last) || now - last >= interval;
+    });
+    const [sourceResults, proxmoxResults] = await Promise.all([
+      Promise.allSettled(
+        due.map((source) => syncIpamSource(source, { actor: "scheduler" })),
+      ),
+      Promise.allSettled(
+        dueProxmox.map((connection) =>
+          syncProxmoxIpam(connection.id, { actor: "scheduler" }),
+        ),
+      ),
+    ]);
+    const sourceFailed = sourceResults.filter(
       (result) => result.status === "rejected",
     ).length;
-    if (due.length) {
+    const proxmoxFailed = proxmoxResults.filter(
+      (result) => result.status === "rejected",
+    ).length;
+    if (due.length || dueProxmox.length) {
       broadcast({ type: "cache_updated", scope: "ipam" });
       log.info(
-        { configured: sources.length, synced: due.length - failed, failed },
+        {
+          sourcesConfigured: sources.length,
+          sourcesSynced: due.length - sourceFailed,
+          sourcesFailed: sourceFailed,
+          proxmoxConfigured: proxmoxConnections.length,
+          proxmoxSynced: dueProxmox.length - proxmoxFailed,
+          proxmoxFailed,
+        },
         "IPAM sources refreshed",
       );
     }

@@ -5,8 +5,13 @@ const { randomUUID } = require('crypto');
 const log = require('../../../utils/logger').child('features:opentofu:platforms');
 const cryptoUtil = require('../../../utils/crypto');
 const { can, getPermissions } = require('../../../utils/permissions');
-const { PROXMOX_IDENTIFIER_RE, extractProxmoxGuestNetworkRecords, extractProxmoxLxcNetworkRecords, ipv4Number, subnetContainsIpv4 } = require('../proxmox-blueprints');
+const { PROXMOX_IDENTIFIER_RE, extractProxmoxGuestNetworkRecords, extractProxmoxLxcNetworkRecords } = require('../proxmox-blueprints');
 const { createProxmoxConnection, requestProxmoxApi } = require('../proxmox-client');
+const { syncProxmoxIpam } = require('../proxmox-ipam-sync');
+
+function syncInterval(value, fallback = 15) {
+  return Math.min(1440, Math.max(5, Number.parseInt(value, 10) || fallback));
+}
 
 /** Register platform sources, inventory actions, updates and guest adoption. */
 function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, publicProxmoxConnection, readSavedProxmoxConnection, getProxmoxVms, getLastRun }) {
@@ -31,8 +36,8 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, publicP
     try { createProxmoxConnection(endpoint, token, body.insecure === true); } catch (error) { return res.status(400).json({ error: error.message }); }
     const id = randomUUID();
     try {
-      db.db.prepare('INSERT INTO tofu_proxmox_connections (id, environment_id, name, endpoint, api_token, insecure, ssh_public_key) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(id, environmentId, name, endpoint, cryptoUtil.encrypt(token), body.insecure === true ? 1 : 0, sshPublicKey ? cryptoUtil.encrypt(sshPublicKey) : '');
+      db.db.prepare('INSERT INTO tofu_proxmox_connections (id, environment_id, name, endpoint, api_token, insecure, ssh_public_key, auto_sync_ipam, sync_interval_min) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(id, environmentId, name, endpoint, cryptoUtil.encrypt(token), body.insecure === true ? 1 : 0, sshPublicKey ? cryptoUtil.encrypt(sshPublicKey) : '', body.auto_sync_ipam === false ? 0 : 1, syncInterval(body.sync_interval_min));
       res.status(201).json(publicProxmoxConnection(db.db.prepare('SELECT * FROM tofu_proxmox_connections WHERE id = ?').get(id)));
     } catch (error) { res.status(409).json({ error: error.message || 'Connection already exists' }); }
   });
@@ -46,11 +51,13 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, publicP
     const token = typeof body.api_token === 'string' && body.api_token.trim() ? body.api_token.trim() : null;
     if ((token || (typeof body.ssh_public_key === 'string' && body.ssh_public_key.trim())) && !cryptoUtil.isEncryptionAvailable()) return res.status(503).json({ error: 'SHIPYARD_KEY_SECRET is required before platform secrets can be stored.' });
     const insecure = body.insecure === undefined ? Boolean(existing.insecure) : body.insecure === true;
+    const autoSyncIpam = body.auto_sync_ipam === undefined ? Boolean(existing.auto_sync_ipam) : body.auto_sync_ipam === true;
+    const syncIntervalMin = syncInterval(body.sync_interval_min, existing.sync_interval_min);
     if (!name) return res.status(400).json({ error: 'Connection name is required' });
     try { createProxmoxConnection(endpoint, token || readSavedProxmoxConnection(existing).apiToken, insecure); } catch (error) { return res.status(400).json({ error: error.message }); }
     const sshKey = typeof body.ssh_public_key === 'string' && body.ssh_public_key.trim() ? cryptoUtil.encrypt(body.ssh_public_key.trim()) : existing.ssh_public_key;
-    db.db.prepare("UPDATE tofu_proxmox_connections SET name = ?, endpoint = ?, api_token = ?, insecure = ?, ssh_public_key = ?, updated_at = datetime('now') WHERE id = ?")
-      .run(name, endpoint, token ? cryptoUtil.encrypt(token) : existing.api_token, insecure ? 1 : 0, sshKey, existing.id);
+    db.db.prepare("UPDATE tofu_proxmox_connections SET name = ?, endpoint = ?, api_token = ?, insecure = ?, ssh_public_key = ?, auto_sync_ipam = ?, sync_interval_min = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(name, endpoint, token ? cryptoUtil.encrypt(token) : existing.api_token, insecure ? 1 : 0, sshKey, autoSyncIpam ? 1 : 0, syncIntervalMin, existing.id);
     res.json(publicProxmoxConnection(db.db.prepare('SELECT * FROM tofu_proxmox_connections WHERE id = ?').get(existing.id)));
   });
   
@@ -346,70 +353,7 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, publicP
     if (!can(getPermissions(req.user), 'canEditServers')) return res.status(403).json({ error: 'Permission denied' });
     try {
       const subnetId = String(req.body?.subnet_id || '').trim();
-      const subnet = db.db.prepare('SELECT * FROM ipam_subnets WHERE id = ?').get(subnetId);
-      if (!subnet) return res.status(404).json({ error: 'IPAM prefix not found.' });
-      const { source, connection } = getProxmoxConnectionSource(req.params.id);
-      if (source.environment_id !== subnet.environment_id) return res.status(400).json({ error: 'The Proxmox connection and IPAM prefix must belong to the same environment.' });
-      const resources = await requestProxmoxApi(connection, '/cluster/resources?type=vm');
-      const vms = (Array.isArray(resources) ? resources : []).filter(resource => ['qemu', 'lxc'].includes(String(resource?.type || '').toLowerCase()));
-      const mappedServers = new Map(db.db.prepare('SELECT server_id, node_name, vm_id FROM proxmox_inventory_servers WHERE connection_id = ?').all(source.id).map(row => [`${row.node_name}:${row.vm_id}`, row.server_id]));
-      const occupiedRanges = db.db.prepare('SELECT start_address, end_address FROM ipam_ip_ranges WHERE subnet_id = ?').all(subnet.id).map(row => ({ start: ipv4Number(row.start_address), end: ipv4Number(row.end_address) }));
-      const getReservation = db.db.prepare('SELECT * FROM ipam_reservations WHERE subnet_id = ? AND address = ?');
-      const insertReservation = db.db.prepare('INSERT INTO ipam_reservations (id, subnet_id, address, hostname, server_id, mac_address, status, role, description, source_type, source_ref, last_synced_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime(\'now\'))');
-      const updateReservation = db.db.prepare('UPDATE ipam_reservations SET hostname = ?, server_id = ?, mac_address = ?, status = ?, source_ref = ?, last_synced_at = datetime(\'now\') WHERE id = ?');
-      const clearConflicts = db.db.prepare('DELETE FROM ipam_proxmox_sync_conflicts WHERE connection_id = ? AND subnet_id = ?');
-      const insertConflict = db.db.prepare(`INSERT INTO ipam_proxmox_sync_conflicts (id, environment_id, subnet_id, connection_id, address, hostname, mac_address, reason, existing_reservation_id, last_seen_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`);
-      const stats = { discovered: 0, created: 0, updated: 0, conflicts: 0, skipped: 0, failed: 0 };
-      clearConflicts.run(source.id, subnet.id);
-      for (const vm of vms) {
-        const nodeName = String(vm?.node || '').trim();
-        const vmId = Number(vm?.vmid);
-        const guestType = String(vm?.type || '').toLowerCase();
-        if (!nodeName || !Number.isInteger(vmId)) { stats.skipped += 1; continue; }
-        try {
-          const records = (await getGuestNetworkRecords(connection, { node_name: nodeName, vm_id: vmId, guest_type: guestType }))
-            .filter(record => subnetContainsIpv4(subnet.cidr, record.address));
-          for (const record of records) {
-            const address = record.address;
-            const macAddress = record.mac_address;
-            stats.discovered += 1;
-            const number = ipv4Number(address);
-            if (number === null || occupiedRanges.some(range => range.start !== null && range.end !== null && number >= range.start && number <= range.end)) { stats.skipped += 1; continue; }
-            const sourceRef = `${source.id}:${nodeName}:${vmId}`;
-            const existing = getReservation.get(subnet.id, address);
-            const hostname = String(vm?.name || `${guestType === 'lxc' ? 'CT' : 'VM'} ${vmId}`).slice(0, 100);
-            const serverId = mappedServers.get(`${nodeName}:${vmId}`) || null;
-            if (number === ipv4Number(subnet.gateway)) {
-              insertConflict.run(randomUUID(), source.environment_id, subnet.id, source.id, address, hostname, macAddress, 'Address is configured as the prefix gateway', null);
-              stats.conflicts += 1;
-              continue;
-            }
-            if (!existing) {
-              insertReservation.run(randomUUID(), subnet.id, address, hostname, serverId, macAddress, 'active', '', '', 'proxmox', sourceRef);
-              stats.created += 1;
-            } else if (existing.source_type === 'proxmox' && String(existing.source_ref || '').startsWith(`${source.id}:`)) {
-              updateReservation.run(hostname, serverId, macAddress, 'active', sourceRef, existing.id);
-              stats.updated += 1;
-            } else if (macAddress && String(existing.mac_address || '').toLowerCase().replace(/[^a-f0-9]/g, '') === macAddress.replace(/:/g, '')) {
-              // The same interface can be observed by Proxmox and a DHCP
-              // controller. Equal MAC identity means this is corroboration,
-              // not an address collision.
-              db.db.prepare("UPDATE ipam_reservations SET mac_address = CASE WHEN mac_address = '' THEN ? ELSE mac_address END, last_synced_at = datetime('now') WHERE id = ?")
-                .run(macAddress, existing.id);
-              stats.updated += 1;
-            } else {
-              insertConflict.run(randomUUID(), source.environment_id, subnet.id, source.id, address, hostname, macAddress, `Address is already reserved ${existing.source_type === 'manual' ? 'manually' : 'by another source'}${existing.hostname ? ` (${existing.hostname})` : ''}`, existing.id);
-              stats.conflicts += 1;
-            }
-          }
-        } catch (error) {
-          stats.failed += 1;
-          log.warn({ err: error, connection: source.name, nodeName, vmId }, 'Could not read Proxmox guest addresses for IPAM sync');
-        }
-      }
-      db.auditLog.write('ipam.proxmox_sync', `source=${source.name} prefix=${subnet.cidr} discovered=${stats.discovered} created=${stats.created} updated=${stats.updated}`, req.ip, true, req.user?.username);
-      res.json(stats);
+      res.json(await syncProxmoxIpam(req.params.id, { subnetId: subnetId || null, ip: req.ip, actor: req.user?.username }));
     } catch (error) { res.status(error.status || 502).json({ error: error.message || 'Proxmox IPAM reconciliation failed.' }); }
   });
   

@@ -29,6 +29,7 @@ app.use('/api', authMiddleware);
 const openTofuRouter = express.Router();
 opentofu.register({ router: openTofuRouter, db, broadcast: () => {} });
 app.use('/api/opentofu', openTofuRouter);
+const scheduler = require('../services/scheduler');
 
 const calls = [];
 const originalRequest = https.request;
@@ -329,4 +330,38 @@ test('Proxmox IPAM synchronization stores guest interface MAC addresses', async 
   assert.deepEqual(reservation, {
     address: '10.20.1.42', mac_address: 'aa:bb:cc:dd:ee:ff', source_type: 'proxmox',
   });
+});
+
+test('Proxmox IPAM synchronization without a prefix processes every environment prefix', async () => {
+  const secondSubnetId = 'platform-actions-second-prefix';
+  db.db.prepare("INSERT OR IGNORE INTO ipam_subnets (id, environment_id, name, cidr) VALUES (?, 'default', 'Other network', '10.30.1.0/24')")
+    .run(secondSubnetId);
+  const sync = await request(app)
+    .post(`/api/opentofu/proxmox-connections/${connectionId}/sync-ipam`)
+    .set('Authorization', `Bearer ${token}`)
+    .send({});
+  assert.equal(sync.status, 200, JSON.stringify(sync.body));
+  assert.equal(sync.body.prefixes, 2);
+  assert.equal(sync.body.discovered, 1);
+  const connection = db.db.prepare('SELECT last_ipam_status, last_ipam_synced_at FROM tofu_proxmox_connections WHERE id = ?').get(connectionId);
+  assert.equal(connection.last_ipam_status, 'success');
+  assert.ok(connection.last_ipam_synced_at);
+});
+
+test('scheduler synchronizes due Proxmox connections and respects automatic sync being disabled', async () => {
+  db.db.prepare("UPDATE tofu_proxmox_connections SET auto_sync_ipam = 1, sync_interval_min = 5, last_ipam_synced_at = NULL, last_ipam_status = '' WHERE id = ?")
+    .run(connectionId);
+  await scheduler.pollIpamSources();
+  assert.equal(
+    db.db.prepare('SELECT last_ipam_status FROM tofu_proxmox_connections WHERE id = ?').get(connectionId).last_ipam_status,
+    'success',
+  );
+
+  db.db.prepare("UPDATE tofu_proxmox_connections SET auto_sync_ipam = 0, last_ipam_synced_at = NULL, last_ipam_status = 'disabled' WHERE id = ?")
+    .run(connectionId);
+  await scheduler.pollIpamSources();
+  assert.equal(
+    db.db.prepare('SELECT last_ipam_status FROM tofu_proxmox_connections WHERE id = ?').get(connectionId).last_ipam_status,
+    'disabled',
+  );
 });
