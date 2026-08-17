@@ -48,7 +48,13 @@ fi
 # (Docker volumes are created as root on first use)
 mkdir -p /app/server/data/bin
 chown -R shipyard:shipyard /app/server/data /app/server/playbooks /app/plugins
-[ -d /workspaces ] && chown shipyard:shipyard /workspaces
+# A bind mount may already contain deployment directories created by root on
+# the host. Owning only the mount root leaves those children unwritable after
+# privileges are dropped to UID/GID 1001. Repair the complete workspace tree
+# on every start so existing and newly mounted deployments work immediately.
+if [ -d /workspaces ]; then
+  chown -R shipyard:shipyard /workspaces
+fi
 
 # OpenTofu became a built-in server feature. Remove only its obsolete bundled
 # plugin copy; workspaces and state live outside this directory and are retained.

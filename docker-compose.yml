@@ -14,9 +14,11 @@ services:
       - "${SHIPYARD_BIND_ADDRESS:-127.0.0.1}:${SHIPYARD_PORT:-443}:8443"
     volumes:
       - shipyard-data:/app/server/data
+      - shipyard-workspaces:/workspaces
       - ./playbooks:/app/server/playbooks
       - ./plugins:/app/plugins
-      # OpenTofu workspaces (optional bind mount):
+      # To use a host directory for OpenTofu instead, replace the
+      # shipyard-workspaces mount above with:
       # - /path/to/workspaces:/workspaces
       # Custom TLS certificate (optional):
       # - /etc/ssl/certs/shipyard.crt:/certs/shipyard.crt:ro
@@ -48,3 +50,4 @@ services:
 
 volumes:
   shipyard-data:
+  shipyard-workspaces:

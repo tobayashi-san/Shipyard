@@ -1161,7 +1161,7 @@ override.tf.json
 
   function permissionError(e, wsPath) {
     return e.code === 'EACCES'
-      ? `Permission denied. Fix with: chown -R 1001:1001 ${wsPath}`
+      ? `Workspace is not writable: ${wsPath}. Restart Shipyard so the container can repair mounted workspace ownership. If the error remains, verify that the mount is not read-only and does not use root-squash.`
       : e.message;
   }
 

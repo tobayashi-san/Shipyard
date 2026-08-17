@@ -73,8 +73,11 @@ able to verify Shipyard's certificate name or IP address.
 
 The named `shipyard-data` volume contains the SQLite database, TLS material,
 encrypted secrets, SSH keys, and the OpenTofu binary installed from the
-Deployments page (`bin/tofu`). The local `./playbooks` and `./plugins`
-directories are also mounted and should be backed up if you customize them.
+Deployments page (`bin/tofu`). OpenTofu deployment files and state are kept in
+the separate `shipyard-workspaces` volume. The container automatically repairs
+workspace ownership on startup, including when `/workspaces` is replaced with
+a writable bind mount. The local `./playbooks` and `./plugins` directories are
+also mounted and should be backed up if you customize them.
 
 For a consistent volume backup, stop Shipyard first, then archive the named
 volume. Replace `shipyard_shipyard-data` with the volume name shown by
