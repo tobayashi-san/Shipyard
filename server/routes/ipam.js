@@ -485,6 +485,31 @@ function systemGatewayAllocation(subnet, existingAllocations) {
   if (gateway === null || allocationCoversAddress(existingAllocations, gateway))
     return null;
   const address = toIpv4(gateway);
+  const observations = db.db
+    .prepare(
+      `SELECT source.name, source.type, observation.hostname,
+              observation.mac_address, observation.last_seen_at
+       FROM ipam_source_observations observation
+       JOIN ipam_sync_sources source ON source.id = observation.source_id
+       WHERE observation.subnet_id = ? AND observation.address = ?
+         AND observation.reservation_id IS NULL
+       ORDER BY observation.last_seen_at DESC, source.name COLLATE NOCASE`,
+    )
+    .all(subnet.id, address);
+  const primary = observations.find(
+    (observation) => observation.hostname || observation.mac_address,
+  );
+  const observedMacs = new Set(
+    observations.map((observation) => canonicalMac(observation.mac_address)).filter(Boolean),
+  );
+  const conflicts = observedMacs.size > 1
+    ? ["Gateway wird von externen Quellen mit unterschiedlichen MAC-Adressen beobachtet"]
+    : [];
+  const sourceObservations = observations.map((observation) => ({
+    name: observation.name,
+    type: observation.type,
+    last_seen_at: observation.last_seen_at,
+  }));
   return {
     id: `gateway:${subnet.id}`,
     subnet_id: subnet.id,
@@ -493,16 +518,17 @@ function systemGatewayAllocation(subnet, existingAllocations) {
     start_address: address,
     end_address: address,
     address_count: 1,
-    hostname: "Gateway",
-    mac_address: "",
+    hostname: primary?.hostname || "Gateway",
+    mac_address: canonicalMac(primary?.mac_address),
     status: "reserved",
     role: "gateway",
     description: "Configured gateway",
     source_type: "system",
     system_managed: true,
-    conflicts: [],
-    conflict: false,
-    observed_sources: [],
+    conflicts,
+    conflict: conflicts.length > 0,
+    source_observations: sourceObservations,
+    observed_sources: sourceObservations.map((observation) => observation.name),
   };
 }
 function gatewayHasStoredCollision(subnet, gateway) {
@@ -2279,25 +2305,13 @@ async function syncIpamSource(source, { ip, actor } = {}) {
             removed += reconcileSourceReservation(priorReservationId, source.id);
         };
         if (gatewayNumber(subnet) === ipv4(record.address)) {
-          db.db
-            .prepare(
-              `INSERT INTO ipam_sync_conflicts (id, environment_id, subnet_id, source_id, address, hostname, mac_address, reason, existing_reservation_id, last_seen_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
-            )
-            .run(
-              db.uuidv4(),
-              source.environment_id,
-              subnet.id,
-              source.id,
-              record.address,
-              record.hostname.slice(0, 100),
-              canonicalMac(record.mac),
-              "Adresse ist als Gateway des Prefixes belegt",
-              now,
-            );
+          // A controller reporting the configured gateway confirms the
+          // protected system allocation; it does not compete with it. Keep
+          // the observation as provenance so the UI can show the gateway's
+          // hostname, MAC and source without creating a normal reservation.
           upsertSourceObservation(source, subnet, sourceRef, record, null, now);
           reconcilePriorReservation();
-          conflicts += 1;
+          updated += 1;
           continue;
         }
         // Keep an owned canonical reservation when the source reports that

@@ -476,6 +476,66 @@ test('IPAM merges identical MAC observations from multiple sources without a con
   }
 });
 
+test('IPAM attaches a controller observation to the protected gateway without a conflict', async () => {
+  const gatewaySubnet = await auth(request(app).post('/api/ipam/subnets')).send({
+    environment_id: environmentId,
+    name: 'Observed gateway prefix',
+    cidr: '10.49.0.0/24',
+    gateway: '10.49.0.1',
+  });
+  assert.equal(gatewaySubnet.status, 201);
+  const controller = http.createServer((_req, res) => {
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ data: [{
+      ip_address: '10.49.0.1',
+      hostname: 'AMST-FW-01',
+      mac_address: '02:00:00:00:00:01',
+      id: 'gateway-device',
+    }] }));
+  });
+  await new Promise(resolve => controller.listen(0, '127.0.0.1', resolve));
+  try {
+    const source = await auth(request(app).post('/api/ipam/sources')).send({
+      environment_id: environmentId,
+      type: 'unifi',
+      name: 'UniFi Production',
+      endpoint: `http://127.0.0.1:${controller.address().port}`,
+      path: '/api/v2/status/dhcp_leases',
+      api_token: 'gateway-token',
+    });
+    assert.equal(source.status, 201);
+
+    const sync = await auth(request(app).post(`/api/ipam/sources/${source.body.id}/sync`));
+    assert.equal(sync.status, 200);
+    assert.deepEqual(
+      { created: sync.body.created, updated: sync.body.updated, conflicts: sync.body.conflicts },
+      { created: 0, updated: 1, conflicts: 0 },
+    );
+
+    const conflicts = await auth(request(app).get(`/api/ipam/subnets/${gatewaySubnet.body.id}/conflicts`));
+    assert.equal(conflicts.status, 200);
+    assert.equal(conflicts.body.some(row => row.address === '10.49.0.1'), false);
+    assert.equal(
+      db.db.prepare("SELECT COUNT(*) AS count FROM ipam_reservations WHERE subnet_id = ? AND address = '10.49.0.1'").get(gatewaySubnet.body.id).count,
+      0,
+    );
+
+    const allocations = await auth(request(app).get(`/api/ipam/subnets/${gatewaySubnet.body.id}/allocations`));
+    const gateway = allocations.body.find(row => row.address === '10.49.0.1');
+    assert.equal(gateway.system_managed, true);
+    assert.equal(gateway.role, 'gateway');
+    assert.equal(gateway.hostname, 'AMST-FW-01');
+    assert.equal(gateway.mac_address, '02:00:00:00:00:01');
+    assert.equal(gateway.conflict, false);
+    assert.deepEqual(gateway.observed_sources, ['UniFi Production']);
+    assert.deepEqual(gateway.source_observations.map(row => ({ name: row.name, type: row.type })), [
+      { name: 'UniFi Production', type: 'unifi' },
+    ]);
+  } finally {
+    await new Promise(resolve => controller.close(resolve));
+  }
+});
+
 test('IPAM enriches a missing MAC on an automated reservation without overwriting manual ownership', async () => {
   const automatedId = db.uuidv4();
   db.db.prepare(`INSERT INTO ipam_reservations
