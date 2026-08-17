@@ -8,6 +8,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import {
+  ArrowUpCircle,
   ArrowRight,
   Boxes,
   Database,
@@ -18,6 +19,7 @@ import {
   Trash2,
   TriangleAlert,
   Workflow,
+  Download,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -29,10 +31,25 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { CreateDeploymentDialog } from "@/features/deployments/CreateDeploymentDialog";
 import { useUi } from "@/lib/store";
 import { hasCap, useProfile } from "@/lib/queries";
+import { showToast } from "@/lib/toast";
 
 interface OpenTofuStatus {
   installed?: boolean;
   version?: string | null;
+  installing?: boolean;
+}
+
+interface OpenTofuReleases {
+  releases?: string[];
+}
+
+function compareVersions(left: string, right: string) {
+  const a = left.split(".").map(Number);
+  const b = right.split(".").map(Number);
+  for (let index = 0; index < 3; index += 1) {
+    if ((a[index] || 0) !== (b[index] || 0)) return (a[index] || 0) - (b[index] || 0);
+  }
+  return 0;
 }
 
 interface Run {
@@ -160,7 +177,9 @@ export function DeploymentsPage() {
   const environmentId = useUi((state) => state.environmentId);
   const profileQuery = useProfile();
   const canEdit = hasCap(profileQuery.data, "canEditDeployments");
+  const canManagePlatforms = hasCap(profileQuery.data, "canManageDeploymentPlatforms");
   const [createOpen, setCreateOpen] = useState(false);
+  const [confirmInstall, setConfirmInstall] = useState(false);
   const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<Set<string>>(
     new Set(),
   );
@@ -169,6 +188,38 @@ export function DeploymentsPage() {
     queryKey: ["opentofu", "status"],
     queryFn: () => apiFetch<OpenTofuStatus>("/opentofu/status"),
     staleTime: 30_000,
+  });
+  const releasesQuery = useQuery({
+    queryKey: ["opentofu", "releases"],
+    queryFn: () => apiFetch<OpenTofuReleases>("/opentofu/releases"),
+    enabled: statusQuery.isSuccess,
+    staleTime: 60 * 60 * 1000,
+    retry: false,
+  });
+  const latestVersion = useMemo(
+    () => [...(releasesQuery.data?.releases || [])].sort((left, right) => compareVersions(right, left))[0] || null,
+    [releasesQuery.data?.releases],
+  );
+  const updateAvailable = Boolean(
+    statusQuery.data?.installed &&
+    statusQuery.data.version &&
+    latestVersion &&
+    compareVersions(latestVersion, statusQuery.data.version) > 0,
+  );
+  const installMutation = useMutation({
+    mutationFn: () => {
+      if (!latestVersion) throw new Error("No stable OpenTofu release is available.");
+      return apiFetch<{ version: string }>("/opentofu/install", {
+        method: "POST",
+        body: { version: latestVersion },
+      });
+    },
+    onSuccess: (result) => {
+      setConfirmInstall(false);
+      showToast(`OpenTofu ${result.version} is ready.`, "success");
+      void queryClient.invalidateQueries({ queryKey: ["opentofu"] });
+    },
+    onError: (error: Error) => showToast(error.message, "error"),
   });
   const workspaceQuery = useQuery({
     queryKey: ["opentofu", "workspaces", environmentId],
@@ -315,19 +366,56 @@ export function DeploymentsPage() {
         </Card>
       )}
 
-      {statusQuery.isSuccess && !statusQuery.data.installed && (
-        <Card className="border-[hsl(var(--warning)/0.35)] bg-[hsl(var(--warning)/0.035)]">
+      {statusQuery.isSuccess && (
+        <Card className={statusQuery.data.installed ? undefined : "border-[hsl(var(--warning)/0.35)] bg-[hsl(var(--warning)/0.035)]"}>
           <CardContent className="flex flex-wrap items-center gap-3 p-4">
-            <TriangleAlert className="h-5 w-5 [color:hsl(var(--warning))]" />
+            {statusQuery.data.installed
+              ? <Workflow className="h-5 w-5 text-primary" />
+              : <TriangleAlert className="h-5 w-5 [color:hsl(var(--warning))]" />}
             <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold">{t("deploy.status")}</div>
               <div className="text-xs text-muted-foreground">
-                {t("deploy.unavailable")}
+                {statusQuery.data.installed
+                  ? `Installed version ${statusQuery.data.version || "unknown"}${latestVersion ? ` · Latest stable ${latestVersion}` : ""}`
+                  : `${t("deploy.unavailable")} Install it into Shipyard's persistent Docker data volume.`}
               </div>
             </div>
+            {releasesQuery.isError ? (
+              <Button type="button" variant="outline" size="sm" onClick={() => void releasesQuery.refetch()}>
+                <RefreshCw />
+                Check releases again
+              </Button>
+            ) : canManagePlatforms && latestVersion && (!statusQuery.data.installed || updateAvailable) ? (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setConfirmInstall(true)}
+                disabled={installMutation.isPending || statusQuery.data.installing}
+              >
+                {statusQuery.data.installed ? <ArrowUpCircle /> : <Download />}
+                {statusQuery.data.installed ? `Update to ${latestVersion}` : `Install ${latestVersion}`}
+              </Button>
+            ) : releasesQuery.isLoading ? (
+              <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                <RefreshCw className="h-4 w-4 animate-spin" /> Checking releases…
+              </span>
+            ) : null}
           </CardContent>
         </Card>
       )}
+
+      <ConfirmDialog
+        open={confirmInstall}
+        onOpenChange={setConfirmInstall}
+        title={statusQuery.data?.installed ? "Update OpenTofu?" : "Install OpenTofu?"}
+        description={statusQuery.data?.installed
+          ? `Shipyard will verify and replace the current OpenTofu binary with version ${latestVersion}. Workspaces and state are unchanged.`
+          : `Shipyard will download and verify OpenTofu ${latestVersion} inside the container. The binary is stored in the persistent Shipyard data volume.`}
+        confirmLabel={statusQuery.data?.installed ? "Update" : "Install"}
+        variant="warning"
+        isPending={installMutation.isPending}
+        onConfirm={() => installMutation.mutate()}
+      />
 
       {workspaceQuery.isLoading ? (
         <div className="space-y-1 rounded-md border p-4">

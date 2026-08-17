@@ -72,7 +72,8 @@ able to verify Shipyard's certificate name or IP address.
 ## Persistent data and backups
 
 The named `shipyard-data` volume contains the SQLite database, TLS material,
-encrypted secrets, and SSH keys. The local `./playbooks` and `./plugins`
+encrypted secrets, SSH keys, and the OpenTofu binary installed from the
+Deployments page (`bin/tofu`). The local `./playbooks` and `./plugins`
 directories are also mounted and should be backed up if you customize them.
 
 For a consistent volume backup, stop Shipyard first, then archive the named

@@ -8,10 +8,11 @@ const { createProxmoxConnection } = require('../proxmox-client');
 const { moveWorkspaceDirectory, moveWorkspaceGitDirectory } = require('../workspace-files');
 
 /** Register deployment inventory, metadata and platform assignment endpoints. */
-function registerWorkspaceRoutes({ db, router, activeRuns, findBinary, getLastRun, getVersion, getWorkspace, getWorkspaceRow, getWorkspaceRows, isAllowedPath, parseWorkspaceEnvVars, permissionError, publicProxmoxConnection, scaffoldWorkspace, serializeWorkspaceEnvVars, syncPathsFile, validateUniqueWorkspaceName, validateUniqueWorkspacePath, WORKSPACE_PATH_ERROR }) {
+function registerWorkspaceRoutes({ db, router, activeRuns, findBinary, getInstallState, getLastRun, getVersion, getWorkspace, getWorkspaceRow, getWorkspaceRows, isAllowedPath, parseWorkspaceEnvVars, permissionError, publicProxmoxConnection, scaffoldWorkspace, serializeWorkspaceEnvVars, syncPathsFile, validateUniqueWorkspaceName, validateUniqueWorkspacePath, WORKSPACE_PATH_ERROR }) {
   router.get('/status', (req, res) => {
     const binary = findBinary();
-    res.json({ installed: !!binary, binary, version: binary ? getVersion(binary) : null });
+    const version = binary ? getVersion(binary) : null;
+    res.json({ installed: Boolean(binary && version), binary, version, installing: getInstallState() });
   });
   
   router.get('/workspaces', (req, res) => {

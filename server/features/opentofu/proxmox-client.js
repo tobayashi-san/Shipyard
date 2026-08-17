@@ -2,30 +2,67 @@
 'use strict';
 
 const https = require('https');
-const http  = require('http');
+const fs = require('fs');
+
+const DOWNLOAD_TIMEOUT_MS = 60_000;
+const MAX_DOWNLOAD_BYTES = 256 * 1024 * 1024;
+const RELEASES_TIMEOUT_MS = 20_000;
+const MAX_RELEASE_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 /** @typedef {import('./types').ProxmoxConnection} ProxmoxConnection */
 
 function _downloadFile(url, dest, redirects = 0) {
   if (redirects > 5) return Promise.reject(new Error('Too many redirects'));
+  let parsed;
+  try { parsed = new URL(url); } catch { return Promise.reject(new Error('Invalid download URL')); }
+  if (parsed.protocol !== 'https:') return Promise.reject(new Error('Downloads require HTTPS'));
   return new Promise((resolve, reject) => {
-    const client = url.startsWith('https') ? https : http;
-    client.get(url, { headers: { 'User-Agent': 'shipyard-lab-manager' } }, (res) => {
+    let settled = false;
+    let file = null;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      if (file) file.destroy();
+      try { fs.unlinkSync(dest); } catch {}
+      reject(error);
+    };
+    const request = https.get(parsed, { headers: { 'User-Agent': 'shipyard-lab-manager' } }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume();
-        _downloadFile(res.headers.location, dest, redirects + 1).then(resolve).catch(reject);
+        const redirectUrl = new URL(res.headers.location, parsed).toString();
+        _downloadFile(redirectUrl, dest, redirects + 1).then(resolve).catch(fail);
         return;
       }
       if (res.statusCode !== 200) {
         res.resume();
-        reject(new Error(`HTTP ${res.statusCode} for ${url}`));
+        fail(new Error(`HTTP ${res.statusCode} for ${url}`));
         return;
       }
-      const file = require('fs').createWriteStream(dest);
+      const contentLength = Number(res.headers['content-length'] || 0);
+      if (contentLength > MAX_DOWNLOAD_BYTES) {
+        res.resume();
+        fail(new Error('OpenTofu download is larger than the allowed limit.'));
+        return;
+      }
+      let received = 0;
+      res.on('data', chunk => {
+        received += chunk.length;
+        if (received > MAX_DOWNLOAD_BYTES) res.destroy(new Error('OpenTofu download is larger than the allowed limit.'));
+      });
+      res.on('aborted', () => fail(new Error('OpenTofu download was interrupted.')));
+      res.on('error', fail);
+      file = fs.createWriteStream(dest);
       res.pipe(file);
-      file.on('finish', () => file.close(resolve));
-      file.on('error', reject);
-    }).on('error', reject);
+      file.on('finish', () => file.close(error => {
+        if (error) return fail(error);
+        if (settled) return;
+        settled = true;
+        resolve();
+      }));
+      file.on('error', fail);
+    });
+    request.setTimeout(DOWNLOAD_TIMEOUT_MS, () => request.destroy(new Error('OpenTofu download timed out.')));
+    request.on('error', fail);
   });
 }
 
@@ -36,9 +73,22 @@ async function _fetchGitHubReleases() {
       path: '/repos/opentofu/opentofu/releases?per_page=15',
       headers: { 'User-Agent': 'shipyard-lab-manager' },
     };
-    https.get(options, (res) => {
+    const request = https.get(options, (res) => {
       let data = '';
-      res.on('data', d => data += d);
+      let received = 0;
+      if (res.statusCode !== 200) {
+        res.resume();
+        reject(new Error(`GitHub release API returned HTTP ${res.statusCode}.`));
+        return;
+      }
+      res.on('data', d => {
+        received += d.length;
+        if (received > MAX_RELEASE_RESPONSE_BYTES) {
+          res.destroy(new Error('GitHub release response is larger than the allowed limit.'));
+          return;
+        }
+        data += d;
+      });
       res.on('end', () => {
         try {
           const list = JSON.parse(data);
@@ -50,7 +100,10 @@ async function _fetchGitHubReleases() {
           resolve(versions);
         } catch (e) { reject(e); }
       });
-    }).on('error', reject);
+      res.on('error', reject);
+    });
+    request.setTimeout(RELEASES_TIMEOUT_MS, () => request.destroy(new Error('GitHub release request timed out.')));
+    request.on('error', reject);
   });
 }
 

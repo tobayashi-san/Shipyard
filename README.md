@@ -60,7 +60,7 @@ Images are published to GitHub Container Registry:
 - Versioned releases: `ghcr.io/tobayashi-san/shipyard:<version>`
 - Release candidates: `ghcr.io/tobayashi-san/shipyard:<version>-rc.<n>`
 
-The Docker image serves the React frontend from `frontend-next/dist`, includes OpenTofu as a built-in server feature, and bundles the starter playbooks. Optional plugins remain operator-managed in `/app/plugins`.
+The Docker image serves the React frontend from `frontend-next/dist` and bundles the starter playbooks. OpenTofu can be installed and updated from the Deployments page; its verified binary is stored in the persistent Shipyard data volume. Optional plugins remain operator-managed in `/app/plugins`.
 
 ### Plugin trust
 
@@ -91,7 +91,7 @@ stale whenever the console design changes.
 - **Notifications** — webhooks (Discord, Slack) and SMTP email alerts
 - **Auth & Security** — JWT, host- and capability-scoped RBAC, custom roles, TOTP/2FA, audit log, rate limiting, and HTTPS
 - **Proxmox inventory** — discover QEMU VMs and LXC containers, inspect configuration and snapshots, run power actions, and adopt either guest type as a managed Linux host
-- **Deployments** — environment-scoped OpenTofu plans, reviewed-plan Apply, drift checks, encrypted local-state recovery, run locking, and Proxmox VM blueprints
+- **Deployments** — one-click OpenTofu installation and updates, environment-scoped plans, reviewed-plan Apply, drift checks, encrypted local-state recovery, run locking, and Proxmox VM blueprints
 - **Plugins** — hot-reloadable extensions with scoped UI and API integration
 - **UI** — English, light/dark/system theme, white-label support
 

@@ -33,6 +33,13 @@ test('OpenTofu is served as an integrated API, not an optional plugin', async ()
     .set('Authorization', `Bearer ${setup.body.token}`);
   assert.equal(core.status, 200);
   assert.equal(typeof core.body.installed, 'boolean');
+  assert.equal(typeof core.body.installing, 'boolean');
+
+  const invalidInstall = await request(app)
+    .post('/api/opentofu/install')
+    .set('Authorization', `Bearer ${setup.body.token}`)
+    .send({ version: '../unsafe' });
+  assert.equal(invalidInstall.status, 400);
 
   const securedWorkspace = await request(app)
     .post('/api/opentofu/workspaces')
@@ -61,7 +68,7 @@ test('OpenTofu is served as an integrated API, not an optional plugin', async ()
   assert.equal(legacy.status, 404);
   assert.equal(db.settings.get('plugin_opentofu_enabled'), null);
 
-  const role = db.roles.create('no-deployments', { canViewServers: true });
+  const role = db.roles.create('no-deployments', { servers: 'all', canViewServers: true });
   db.users.create('restricted', '', await bcrypt.hash('restrictedpass123', 12), role.id);
   const login = await request(app)
     .post('/api/auth/login')
@@ -70,6 +77,12 @@ test('OpenTofu is served as an integrated API, not an optional plugin', async ()
     .get('/api/opentofu/status')
     .set('Authorization', `Bearer ${login.body.token}`);
   assert.equal(denied.status, 403);
+  const installDenied = await request(app)
+    .post('/api/opentofu/install')
+    .set('Authorization', `Bearer ${login.body.token}`)
+    .send({ version: '1.9.0' });
+  assert.equal(installDenied.status, 403);
+  assert.equal(installDenied.body.capability, 'canManageDeploymentPlatforms');
 });
 
 test('OpenTofu enforces granular capabilities and persisted environment scope', async () => {

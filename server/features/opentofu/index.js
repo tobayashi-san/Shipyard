@@ -68,6 +68,7 @@ const { registerStateRoutes } = require('./routes/state');
 const { registerPlatformRoutes } = require('./routes/platforms');
 const { registerVmRoutes } = require('./routes/vms');
 const { registerWorkspaceRoutes } = require('./routes/workspaces');
+const { installOpenTofu, VERSION_RE } = require('./installer');
 
 let _gitSync = null;
 function getGitSync() {
@@ -120,6 +121,7 @@ function register({ router, db, broadcast }) {
   // ── Binary detection (cached) ────────────────────────────────────────────
   let _cachedBinary  = undefined;
   let _cachedVersion = undefined;
+  let _installing = false;
 
   const TOFU_INSTALL_PATH = '/app/server/data/bin/tofu';
 
@@ -1291,6 +1293,7 @@ override.tf.json
     findBinary,
     getLastRun,
     getVersion,
+    getInstallState: () => _installing,
     getWorkspace,
     getWorkspaceRow,
     getWorkspaceRows,
@@ -1701,32 +1704,35 @@ override.tf.json
   });
 
   router.post('/install', async (req, res) => {
-    const { version } = req.body;
-    if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
+    const version = String(req.body?.version || '').trim();
+    if (!VERSION_RE.test(version)) {
       return res.status(400).json({ error: 'Invalid version' });
     }
-    const arch     = process.arch === 'arm64' ? 'arm64' : 'amd64';
-    const filename = `tofu_${version}_linux_${arch}.zip`;
-    const url      = `https://github.com/opentofu/opentofu/releases/download/v${version}/${filename}`;
-    const tmpZip   = `/tmp/tofu_install_${version}_${randomUUID().slice(0, 8)}.zip`;
-    const installDir  = '/app/server/data/bin';
-    const installPath = `${installDir}/tofu`;
+    if (_installing) return res.status(409).json({ error: 'An OpenTofu installation is already running.' });
 
+    _installing = true;
     try {
-      fs.mkdirSync(installDir, { recursive: true });
-      await _downloadFile(url, tmpZip);
-      await execFileAsync('unzip', ['-o', tmpZip, 'tofu', '-d', installDir]);
-      fs.chmodSync(installPath, 0o755);
-      try { fs.unlinkSync(tmpZip); } catch {}
-      // Invalidate binary cache so next call picks up new binary
+      const releases = await _fetchGitHubReleases();
+      const installedVersion = await installOpenTofu({
+        version,
+        architecture: process.arch,
+        installPath: TOFU_INSTALL_PATH,
+        releases,
+        downloadFile: _downloadFile,
+        execFile: execFileAsync,
+      });
       _cachedBinary  = undefined;
       _cachedVersion = undefined;
       const bin = findBinary();
       const ver = bin ? getVersion(bin) : null;
+      if (ver !== installedVersion) throw new Error('OpenTofu could not be started after installation.');
+      db.auditLog.write('opentofu.install', `version=${ver} path=${TOFU_INSTALL_PATH}`, req.ip, true, req.user?.username || null);
       res.json({ success: true, binary: bin, version: ver });
     } catch (e) {
-      try { fs.unlinkSync(tmpZip); } catch {}
-      res.status(500).json({ error: e.message });
+      db.auditLog.write('opentofu.install', `version=${version} error=${String(e.message || 'installation failed').slice(0, 200)}`, req.ip, false, req.user?.username || null);
+      res.status(e.status || 500).json({ error: e.message || 'OpenTofu installation failed.' });
+    } finally {
+      _installing = false;
     }
   });
 
