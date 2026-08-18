@@ -61,6 +61,35 @@ test('Proxmox catalog connection keeps API credentials server-side and preserves
   assert.throws(() => _test.readProxmoxConnection({ TF_VAR_proxmox_endpoint: 'http://pve.example.test' }), /not configured/);
 });
 
+test('Proxmox network catalog merges node bridges with SDN zones, VNets, and VLAN tags', () => {
+  const catalog = _test.buildProxmoxNetworkCatalog(
+    [
+      { iface: 'vmbr0', type: 'bridge', active: 1 },
+      { iface: 'prod-vnet', type: 'bridge', active: 1 },
+    ],
+    [
+      { zone: 'production', type: 'vlan', bridge: 'vmbr1', nodes: 'pve001,pve002' },
+      { zone: 'remote', type: 'vxlan', nodes: 'pve002' },
+    ],
+    [
+      { vnet: 'prod-vnet', zone: 'production', tag: 120, alias: 'Production' },
+      { vnet: 'pending-vnet', zone: 'production', tag: '121' },
+      { vnet: 'remote-vnet', zone: 'remote', tag: 130 },
+    ],
+    'pve001',
+  );
+
+  assert.deepEqual(catalog.sdn_zones.map(zone => zone.name), ['production', 'remote']);
+  assert.deepEqual(catalog.vlans.map(vlan => vlan.vlan_id), [120, 121, 130]);
+  assert.deepEqual(catalog.bridges.map(bridge => bridge.name), ['pending-vnet', 'prod-vnet', 'remote-vnet', 'vmbr0']);
+  assert.deepEqual(catalog.bridges.find(bridge => bridge.name === 'prod-vnet'), {
+    id: 'prod-vnet', name: 'prod-vnet', zone: 'production', zone_type: 'vlan', alias: 'Production',
+    vlan_id: 120, active: true, available_on_node: true, source: 'sdn',
+  });
+  assert.equal(catalog.bridges.find(bridge => bridge.name === 'remote-vnet').available_on_node, false);
+  assert.equal(catalog.bridges.find(bridge => bridge.name === 'pending-vnet').active, false);
+});
+
 test('Proxmox resource overview totals desired capacity and reads state resources', () => {
   const vm = _test.normalizeProxmoxVm({
     name: 'app-1', node_name: 'pve001', disk_datastore: 'fast', bridge: 'vmbr0', cpu_cores: 4, memory_mb: 8192, disk_size_gb: 80,

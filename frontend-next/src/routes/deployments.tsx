@@ -1,768 +1,138 @@
-import { useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import {
-  useMutation,
-  useQueries,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
-import {
-  ArrowUpCircle,
-  ArrowRight,
-  Boxes,
-  Database,
-  FolderPlus,
-  Layers3,
-  RefreshCw,
-  Server,
-  Trash2,
-  TriangleAlert,
-  Workflow,
-  Download,
-} from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowRight, RefreshCw, Server, TriangleAlert, Workflow } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { CreateDeploymentDialog } from "@/features/deployments/CreateDeploymentDialog";
 import { useUi } from "@/lib/store";
 import { hasCap, useProfile } from "@/lib/queries";
 import { showToast } from "@/lib/toast";
 
-interface OpenTofuStatus {
-  installed?: boolean;
-  version?: string | null;
-  installing?: boolean;
-}
-
-interface OpenTofuReleases {
-  releases?: string[];
-}
-
-function compareVersions(left: string, right: string) {
-  const a = left.split(".").map(Number);
-  const b = right.split(".").map(Number);
-  for (let index = 0; index < 3; index += 1) {
-    if ((a[index] || 0) !== (b[index] || 0)) return (a[index] || 0) - (b[index] || 0);
-  }
-  return 0;
-}
-
 interface Run {
+  id: string;
   action?: string;
   status?: string;
+  plan_summary?: string | null;
   started_at?: string;
   completed_at?: string;
 }
-
-interface Workspace {
+interface ManagedVm {
   id: string;
   name: string;
-  path?: string;
-  description?: string;
+  node_name?: string;
+  vm_id?: number | string | null;
+  started?: boolean;
+  platform?: { id: string; name: string; endpoint: string } | null;
   last_run?: Run | null;
-  proxmox_connection?: { id: string; name: string; endpoint: string } | null;
 }
+interface LegacyWorkspace { id: string; name: string; vm_count: number; migration_status?: string }
+interface VmTemplate { id: string; name: string; connection_id?: string | null; config?: { cpu_cores?: number; memory_mb?: number; disk_size_gb?: number } }
 
-interface DeploymentSummary {
-  vm_count: number;
-  started_vm_count: number;
-  post_deploy?: {
-    counts?: {
-      success?: number;
-      running?: number;
-      failed?: number;
-      pending?: number;
-    };
-  };
-  resources?: Array<{
-    id: string;
-    name: string;
-    node_name?: string;
-    vm_id?: number | string;
-    cpu_cores?: number;
-    memory_mb?: number;
-    disk_size_gb?: number;
-  }>;
-}
-
-function runTone(status?: string): StatusTone {
-  switch (String(status || "").toLowerCase()) {
-    case "success":
-    case "completed":
-      return "success";
-    case "failed":
-    case "error":
-      return "danger";
-    case "running":
-    case "queued":
-      return "info";
-    default:
-      return "muted";
+function vmStatus(vm: ManagedVm) {
+  const run = vm.last_run;
+  if (!run) return { label: "Draft", tone: "muted" as StatusTone };
+  if (run.status === "running" || run.status === "cancelling") return { label: "Running operation", tone: "info" as StatusTone };
+  if (run.status === "failed" || run.status === "interrupted") return { label: "Needs attention", tone: "danger" as StatusTone };
+  if (run.action === "drift" && run.plan_summary) {
+    try {
+      const summary = JSON.parse(run.plan_summary) as Record<string, number>;
+      if ((summary.create || 0) + (summary.update || 0) + (summary.delete || 0) + (summary.replace || 0) > 0) return { label: "Drift", tone: "warning" as StatusTone };
+    } catch { /* keep the normal status */ }
   }
+  return { label: vm.started ? "Managed" : "Stopped", tone: "success" as StatusTone };
 }
-
 function formatDate(value?: string) {
-  if (!value) return null;
+  if (!value) return "—";
   const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value
-    : new Intl.DateTimeFormat(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(date);
-}
-
-function DeploymentFact({
-  icon: Icon,
-  label,
-  value,
-  detail,
-}: {
-  icon: typeof Workflow;
-  label: string;
-  value: string | number;
-  detail: string;
-}) {
-  return (
-    <div className="console-object-info">
-      <div className="flex items-center gap-1.5">
-        <Icon className="h-3.5 w-3.5" />
-        {label}
-      </div>
-      <div className="font-mono">{value}</div>
-      <p>{detail}</p>
-    </div>
-  );
-}
-
-function runLabel(run?: Run | null) {
-  if (!run) return "No runs yet";
-  const action =
-    {
-      init: "Initialization",
-      validate: "Validation",
-      plan: "Plan",
-      apply: "Apply",
-      destroy: "Destroy",
-    }[String(run.action || "").toLowerCase()] ||
-    run.action ||
-    "Run";
-  const status =
-    {
-      success: "successful",
-      completed: "successful",
-      failed: "failed",
-      error: "failed",
-      running: "running",
-      queued: "queued",
-    }[String(run.status || "").toLowerCase()] || run.status;
-  return status ? `${action} · ${status}` : action;
-}
-
-function postDeployOpen(summary?: DeploymentSummary) {
-  const counts = summary?.post_deploy?.counts;
-  return (
-    (counts?.pending || 0) + (counts?.running || 0) + (counts?.failed || 0)
-  );
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
 export function DeploymentsPage() {
-  const { t } = useTranslation();
-  const queryClient = useQueryClient();
   const environmentId = useUi((state) => state.environmentId);
+  const queryClient = useQueryClient();
   const profileQuery = useProfile();
   const canEdit = hasCap(profileQuery.data, "canEditDeployments");
-  const canManagePlatforms = hasCap(profileQuery.data, "canManageDeploymentPlatforms");
   const [createOpen, setCreateOpen] = useState(false);
-  const [confirmInstall, setConfirmInstall] = useState(false);
-  const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<Set<string>>(
-    new Set(),
-  );
-  const [confirmWorkspaceRemoval, setConfirmWorkspaceRemoval] = useState(false);
-  const statusQuery = useQuery({
-    queryKey: ["opentofu", "status"],
-    queryFn: () => apiFetch<OpenTofuStatus>("/opentofu/status"),
-    staleTime: 30_000,
-  });
-  const releasesQuery = useQuery({
-    queryKey: ["opentofu", "releases"],
-    queryFn: () => apiFetch<OpenTofuReleases>("/opentofu/releases"),
-    enabled: statusQuery.isSuccess,
-    staleTime: 60 * 60 * 1000,
-    retry: false,
-  });
-  const latestVersion = useMemo(
-    () => [...(releasesQuery.data?.releases || [])].sort((left, right) => compareVersions(right, left))[0] || null,
-    [releasesQuery.data?.releases],
-  );
-  const updateAvailable = Boolean(
-    statusQuery.data?.installed &&
-    statusQuery.data.version &&
-    latestVersion &&
-    compareVersions(latestVersion, statusQuery.data.version) > 0,
-  );
-  const installMutation = useMutation({
-    mutationFn: () => {
-      if (!latestVersion) throw new Error("No stable OpenTofu release is available.");
-      return apiFetch<{ version: string }>("/opentofu/install", {
-        method: "POST",
-        body: { version: latestVersion },
-      });
-    },
-    onSuccess: (result) => {
-      setConfirmInstall(false);
-      showToast(`OpenTofu ${result.version} is ready.`, "success");
-      void queryClient.invalidateQueries({ queryKey: ["opentofu"] });
-    },
-    onError: (error: Error) => showToast(error.message, "error"),
-  });
-  const workspaceQuery = useQuery({
-    queryKey: ["opentofu", "workspaces", environmentId],
-    queryFn: () =>
-      apiFetch<Workspace[]>(
-        `/opentofu/workspaces?environment_id=${encodeURIComponent(environmentId)}`,
-      ),
+  const [legacyToMigrate, setLegacyToMigrate] = useState<LegacyWorkspace | null>(null);
+  const vmsQuery = useQuery({
+    queryKey: ["opentofu", "vms", environmentId],
+    queryFn: () => apiFetch<ManagedVm[]>(`/opentofu/vms?environment_id=${encodeURIComponent(environmentId)}`),
     staleTime: 15_000,
   });
-  const workspaces = Array.isArray(workspaceQuery.data)
-    ? workspaceQuery.data
-    : [];
-  const removeWorkspaces = useMutation({
-    mutationFn: async (workspaceIds: string[]) =>
-      Promise.all(
-        workspaceIds.map((workspaceId) =>
-          apiFetch(`/opentofu/workspaces/${encodeURIComponent(workspaceId)}`, {
-            method: "DELETE",
-          }),
-        ),
-      ),
-    onSuccess: (_result, workspaceIds) => {
-      setSelectedWorkspaceIds(new Set());
-      setConfirmWorkspaceRemoval(false);
-      void queryClient.invalidateQueries({
-        queryKey: ["opentofu", "workspaces", environmentId],
-      });
-      void queryClient.invalidateQueries({ queryKey: ["opentofu"] });
-    },
+  const vms = Array.isArray(vmsQuery.data) ? vmsQuery.data : [];
+  const legacyQuery = useQuery({
+    queryKey: ["opentofu", "legacy-workspaces", environmentId],
+    queryFn: () => apiFetch<LegacyWorkspace[]>(`/opentofu/legacy-workspaces?environment_id=${encodeURIComponent(environmentId)}`),
+    staleTime: 15_000,
   });
-  const summaryQueries = useQueries({
-    queries: workspaces.map((workspace) => ({
-      queryKey: ["opentofu", "workspace", workspace.id, "deployment-summary"],
-      queryFn: () =>
-        apiFetch<DeploymentSummary>(
-          `/opentofu/workspaces/${encodeURIComponent(workspace.id)}/deployment-summary`,
-        ),
-      staleTime: 15_000,
-    })),
+  const legacy = Array.isArray(legacyQuery.data) ? legacyQuery.data : [];
+  const templatesQuery = useQuery({
+    queryKey: ["opentofu", "vm-templates", environmentId],
+    queryFn: () => apiFetch<{ templates?: VmTemplate[] }>(`/opentofu/vm-templates?environment_id=${encodeURIComponent(environmentId)}`),
+    staleTime: 15_000,
   });
-  const summaries = useMemo(
-    () =>
-      new Map(
-        workspaces.map((workspace, index) => [
-          workspace.id,
-          summaryQueries[index]?.data,
-        ]),
-      ),
-    [summaryQueries, workspaces],
-  );
-  const isRefreshing =
-    statusQuery.isFetching ||
-    workspaceQuery.isFetching ||
-    summaryQueries.some((query) => query.isFetching);
-  const inventory = useMemo(() => {
-    const resources = workspaces.flatMap(
-      (workspace) => summaries.get(workspace.id)?.resources || [],
-    );
-    const postDeploy = workspaces.reduce(
-      (total, workspace) => total + postDeployOpen(summaries.get(workspace.id)),
-      0,
-    );
-    return {
-      deployments: workspaces.length,
-      platforms: new Set(
-        workspaces
-          .map((workspace) => workspace.proxmox_connection?.id)
-          .filter(Boolean),
-      ).size,
-      vms: resources.length,
-      started: workspaces.reduce(
-        (total, workspace) =>
-          total + (summaries.get(workspace.id)?.started_vm_count || 0),
-        0,
-      ),
-      postDeploy,
-    };
-  }, [summaries, workspaces]);
+  const templates = Array.isArray(templatesQuery.data?.templates) ? templatesQuery.data!.templates! : [];
+  const migrateMutation = useMutation({
+    mutationFn: (workspace: LegacyWorkspace) => apiFetch(`/opentofu/legacy-workspaces/${encodeURIComponent(workspace.id)}/migrate-vms`, { method: "POST", body: { confirmation: `MIGRATE ${workspace.name}` } }),
+    onSuccess: () => { setLegacyToMigrate(null); showToast("VM states were isolated successfully.", "success"); refresh(); },
+    onError: (error: Error) => showToast(error.message, "error"),
+  });
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: ["opentofu"] });
 
-  const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: ["opentofu"] });
-  };
-  const selectedWorkspaceCount = selectedWorkspaceIds.size;
-  const allWorkspacesSelected =
-    workspaces.length > 0 &&
-    workspaces.every((workspace) => selectedWorkspaceIds.has(workspace.id));
-  const someWorkspacesSelected = workspaces.some((workspace) =>
-    selectedWorkspaceIds.has(workspace.id),
-  );
-  const toggleWorkspace = (workspaceId: string) =>
-    setSelectedWorkspaceIds((current) => {
-      const next = new Set(current);
-      if (next.has(workspaceId)) next.delete(workspaceId);
-      else next.add(workspaceId);
-      return next;
-    });
-  const toggleAllWorkspaces = () =>
-    setSelectedWorkspaceIds(
-      allWorkspacesSelected
-        ? new Set()
-        : new Set(workspaces.map((workspace) => workspace.id)),
-    );
+  return <div className="space-y-5">
+    <PageHeader
+      title="Virtual machines"
+      description="Each VM is managed independently with its own OpenTofu state, plans, and run history."
+      actions={<>
+        <Button type="button" variant="outline" onClick={refresh} disabled={vmsQuery.isFetching}><RefreshCw className={vmsQuery.isFetching ? "animate-spin" : undefined} />Refresh</Button>
+        <Button type="button" onClick={() => setCreateOpen(true)} disabled={!canEdit}><Server />New VM</Button>
+      </>}
+    />
 
-  return (
-    <div className="space-y-5">
-      <PageHeader
-        title={t("deploy.title")}
-        description={t("deploy.description")}
-        actions={
-          <>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={refresh}
-              disabled={isRefreshing}
-            >
-              <RefreshCw
-                className={isRefreshing ? "animate-spin" : undefined}
-              />
-              {t("deploy.refresh")}
-            </Button>
-            <Button type="button" onClick={() => setCreateOpen(true)} disabled={!canEdit}>
-              <FolderPlus />
-              Create deployment
-            </Button>
-          </>
-        }
-      />
+    {legacy.length > 0 && <Card className="border-amber-500/40">
+      <CardHeader><CardTitle className="flex items-center gap-2 text-base"><TriangleAlert className="h-4 w-4 text-amber-600" />Legacy VM state migration required</CardTitle></CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-muted-foreground">These older deployments still share an OpenTofu state. Migration is explicit, creates an encrypted backup, validates every resulting VM plan, and never applies infrastructure changes.</p>
+        {legacy.map((workspace) => <div key={workspace.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3"><div><div className="font-medium">{workspace.name}</div><div className="text-xs text-muted-foreground">{workspace.vm_count} VM{workspace.vm_count === 1 ? "" : "s"} · {workspace.migration_status || "not migrated"}</div></div><Button size="sm" variant="outline" disabled={!canEdit || migrateMutation.isPending} onClick={() => setLegacyToMigrate(workspace)}>Migrate to isolated VM states</Button></div>)}
+      </CardContent>
+    </Card>}
 
-      {statusQuery.isError && (
-        <Card>
-          <EmptyState
-            compact
-            icon={<TriangleAlert className="h-5 w-5" />}
-            title="OpenTofu status could not be loaded"
-            description="Deployment availability is currently unknown. No data has been changed."
-            action={
-              <Button variant="outline" onClick={() => void statusQuery.refetch()}>
-                <RefreshCw />
-                Try again
-              </Button>
-            }
-          />
-        </Card>
-      )}
+    {vmsQuery.isLoading ? <div className="space-y-1 rounded-md border p-4">{[0, 1, 2, 3].map((item) => <div key={item} className="h-11 animate-pulse rounded bg-muted/40" />)}</div>
+      : vmsQuery.isError ? <Card><EmptyState icon={<TriangleAlert className="h-5 w-5" />} title="Virtual machines could not be loaded" description="No infrastructure has been changed." action={<Button variant="outline" onClick={() => void vmsQuery.refetch()}><RefreshCw />Try again</Button>} /></Card>
+      : vms.length === 0 ? <Card><EmptyState icon={<Server className="h-5 w-5" />} title="No managed virtual machines" description="Create a VM. Shipyard will isolate it in its own OpenTofu state." action={canEdit ? <Button onClick={() => setCreateOpen(true)}><Server />New VM</Button> : undefined} /></Card>
+      : <Card>
+        <CardHeader className="border-b bg-muted/15 py-3"><CardTitle className="flex items-center gap-2 text-base"><Workflow className="h-4 w-4" />Managed virtual machines</CardTitle></CardHeader>
+        <CardContent className="p-0">
+          <div className="table-scroll">
+            <table data-density="compact" className="w-full min-w-[850px] text-sm">
+              <thead><tr><th className="px-3">Name</th><th className="px-3">Status</th><th className="px-3">Platform</th><th className="px-3">Proxmox</th><th className="px-3">Last run</th><th className="w-28 px-3 text-right">Actions</th></tr></thead>
+              <tbody>{vms.map((vm) => {
+                const status = vmStatus(vm);
+                return <tr key={vm.id}>
+                  <td className="px-3"><div className="font-medium">{vm.name}</div><div className="text-xs text-muted-foreground">Independent state</div></td>
+                  <td className="px-3"><StatusBadge tone={status.tone} dot>{status.label}</StatusBadge></td>
+                  <td className="px-3"><div className="font-medium">{vm.platform?.name || "—"}</div><div className="max-w-[14rem] truncate text-xs text-muted-foreground">{vm.platform?.endpoint?.replace(/^https?:\/\//, "") || "Platform unavailable"}</div></td>
+                  <td className="px-3"><span className="font-mono text-xs">{vm.node_name || "—"} · {vm.vm_id || "auto"}</span></td>
+                  <td className="px-3"><div className="text-xs">{vm.last_run ? `${vm.last_run.action || "Run"} · ${vm.last_run.status || "unknown"}` : "No runs yet"}</div><div className="text-xs text-muted-foreground">{formatDate(vm.last_run?.completed_at || vm.last_run?.started_at)}</div></td>
+                  <td className="px-3 text-right"><Button asChild size="sm" variant="outline"><Link to="/deployments/$id" params={{ id: vm.id }}>Open<ArrowRight /></Link></Button></td>
+                </tr>;
+              })}</tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>}
 
-      {statusQuery.isSuccess && (
-        <Card className={statusQuery.data.installed ? undefined : "border-[hsl(var(--warning)/0.35)] bg-[hsl(var(--warning)/0.035)]"}>
-          <CardContent className="flex flex-wrap items-center gap-3 p-4">
-            {statusQuery.data.installed
-              ? <Workflow className="h-5 w-5 text-primary" />
-              : <TriangleAlert className="h-5 w-5 [color:hsl(var(--warning))]" />}
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-semibold">{t("deploy.status")}</div>
-              <div className="text-xs text-muted-foreground">
-                {statusQuery.data.installed
-                  ? `Installed version ${statusQuery.data.version || "unknown"}${latestVersion ? ` · Latest stable ${latestVersion}` : ""}`
-                  : `${t("deploy.unavailable")} Install it into Shipyard's persistent Docker data volume.`}
-              </div>
-            </div>
-            {releasesQuery.isError ? (
-              <Button type="button" variant="outline" size="sm" onClick={() => void releasesQuery.refetch()}>
-                <RefreshCw />
-                Check releases again
-              </Button>
-            ) : canManagePlatforms && latestVersion && (!statusQuery.data.installed || updateAvailable) ? (
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => setConfirmInstall(true)}
-                disabled={installMutation.isPending || statusQuery.data.installing}
-              >
-                {statusQuery.data.installed ? <ArrowUpCircle /> : <Download />}
-                {statusQuery.data.installed ? `Update to ${latestVersion}` : `Install ${latestVersion}`}
-              </Button>
-            ) : releasesQuery.isLoading ? (
-              <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                <RefreshCw className="h-4 w-4 animate-spin" /> Checking releases…
-              </span>
-            ) : null}
-          </CardContent>
-        </Card>
-      )}
-
-      <ConfirmDialog
-        open={confirmInstall}
-        onOpenChange={setConfirmInstall}
-        title={statusQuery.data?.installed ? "Update OpenTofu?" : "Install OpenTofu?"}
-        description={statusQuery.data?.installed
-          ? `Shipyard will verify and replace the current OpenTofu binary with version ${latestVersion}. Workspaces and state are unchanged.`
-          : `Shipyard will download and verify OpenTofu ${latestVersion} inside the container. The binary is stored in the persistent Shipyard data volume.`}
-        confirmLabel={statusQuery.data?.installed ? "Update" : "Install"}
-        variant="warning"
-        isPending={installMutation.isPending}
-        onConfirm={() => installMutation.mutate()}
-      />
-
-      {workspaceQuery.isLoading ? (
-        <div className="space-y-1 rounded-md border p-4">
-          {[0, 1, 2, 3].map((item) => (
-            <div
-              key={item}
-              className="h-11 animate-pulse rounded bg-muted/40"
-            />
-          ))}
-        </div>
-      ) : workspaceQuery.isError ? (
-        <Card>
-          <EmptyState
-            icon={<TriangleAlert className="h-5 w-5" />}
-            title="Deployments could not be loaded"
-            description="The deployment inventory is currently unavailable. Your existing deployments have not been changed."
-            action={
-              <Button variant="outline" onClick={() => void workspaceQuery.refetch()}>
-                <RefreshCw />
-                Try again
-              </Button>
-            }
-          />
-        </Card>
-      ) : workspaces.length === 0 ? (
-        <Card>
-          <EmptyState
-            icon={<Layers3 className="h-5 w-5" />}
-            title={t("deploy.noWorkspaces")}
-            description={`${t("deploy.noWorkspacesHint")} Use the primary action in the top-right corner.`}
-          />
-        </Card>
-      ) : (
-        <>
-          <section
-            className="console-object-summary"
-            aria-label="Deployment inventory"
-          >
-            <div className="console-object-summary-main">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-                  <Boxes className="h-4 w-4 text-muted-foreground" />
-                  Provisioning capacity
-                </div>
-                <div className="console-object-info-grid grid-cols-1 sm:grid-cols-3">
-                  <DeploymentFact
-                    icon={Workflow}
-                    label="Deployments"
-                    value={inventory.deployments}
-                    detail={`${inventory.platforms} platform${inventory.platforms === 1 ? "" : "s"} connected`}
-                  />
-                  <DeploymentFact
-                    icon={Server}
-                    label={t("deploy.vms")}
-                    value={inventory.vms}
-                    detail={`${inventory.started} started`}
-                  />
-                  <DeploymentFact
-                    icon={TriangleAlert}
-                    label="Post-deployment"
-                    value={inventory.postDeploy}
-                    detail={
-                      inventory.postDeploy
-                        ? "Steps pending"
-                        : "No pending steps"
-                    }
-                  />
-                </div>
-            </div>
-          </section>
-          <Card>
-            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b bg-muted/15 py-3">
-              <div>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Workflow className="h-4 w-4" />
-                  Deployments
-                </CardTitle>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Desired-state definitions, managed VM capacity, and current run status.
-                </p>
-              </div>
-              {selectedWorkspaceCount > 0 && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium tabular-nums">
-                    {selectedWorkspaceCount} selected
-                  </span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setSelectedWorkspaceIds(new Set())}
-                  >
-                    Clear selection
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => setConfirmWorkspaceRemoval(true)}
-                  >
-                    <Trash2 />
-                    Remove
-                  </Button>
-                </div>
-              )}
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="divide-y md:hidden">
-                {workspaces.map((workspace) => {
-                  const summary = summaries.get(workspace.id);
-                  const lastRun = workspace.last_run;
-                  const pending = postDeployOpen(summary);
-                  return (
-                    <div
-                      key={workspace.id}
-                      className="flex gap-3 p-3.5 transition-colors hover:bg-muted/30"
-                      data-selected={
-                        selectedWorkspaceIds.has(workspace.id) || undefined
-                      }
-                    >
-                      <input
-                        className="mt-1"
-                        type="checkbox"
-                        aria-label={`Select ${workspace.name}`}
-                        checked={selectedWorkspaceIds.has(workspace.id)}
-                        disabled={!canEdit}
-                        onChange={() => toggleWorkspace(workspace.id)}
-                      />
-                      <Link
-                        to="/deployments/$id"
-                        params={{ id: workspace.id }}
-                        className="min-w-0 flex-1"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="truncate font-medium">
-                              {workspace.name}
-                            </div>
-                            <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
-                              {workspace.path || "—"}
-                            </div>
-                          </div>
-                          {lastRun ? (
-                            <StatusBadge tone={runTone(lastRun.status)} dot>
-                              {lastRun.status || lastRun.action || "—"}
-                            </StatusBadge>
-                          ) : (
-                            <StatusBadge tone="muted">
-                              {t("deploy.noRun")}
-                            </StatusBadge>
-                          )}
-                        </div>
-                        <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                          <div>
-                            <div className="text-muted-foreground">
-                              Platform
-                            </div>
-                            <div className="mt-0.5 truncate font-medium text-foreground">
-                              {workspace.proxmox_connection?.name ||
-                                "Not assigned"}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-muted-foreground">
-                              Provisioning
-                            </div>
-                            <div className="mt-0.5 font-mono text-foreground">
-                              {summary
-                                ? `${summary.started_vm_count}/${summary.vm_count} started`
-                                : "—"}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-muted-foreground">
-                              Last run
-                            </div>
-                            <div className="mt-0.5 truncate text-foreground">
-                              {runLabel(lastRun)}
-                            </div>
-                          </div>
-                        </div>
-                        {pending > 0 && (
-                          <div className="mt-3 text-xs [color:hsl(var(--warning))]">
-                            {pending} post-deployment step{pending === 1 ? "" : "s"}{" "}
-                            open
-                          </div>
-                        )}
-                      </Link>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="table-scroll hidden md:block">
-                <table
-                  data-density="compact"
-                  className="w-full min-w-[980px] text-sm"
-                >
-                  <thead>
-                    <tr>
-                      <th className="w-11 px-3">
-                        <input
-                          type="checkbox"
-                          aria-label="Select all deployments"
-                          checked={allWorkspacesSelected}
-                          disabled={!canEdit}
-                          ref={(input) => {
-                            if (input)
-                              input.indeterminate =
-                                someWorkspacesSelected &&
-                                !allWorkspacesSelected;
-                          }}
-                          onChange={toggleAllWorkspaces}
-                        />
-                      </th>
-                      <th className="px-3">Deployment</th>
-                      <th className="px-3">Platform</th>
-                      <th className="px-3">Provisioning</th>
-                      <th className="px-3">Last run</th>
-                      <th className="px-3">Status</th>
-                      <th className="w-32 px-3 text-right">Open</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {workspaces.map((workspace) => {
-                      const summary = summaries.get(workspace.id);
-                      const lastRun = workspace.last_run;
-                      const pending = postDeployOpen(summary);
-                      return (
-                        <tr
-                          key={workspace.id}
-                          data-selected={
-                            selectedWorkspaceIds.has(workspace.id) || undefined
-                          }
-                        >
-                          <td className="px-3">
-                            <input
-                              type="checkbox"
-                              aria-label={`Select ${workspace.name}`}
-                              checked={selectedWorkspaceIds.has(workspace.id)}
-                              disabled={!canEdit}
-                              onChange={() => toggleWorkspace(workspace.id)}
-                            />
-                          </td>
-                          <td className="px-3">
-                            <div className="font-medium">{workspace.name}</div>
-                            <div className="mt-0.5 max-w-[22rem] truncate font-mono text-xs text-muted-foreground">
-                              {workspace.path || "—"}
-                            </div>
-                          </td>
-                          <td className="px-3">
-                            <div className="flex items-center gap-1.5 font-medium">
-                              <Database className="h-3.5 w-3.5 text-muted-foreground" />
-                              {workspace.proxmox_connection?.name ||
-                                "Not assigned"}
-                            </div>
-                            <div className="mt-0.5 max-w-[15rem] truncate font-mono text-xs text-muted-foreground">
-                              {workspace.proxmox_connection?.endpoint?.replace(
-                                /^https?:\/\//,
-                                "",
-                              ) || "Select a platform in the configuration"}
-                            </div>
-                          </td>
-                          <td className="px-3">
-                            <div className="font-mono text-xs tabular-nums">
-                              {summary
-                                ? `${summary.started_vm_count}/${summary.vm_count} started`
-                                : "—"}
-                            </div>
-                            {pending > 0 && (
-                              <div className="mt-0.5 text-xs [color:hsl(var(--warning))]">
-                                {pending} steps pending
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-3">
-                            <div className="text-xs text-foreground">
-                              {runLabel(lastRun)}
-                            </div>
-                            <div className="mt-0.5 whitespace-nowrap text-xs text-muted-foreground">
-                              {formatDate(
-                                lastRun?.completed_at || lastRun?.started_at,
-                              ) || "—"}
-                            </div>
-                          </td>
-                          <td className="px-3">
-                            {lastRun ? (
-                              <StatusBadge tone={runTone(lastRun.status)} dot>
-                                {lastRun.status || lastRun.action || "—"}
-                              </StatusBadge>
-                            ) : (
-                              <StatusBadge tone="muted">
-                                {t("deploy.noRun")}
-                              </StatusBadge>
-                            )}
-                          </td>
-                          <td className="px-3 text-right">
-                            <Button asChild size="sm" variant="outline">
-                              <Link
-                                to="/deployments/$id"
-                                params={{ id: workspace.id }}
-                              >
-                                {t("deploy.open")}
-                                <ArrowRight />
-                              </Link>
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </>
-      )}
-      <CreateDeploymentDialog
-        environmentId={environmentId}
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-      />
-      <ConfirmDialog
-        open={confirmWorkspaceRemoval}
-        onOpenChange={setConfirmWorkspaceRemoval}
-        title={
-          selectedWorkspaceCount === 1
-            ? "Remove deployment from Fleet"
-            : `Remove ${selectedWorkspaceCount} deployments from Fleet`
-        }
-        description="Only the deployment registration and run history are removed. OpenTofu files and provisioned infrastructure remain unchanged."
-        confirmLabel="Remove from Fleet"
-        confirmTextValue={
-          selectedWorkspaceCount > 0
-            ? `REMOVE ${selectedWorkspaceCount}`
-            : undefined
-        }
-        confirmInputLabel="Confirmation"
-        confirmInputHelp={
-          <>
-            To confirm, enter{" "}
-            <span className="font-mono text-foreground">
-              REMOVE {selectedWorkspaceCount}
-            </span>.
-          </>
-        }
-        onConfirm={() => removeWorkspaces.mutate([...selectedWorkspaceIds])}
-        isPending={removeWorkspaces.isPending}
-      />
-    </div>
-  );
+    <Card>
+      <CardHeader><CardTitle className="text-base">VM templates</CardTitle></CardHeader>
+      <CardContent>{templates.length === 0 ? <p className="text-sm text-muted-foreground">No templates yet. Save the current values as a template while creating or editing a VM.</p> : <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{templates.map((template) => <div key={template.id} className="rounded-md border p-3"><div className="font-medium">{template.name}</div><div className="mt-1 text-xs text-muted-foreground">{template.config?.cpu_cores || "—"} CPU · {template.config?.memory_mb || "—"} MB · {template.config?.disk_size_gb || "—"} GB</div></div>)}</div>}</CardContent>
+    </Card>
+    <CreateDeploymentDialog environmentId={environmentId} open={createOpen} onOpenChange={setCreateOpen} />
+    <ConfirmDialog open={Boolean(legacyToMigrate)} onOpenChange={(next) => !next && setLegacyToMigrate(null)} title="Split legacy state by VM?" description="Shipyard locks the legacy deployment, backs up its local state, moves each VM resource to an independent state, and validates that no VM would be created or destroyed. Remote backends are rejected and require a backend-specific migration." confirmLabel="Migrate VM states" variant="warning" confirmTextValue={legacyToMigrate ? `MIGRATE ${legacyToMigrate.name}` : undefined} confirmInputHelp={legacyToMigrate ? <>Enter <code className="font-mono">MIGRATE {legacyToMigrate.name}</code>.</> : undefined} onConfirm={() => legacyToMigrate && migrateMutation.mutate(legacyToMigrate)} isPending={migrateMutation.isPending} />
+  </div>;
 }

@@ -1455,6 +1455,12 @@
     "lastSeen": "Last seen",
     "noLongerPresent": "No longer present",
     "editAddress": "Edit IP address",
+    "deviceName": "Device name",
+    "nameDevice": "Name device {{mac}}",
+    "nameDeviceTitle": "Name device",
+    "nameDeviceDescription": "This name is saved with the MAC address and follows the device when DHCP assigns a different IP address.",
+    "deviceNamePlaceholder": "e.g. office printer",
+    "deviceNameSaved": "Device name saved.",
     "deletePrefix": "Delete prefix?",
     "deletePrefixDescription": "The prefix {{cidr}}, its {{addresses}} individual addresses, and {{ranges}} ranges will be deleted. Child prefixes remain and are reparented automatically. This cannot be undone.",
     "deletePrefixAction": "Delete prefix",
@@ -1651,8 +1657,8 @@
     "next": "Next"
   },
   "deploy": {
-    "title": "Deployments",
-    "description": "Desired-state provisioning with OpenTofu: plan, apply, and track managed VM resources.",
+    "title": "Virtual machines",
+    "description": "Independently managed Proxmox VMs with one OpenTofu state per VM.",
     "advanced": "Files & variables (expert view)",
     "refresh": "Refresh",
     "status": "OpenTofu status",

@@ -7,6 +7,9 @@ process.env.DB_PATH = path.join(os.tmpdir(), `shipyard_test_opentofu_core_${Date
 process.env.JWT_SECRET = 'test-jwt-secret-opentofu-core';
 process.env.SHIPYARD_KEY_SECRET = 'test-key-secret-opentofu-core';
 process.env.NODE_ENV = 'test';
+const isolatedWorkspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'shipyard-isolated-vms-'));
+process.env.OPENTOFU_WORKSPACE_ROOTS = `/workspaces,${isolatedWorkspaceRoot}`;
+process.env.OPENTOFU_INTERNAL_VM_ROOT = path.join(isolatedWorkspaceRoot, 'internal', 'vms');
 
 const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -19,6 +22,7 @@ after(() => {
   for (const suffix of ['', '-wal', '-shm']) {
     try { fs.unlinkSync(process.env.DB_PATH + suffix); } catch {}
   }
+  fs.rmSync(isolatedWorkspaceRoot, { recursive: true, force: true });
 });
 
 test('OpenTofu is served as an integrated API, not an optional plugin', async () => {
@@ -122,4 +126,85 @@ test('OpenTofu enforces granular capabilities and persisted environment scope', 
   const planDenied = await request(app).post('/api/opentofu/workspaces/tofu-ws-a/run').set(scopedAuth).send({ action: 'plan' });
   assert.equal(planDenied.status, 403);
   assert.equal(planDenied.body.capability, 'canPlanDeployments');
+});
+
+test('VM API creates one hidden workspace and state boundary per VM', async () => {
+  const { app } = createApp();
+  const login = await request(app).post('/api/auth/login').send({ username: 'admin', password: 'testpass12345' });
+  const auth = { Authorization: `Bearer ${login.body.token}`, 'X-Shipyard-Environment': 'default' };
+  const connection = await request(app).post('/api/opentofu/proxmox-connections').set(auth).send({
+    environment_id: 'default', name: `Isolated test ${Date.now()}`,
+    endpoint: 'https://pve.example.test:8006', api_token: 'root@pam!shipyard=test-secret', insecure: true,
+  });
+  assert.equal(connection.status, 201);
+
+  const created = await request(app).post('/api/opentofu/vms').set(auth).send({
+    environment_id: 'default', connection_id: connection.body.id,
+    name: `isolated-${Date.now()}`, node_name: 'pve001', vm_id: 45101,
+    clone_vm_id: 9000, disk_datastore: 'local-lvm', disk_size_gb: 40,
+    bridge: 'vmbr0', ipv4_address: 'dhcp', username: 'ubuntu',
+  });
+  assert.equal(created.status, 201, created.text);
+  assert.equal('workspace_id' in created.body, false);
+  assert.equal('workspace_path' in created.body, false);
+  const stored = db.db.prepare(`
+    SELECT vm.workspace_id, vm.is_isolated, vm.connection_id, workspace.path, workspace.workspace_kind
+    FROM tofu_proxmox_vms vm JOIN tofu_workspaces workspace ON workspace.id = vm.workspace_id
+    WHERE vm.id = ?
+  `).get(created.body.id);
+  assert.equal(stored.is_isolated, 1);
+  assert.equal(stored.workspace_kind, 'isolated_vm');
+  assert.equal(stored.connection_id, connection.body.id);
+  assert.match(stored.path, /\/internal\/vms\//);
+  const generated = fs.readFileSync(path.join(stored.path, 'fleet-proxmox-vms.tf'), 'utf8');
+  assert.equal((generated.match(/resource "proxmox_virtual_environment_vm"/g) || []).length, 1);
+
+  const inventory = await request(app).get('/api/opentofu/vms?environment_id=default').set(auth);
+  assert.equal(inventory.status, 200);
+  assert.equal(inventory.body.some(vm => vm.id === created.body.id), true);
+  assert.equal(inventory.body.some(vm => 'path' in vm || 'workspace_id' in vm), false);
+  const runs = await request(app).get(`/api/opentofu/vms/${created.body.id}/runs`).set(auth);
+  assert.equal(runs.status, 200);
+  assert.deepEqual(runs.body.items, []);
+  const planWithoutBinary = await request(app).post(`/api/opentofu/vms/${created.body.id}/plan`).set(auth).send({});
+  assert.equal(planWithoutBinary.status, 500);
+  assert.match(planWithoutBinary.body.error, /binary not found/i);
+
+  const forgotten = await request(app).post(`/api/opentofu/vms/${created.body.id}/forget`).set(auth).send({ confirmation: `FORGET ${created.body.name}` });
+  assert.equal(forgotten.status, 200, forgotten.text);
+  assert.equal(forgotten.body.infrastructure_kept, true);
+  assert.equal(db.db.prepare('SELECT 1 FROM tofu_proxmox_vms WHERE id = ?').get(created.body.id), undefined);
+  fs.rmSync(stored.path, { recursive: true, force: true });
+});
+
+test('legacy migration explicitly splits draft VMs into independent internal workspaces', async () => {
+  const { app } = createApp();
+  const login = await request(app).post('/api/auth/login').send({ username: 'admin', password: 'testpass12345' });
+  const auth = { Authorization: `Bearer ${login.body.token}`, 'X-Shipyard-Environment': 'default' };
+  const connection = await request(app).post('/api/opentofu/proxmox-connections').set(auth).send({
+    environment_id: 'default', name: `Migration test ${Date.now()}`,
+    endpoint: 'https://pve.example.test:8006', api_token: 'root@pam!shipyard=migration-secret', insecure: true,
+  });
+  assert.equal(connection.status, 201);
+  const workspaceId = `legacy-${Date.now()}`;
+  const workspaceName = `legacy migration ${Date.now()}`;
+  const legacyPath = path.join(isolatedWorkspaceRoot, workspaceId);
+  fs.mkdirSync(legacyPath, { recursive: true });
+  db.db.prepare(`INSERT INTO tofu_workspaces (id, name, path, description, env_vars, environment_id, proxmox_connection_id, workspace_kind)
+    VALUES (?, ?, ?, '', '{}', 'default', ?, 'legacy')`).run(workspaceId, workspaceName, legacyPath, connection.body.id);
+  const insertVm = db.db.prepare(`INSERT INTO tofu_proxmox_vms (id, workspace_id, name, config) VALUES (?, ?, ?, ?)`);
+  for (const [id, name, vmId] of [['legacy-vm-a', 'legacy-app-a', 45201], ['legacy-vm-b', 'legacy-app-b', 45202]]) {
+    insertVm.run(`${id}-${Date.now()}`, workspaceId, name, JSON.stringify({ name, node_name: 'pve001', vm_id: vmId, disk_datastore: 'local-lvm', bridge: 'vmbr0' }));
+  }
+
+  const migrated = await request(app).post(`/api/opentofu/legacy-workspaces/${workspaceId}/migrate-vms`).set(auth).send({ confirmation: `MIGRATE ${workspaceName}` });
+  assert.equal(migrated.status, 200, migrated.text);
+  assert.equal(migrated.body.migrated_vms.length, 2);
+  const rows = db.db.prepare(`SELECT vm.id, vm.is_isolated, workspace.workspace_kind, workspace.path
+    FROM tofu_proxmox_vms vm JOIN tofu_workspaces workspace ON workspace.id = vm.workspace_id
+    WHERE vm.name IN ('legacy-app-a', 'legacy-app-b') ORDER BY vm.name`).all();
+  assert.equal(rows.length, 2);
+  assert.equal(new Set(rows.map(row => row.path)).size, 2);
+  assert.equal(rows.every(row => row.is_isolated === 1 && row.workspace_kind === 'isolated_vm'), true);
+  assert.equal(db.db.prepare('SELECT workspace_kind FROM tofu_workspaces WHERE id = ?').get(workspaceId).workspace_kind, 'legacy_migrated');
 });

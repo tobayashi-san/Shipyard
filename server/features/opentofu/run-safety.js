@@ -66,6 +66,47 @@ function summarizePlanJson(value) {
   return counts;
 }
 
+/**
+ * Proves that an isolated VM plan can only affect its single managed resource.
+ * Provider reads and no-op entries are harmless; every mutating resource
+ * address must be the VM owned by the internal workspace.
+ * @param {any} value
+ * @param {{ name: string }} vm
+ * @returns {{ safe: boolean, initial: boolean, expected_address: string, changed_addresses: string[], error: string | null }}
+ */
+function validateIsolatedVmPlan(value, vm) {
+  const expectedAddress = `proxmox_virtual_environment_vm.${vm.name}`;
+  const changes = (Array.isArray(value?.resource_changes) ? value.resource_changes : [])
+    .map(change => ({
+      address: String(change?.address || ''),
+      actions: Array.isArray(change?.change?.actions) ? change.change.actions.map(String) : [],
+    }))
+    .filter(change => change.actions.some(action => ['create', 'update', 'delete'].includes(action)));
+  const changedAddresses = [...new Set(changes.map(change => change.address).filter(Boolean))];
+  const unexpected = changedAddresses.filter(address => address !== expectedAddress);
+  if (unexpected.length) {
+    return {
+      safe: false,
+      initial: false,
+      expected_address: expectedAddress,
+      changed_addresses: changedAddresses,
+      error: `The plan affects resources outside this VM: ${unexpected.join(', ')}`,
+    };
+  }
+  const expectedChange = changes.find(change => change.address === expectedAddress);
+  const initial = Boolean(expectedChange?.actions.includes('create') && !expectedChange.actions.includes('delete'));
+  if (initial && (changes.length !== 1 || expectedChange.actions.length !== 1)) {
+    return {
+      safe: false,
+      initial: true,
+      expected_address: expectedAddress,
+      changed_addresses: changedAddresses,
+      error: 'An initial VM deployment must contain exactly one create and no update, delete, or replacement.',
+    };
+  }
+  return { safe: true, initial, expected_address: expectedAddress, changed_addresses: changedAddresses, error: null };
+}
+
 function redactTofuOutput(value, env = {}) {
   let output = String(value || '');
   const secrets = [...new Set(Object.values(env).filter(item => typeof item === 'string' && item.length >= 6))]
@@ -105,4 +146,5 @@ module.exports = {
   redactTofuOutput,
   summarizePlanJson,
   terraformConfigurationHash,
+  validateIsolatedVmPlan,
 };

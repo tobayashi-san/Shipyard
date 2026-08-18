@@ -21,6 +21,7 @@ const {
   redactTofuOutput,
   summarizePlanJson,
   terraformConfigurationHash,
+  validateIsolatedVmPlan,
 } = require('./run-safety');
 const {
   detectTerraformResources,
@@ -31,6 +32,7 @@ const {
 const {
   PROXMOX_IDENTIFIER_RE,
   applyFleetProxmoxBlueprintMetadata,
+  buildProxmoxNetworkCatalog,
   buildProxmoxProviderFiles,
   buildProxmoxResourceOverview,
   extractProxmoxGuestIpv4,
@@ -67,6 +69,8 @@ const { registerFileRoutes } = require('./routes/files');
 const { registerStateRoutes } = require('./routes/state');
 const { registerPlatformRoutes } = require('./routes/platforms');
 const { registerVmRoutes } = require('./routes/vms');
+const { registerIsolatedVmRoutes } = require('./routes/isolated-vms');
+const { registerLegacyVmMigrationRoutes } = require('./routes/legacy-migration');
 const { registerWorkspaceRoutes } = require('./routes/workspaces');
 const { installOpenTofu, VERSION_RE } = require('./installer');
 
@@ -176,6 +180,7 @@ function register({ router, db, broadcast }) {
     .filter(Boolean)
     .map(root => path.resolve(root));
   const ALLOWED_PATH_PREFIXES = ALLOWED_PATH_ROOTS.map(root => `${root}${path.sep}`);
+  const INTERNAL_VM_ROOT = path.resolve(process.env.OPENTOFU_INTERNAL_VM_ROOT || path.join(ALLOWED_PATH_ROOTS[0] || '/workspaces', 'internal', 'vms'));
   const WORKSPACE_PATH_ERROR = `Path must be under configured OpenTofu workspace roots: ${ALLOWED_PATH_ROOTS.join(', ') || '/workspaces'}`;
 
   function isAllowedPath(p) {
@@ -375,6 +380,7 @@ ${providerCfg?.extra_variables || ''}`;
 *.auto.tfvars
 
 # OpenTofu / Terraform state and cache
+.local/
 .terraform/
 *.tfstate
 *.tfstate.backup
@@ -763,11 +769,13 @@ override.tf.json
       ? wantedNode
       : (nodes.find(node => node.online) || nodes[0]).name;
     const safeNode = encodeURIComponent(nodeName);
-    const [nextIdResponse, templatesResponse, storageResponse, networkResponse] = await Promise.all([
+    const [nextIdResponse, templatesResponse, storageResponse, networkResponse, zonesResult, vnetsResult] = await Promise.all([
       requestProxmoxApi(connection, '/cluster/nextid'),
       requestProxmoxApi(connection, `/nodes/${safeNode}/qemu?full=1`),
       requestProxmoxApi(connection, `/nodes/${safeNode}/storage`),
       requestProxmoxApi(connection, `/nodes/${safeNode}/network`),
+      requestProxmoxApi(connection, '/cluster/sdn/zones').then(value => ({ value })).catch(error => ({ error })),
+      requestProxmoxApi(connection, '/cluster/sdn/vnets').then(value => ({ value })).catch(error => ({ error })),
     ]);
     const nextVmId = Number.parseInt(String(nextIdResponse?.vmid ?? nextIdResponse ?? ''), 10);
     const templates = (Array.isArray(templatesResponse) ? templatesResponse : [])
@@ -783,10 +791,16 @@ override.tf.json
       }))
       .filter(item => item.content.length === 0 || item.content.includes('images'))
       .sort((a, b) => a.id.localeCompare(b.id, 'de'));
-    const bridges = (Array.isArray(networkResponse) ? networkResponse : [])
-      .filter(item => item && item.iface && (item.type === 'bridge' || String(item.iface).startsWith('vmbr')))
-      .map(item => ({ name: String(item.iface), active: item.active === 1 || item.active === '1' || item.active === true }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+    const networkCatalog = buildProxmoxNetworkCatalog(
+      networkResponse,
+      zonesResult.value,
+      vnetsResult.value,
+      nodeName
+    );
+    const sdnWarnings = [zonesResult.error, vnetsResult.error]
+      .filter(Boolean)
+      .map(error => String(error.message || 'SDN catalog unavailable'));
+    if (sdnWarnings.length) log.warn(`Could not load the complete Proxmox SDN catalog: ${sdnWarnings.join('; ')}`);
 
     return {
       nodes,
@@ -794,7 +808,8 @@ override.tf.json
       next_vm_id: Number.isInteger(nextVmId) && nextVmId > 0 ? nextVmId : null,
       templates,
       datastores,
-      bridges,
+      ...networkCatalog,
+      sdn_warnings: sdnWarnings,
     };
   }
 
@@ -1209,6 +1224,7 @@ override.tf.json
   function deploymentCapability(req) {
     const pathname = req.path || '/';
     if (pathname === '/install') return 'canManageDeploymentPlatforms';
+    if (/^\/proxmox-connections\/[^/]+\/vm-catalog$/.test(pathname)) return 'canViewDeployments';
     if (/^\/proxmox-connections(?:\/[^/]+)?$/.test(pathname) && req.method !== 'GET') return 'canManageDeploymentPlatforms';
     if (pathname === '/infrastructure') return 'canViewInfrastructure';
     if (/^\/proxmox-connections(?:\/|$)/.test(pathname)) return 'canViewInfrastructure';
@@ -1217,6 +1233,10 @@ override.tf.json
     if (/\/promote-proxmox-connection$/.test(pathname)) return 'canManageDeploymentPlatforms';
     if (/\/proxmox-connection$/.test(pathname) && req.method !== 'GET') return 'canManageDeploymentPlatforms';
     if (/\/post-deploy\/retry$/.test(pathname)) return 'canApplyDeployments';
+    if (/^\/vms\/[^/]+\/apply$/.test(pathname)) return 'canApplyDeployments';
+    if (/^\/vms\/[^/]+\/destroy$/.test(pathname)) return 'canDestroyDeployments';
+    if (/^\/vms\/[^/]+\/(?:plan|check-drift)$/.test(pathname)) return 'canPlanDeployments';
+    if (/^\/vms\/[^/]+\/forget$/.test(pathname)) return 'canEditDeployments';
     if (/\/state-backups\/restore$/.test(pathname)) return 'canDestroyDeployments';
     if (/\/cancel\//.test(pathname)) {
       const run = db.db.prepare('SELECT action FROM tofu_runs WHERE id = ?').get(pathname.split('/').pop());
@@ -1240,6 +1260,26 @@ override.tf.json
       const workspace = getWorkspaceRow(decodeURIComponent(workspaceMatch[1]));
       return workspace ? String(workspace.environment_id || 'default') : null;
     }
+    const vmMatch = pathname.match(/^\/vms\/([^/]+)/);
+    if (vmMatch) {
+      const row = db.db.prepare(`
+        SELECT workspace.environment_id
+        FROM tofu_proxmox_vms vm
+        JOIN tofu_workspaces workspace ON workspace.id = vm.workspace_id
+        WHERE vm.id = ? AND vm.is_isolated = 1
+      `).get(decodeURIComponent(vmMatch[1]));
+      return row ? String(row.environment_id || 'default') : null;
+    }
+    const legacyMatch = pathname.match(/^\/legacy-workspaces\/([^/]+)/);
+    if (legacyMatch) {
+      const row = getWorkspaceRow(decodeURIComponent(legacyMatch[1]));
+      return row ? String(row.environment_id || 'default') : null;
+    }
+    const templateMatch = pathname.match(/^\/vm-templates\/([^/]+)/);
+    if (templateMatch) {
+      const row = db.db.prepare('SELECT environment_id FROM tofu_proxmox_vm_templates WHERE id = ?').get(decodeURIComponent(templateMatch[1]));
+      return row ? String(row.environment_id || 'default') : null;
+    }
     const connectionMatch = pathname.match(/^\/proxmox-connections\/([^/]+)/);
     if (connectionMatch) {
       const source = db.db.prepare('SELECT environment_id FROM tofu_proxmox_connections WHERE id = ?')
@@ -1251,7 +1291,7 @@ override.tf.json
       const server = db.servers.getById(decodeURIComponent(managedServerMatch[1]));
       return server ? String(server.environment_id || 'default') : null;
     }
-    if (pathname === '/workspaces' || pathname === '/proxmox-connections') {
+    if (pathname === '/workspaces' || pathname === '/vms' || pathname === '/vm-templates' || pathname === '/legacy-workspaces' || pathname === '/proxmox-connections') {
       return String(req.method === 'GET' ? req.query.environment_id || '' : req.body?.environment_id || '').trim() || undefined;
     }
     if (pathname === '/infrastructure') return String(req.query.environment_id || '').trim() || undefined;
@@ -1291,6 +1331,38 @@ override.tf.json
     getLastRun,
   });
 
+  registerIsolatedVmRoutes({
+    db,
+    router,
+    backupLocalState,
+    ensureWorkspacePath,
+    findBinary,
+    getPostDeployOverview,
+    getWorkspace,
+    internalVmRoot: INTERNAL_VM_ROOT,
+    isAllowedPath,
+    loadProxmoxCatalog,
+    normalizeProxmoxVm,
+    normalizeProxmoxVmTemplate,
+    readSavedProxmoxConnection,
+    syncPathsFile,
+    validatePostDeployPlaybookAccess,
+    writeFleetProxmoxFiles,
+  });
+
+  registerLegacyVmMigrationRoutes({
+    db,
+    router,
+    backupLocalState,
+    findBinary,
+    getProxmoxVms,
+    getWorkspace,
+    internalVmRoot: INTERNAL_VM_ROOT,
+    isAllowedPath,
+    syncPathsFile,
+    workspaceBackendType,
+  });
+
   registerWorkspaceRoutes({
     db,
     router,
@@ -1324,7 +1396,7 @@ override.tf.json
     const page = Math.min(requestedPage, totalPages);
     const offset = (page - 1) * pageSize;
     const runs = db.db.prepare(
-      'SELECT id, workspace_id, action, status, plan_summary, approved_plan_id, started_by, started_at, completed_at FROM tofu_runs WHERE workspace_id = ? ORDER BY started_at DESC LIMIT ? OFFSET ?'
+      'SELECT id, workspace_id, action, status, plan_summary, plan_safe, plan_validation, approved_plan_id, started_by, started_at, completed_at FROM tofu_runs WHERE workspace_id = ? ORDER BY started_at DESC LIMIT ? OFFSET ?'
     ).all(req.params.id, pageSize, offset);
     res.json({
       items: runs,
@@ -1340,7 +1412,7 @@ override.tf.json
   });
 
   router.get('/workspaces/:id/runs/:runId', (req, res) => {
-    const run = db.db.prepare('SELECT id, workspace_id, action, status, output, plan_summary, approved_plan_id, started_by, started_at, completed_at FROM tofu_runs WHERE id = ? AND workspace_id = ?')
+    const run = db.db.prepare('SELECT id, workspace_id, action, status, output, plan_summary, plan_safe, plan_validation, approved_plan_id, started_by, started_at, completed_at FROM tofu_runs WHERE id = ? AND workspace_id = ?')
       .get(req.params.runId, req.params.id);
     if (!run) return res.status(404).json({ error: 'Run not found' });
     res.json(run);
@@ -1355,6 +1427,9 @@ override.tf.json
 
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    if (db.db.prepare("SELECT 1 FROM tofu_workspaces WHERE migration_status = 'running' LIMIT 1").get()) {
+      return res.status(409).json({ error: 'OpenTofu runs are temporarily locked while legacy VM state is being isolated.' });
+    }
     const activeRun = db.db.prepare("SELECT id, action, started_at FROM tofu_runs WHERE workspace_id = ? AND status IN ('running', 'cancelling')").get(workspace.id);
     if (activeRun) return res.status(409).json({ error: `${activeRun.action} is already running for this deployment.`, active_run: activeRun });
 
@@ -1364,6 +1439,11 @@ override.tf.json
         .get(String(planId || ''), workspace.id);
       if (!approvedPlan?.plan_path || !approvedPlan.config_hash) {
         return res.status(409).json({ error: 'Apply requires a successfully reviewed and saved plan.' });
+      }
+      if (workspace.workspace_kind === 'isolated_vm' && approvedPlan.plan_safe !== 1) {
+        let detail = null;
+        try { detail = JSON.parse(approvedPlan.plan_validation || 'null'); } catch {}
+        return res.status(409).json({ error: detail?.error || 'The reviewed plan did not pass the isolated-VM safety check.' });
       }
       const latestPlan = db.db.prepare("SELECT id FROM tofu_runs WHERE workspace_id = ? AND action = 'plan' AND status = 'success' ORDER BY started_at DESC, rowid DESC LIMIT 1").get(workspace.id);
       if (latestPlan?.id !== approvedPlan.id) return res.status(409).json({ error: 'Only the latest successful plan can be applied.' });
@@ -1390,9 +1470,10 @@ override.tf.json
       if (!row) return res.status(404).json({ error: 'VM definition not found' });
       try { vmToDestroy = { ...normalizeProxmoxVm(JSON.parse(row.config)), id: row.id }; }
       catch { return res.status(400).json({ error: 'The stored VM definition is invalid.' }); }
-      if (!hasValidDestroyVmConfirmation(destroyConfirmation, workspace.name, vmToDestroy.name)) {
+      const isolatedConfirmation = workspace.workspace_kind === 'isolated_vm' && destroyConfirmation === `DESTROY ${vmToDestroy.name}`;
+      if (!isolatedConfirmation && !hasValidDestroyVmConfirmation(destroyConfirmation, workspace.name, vmToDestroy.name)) {
         return res.status(400).json({
-          error: `VM destroy must be confirmed with "${destroyVmConfirmationPhrase(workspace.name, vmToDestroy.name)}".`,
+          error: `VM destroy must be confirmed with "${workspace.workspace_kind === 'isolated_vm' ? `DESTROY ${vmToDestroy.name}` : destroyVmConfirmationPhrase(workspace.name, vmToDestroy.name)}".`,
         });
       }
     }
@@ -1427,6 +1508,11 @@ override.tf.json
 
     const env = { ...process.env, ...workspace.env_vars };
     const logMeta = { ip: req.ip, user: req.user?.username };
+    const eventVm = workspace.workspace_kind === 'isolated_vm' ? getProxmoxVms(workspace.id)[0] : null;
+    const broadcastTofu = payload => broadcast({
+      ...payload,
+      ...(eventVm ? { vmId: eventVm.id, vmName: eventVm.name } : { workspaceId: workspace.id }),
+    });
 
     res.json({ runId, dbRunId, status: 'started' });
 
@@ -1449,8 +1535,29 @@ override.tf.json
       } catch (error) {
         const message = `Fleet Proxmox files could not be generated: ${permissionError(error, workspace.path)}`;
         db.db.prepare("UPDATE tofu_runs SET status='failed', output=?, completed_at=datetime('now') WHERE id=?").run(message, dbRunId);
-        broadcast({ type: 'tofu_done', runId, workspaceId: workspace.id, success: false, error: message, dbRunId });
+        broadcastTofu({ type: 'tofu_done', runId, success: false, error: message, dbRunId });
         return;
+      }
+
+      // Internal VM units have no user-visible Init action. Initialize their
+      // provider automatically before every plan/drift check so the first
+      // deployment is a single Plan -> Apply workflow.
+      if (workspace.workspace_kind === 'isolated_vm' && ['plan', 'drift'].includes(action)) {
+        try {
+          await execFileAsync(binary, ['init', '-input=false', '-no-color'], {
+            cwd: workspace.path,
+            env: { ...process.env, ...workspace.env_vars },
+            timeout: 120_000,
+            maxBuffer: 16 * 1024 * 1024,
+          });
+          ensureProviderLockIsTracked(workspace.path);
+        } catch (error) {
+          const detail = String(error.stderr || error.stdout || error.message || 'OpenTofu init failed').trim();
+          const message = `The isolated VM provider could not be initialized: ${redactTofuOutput(detail, workspace.env_vars)}`;
+          db.db.prepare("UPDATE tofu_runs SET status='failed', output=?, completed_at=datetime('now') WHERE id=?").run(message, dbRunId);
+          broadcastTofu({ type: 'tofu_done', runId, success: false, error: message, dbRunId });
+          return;
+        }
       }
 
       const configHash = terraformConfigurationHash(workspace.path, workspace.env_vars);
@@ -1461,7 +1568,7 @@ override.tf.json
         } catch (error) {
           const message = `State safety check failed: ${error.message}`;
           db.db.prepare("UPDATE tofu_runs SET status='failed', output=?, completed_at=datetime('now') WHERE id=?").run(message, dbRunId);
-          broadcast({ type: 'tofu_done', runId, workspaceId: workspace.id, success: false, error: message, dbRunId });
+          broadcastTofu({ type: 'tofu_done', runId, success: false, error: message, dbRunId });
           return;
         }
       }
@@ -1471,15 +1578,15 @@ override.tf.json
             ? 'The saved plan artifact is no longer available. Create a new plan.'
             : 'The deployment configuration has changed since the plan. Create and review a new plan.';
           db.db.prepare("UPDATE tofu_runs SET status='failed', output=?, completed_at=datetime('now') WHERE id=?").run(message, dbRunId);
-          broadcast({ type: 'tofu_done', runId, workspaceId: workspace.id, success: false, error: message, dbRunId });
+          broadcastTofu({ type: 'tofu_done', runId, success: false, error: message, dbRunId });
           return;
         }
       }
       db.db.prepare('UPDATE tofu_runs SET config_hash = ? WHERE id = ?').run(configHash, dbRunId);
 
-      broadcast({ type: 'tofu_start', runId, workspaceId: workspace.id, action: tofuAction });
+      broadcastTofu({ type: 'tofu_start', runId, action: tofuAction });
       const header = `▶  ${binary} ${args.join(' ')}\n   cwd: ${workspace.path}\n\n`;
-      broadcast({ type: 'tofu_output', runId, workspaceId: workspace.id, stream: 'meta',
+      broadcastTofu({ type: 'tofu_output', runId, stream: 'meta',
         data: header });
       db.db.prepare('UPDATE tofu_runs SET output = ? WHERE id = ?').run(header, dbRunId);
 
@@ -1492,13 +1599,13 @@ override.tf.json
         const text = redactTofuOutput(raw, workspace.env_vars);
         output += text;
         db.db.prepare('UPDATE tofu_runs SET output = output || ? WHERE id = ?').run(text, dbRunId);
-        broadcast({ type: 'tofu_output', runId, workspaceId: workspace.id, stream: 'meta', data: text });
+        broadcastTofu({ type: 'tofu_output', runId, stream: 'meta', data: text });
       };
       const emitProcessOutput = (stream, s) => {
         if (!s) return;
         output += s;
         db.db.prepare('UPDATE tofu_runs SET output = output || ? WHERE id = ?').run(s, dbRunId);
-        broadcast({ type: 'tofu_output', runId, workspaceId: workspace.id, stream, data: s });
+        broadcastTofu({ type: 'tofu_output', runId, stream, data: s });
       };
       const stdoutRedactor = createStreamingRedactor(workspace.env_vars, value => emitProcessOutput('stdout', value));
       const stderrRedactor = createStreamingRedactor(workspace.env_vars, value => emitProcessOutput('stderr', value));
@@ -1513,6 +1620,7 @@ override.tf.json
         const success = !cancelled && (code === 0 || (['plan', 'drift'].includes(action) && code === 2));
         const finish = async () => {
           let planSummary = null;
+          let planValidation = null;
           if (success && ['plan', 'drift'].includes(action)) {
             try {
               fs.chmodSync(planPath, 0o600);
@@ -1525,6 +1633,14 @@ override.tf.json
               }));
               planSummary = summarizePlanJson(planJson);
               emitMeta(`[Shipyard] Plan: ${planSummary.create} create, ${planSummary.update} update, ${planSummary.delete} delete, ${planSummary.replace} replace.`);
+              if (workspace.workspace_kind === 'isolated_vm') {
+                const isolatedVm = getProxmoxVms(workspace.id)[0];
+                if (!isolatedVm) throw new Error('The internal VM workspace does not contain exactly one VM definition.');
+                planValidation = validateIsolatedVmPlan(planJson, isolatedVm);
+                emitMeta(planValidation.safe
+                  ? `[Shipyard] Isolation check passed for ${planValidation.expected_address}.`
+                  : `[Shipyard] Isolation check blocked Apply: ${planValidation.error}`);
+              }
               if (action === 'drift') {
                 try { fs.unlinkSync(planPath); } catch {}
                 db.db.prepare('UPDATE tofu_runs SET plan_path = NULL WHERE id = ?').run(dbRunId);
@@ -1602,24 +1718,24 @@ override.tf.json
           if (success && action === 'init') syncFleetWorkspace(workspace, `Track provider lock for ${workspace.name}`);
 
           const status = cancelled ? 'cancelled' : success ? 'success' : 'failed';
-          db.db.prepare("UPDATE tofu_runs SET status=?, output=?, plan_summary=?, completed_at=datetime('now') WHERE id=?")
-            .run(status, output, planSummary ? JSON.stringify(planSummary) : null, dbRunId);
+          db.db.prepare("UPDATE tofu_runs SET status=?, output=?, plan_summary=?, plan_safe=?, plan_validation=?, completed_at=datetime('now') WHERE id=?")
+            .run(status, output, planSummary ? JSON.stringify(planSummary) : null, planValidation ? (planValidation.safe ? 1 : 0) : null, planValidation ? JSON.stringify(planValidation) : null, dbRunId);
           db.auditLog.write('tofu.run', `workspace=${workspace.name} action=${action} status=${status} run=${dbRunId}`, logMeta.ip || null, success, logMeta.user || null);
-          broadcast({ type: 'tofu_done', runId, workspaceId: workspace.id, success, exitCode: code, dbRunId });
+          broadcastTofu({ type: 'tofu_done', runId, success, exitCode: code, dbRunId });
         };
 
         finish().catch(err => {
           log.error({ err, workspace: workspace.name }, 'OpenTofu run finalization failed');
           db.db.prepare("UPDATE tofu_runs SET status='failed', output=?, completed_at=datetime('now') WHERE id=?")
             .run(`${output}\n[Shipyard] Finalization failed: ${err.message}\n`, dbRunId);
-          broadcast({ type: 'tofu_done', runId, workspaceId: workspace.id, success: false, exitCode: code, error: err.message, dbRunId });
+          broadcastTofu({ type: 'tofu_done', runId, success: false, exitCode: code, error: err.message, dbRunId });
         });
       });
       proc.on('error', err => {
         _running.delete(runId);
         db.db.prepare("UPDATE tofu_runs SET status='failed', output=?, completed_at=datetime('now') WHERE id=?")
           .run(err.message, dbRunId);
-        broadcast({ type: 'tofu_done', runId, workspaceId: workspace.id, success: false, exitCode: -1, error: err.message, dbRunId });
+        broadcastTofu({ type: 'tofu_done', runId, success: false, exitCode: -1, error: err.message, dbRunId });
       });
     };
 
@@ -1627,7 +1743,7 @@ override.tf.json
       log.error({ err: error, workspace: workspace.name }, 'OpenTofu preflight failed');
       db.db.prepare("UPDATE tofu_runs SET status='failed', output=output || ?, completed_at=datetime('now') WHERE id=? AND status='running'")
         .run(`\n[Shipyard] Preparation failed: ${error.message}\n`, dbRunId);
-      broadcast({ type: 'tofu_done', runId, workspaceId: workspace.id, success: false, error: error.message, dbRunId });
+      broadcastTofu({ type: 'tofu_done', runId, success: false, error: error.message, dbRunId });
     });
   });
 
@@ -1761,6 +1877,7 @@ module.exports = {
     readProxmoxConnection,
     proxmoxApiUrl,
     buildProxmoxProviderFiles,
+    buildProxmoxNetworkCatalog,
     buildProxmoxResourceOverview,
     applyFleetProxmoxBlueprintMetadata,
     extractProxmoxGuestIpv4,
@@ -1776,6 +1893,7 @@ module.exports = {
     normalizedWorkspaceName,
     terraformConfigurationHash,
     summarizePlanJson,
+    validateIsolatedVmPlan,
     redactTofuOutput,
     createStreamingRedactor,
   },

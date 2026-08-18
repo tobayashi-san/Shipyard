@@ -20,6 +20,7 @@ import {
   RefreshCw,
   ServerCog,
   Settings2,
+  Tag,
   Trash2,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
@@ -82,6 +83,7 @@ interface Reservation {
   server_id?: string;
   server_name?: string;
   mac_address?: string;
+  device_name?: string;
   status: string;
   configured_status?: string;
   role?: string;
@@ -203,6 +205,7 @@ export function NetworkDetailPage() {
   const [rangeEnd, setRangeEnd] = useState("");
   const [rangeDescription, setRangeDescription] = useState("");
   const [editing, setEditing] = useState<Reservation | null>(null);
+  const [naming, setNaming] = useState<Reservation | null>(null);
   const [syncOpen, setSyncOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [addKind, setAddKind] = useState<"address" | "range">("address");
@@ -357,6 +360,19 @@ export function NetworkDetailPage() {
     onSuccess: () => {
       showToast(tr("ipSaved"), "success");
       setEditing(null);
+      refresh();
+    },
+    onError: (error: Error) => showToast(error.message, "error"),
+  });
+  const updateDeviceName = useMutation({
+    mutationFn: ({ reservation, name }: { reservation: Reservation; name: string }) =>
+      apiFetch(`/ipam/reservations/${encodeURIComponent(reservation.id)}/device-name`, {
+        method: "PATCH",
+        body: { name },
+      }),
+    onSuccess: () => {
+      showToast(tr("deviceNameSaved"), "success");
+      setNaming(null);
       refresh();
     },
     onError: (error: Error) => showToast(error.message, "error"),
@@ -727,6 +743,7 @@ export function NetworkDetailPage() {
               onSearch={setAllocationSearch}
               onStatusFilter={setAllocationStatus}
               onEdit={setEditing}
+              onName={setNaming}
               onRelease={setReleaseTarget}
               onBulkRelease={async (selected) => {
                 await Promise.all(
@@ -770,6 +787,13 @@ export function NetworkDetailPage() {
         onOpenChange={(open) => !open && setEditing(null)}
         onSave={(value) => updateReservation.mutate(value)}
         saving={updateReservation.isPending}
+      />
+      <DeviceNameDialog
+        reservation={naming}
+        open={Boolean(naming)}
+        onOpenChange={(open) => !open && setNaming(null)}
+        onSave={(name) => naming && updateDeviceName.mutate({ reservation: naming, name })}
+        saving={updateDeviceName.isPending}
       />
       <EditPrefixDialog
         prefix={network}
@@ -1211,6 +1235,7 @@ function AllocationTable({
   onSearch,
   onStatusFilter,
   onEdit,
+  onName,
   onRelease,
   onBulkRelease,
   onReserveFirst,
@@ -1229,6 +1254,7 @@ function AllocationTable({
   onSearch: (value: string) => void;
   onStatusFilter: (value: string) => void;
   onEdit: (row: Reservation) => void;
+  onName: (row: Reservation) => void;
   onRelease: (row: Allocation) => void;
   onBulkRelease: (rows: Allocation[]) => Promise<void>;
   onReserveFirst: (segment: FreeSpaceSegment) => void;
@@ -1384,6 +1410,7 @@ function AllocationTable({
                     checked={selected.has(keyFor(row))}
                     onToggle={() => toggle(row)}
                     onEdit={onEdit}
+                    onName={onName}
                     onRelease={onRelease}
                     canEdit={canEdit}
                   />
@@ -1498,19 +1525,20 @@ function AllocationTable({
                               className="block truncate font-medium text-primary hover:underline"
                             >
                               {row.server_name ||
+                                row.device_name ||
                                 row.hostname ||
                                 tr("openManagedHost")}
                             </Link>
                           ) : (
                             <span
                               className={
-                                isAddress && (row.server_name || row.hostname)
+                                isAddress && (row.server_name || row.device_name || row.hostname)
                                   ? "block truncate font-semibold text-foreground"
                                   : "block truncate text-muted-foreground"
                               }
                             >
                               {isAddress
-                                ? row.server_name || row.hostname || "—"
+                                ? row.server_name || row.device_name || row.hostname || "—"
                                 : row.role || "—"}
                             </span>
                           )}
@@ -1535,6 +1563,17 @@ function AllocationTable({
                         </td>
                         {canEdit && <td className="px-3">
                           <div className="flex justify-end gap-1">
+                            {isAddress && !row.system_managed && row.mac_address && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => onName(row as Reservation)}
+                                aria-label={tr("nameDevice", { mac: row.mac_address })}
+                                title={tr("nameDevice", { mac: row.mac_address })}
+                              >
+                                <Tag className="h-4 w-4" />
+                              </Button>
+                            )}
                             {isAddress && !isProtected(row) && (
                               <Button
                                 variant="ghost"
@@ -1786,6 +1825,7 @@ function AllocationMobileRow({
   checked,
   onToggle,
   onEdit,
+  onName,
   onRelease,
   canEdit,
 }: {
@@ -1793,6 +1833,7 @@ function AllocationMobileRow({
   checked: boolean;
   onToggle: () => void;
   onEdit: (row: Reservation) => void;
+  onName: (row: Reservation) => void;
   onRelease: (row: Allocation) => void;
   canEdit: boolean;
 }) {
@@ -1845,12 +1886,12 @@ function AllocationMobileRow({
               params={{ id: row.server_id }}
               className="font-medium text-primary hover:underline"
             >
-              {row.server_name || row.hostname || tr("openManagedHost")}
+              {row.server_name || row.device_name || row.hostname || tr("openManagedHost")}
             </Link>
           ) : (
             <span className="text-foreground">
               {isAddress
-                ? row.server_name || row.hostname || "—"
+                ? row.server_name || row.device_name || row.hostname || "—"
                 : row.role || "—"}
             </span>
           )}
@@ -1869,6 +1910,16 @@ function AllocationMobileRow({
         )}
       </div>
       {canEdit && <div className="ml-7 flex gap-2">
+        {isAddress && !row.system_managed && row.mac_address && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onName(row as Reservation)}
+          >
+            <Tag />
+            {tr("deviceName")}
+          </Button>
+        )}
         {isAddress && !protectedRow && (
           <Button
             variant="outline"
@@ -2224,6 +2275,63 @@ function editableReservationValue(reservation: Reservation | null) {
           (reservation.status === "dhcp" ? "active" : reservation.status),
       }
     : null;
+}
+
+function DeviceNameDialog({
+  reservation,
+  open,
+  onOpenChange,
+  onSave,
+  saving,
+}: {
+  reservation: Reservation | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSave: (name: string) => void;
+  saving: boolean;
+}) {
+  const [name, setName] = useState("");
+  useEffect(() => {
+    setName(reservation?.device_name || "");
+  }, [reservation]);
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{tr("nameDeviceTitle")}</DialogTitle>
+          <DialogDescription>
+            {tr("nameDeviceDescription")}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <Field label={tr("deviceName")}>
+            <Input
+              autoFocus
+              value={name}
+              maxLength={100}
+              onChange={(event) => setName(event.target.value)}
+              placeholder={tr("deviceNamePlaceholder")}
+            />
+          </Field>
+          <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+            <span className="block">{reservation?.address || "—"}</span>
+            <span className="font-mono text-foreground">
+              {reservation?.mac_address || "—"}
+            </span>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {tr("cancel")}
+          </Button>
+          <Button onClick={() => onSave(name.trim())} disabled={saving}>
+            <Tag />
+            {tr("save")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function EditAddressDialog({

@@ -10,6 +10,7 @@ const TOFU_SUBDIR       = 'tofu';
 // Sync configuration and the provider lock file; .tfvars may contain secrets.
 const TOFU_EXTENSIONS   = ['.tf'];
 const TOFU_GIT_FILES    = new Set(['.gitignore', '.terraform.lock.hcl']);
+const LOCAL_ONLY_NAMES  = new Set(['.local']);
 const WORKSPACE_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,62}$/;
 
 function normalizedWorkspaceName(value) {
@@ -35,8 +36,10 @@ function syncOneToGit(name, wsPath) {
   fs.mkdirSync(destDir, { recursive: true });
   const srcFiles = new Set(
     fs.readdirSync(wsPath).filter(f =>
+      !LOCAL_ONLY_NAMES.has(f) &&
       (TOFU_GIT_FILES.has(f) || TOFU_EXTENSIONS.some(e => f.endsWith(e))) &&
-      !NEVER_SYNC.some(e => f.endsWith(e))
+      !NEVER_SYNC.some(e => f.endsWith(e)) &&
+      fs.statSync(path.join(wsPath, f)).isFile()
     )
   );
   for (const f of srcFiles) fs.copyFileSync(path.join(wsPath, f), path.join(destDir, f));

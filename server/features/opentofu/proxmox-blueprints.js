@@ -284,11 +284,80 @@ function buildProxmoxResourceOverview(vms, state = null, managedServersByVm = ne
   };
 }
 
+function buildProxmoxNetworkCatalog(networkResponse, zonesResponse, vnetsResponse, nodeName) {
+  const nodeNetworks = Array.isArray(networkResponse) ? networkResponse : [];
+  const activeByName = new Map(nodeNetworks
+    .filter(item => item?.iface)
+    .map(item => [String(item.iface), item.active === 1 || item.active === '1' || item.active === true]));
+  const zones = (Array.isArray(zonesResponse) ? zonesResponse : [])
+    .map(item => {
+      const name = String(item?.zone || item?.id || '').trim();
+      const nodes = Array.isArray(item?.nodes)
+        ? item.nodes.map(String)
+        : String(item?.nodes || '').split(',').map(value => value.trim()).filter(Boolean);
+      return {
+        id: name,
+        name,
+        type: String(item?.type || '').trim(),
+        bridge: String(item?.bridge || '').trim(),
+        nodes,
+        available_on_node: nodes.length === 0 || nodes.includes(nodeName),
+      };
+    })
+    .filter(item => item.name)
+    .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  const zonesByName = new Map(zones.map(zone => [zone.name, zone]));
+  const vnets = (Array.isArray(vnetsResponse) ? vnetsResponse : [])
+    .map(item => {
+      const name = String(item?.vnet || item?.id || '').trim();
+      const zone = String(item?.zone || '').trim();
+      const parsedTag = Number.parseInt(String(item?.tag ?? ''), 10);
+      const zoneEntry = zonesByName.get(zone);
+      return {
+        id: name,
+        name,
+        zone,
+        zone_type: zoneEntry?.type || '',
+        alias: String(item?.alias || '').trim(),
+        vlan_id: Number.isInteger(parsedTag) && parsedTag >= 1 && parsedTag <= 4094 ? parsedTag : null,
+        active: activeByName.get(name) === true,
+        available_on_node: zoneEntry ? zoneEntry.available_on_node : true,
+      };
+    })
+    .filter(item => item.name)
+    .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  const vnetsByName = new Map(vnets.map(vnet => [vnet.name, vnet]));
+  const bridges = nodeNetworks
+    .filter(item => item?.iface && (item.type === 'bridge' || String(item.iface).startsWith('vmbr')))
+    .map(item => {
+      const name = String(item.iface);
+      const vnet = vnetsByName.get(name);
+      return vnet
+        ? { ...vnet, source: 'sdn' }
+        : { name, id: name, source: 'node', active: activeByName.get(name) === true, available_on_node: true };
+    });
+  for (const vnet of vnets) {
+    if (!bridges.some(bridge => bridge.name === vnet.name)) bridges.push({ ...vnet, source: 'sdn' });
+  }
+  const vlans = [...new Map(vnets
+    .filter(vnet => vnet.vlan_id !== null)
+    .map(vnet => [vnet.vlan_id, { id: String(vnet.vlan_id), vlan_id: vnet.vlan_id, vnet: vnet.name, zone: vnet.zone }])).values()]
+    .sort((a, b) => a.vlan_id - b.vlan_id);
+
+  return {
+    bridges: bridges.sort((a, b) => a.name.localeCompare(b.name, 'de')),
+    sdn_zones: zones,
+    sdn_vnets: vnets,
+    vlans,
+  };
+}
+
 
 module.exports = {
   PROXMOX_IDENTIFIER_RE,
   applyFleetProxmoxBlueprintMetadata,
   buildProxmoxProviderFiles,
+  buildProxmoxNetworkCatalog,
   buildProxmoxResourceOverview,
   extractProxmoxGuestIpv4,
   extractProxmoxGuestIpv4s,

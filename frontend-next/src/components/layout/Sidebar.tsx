@@ -243,7 +243,7 @@ export function Sidebar({
           {canViewDeployments && (
             <NavItem
               to="/deployments"
-              label="Deployments"
+              label="Virtual machines"
               icon={Workflow}
               active={path === "/deployments" || path.startsWith("/deployments/")}
               collapsed={collapsed}

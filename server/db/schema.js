@@ -183,6 +183,20 @@ function applySchema(db) {
     CREATE INDEX IF NOT EXISTS idx_ipam_reservations_subnet ON ipam_reservations(subnet_id);
     CREATE INDEX IF NOT EXISTS idx_ipam_ranges_subnet ON ipam_ip_ranges(subnet_id);
 
+    -- Operator-assigned device names belong to the hardware identity, not to
+    -- a lease. A reservation can therefore move to another DHCP address
+    -- without losing the name chosen in Fleet.
+    CREATE TABLE IF NOT EXISTS ipam_device_names (
+      environment_id TEXT NOT NULL,
+      mac_address TEXT NOT NULL,
+      name TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (environment_id, mac_address),
+      FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_ipam_device_names_name ON ipam_device_names(environment_id, name);
+
     -- Repair legacy cross-environment links and enforce the boundary for every
     -- writer, not only the HTTP route validation.
     UPDATE ipam_reservations

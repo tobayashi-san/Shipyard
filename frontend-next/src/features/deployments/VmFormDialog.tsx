@@ -21,6 +21,14 @@ interface CatalogItem {
   vm_id?: string | number;
   online?: boolean;
   active?: boolean;
+  source?: "node" | "sdn";
+  type?: string;
+  zone?: string;
+  zone_type?: string;
+  alias?: string;
+  vlan_id?: number | null;
+  vnet?: string;
+  available_on_node?: boolean;
 }
 interface Catalog {
   node?: string;
@@ -29,6 +37,10 @@ interface Catalog {
   templates?: CatalogItem[];
   datastores?: CatalogItem[];
   bridges?: CatalogItem[];
+  sdn_zones?: CatalogItem[];
+  sdn_vnets?: CatalogItem[];
+  vlans?: CatalogItem[];
+  sdn_warnings?: string[];
 }
 interface VmTemplate {
   id: string;
@@ -142,11 +154,17 @@ function formFromVm(input?: Record<string, unknown> | null) {
 
 export function VmFormDialog({
   workspaceId,
+  vmId,
+  environmentId,
+  connectionId,
   open,
   onOpenChange,
   initialVm,
 }: {
-  workspaceId: string;
+  workspaceId?: string;
+  vmId?: string;
+  environmentId?: string;
+  connectionId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialVm?: Record<string, unknown> | null;
@@ -156,22 +174,32 @@ export function VmFormDialog({
   const [postDeploy, setPostDeploy] = useState<string[]>([]);
   const [templateId, setTemplateId] = useState("");
   const [templateName, setTemplateName] = useState("");
+  const [selectedZone, setSelectedZone] = useState("");
+  const isolated = Boolean(vmId || (!workspaceId && environmentId && connectionId));
+  const catalogUrl = vmId
+    ? `/opentofu/vms/${encodeURIComponent(vmId)}/catalog`
+    : workspaceId
+      ? `/opentofu/workspaces/${encodeURIComponent(workspaceId)}/proxmox-catalog`
+      : `/opentofu/proxmox-connections/${encodeURIComponent(connectionId || "")}/vm-catalog`;
   const catalogQuery = useQuery({
-    queryKey: ["opentofu", "workspace", workspaceId, "catalog", form.node_name],
+    queryKey: ["opentofu", isolated ? "vm" : "workspace", vmId || workspaceId || connectionId, "catalog", form.node_name],
     queryFn: () =>
       apiFetch<Catalog>(
-        `/opentofu/workspaces/${encodeURIComponent(workspaceId)}/proxmox-catalog${form.node_name ? `?node=${encodeURIComponent(form.node_name)}` : ""}`,
+        `${catalogUrl}${form.node_name ? `?node=${encodeURIComponent(form.node_name)}` : ""}`,
       ),
-    enabled: open,
-    staleTime: 30_000,
+    enabled: open && Boolean(vmId || workspaceId || connectionId),
+    staleTime: 0,
+    refetchOnMount: "always",
   });
   const templatesQuery = useQuery({
-    queryKey: ["opentofu", "workspace", workspaceId, "vm-templates"],
+    queryKey: ["opentofu", "vm-templates", environmentId || workspaceId],
     queryFn: () =>
       apiFetch<{ templates?: VmTemplate[] }>(
-        `/opentofu/workspaces/${encodeURIComponent(workspaceId)}/proxmox-vm-templates`,
+        isolated
+          ? `/opentofu/vm-templates?environment_id=${encodeURIComponent(environmentId || "")}`
+          : `/opentofu/workspaces/${encodeURIComponent(workspaceId || "")}/proxmox-vm-templates`,
       ),
-    enabled: open,
+    enabled: open && Boolean(isolated ? environmentId : workspaceId),
     staleTime: 30_000,
   });
   const playbooksQuery = useQuery({
@@ -203,12 +231,19 @@ export function VmFormDialog({
     );
     setTemplateId("");
     setTemplateName("");
+    setSelectedZone("");
   }, [initialVm, open]);
 
   useEffect(() => {
     const catalog = catalogQuery.data;
     if (!catalog || !open) return;
-    setForm((current) => ({
+    setForm((current) => {
+      const nextBridge = current.bridge === "vmbr0"
+        ? selectItems(catalog, "bridges").find((item) => item.name === "vmbr0")?.name ||
+          selectItems(catalog, "bridges")[0]?.name || current.bridge
+        : current.bridge;
+      const bridgeEntry = selectItems(catalog, "bridges").find((item) => item.name === nextBridge);
+      return {
       ...current,
       node_name:
         current.node_name ||
@@ -220,20 +255,14 @@ export function VmFormDialog({
         current.disk_datastore ||
         selectItems(catalog, "datastores")[0]?.id ||
         "",
-      bridge:
-        current.bridge === "vmbr0"
-          ? selectItems(catalog, "bridges").find(
-              (item) => item.name === "vmbr0",
-            )?.name ||
-            selectItems(catalog, "bridges")[0]?.name ||
-            current.bridge
-          : current.bridge,
+      bridge: nextBridge,
+      vlan_id: bridgeEntry?.source === "sdn" && bridgeEntry.vlan_id ? "" : current.vlan_id,
       clone_vm_id:
         current.clone_vm_id === "9000" &&
         selectItems(catalog, "templates")[0]?.vm_id
           ? String(selectItems(catalog, "templates")[0].vm_id)
           : current.clone_vm_id,
-    }));
+    }});
   }, [catalogQuery.data, open]);
 
   const payload = () => ({
@@ -248,21 +277,23 @@ export function VmFormDialog({
   const saveMutation = useMutation({
     mutationFn: () =>
       apiFetch(
-        `/opentofu/workspaces/${encodeURIComponent(workspaceId)}/proxmox-vms${initialVm?.id ? `/${encodeURIComponent(String(initialVm.id))}` : ""}`,
-        { method: initialVm?.id ? "PUT" : "POST", body: payload() },
+        isolated
+          ? `/opentofu/vms${vmId ? `/${encodeURIComponent(vmId)}` : ""}`
+          : `/opentofu/workspaces/${encodeURIComponent(workspaceId || "")}/proxmox-vms${initialVm?.id ? `/${encodeURIComponent(String(initialVm.id))}` : ""}`,
+        {
+          method: vmId || initialVm?.id ? "PUT" : "POST",
+          body: { ...payload(), environment_id: environmentId, connection_id: connectionId, template_id: templateId || undefined },
+        },
       ),
     onSuccess: () => {
       showToast(
-        initialVm?.id
-          ? "VM definition updated. OpenTofu files were adjusted."
-          : "VM definition saved. OpenTofu files were updated.",
+        vmId || initialVm?.id
+          ? "VM configuration updated. Review a plan before applying it."
+          : "VM created as an isolated OpenTofu deployment.",
         "success",
       );
       void queryClient.invalidateQueries({
-        queryKey: ["opentofu", "workspace", workspaceId],
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["opentofu", "workspaces"],
+        queryKey: ["opentofu"],
       });
       onOpenChange(false);
     },
@@ -271,17 +302,19 @@ export function VmFormDialog({
   const saveTemplateMutation = useMutation({
     mutationFn: () =>
       apiFetch(
-        `/opentofu/workspaces/${encodeURIComponent(workspaceId)}/proxmox-vm-templates`,
+        isolated
+          ? "/opentofu/vm-templates"
+          : `/opentofu/workspaces/${encodeURIComponent(workspaceId || "")}/proxmox-vm-templates`,
         {
           method: "POST",
-          body: { name: templateName.trim(), config: payload() },
+          body: { name: templateName.trim(), config: payload(), environment_id: environmentId, connection_id: connectionId },
         },
       ),
     onSuccess: () => {
       showToast("VM template saved.", "success");
       setTemplateName("");
       void queryClient.invalidateQueries({
-        queryKey: ["opentofu", "workspace", workspaceId, "vm-templates"],
+        queryKey: ["opentofu", "vm-templates"],
       });
     },
     onError: (error: Error) => showToast(error.message, "error"),
@@ -331,6 +364,20 @@ export function VmFormDialog({
       return next;
     });
   const catalog = catalogQuery.data;
+  const bridgeItems = selectItems(catalog, "bridges");
+  const visibleBridges = bridgeItems.filter(
+    (item) => item.source !== "sdn" || !selectedZone || item.zone === selectedZone,
+  );
+  const selectedBridge = bridgeItems.find((item) => item.name === form.bridge);
+  const selectBridge = (value: string) => {
+    const item = bridgeItems.find((bridge) => bridge.name === value);
+    setForm((current) => ({
+      ...current,
+      bridge: value,
+      vlan_id: item?.source === "sdn" && item.vlan_id ? "" : current.vlan_id,
+    }));
+    if (item?.source === "sdn" && item.zone) setSelectedZone(item.zone);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -341,8 +388,8 @@ export function VmFormDialog({
             {initialVm?.id ? "Edit Proxmox VM" : "Add Proxmox VM"}
           </DialogTitle>
           <DialogDescription>
-            Fleet generates the required OpenTofu files; sensitive Proxmox
-            values remain stored as workspace variables.
+            Shipyard manages this VM in its own isolated OpenTofu state;
+            sensitive Proxmox values remain on the selected platform.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -532,26 +579,72 @@ export function VmFormDialog({
           </section>
 
           <section className="space-y-3 border-t pt-5">
-            <h3 className="text-sm font-semibold">Network & guest access</h3>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold">Network & guest access</h3>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={catalogQuery.isFetching}
+                onClick={() => void catalogQuery.refetch()}
+              >
+                <RefreshCw className={catalogQuery.isFetching ? "animate-spin" : ""} />
+                Refresh Proxmox networks
+              </Button>
+            </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <Field label="Bridge">
+              {Array.isArray(catalog?.sdn_zones) && catalog.sdn_zones.length > 0 && (
+                <Field label="SDN zone" hint="Filters SDN VNets; node bridges remain visible.">
+                  <select
+                    value={selectedZone}
+                    onChange={(event) => setSelectedZone(event.target.value)}
+                    className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="">All zones</option>
+                    {catalog.sdn_zones.map((zone) => (
+                      <option key={zone.name} value={zone.name}>
+                        {zone.name}{zone.zone_type || zone.type ? ` (${zone.zone_type || zone.type})` : ""}
+                        {zone.available_on_node === false ? " — unavailable on node" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+              <Field label="Bridge / SDN VNet">
                 <Select
                   value={form.bridge}
-                  onChange={(value) => update("bridge", value)}
-                  options={selectItems(catalog, "bridges").map((item) => ({
+                  onChange={selectBridge}
+                  options={visibleBridges.map((item) => ({
                     value: item.name || "",
-                    label: `${item.name || ""}${item.active === false ? " (inactive)" : ""}`,
+                    label: item.source === "sdn"
+                      ? `${item.name || ""} — SDN ${item.zone || ""}${item.vlan_id ? ` / VLAN ${item.vlan_id}` : ""}${item.alias ? ` / ${item.alias}` : ""}${item.active === false ? " (not active)" : ""}`
+                      : `${item.name || ""} — node bridge${item.active === false ? " (inactive)" : ""}`,
+                    disabled: item.available_on_node === false,
                   }))}
                 />
               </Field>
-              <Field label="VLAN-ID (optional)">
+              <Field
+                label="Guest VLAN-ID (optional)"
+                hint={selectedBridge?.source === "sdn" && selectedBridge.vlan_id
+                  ? `VLAN ${selectedBridge.vlan_id} is defined by the SDN VNet and is not added again to the VM NIC.`
+                  : "A NIC tag for a VLAN-aware bridge. SDN VNet VLANs are shown in the network selection."}
+              >
                 <Input
                   value={form.vlan_id}
                   onChange={(event) => update("vlan_id", event.target.value)}
                   type="number"
                   min="1"
                   max="4094"
+                  disabled={selectedBridge?.source === "sdn" && Boolean(selectedBridge.vlan_id)}
+                  list="proxmox-sdn-vlans"
                 />
+                <datalist id="proxmox-sdn-vlans">
+                  {(catalog?.vlans || []).map((vlan) => (
+                    <option key={`${vlan.vlan_id}-${vlan.vnet}`} value={vlan.vlan_id || ""}>
+                      {vlan.vnet ? `${vlan.vnet}${vlan.zone ? ` / ${vlan.zone}` : ""}` : ""}
+                    </option>
+                  ))}
+                </datalist>
               </Field>
               <Field label="IP configuration">
                 <select
@@ -610,6 +703,11 @@ export function VmFormDialog({
                 />
               </Field>
             </div>
+            {Array.isArray(catalog?.sdn_warnings) && catalog.sdn_warnings.length > 0 && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                Classic bridges were loaded, but the SDN catalog is incomplete. Check that the Proxmox API token has SDN audit permissions.
+              </p>
+            )}
             <details className="border-t pt-3">
               <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
                 Advanced guest access
@@ -830,7 +928,7 @@ function Select({
 }: {
   value: string;
   onChange: (value: string) => void;
-  options: Array<{ value: string; label: string }>;
+  options: Array<{ value: string; label: string; disabled?: boolean }>;
 }) {
   const allOptions =
     value && !options.some((option) => option.value === value)
@@ -847,7 +945,7 @@ function Select({
         {options.length ? "Select…" : "Loading…"}
       </option>
       {allOptions.map((option) => (
-        <option key={option.value} value={option.value}>
+        <option key={option.value} value={option.value} disabled={option.disabled}>
           {option.label}
         </option>
       ))}

@@ -17,7 +17,13 @@ if [ "$action" = "version" ]; then
 fi
 if [ "$action" = "show" ]; then
   if [ "$#" -ge 3 ]; then
-    echo '{"resource_changes":[{"change":{"actions":["create"]}},{"change":{"actions":["update"]}},{"change":{"actions":["delete"]}}]}'
+    if [ -f isolation-unsafe ]; then
+      echo '{"resource_changes":[{"address":"proxmox_virtual_environment_vm.isolated-app","change":{"actions":["create"]}},{"address":"proxmox_virtual_environment_vm.foreign-app","change":{"actions":["update"]}}]}'
+    elif [ -f isolation-safe ]; then
+      echo '{"resource_changes":[{"address":"proxmox_virtual_environment_vm.isolated-app","change":{"actions":["create"]}}]}'
+    else
+      echo '{"resource_changes":[{"change":{"actions":["create"]}},{"change":{"actions":["update"]}},{"change":{"actions":["delete"]}}]}'
+    fi
   else
     echo '{"values":{}}'
   fi
@@ -135,4 +141,34 @@ test('startup recovery marks orphaned running rows as interrupted', () => {
   assert.equal(recovered.status, 'interrupted');
   assert.match(recovered.output, /interrupted by a restart/);
   assert.ok(recovered.completed_at);
+});
+
+test('isolated VM Apply accepts only a plan for its single resource address', async () => {
+  const { app } = createApp();
+  const login = await request(app).post('/api/auth/login').send({ username: 'admin', password: 'testpass12345' });
+  const auth = { Authorization: `Bearer ${login.body.token}` };
+  const workspacePath = path.join(workspaceRoot, 'isolated-app');
+  fs.mkdirSync(workspacePath, { recursive: true });
+  fs.writeFileSync(path.join(workspacePath, 'isolation-safe'), 'safe');
+  db.db.prepare(`INSERT INTO tofu_workspaces (id, name, path, description, env_vars, environment_id, workspace_kind)
+    VALUES ('isolated-workspace', 'vm-isolated-app', ?, '', '{}', 'default', 'isolated_vm')`).run(workspacePath);
+  db.db.prepare(`INSERT INTO tofu_proxmox_vms (id, workspace_id, name, config, is_isolated)
+    VALUES ('isolated-vm', 'isolated-workspace', 'isolated-app', ?, 1)`).run(JSON.stringify({ name: 'isolated-app', node_name: 'pve001', vm_id: 46001, disk_datastore: 'local-lvm', bridge: 'vmbr0' }));
+
+  const safeStart = await request(app).post('/api/opentofu/vms/isolated-vm/plan').set(auth).send({});
+  assert.equal(safeStart.status, 200);
+  const safePlan = await waitForRun(safeStart.body.dbRunId, 'success');
+  assert.equal(safePlan.plan_safe, 1);
+  assert.equal(JSON.parse(safePlan.plan_validation).expected_address, 'proxmox_virtual_environment_vm.isolated-app');
+
+  fs.unlinkSync(path.join(workspacePath, 'isolation-safe'));
+  fs.writeFileSync(path.join(workspacePath, 'isolation-unsafe'), 'unsafe');
+  const unsafeStart = await request(app).post('/api/opentofu/vms/isolated-vm/plan').set(auth).send({});
+  assert.equal(unsafeStart.status, 200);
+  const unsafePlan = await waitForRun(unsafeStart.body.dbRunId, 'success');
+  assert.equal(unsafePlan.plan_safe, 0);
+  assert.match(JSON.parse(unsafePlan.plan_validation).error, /foreign-app/);
+  const blockedApply = await request(app).post('/api/opentofu/vms/isolated-vm/apply').set(auth).send({ plan_id: unsafePlan.id });
+  assert.equal(blockedApply.status, 409);
+  assert.match(blockedApply.body.error, /foreign-app/);
 });

@@ -24,6 +24,7 @@ docker-compose.override.yml
 .claude/
 
 # Local agent/wiki workspaces
+.local/
 .agents/
 .codex/
 Shipyard.wiki/

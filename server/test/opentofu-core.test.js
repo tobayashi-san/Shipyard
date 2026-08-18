@@ -13,6 +13,7 @@ const assert = require('node:assert/strict');
 
 const db = require('../db');
 const opentofuFeature = require('../features/opentofu');
+const { syncOneToGit } = require('../features/opentofu/workspace-files');
 
 const {
   extractManagedServersFromState,
@@ -36,6 +37,7 @@ const {
   normalizedWorkspaceName,
   terraformConfigurationHash,
   summarizePlanJson,
+  validateIsolatedVmPlan,
   redactTofuOutput,
   createStreamingRedactor,
 } = opentofuFeature._test;
@@ -73,6 +75,53 @@ test('workspace names are safe for the Git workspace and plans are summarized', 
     { change: { actions: ['delete'] } },
     { change: { actions: ['delete', 'create'] } },
   ] }), { create: 1, update: 1, delete: 1, replace: 1, no_op: 0, read: 0 });
+});
+
+test('OpenTofu Git synchronization never exports .local workspace content', () => {
+  const name = `local-sync-test-${process.pid}-${Date.now()}`;
+  const source = fs.mkdtempSync(path.join(os.tmpdir(), 'shipyard-local-sync-'));
+  const destination = path.join(__dirname, '..', 'data', 'git-workspace', 'tofu', name);
+  try {
+    fs.writeFileSync(path.join(source, 'main.tf'), 'resource "example" "safe" {}\n');
+    fs.mkdirSync(path.join(source, '.local'));
+    fs.writeFileSync(path.join(source, '.local', 'secret.tf'), 'sensitive local material\n');
+    syncOneToGit(name, source);
+    assert.equal(fs.existsSync(path.join(destination, 'main.tf')), true);
+    assert.equal(fs.existsSync(path.join(destination, '.local')), false);
+    assert.equal(fs.existsSync(path.join(destination, 'secret.tf')), false);
+  } finally {
+    fs.rmSync(source, { recursive: true, force: true });
+    fs.rmSync(destination, { recursive: true, force: true });
+  }
+});
+
+test('isolated VM plans allow only the owned Proxmox resource address', () => {
+  const vm = { name: 'app-01' };
+  assert.deepEqual(validateIsolatedVmPlan({ resource_changes: [{
+    address: 'proxmox_virtual_environment_vm.app-01',
+    change: { actions: ['create'] },
+  }] }, vm), {
+    safe: true,
+    initial: true,
+    expected_address: 'proxmox_virtual_environment_vm.app-01',
+    changed_addresses: ['proxmox_virtual_environment_vm.app-01'],
+    error: null,
+  });
+  const foreign = validateIsolatedVmPlan({ resource_changes: [
+    { address: 'proxmox_virtual_environment_vm.app-01', change: { actions: ['create'] } },
+    { address: 'proxmox_virtual_environment_vm.database-01', change: { actions: ['update'] } },
+  ] }, vm);
+  assert.equal(foreign.safe, false);
+  assert.match(foreign.error, /database-01/);
+});
+
+test('isolated plan does not mistake an existing-VM replacement for an initial create', () => {
+  const result = validateIsolatedVmPlan({ resource_changes: [{
+    address: 'proxmox_virtual_environment_vm.app-01',
+    change: { actions: ['delete', 'create'] },
+  }] }, { name: 'app-01' });
+  assert.equal(result.safe, true);
+  assert.equal(result.initial, false);
 });
 
 test('configuration hash changes with Terraform files and variables', () => {

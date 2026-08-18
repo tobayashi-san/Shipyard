@@ -960,17 +960,18 @@ router.get("/search", guard("canViewNetworks"), (req, res) => {
   const addresses = db.db.prepare(`
     SELECT 'address' AS kind, reservation.id, reservation.address,
            reservation.address AS label,
-           COALESCE(NULLIF(reservation.hostname, ''), server.name, 'IP address') AS secondary,
+           COALESCE(NULLIF(device.name, ''), NULLIF(reservation.hostname, ''), server.name, 'IP address') AS secondary,
            subnet.id AS subnet_id, subnet.cidr AS subnet_cidr, reservation.status,
            subnet.dhcp_start, subnet.dhcp_end,
            reservation.description, reservation.server_id
     FROM ipam_reservations reservation
     JOIN ipam_subnets subnet ON subnet.id = reservation.subnet_id
     LEFT JOIN servers server ON server.id = reservation.server_id AND server.environment_id = subnet.environment_id
+    LEFT JOIN ipam_device_names device ON device.environment_id = subnet.environment_id AND device.mac_address = reservation.mac_address
     WHERE subnet.environment_id = ?
       AND (reservation.address LIKE ? OR reservation.hostname LIKE ? OR reservation.mac_address LIKE ?
-        OR reservation.description LIKE ? OR server.name LIKE ?)
-  `).all(environmentId, like, like, like, like, like);
+        OR reservation.description LIKE ? OR server.name LIKE ? OR device.name LIKE ?)
+  `).all(environmentId, like, like, like, like, like, like);
   const ranges = db.db.prepare(`
     SELECT 'range' AS kind, range.id,
            range.start_address || ' – ' || range.end_address AS label,
@@ -1292,10 +1293,13 @@ router.get("/subnets/:id/reservations", guard("canViewNetworks"), (req, res) => 
   const rows = db.db
     .prepare(
       `
-    SELECT reservation.*, server.name AS server_name, source.name AS source_name
+    SELECT reservation.*, server.name AS server_name, source.name AS source_name,
+           device.name AS device_name
     FROM ipam_reservations reservation
+    JOIN ipam_subnets subnet ON subnet.id = reservation.subnet_id
     LEFT JOIN servers server ON server.id = reservation.server_id AND server.environment_id = ?
     LEFT JOIN ipam_sync_sources source ON reservation.source_ref LIKE source.id || ':%'
+    LEFT JOIN ipam_device_names device ON device.environment_id = subnet.environment_id AND device.mac_address = reservation.mac_address
     WHERE reservation.subnet_id = ?
   `,
     )
@@ -1390,10 +1394,12 @@ router.get("/reservations", guard("canViewNetworks"), (req, res) => {
     .prepare(
       `
     SELECT reservation.*, subnet.cidr AS subnet_cidr, subnet.name AS subnet_name,
-           subnet.dhcp_start, subnet.dhcp_end, source.name AS source_name
+           subnet.dhcp_start, subnet.dhcp_end, source.name AS source_name,
+           device.name AS device_name
     FROM ipam_reservations reservation
     JOIN ipam_subnets subnet ON subnet.id = reservation.subnet_id
     LEFT JOIN ipam_sync_sources source ON reservation.source_ref LIKE source.id || ':%'
+    LEFT JOIN ipam_device_names device ON device.environment_id = subnet.environment_id AND device.mac_address = reservation.mac_address
     WHERE reservation.server_id = ? AND subnet.environment_id = ?
     ORDER BY subnet.cidr, reservation.address
   `,
@@ -1420,10 +1426,13 @@ router.get("/subnets/:id/allocations", guard("canViewNetworks"), (req, res) => {
     withProxmoxSourceNames(db.db
       .prepare(
         `
-    SELECT reservation.*, server.name AS server_name, source.name AS source_name
+    SELECT reservation.*, server.name AS server_name, source.name AS source_name,
+           device.name AS device_name
     FROM ipam_reservations reservation
+    JOIN ipam_subnets reservation_subnet ON reservation_subnet.id = reservation.subnet_id
     LEFT JOIN servers server ON server.id = reservation.server_id AND server.environment_id = ?
     LEFT JOIN ipam_sync_sources source ON reservation.source_ref LIKE source.id || ':%'
+    LEFT JOIN ipam_device_names device ON device.environment_id = reservation_subnet.environment_id AND device.mac_address = reservation.mac_address
     WHERE reservation.subnet_id = ?
   `,
       )
@@ -1459,7 +1468,7 @@ router.get("/subnets/:id/allocations", guard("canViewNetworks"), (req, res) => {
   const status = String(req.query.status || "all").trim().toLowerCase();
   const filtered = rows.filter((row) => {
     const matchesQuery = !query || [
-      row.start_address, row.end_address, row.hostname, row.server_name,
+      row.start_address, row.end_address, row.hostname, row.device_name, row.server_name,
       row.description, row.role, row.source_type, row.source_name, row.mac_address,
       (row.source_observations || []).map((source) => `${source.type} ${source.name}`).join(" "),
     ].some((value) => String(value || "").toLowerCase().includes(query));
@@ -1723,6 +1732,53 @@ router.put("/reservations/:id", guard("canEditNetworks"), (req, res) => {
       .json({
         error: error.message || "IP-Adresse konnte nicht gespeichert werden.",
       });
+  }
+});
+
+// A friendly device name is intentionally edited independently from an
+// imported reservation. Its key is the normalized MAC address, so DHCP lease
+// changes and source-driven reservation moves cannot detach the name.
+router.patch("/reservations/:id/device-name", guard("canEditNetworks"), (req, res) => {
+  const reservation = db.db
+    .prepare(`
+      SELECT reservation.id, reservation.address, reservation.mac_address,
+             subnet.environment_id, subnet.cidr
+      FROM ipam_reservations reservation
+      JOIN ipam_subnets subnet ON subnet.id = reservation.subnet_id
+      WHERE reservation.id = ?
+    `)
+    .get(req.params.id);
+  if (!reservation)
+    return res.status(404).json({ error: "IP-Adresse nicht gefunden." });
+  if (!guardEnvironment(req, res, reservation.environment_id)) return;
+
+  try {
+    const macAddress = parseMac(reservation.mac_address);
+    const name = String(req.body?.name || "").trim().slice(0, 100);
+    if (name) {
+      db.db.prepare(`
+        INSERT INTO ipam_device_names (environment_id, mac_address, name)
+        VALUES (?, ?, ?)
+        ON CONFLICT(environment_id, mac_address) DO UPDATE SET
+          name = excluded.name, updated_at = datetime('now')
+      `).run(reservation.environment_id, macAddress, name);
+    } else {
+      db.db.prepare(
+        "DELETE FROM ipam_device_names WHERE environment_id = ? AND mac_address = ?",
+      ).run(reservation.environment_id, macAddress);
+    }
+    db.auditLog.write(
+      "ipam.device_name_update",
+      `subnet=${reservation.cidr} address=${reservation.address} mac=${macAddress} name=${name || "removed"}`,
+      req.ip,
+      true,
+      req.user?.username,
+    );
+    res.json({ mac_address: macAddress, device_name: name });
+  } catch (error) {
+    res.status(400).json({
+      error: error.message || "Gerätename konnte nicht gespeichert werden.",
+    });
   }
 });
 

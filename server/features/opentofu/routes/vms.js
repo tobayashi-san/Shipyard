@@ -22,6 +22,11 @@ function snapshotNameOrError(value) {
 
 /** Register deployment VM definitions and linked-host operations. */
 function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPostDeployOverview, getProxmoxVmTemplates, getProxmoxVms, getWorkspace, listProxmoxConnectionRows, loadProxmoxCatalog, loadProxmoxInfrastructure, permissionError, readSavedProxmoxConnection, runPostDeployPlaybooks, syncFleetWorkspace, validatePostDeployPlaybookAccess, writeFleetProxmoxFiles }) {
+  function legacyWorkspaceOrError(workspace, res) {
+    if (workspace?.workspace_kind !== 'isolated_vm') return true;
+    res.status(410).json({ error: 'This VM is managed through the VM API; its internal workspace is not user-editable.' });
+    return false;
+  }
   function getProxmoxConnectionSource(id) {
     const source = db.db.prepare('SELECT * FROM tofu_proxmox_connections WHERE id = ?').get(id);
     if (!source) {
@@ -320,6 +325,7 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
   router.post('/workspaces/:id/proxmox-vm-templates', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    if (!legacyWorkspaceOrError(workspace, res)) return;
     try {
       const template = normalizeProxmoxVmTemplate(req.body || {});
       validatePostDeployPlaybookAccess(template.config.post_deploy_playbooks, req);
@@ -335,6 +341,7 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
   router.put('/workspaces/:id/proxmox-vm-templates/:templateId', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    if (!legacyWorkspaceOrError(workspace, res)) return;
     const existing = db.db.prepare('SELECT id FROM tofu_proxmox_vm_templates WHERE id = ? AND workspace_id = ?')
       .get(req.params.templateId, workspace.id);
     if (!existing) return res.status(404).json({ error: 'VM template not found' });
@@ -352,6 +359,7 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
   router.delete('/workspaces/:id/proxmox-vm-templates/:templateId', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    if (!legacyWorkspaceOrError(workspace, res)) return;
     const result = db.db.prepare('DELETE FROM tofu_proxmox_vm_templates WHERE id = ? AND workspace_id = ?')
       .run(req.params.templateId, workspace.id);
     if (!result.changes) return res.status(404).json({ error: 'VM template not found' });
@@ -361,6 +369,7 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
   router.post('/workspaces/:id/proxmox-vms', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    if (!legacyWorkspaceOrError(workspace, res)) return;
     const mkdirErr = ensureWorkspacePath(workspace);
     if (mkdirErr) return res.status(400).json({ error: permissionError(mkdirErr, workspace.path) });
     try {
@@ -383,6 +392,7 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
   router.put('/workspaces/:id/proxmox-vms/:vmId', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    if (!legacyWorkspaceOrError(workspace, res)) return;
     const existing = db.db.prepare('SELECT id FROM tofu_proxmox_vms WHERE id = ? AND workspace_id = ?').get(req.params.vmId, workspace.id);
     if (!existing) return res.status(404).json({ error: 'VM definition not found' });
     try {
@@ -404,6 +414,7 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
   router.delete('/workspaces/:id/proxmox-vms/:vmId', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    if (!legacyWorkspaceOrError(workspace, res)) return;
     const result = db.db.prepare('DELETE FROM tofu_proxmox_vms WHERE id = ? AND workspace_id = ?').run(req.params.vmId, workspace.id);
     if (!result.changes) return res.status(404).json({ error: 'VM definition not found' });
     try {
@@ -418,6 +429,7 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
   router.post('/workspaces/:id/proxmox-vms/regenerate', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    if (!legacyWorkspaceOrError(workspace, res)) return;
     const mkdirErr = ensureWorkspacePath(workspace);
     if (mkdirErr) return res.status(400).json({ error: permissionError(mkdirErr, workspace.path) });
     try {

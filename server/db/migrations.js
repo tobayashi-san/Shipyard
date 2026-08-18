@@ -11,6 +11,7 @@ const REQUIRED_COLUMNS = {
   environments: ['id', 'name'],
   ipam_subnets: ['id', 'environment_id', 'status', 'role', 'dhcp_start', 'dhcp_end'],
   ipam_reservations: ['id', 'subnet_id', 'status', 'role', 'source_type'],
+  ipam_device_names: ['environment_id', 'mac_address', 'name'],
   ipam_ip_ranges: ['id', 'subnet_id', 'start_address', 'end_address'],
   ipam_sync_sources: ['id', 'environment_id', 'auto_sync', 'sync_interval_min', 'last_record_count', 'last_ignored_count'],
   maintenance_windows: ['id', 'environment_id', 'starts_at', 'ends_at'],
@@ -194,6 +195,15 @@ function applyMigrations(db) {
   } catch {}
   try {
     db.exec("ALTER TABLE ipam_reservations ADD COLUMN last_synced_at TEXT");
+  } catch {}
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS ipam_device_names (
+      environment_id TEXT NOT NULL, mac_address TEXT NOT NULL, name TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (environment_id, mac_address),
+      FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE
+    )`);
+    db.exec("CREATE INDEX IF NOT EXISTS idx_ipam_device_names_name ON ipam_device_names(environment_id, name)");
   } catch {}
   // DHCP is defined by the prefix pool. Older source imports marked every
   // observed address as DHCP, so remove that legacy claim before deriving the

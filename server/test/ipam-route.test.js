@@ -156,6 +156,48 @@ test('IPAM combines individual addresses and ranges and exposes address conflict
   assert.ok(rangeAudit.some(row => /start=10\.44\.0\.40 end=10\.44\.0\.49/.test(row.detail)));
 });
 
+test('operator device names stay attached to the MAC when a DHCP address changes', async () => {
+  const reservationId = db.uuidv4();
+  db.db.prepare(`
+    INSERT INTO ipam_reservations
+      (id, subnet_id, address, hostname, mac_address, source_type, source_ref)
+    VALUES (?, ?, ?, ?, ?, 'unifi', ?)
+  `).run(
+    reservationId,
+    parentSubnetId,
+    '10.44.0.100',
+    'source-hostname',
+    '02:00:00:00:00:60',
+    `test-source:${reservationId}`,
+  );
+
+  const named = await auth(
+    request(app).patch(`/api/ipam/reservations/${reservationId}/device-name`),
+  ).send({ name: 'Office printer' });
+  assert.equal(named.status, 200);
+  assert.equal(named.body.device_name, 'Office printer');
+
+  // Simulate the source reconciliation moving the same observed device to a
+  // newly assigned lease. The separate MAC mapping must remain effective.
+  db.db.prepare('UPDATE ipam_reservations SET address = ? WHERE id = ?')
+    .run('10.44.0.101', reservationId);
+
+  const allocations = await auth(
+    request(app).get(`/api/ipam/subnets/${parentSubnetId}/allocations`),
+  );
+  assert.equal(allocations.status, 200);
+  const moved = allocations.body.find((row) => row.id === reservationId);
+  assert.equal(moved.address, '10.44.0.101');
+  assert.equal(moved.device_name, 'Office printer');
+  assert.equal(moved.hostname, 'source-hostname');
+
+  const search = await auth(
+    request(app).get(`/api/ipam/search?environment_id=${environmentId}&q=Office%20printer`),
+  );
+  assert.equal(search.status, 200);
+  assert.equal(search.body.items.some((row) => row.id === reservationId), true);
+});
+
 test('IPAM validates one DHCP pool per prefix and derives address status only from that pool', async () => {
   const incomplete = await auth(request(app).post('/api/ipam/subnets')).send({
     environment_id: environmentId,

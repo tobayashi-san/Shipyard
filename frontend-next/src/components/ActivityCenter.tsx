@@ -81,7 +81,7 @@ function describeEvent(data: Record<string, unknown>, existing?: ActivityItem): 
     return {
       kind: 'tofu',
       title: existing?.title || `OpenTofu ${text(data.action) || 'run'}`,
-      subtitle: data.workspaceId ? `Workspace ${text(data.workspaceId)}` : existing?.subtitle,
+      subtitle: data.vmName ? `VM ${text(data.vmName)}` : data.workspaceId ? `Legacy deployment ${text(data.workspaceId)}` : existing?.subtitle,
     };
   }
 

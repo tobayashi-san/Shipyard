@@ -9,6 +9,11 @@ const { moveWorkspaceDirectory, moveWorkspaceGitDirectory } = require('../worksp
 
 /** Register deployment inventory, metadata and platform assignment endpoints. */
 function registerWorkspaceRoutes({ db, router, activeRuns, findBinary, getInstallState, getLastRun, getVersion, getWorkspace, getWorkspaceRow, getWorkspaceRows, isAllowedPath, parseWorkspaceEnvVars, permissionError, publicProxmoxConnection, scaffoldWorkspace, serializeWorkspaceEnvVars, syncPathsFile, validateUniqueWorkspaceName, validateUniqueWorkspacePath, WORKSPACE_PATH_ERROR }) {
+  function rejectInternalWorkspace(workspace, res) {
+    if (workspace?.workspace_kind !== 'isolated_vm') return false;
+    res.status(410).json({ error: 'Internal VM workspaces are managed exclusively through the VM API.' });
+    return true;
+  }
   router.get('/status', (req, res) => {
     const binary = findBinary();
     const version = binary ? getVersion(binary) : null;
@@ -19,7 +24,7 @@ function registerWorkspaceRoutes({ db, router, activeRuns, findBinary, getInstal
     const environmentId = String(req.query.environment_id || '').trim();
     if (!environmentId) return res.status(400).json({ error: 'environment_id is required' });
     if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found' });
-    const rows = getWorkspaceRows(environmentId);
+    const rows = getWorkspaceRows(environmentId).filter(row => row.workspace_kind !== 'isolated_vm');
     const withStatus = rows.map(r => {
       const lastRun = getLastRun(r.id);
       return {
@@ -79,6 +84,7 @@ function registerWorkspaceRoutes({ db, router, activeRuns, findBinary, getInstal
     if (!isAllowedPath(wPath)) return res.status(400).json({ error: WORKSPACE_PATH_ERROR });
     const existing = getWorkspaceRow(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Workspace not found' });
+    if (rejectInternalWorkspace(existing, res)) return;
     let safeName;
     try { safeName = validateUniqueWorkspaceName(name, existing.id); }
     catch (error) { return res.status(409).json({ error: error.message }); }
@@ -112,6 +118,7 @@ function registerWorkspaceRoutes({ db, router, activeRuns, findBinary, getInstal
   router.patch('/workspaces/:id/metadata', (req, res) => {
     const existing = getWorkspaceRow(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Workspace not found' });
+    if (rejectInternalWorkspace(existing, res)) return;
     const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
     const description = typeof req.body?.description === 'string' ? req.body.description.trim() : '';
     if (!name) return res.status(400).json({ error: 'name is required' });
@@ -128,6 +135,7 @@ function registerWorkspaceRoutes({ db, router, activeRuns, findBinary, getInstal
   router.delete('/workspaces/:id', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    if (rejectInternalWorkspace(workspace, res)) return;
     if ([...activeRuns.values()].some(run => run.workspaceId === workspace.id)) {
       return res.status(409).json({ error: 'The workspace cannot be removed while an OpenTofu run is active.' });
     }
@@ -170,6 +178,7 @@ function registerWorkspaceRoutes({ db, router, activeRuns, findBinary, getInstal
   router.put('/workspaces/:id/proxmox-connection', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    if (rejectInternalWorkspace(workspace, res)) return;
     const body = req.body || {};
     const sourceId = String(body.proxmox_connection_id || '').trim() || null;
     if (sourceId) {
