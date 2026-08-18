@@ -11,6 +11,7 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const apiPort = process.env.FLEET_E2E_API_PORT || '3011';
 const webPort = process.env.FLEET_E2E_WEB_PORT || '5175';
 const externalServers = process.env.FLEET_E2E_EXTERNAL_SERVERS === '1';
+const workspaceRoot = path.join(runtimeDir, 'workspaces');
 
 export default defineConfig({
   testDir: './e2e',
@@ -36,7 +37,7 @@ export default defineConfig({
       cwd: '../server',
       url: `http://127.0.0.1:${apiPort}/api/health`,
       reuseExistingServer: false,
-      env: { ...process.env, NODE_ENV: 'test', PORT: apiPort, DB_PATH: path.join(runtimeDir, 'fleet.sqlite'), JWT_SECRET: 'fleet-browser-e2e-secret', SHIPYARD_KEY_SECRET: 'fleet-browser-e2e-key-secret', PLUGINS_DIR: path.join(projectRoot, 'plugins') },
+      env: { ...process.env, NODE_ENV: 'test', PORT: apiPort, DB_PATH: path.join(runtimeDir, 'fleet.sqlite'), JWT_SECRET: 'fleet-browser-e2e-secret', SHIPYARD_KEY_SECRET: 'fleet-browser-e2e-key-secret', PLUGINS_DIR: path.join(projectRoot, 'plugins'), OPENTOFU_WORKSPACE_ROOTS: workspaceRoot, OPENTOFU_INTERNAL_VM_ROOT: path.join(workspaceRoot, 'internal', 'vms') },
     },
     {
       command: `VITE_API_TARGET=http://127.0.0.1:${apiPort} vite --host 127.0.0.1 --port ${webPort}`,

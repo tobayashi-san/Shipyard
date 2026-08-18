@@ -231,12 +231,14 @@ test('dashboard and deployment failures are never presented as healthy empty sta
   await page.unroute('**/api/dashboard');
   await page.unroute('**/api/opentofu/infrastructure?*');
 
-  await page.route('**/api/opentofu/status', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'status unavailable' }) }));
-  await page.route('**/api/opentofu/workspaces?*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'workspaces unavailable' }) }));
+  await page.route('**/api/opentofu/vms?*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'virtual machines unavailable' }) }));
+  await page.route('**/api/opentofu/legacy-workspaces?*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'legacy deployments unavailable' }) }));
+  await page.route('**/api/opentofu/vm-templates?*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'templates unavailable' }) }));
   await page.goto('/deployments');
-  await expect(page.getByText('OpenTofu status could not be loaded', { exact: true })).toBeVisible();
-  await expect(page.getByText('Deployments could not be loaded', { exact: true })).toBeVisible();
-  await expect(page.getByText(/no deployments|no workspaces/i)).toHaveCount(0);
+  await expect(page.getByText('Virtual machines could not be loaded', { exact: true })).toBeVisible();
+  await expect(page.getByText('Legacy VM deployments could not be checked', { exact: true })).toBeVisible();
+  await expect(page.getByText('VM templates could not be loaded', { exact: true })).toBeVisible();
+  await expect(page.getByText(/no managed virtual machines|no templates yet/i)).toHaveCount(0);
 });
 
 test('playbook workflows expose safe secrets, explicit targets and one run flow', async ({ page }) => {
@@ -852,49 +854,47 @@ test('a Proxmox VM keeps configuration and tasks in distinct object tabs', async
   }
 });
 
-test('a deployment uses a platform source and guards Destroy with an exact phrase', async ({ page }) => {
-  // The first deployment opens and initializes an OpenTofu workspace.
-  // Allow that one-time initialization enough room on slower CI runners; the
-  // assertions below still fail fast when an interaction is broken.
+test('an isolated VM uses a platform source and guards Destroy with an exact phrase', async ({ page }) => {
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await loginForIsolatedTest(page);
+  const suffix = Date.now().toString(36);
+  const vmName = `e2e-isolated-${suffix}`;
 
-  const connection = await page.evaluate(async () => {
+  const connection = await page.evaluate(async (uniqueSuffix) => {
     const token = localStorage.getItem('shipyard_token');
     const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
     const response = await fetch('/api/opentofu/proxmox-connections', {
       method: 'POST', headers,
-      body: JSON.stringify({ environment_id: 'default', name: 'E2E Deployment Platform', endpoint: 'https://pve.e2e.invalid:8006', api_token: 'root@pam!fleet=e2e-token', insecure: true }),
+      body: JSON.stringify({ environment_id: 'default', name: `E2E Deployment Platform ${uniqueSuffix}`, endpoint: 'https://pve.e2e.invalid:8006', api_token: 'root@pam!fleet=e2e-token', insecure: true }),
     });
     if (!response.ok) throw new Error(`Platform setup failed (${response.status})`);
     return response.json() as Promise<{ id: string }>;
-  });
+  }, suffix);
 
-  let workspaceId = '';
+  let vmId = '';
   try {
-    await page.goto('/deployments');
-    await page.getByRole('button', { name: 'Create deployment' }).click();
-    const dialog = page.getByRole('dialog', { name: /new deployment|neues deployment/i });
-    await dialog.locator('#deployment-name').fill('E2E Deployment');
-    await dialog.locator('#deployment-description').fill('Lifecycle verification');
-    await expect(dialog.locator('#deployment-connection')).toHaveValue(connection.id);
-    await dialog.getByRole('button', { name: /create deployment|deployment anlegen/i }).click();
-    await expect(page).toHaveURL(/\/deployments\/[0-9a-f-]+/);
-    workspaceId = page.url().split('/').pop() || '';
-    await expect(page.getByRole('heading', { name: 'E2E Deployment' })).toBeVisible();
-    await page.getByRole('tab', { name: /^Runs/i }).click();
-    await expect(page).toHaveURL(/#tab=runs$/);
-    await page.reload();
-    await expect(page.getByRole('tab', { name: /^Runs/i })).toHaveAttribute('data-state', 'active');
-    await page.goBack();
-    await expect(page.getByRole('tab', { name: 'Overview', exact: true })).toHaveAttribute('data-state', 'active');
+    vmId = await page.evaluate(async ({ connectionId, name }) => {
+      const token = localStorage.getItem('shipyard_token');
+      const response = await fetch('/api/opentofu/vms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          environment_id: 'default', connection_id: connectionId,
+          name, node_name: 'pve-e2e',
+          clone_vm_id: 9000, disk_datastore: 'local-lvm', bridge: 'vmbr0',
+        }),
+      });
+      if (!response.ok) throw new Error(`VM setup failed (${response.status})`);
+      return String((await response.json() as { id: string }).id);
+    }, { connectionId: connection.id, name: vmName });
 
-    await page.getByLabel('Open advanced actions').click();
-    await page.getByRole('button', { name: 'Prepare destroy' }).click();
-    const destroyDialog = page.getByRole('dialog', { name: 'Really destroy deployment?' });
-    const destroyButton = destroyDialog.getByRole('button', { name: 'Start destroy' });
-    const confirmInput = destroyDialog.getByLabel('Enter to confirm');
+    await page.goto(`/deployments/${vmId}`);
+    await expect(page.getByRole('heading', { name: vmName })).toBeVisible();
+    await page.getByRole('button', { name: 'Destroy VM' }).click();
+    const destroyDialog = page.getByRole('dialog', { name: 'Destroy VM in Proxmox?' });
+    const destroyButton = destroyDialog.getByRole('button', { name: 'Destroy VM' });
+    const confirmInput = destroyDialog.getByLabel('Type to confirm');
     const phrase = await confirmInput.getAttribute('placeholder');
     expect(phrase).toBeTruthy();
     await expect(destroyButton).toBeDisabled();
@@ -911,6 +911,6 @@ test('a deployment uses a platform source and guards Destroy with an exact phras
     // process after the destructive-action assertion has already completed.
     // The complete temporary database is removed when the isolated server exits.
     void connection;
-    void workspaceId;
+    void vmId;
   }
 });

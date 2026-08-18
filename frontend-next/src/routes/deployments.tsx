@@ -95,7 +95,9 @@ export function DeploymentsPage() {
       </>}
     />
 
-    {legacy.length > 0 && <Card className="border-amber-500/40">
+    {legacyQuery.isError && <Card><EmptyState icon={<TriangleAlert className="h-5 w-5" />} title="Legacy VM deployments could not be checked" description="No migration has been started." action={<Button variant="outline" onClick={() => void legacyQuery.refetch()}><RefreshCw />Try again</Button>} /></Card>}
+
+    {!legacyQuery.isError && legacy.length > 0 && <Card className="border-amber-500/40">
       <CardHeader><CardTitle className="flex items-center gap-2 text-base"><TriangleAlert className="h-4 w-4 text-amber-600" />Legacy VM state migration required</CardTitle></CardHeader>
       <CardContent className="space-y-3">
         <p className="text-sm text-muted-foreground">These older deployments still share an OpenTofu state. Migration is explicit, creates an encrypted backup, validates every resulting VM plan, and never applies infrastructure changes.</p>
@@ -130,7 +132,9 @@ export function DeploymentsPage() {
 
     <Card>
       <CardHeader><CardTitle className="text-base">VM templates</CardTitle></CardHeader>
-      <CardContent>{templates.length === 0 ? <p className="text-sm text-muted-foreground">No templates yet. Save the current values as a template while creating or editing a VM.</p> : <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{templates.map((template) => <div key={template.id} className="rounded-md border p-3"><div className="font-medium">{template.name}</div><div className="mt-1 text-xs text-muted-foreground">{template.config?.cpu_cores || "—"} CPU · {template.config?.memory_mb || "—"} MB · {template.config?.disk_size_gb || "—"} GB</div></div>)}</div>}</CardContent>
+      <CardContent>{templatesQuery.isError
+        ? <EmptyState icon={<TriangleAlert className="h-5 w-5" />} title="VM templates could not be loaded" description="No template data is being shown." action={<Button variant="outline" onClick={() => void templatesQuery.refetch()}><RefreshCw />Try again</Button>} />
+        : templates.length === 0 ? <p className="text-sm text-muted-foreground">No templates yet. Save the current values as a template while creating or editing a VM.</p> : <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{templates.map((template) => <div key={template.id} className="rounded-md border p-3"><div className="font-medium">{template.name}</div><div className="mt-1 text-xs text-muted-foreground">{template.config?.cpu_cores || "—"} CPU · {template.config?.memory_mb || "—"} MB · {template.config?.disk_size_gb || "—"} GB</div></div>)}</div>}</CardContent>
     </Card>
     <CreateDeploymentDialog environmentId={environmentId} open={createOpen} onOpenChange={setCreateOpen} />
     <ConfirmDialog open={Boolean(legacyToMigrate)} onOpenChange={(next) => !next && setLegacyToMigrate(null)} title="Split legacy state by VM?" description="Shipyard locks the legacy deployment, backs up its local state, moves each VM resource to an independent state, and validates that no VM would be created or destroyed. Remote backends are rejected and require a backend-specific migration." confirmLabel="Migrate VM states" variant="warning" confirmTextValue={legacyToMigrate ? `MIGRATE ${legacyToMigrate.name}` : undefined} confirmInputHelp={legacyToMigrate ? <>Enter <code className="font-mono">MIGRATE {legacyToMigrate.name}</code>.</> : undefined} onConfirm={() => legacyToMigrate && migrateMutation.mutate(legacyToMigrate)} isPending={migrateMutation.isPending} />
