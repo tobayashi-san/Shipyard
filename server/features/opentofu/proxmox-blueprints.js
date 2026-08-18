@@ -41,6 +41,12 @@ function normalizeProxmoxVm(input = {}) {
   const ipv4Address = normalizeStaticIpv4Address(ipv4Input, ipv4Prefix);
   const gateway = String(input.ipv4_gateway ?? '').trim();
   if (gateway && !isValidIpv4(gateway)) throw new Error('Invalid IPv4 gateway');
+  const dnsInput = Array.isArray(input.dns_servers)
+    ? input.dns_servers
+    : String(input.dns_servers ?? '').split(/[\s,]+/);
+  const dnsServers = [...new Set(dnsInput.map(value => String(value).trim()).filter(Boolean))];
+  if (dnsServers.length > 8) throw new Error('At most 8 DNS servers may be configured');
+  if (dnsServers.some(server => net.isIP(server) === 0)) throw new Error('DNS servers must be valid IP addresses');
   const vlanRaw = String(input.vlan_id ?? '').trim();
   const vlanId = vlanRaw === '' ? null : proxmoxInt(vlanRaw, null, { min: 1, max: 4094, field: 'VLAN ID' });
   const vmIdRaw = String(input.vm_id ?? '').trim();
@@ -70,6 +76,7 @@ function normalizeProxmoxVm(input = {}) {
     ipv4_address: ipv4Address,
     ipv4_prefix: ipv4Address === 'dhcp' ? null : Number(ipv4Address.split('/')[1]),
     ipv4_gateway: ipv4Address === 'dhcp' ? '' : gateway,
+    dns_servers: dnsServers,
     username: proxmoxString(input.username, 'ubuntu', { field: 'Guest username', pattern: /^[a-z_][a-z0-9_-]{0,31}$/, max: 32 }),
     ssh_public_key_variable: sshPublicKeyVariable,
     post_deploy_playbooks: normalizePostDeployPlaybooks(input.post_deploy_playbooks),
@@ -119,7 +126,11 @@ function renderProxmoxVmHcl(vm) {
     '', '  network_device {', `    bridge = ${JSON.stringify(vm.bridge)}`,
   );
   if (vm.vlan_id !== null) lines.push(`    vlan_id = ${vm.vlan_id}`);
-  lines.push('  }', '', '  initialization {', '    ip_config {', '      ipv4 {', `        address = ${JSON.stringify(vm.ipv4_address)}`);
+  lines.push('  }', '', '  initialization {');
+  if (vm.dns_servers.length) {
+    lines.push('    dns {', `      servers = ${JSON.stringify(vm.dns_servers)}`, '    }', '');
+  }
+  lines.push('    ip_config {', '      ipv4 {', `        address = ${JSON.stringify(vm.ipv4_address)}`);
   if (vm.ipv4_gateway) lines.push(`        gateway = ${JSON.stringify(vm.ipv4_gateway)}`);
   lines.push('      }', '    }', '', '    user_account {', `      username = ${JSON.stringify(vm.username)}`);
   if (vm.ssh_public_key_variable) lines.push(`      keys     = [var.${vm.ssh_public_key_variable}]`);

@@ -7,7 +7,8 @@ test('Proxmox VM blueprint normalizes the console form and renders safe HCL', ()
     name: 'hr01-app-erpnext', node_name: 'pve001', vm_id: '101', clone_vm_id: '9000', clone_retries: '3',
     disk_datastore: 'NVME_VM_Store', disk_interface: 'scsi0', disk_size_gb: '40',
     cpu_cores: '2', memory_mb: '4048', bridge: 'vmbr0', vlan_id: '2010',
-    ipv4_address: 'dhcp', username: 'ubuntu', ssh_public_key_variable: 'ssh_public_key',
+    ipv4_address: 'dhcp', dns_servers: ['10.10.20.53', '1.1.1.1'],
+    username: 'ubuntu', ssh_public_key_variable: 'ssh_public_key',
   });
   assert.equal(vm.vlan_id, 2010);
   assert.equal(vm.memory_mb, 4048);
@@ -15,7 +16,20 @@ test('Proxmox VM blueprint normalizes the console form and renders safe HCL', ()
   assert.match(hcl, /resource "proxmox_virtual_environment_vm" "hr01-app-erpnext"/);
   assert.match(hcl, /vm_id\s+= 101/);
   assert.match(hcl, /vlan_id = 2010/);
+  assert.match(hcl, /dns \{/);
+  assert.match(hcl, /servers = \["10\.10\.20\.53","1\.1\.1\.1"\]/);
   assert.match(hcl, /keys     = \[var\.ssh_public_key\]/);
+});
+
+test('Proxmox VM blueprint validates DNS servers configured at deployment time', () => {
+  const vm = _test.normalizeProxmoxVm({
+    name: 'dns-vm', node_name: 'pve001', disk_datastore: 'fast', bridge: 'vmbr0',
+    dns_servers: '10.20.0.53, 2001:4860:4860::8888 10.20.0.53',
+  });
+  assert.deepEqual(vm.dns_servers, ['10.20.0.53', '2001:4860:4860::8888']);
+  assert.throws(() => _test.normalizeProxmoxVm({
+    name: 'bad-dns-vm', node_name: 'pve001', disk_datastore: 'fast', bridge: 'vmbr0', dns_servers: 'not-an-ip',
+  }), /DNS servers/);
 });
 
 test('Proxmox VM blueprint rejects unsafe identifiers and invalid VLAN values', () => {

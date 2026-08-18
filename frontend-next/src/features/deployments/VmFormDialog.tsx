@@ -45,7 +45,10 @@ interface Catalog {
 interface VmTemplate {
   id: string;
   name: string;
-  config: Partial<VmForm> & { post_deploy_playbooks?: string[] };
+  config: Partial<Omit<VmForm, "dns_servers">> & {
+    dns_servers?: string | string[];
+    post_deploy_playbooks?: string[];
+  };
 }
 interface Playbook {
   filename?: string;
@@ -73,6 +76,7 @@ interface VmForm {
   ipv4_address: string;
   ipv4_prefix: string;
   ipv4_gateway: string;
+  dns_servers: string;
   username: string;
   ssh_public_key_variable: string;
   started: boolean;
@@ -98,6 +102,7 @@ const initialForm: VmForm = {
   ipv4_address: "",
   ipv4_prefix: "24",
   ipv4_gateway: "",
+  dns_servers: "",
   username: "ubuntu",
   ssh_public_key_variable: "ssh_public_key",
   started: true,
@@ -141,6 +146,9 @@ function formFromVm(input?: Record<string, unknown> | null) {
         ? initialForm.ipv4_prefix
         : prefix || String(input.ipv4_prefix || initialForm.ipv4_prefix),
     ipv4_gateway: String(input.ipv4_gateway || ""),
+    dns_servers: Array.isArray(input.dns_servers)
+      ? input.dns_servers.map(String).join(", ")
+      : String(input.dns_servers || ""),
     username: stringValue("username"),
     ssh_public_key_variable: String(input.ssh_public_key_variable || ""),
     agent_enabled:
@@ -272,6 +280,10 @@ export function VmFormDialog({
     ipv4_address: form.ipv4_mode === "dhcp" ? "dhcp" : form.ipv4_address.trim(),
     ipv4_prefix: form.ipv4_mode === "dhcp" ? null : form.ipv4_prefix.trim(),
     ipv4_gateway: form.ipv4_mode === "dhcp" ? "" : form.ipv4_gateway.trim(),
+    dns_servers: form.dns_servers
+      .split(/[\s,]+/)
+      .map((value) => value.trim())
+      .filter(Boolean),
     post_deploy_playbooks: postDeploy,
   });
   const saveMutation = useMutation({
@@ -341,6 +353,9 @@ export function VmFormDialog({
           ? current.ipv4_prefix
           : prefix || String(config.ipv4_prefix || "24"),
       ipv4_gateway: String(config.ipv4_gateway || ""),
+      dns_servers: Array.isArray(config.dns_servers)
+        ? config.dns_servers.map(String).join(", ")
+        : String(config.dns_servers || ""),
     }));
     setPostDeploy(
       Array.isArray(config.post_deploy_playbooks)
@@ -695,6 +710,17 @@ export function VmFormDialog({
                   </Field>
                 </>
               )}
+              <Field
+                label="DNS servers (optional)"
+                hint="Comma-separated. Leave empty to inherit DNS from the Proxmox template or DHCP."
+              >
+                <Input
+                  value={form.dns_servers}
+                  onChange={(event) => update("dns_servers", event.target.value)}
+                  placeholder="10.10.2.1, 1.1.1.1"
+                  inputMode="decimal"
+                />
+              </Field>
               <Field label="Guest user">
                 <Input
                   required
