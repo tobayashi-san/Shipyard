@@ -49,11 +49,9 @@ test('initial setup, login and protected console navigation work end-to-end', as
 
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole('heading', { name: /operations overview|environment overview|betriebsübersicht|umgebungsübersicht|dashboard/i })).toBeVisible();
-  await expect(page.getByRole('heading', { name: /currency & desired state|aktualität & sollzustand/i })).toBeVisible();
-  await expect(page.getByText(/system packages|systempakete/i, { exact: true })).toBeVisible();
-  await expect(page.getByText(/container images|container-images/i, { exact: true })).toBeVisible();
-  await expect(page.getByText(/^(reboots|neustarts)$/i)).toBeVisible();
-  await expect(page.getByText(/custom desired state|custom sollzustand/i, { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: /current environment status/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /no hosts yet/i })).toBeVisible();
+  await expect(page.getByRole('link', { name: /add host/i })).toBeVisible();
 
   await page.goto('/servers');
   await expect(page).toHaveURL(/\/servers/);
@@ -74,17 +72,19 @@ test('initial setup, login and protected console navigation work end-to-end', as
   // instead of relying on a unique text node.
   await expect(page.getByText('E2E-Proxmox-Wartung', { exact: true }).first()).toBeVisible();
 
-  await page.getByRole('button', { name: 'Delete E2E-Proxmox-Wartung' }).click();
+  await page.getByRole('button', { name: 'Actions for E2E-Proxmox-Wartung' }).click();
+  await page.getByRole('menuitem', { name: 'Delete window' }).click();
   await expect(page.getByRole('dialog', { name: /delete maintenance window/i })).toBeVisible();
   await page.getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(page.getByText('E2E-Proxmox-Wartung', { exact: true })).toHaveCount(0);
 
   await page.goto('/settings');
   await expect(page.getByRole('heading', { name: /einstellungen|settings/i })).toBeVisible();
-  await expect(page.getByText(/^(console|konsole)$/i)).toBeVisible();
-  await expect(page.getByText(/^(access & security|zugriff & sicherheit)$/i)).toBeVisible();
-  await expect(page.getByText(/^(integrations|integrationen)$/i)).toBeVisible();
-  await expect(page.getByText(/^(operations & system|betrieb & system)$/i)).toBeVisible();
+  const settingsNavigation = page.getByRole('navigation', { name: 'Settings' });
+  await expect(settingsNavigation.getByRole('link', { name: 'Appearance' })).toBeVisible();
+  await expect(settingsNavigation.getByRole('link', { name: 'SSH' })).toBeVisible();
+  await expect(settingsNavigation.getByRole('link', { name: 'Git Integration' })).toBeVisible();
+  await expect(settingsNavigation.getByRole('link', { name: 'System', exact: true })).toBeVisible();
 });
 
 test('mobile profile menu and maintenance form remain inside the viewport', async ({ page }) => {
@@ -104,7 +104,7 @@ test('mobile profile menu and maintenance form remain inside the viewport', asyn
     return response.json() as Promise<{ id: string }>;
   });
   await page.reload();
-  const environmentSelect = page.getByLabel('Environment');
+  const environmentSelect = page.getByLabel('Environment', { exact: true });
   await expect(environmentSelect).toBeVisible();
   await environmentSelect.selectOption(mobileEnvironment.id);
   await expect(environmentSelect).toHaveValue(mobileEnvironment.id);
@@ -177,14 +177,13 @@ test('agent feature visibility follows the setting immediately', async ({ page }
     return String((await response.json()).id);
   });
   await expect(agentToggle).toHaveAttribute('data-state', 'checked');
-  await page.goto('/');
-  await expect(page.getByRole('columnheader', { name: 'Agent', exact: true })).toBeVisible();
   await page.goto(`/servers/${serverId}`);
-  await expect(page.getByRole('tab', { name: 'Agent', exact: true })).toBeVisible();
-  await page.getByRole('tab', { name: /history/i }).click();
+  const additionalSections = page.getByLabel('Additional host sections');
+  await expect(additionalSections.locator('option[value="agent"]')).toHaveCount(1);
+  await page.getByRole('tab', { name: 'Operations', exact: true }).click();
   await expect(page).toHaveURL(/#tab=history$/);
   await page.reload();
-  await expect(page.getByRole('tab', { name: /history/i })).toHaveAttribute('data-state', 'active');
+  await expect(page.getByRole('tab', { name: 'Operations', exact: true })).toHaveAttribute('data-state', 'active');
   await page.goBack();
   await expect(page.getByRole('tab', { name: /overview/i })).toHaveAttribute('data-state', 'active');
 
@@ -193,11 +192,9 @@ test('agent feature visibility follows the setting immediately', async ({ page }
   await page.getByRole('switch', { name: /agent-feature aktivieren|enable agent feature/i }).click();
   await disabledSave;
   await page.goto(`/servers/${serverId}`);
-  await expect(page.getByRole('tab', { name: 'Agent', exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Additional host sections').locator('option[value="agent"]')).toHaveCount(0);
   await page.goto('/settings');
   await expect(page.getByText(/agent manifest/i, { exact: true })).toHaveCount(0);
-  await page.goto('/');
-  await expect(page.getByRole('columnheader', { name: 'Agent', exact: true })).toHaveCount(0);
   await page.evaluate(async (id) => {
     const token = localStorage.getItem('shipyard_token');
     await fetch(`/api/servers/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
@@ -224,7 +221,6 @@ test('dashboard and deployment failures are never presented as healthy empty sta
   await page.route('**/api/dashboard', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'dashboard unavailable' }) }));
   await page.route('**/api/opentofu/infrastructure?*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'infrastructure unavailable' }) }));
   await page.goto('/');
-  await expect(page.getByText('Status unavailable', { exact: true })).toBeVisible();
   await expect(page.getByText('Dashboard data could not be loaded', { exact: true })).toBeVisible();
   await expect(page.getByText('Ready for operation', { exact: true })).toHaveCount(0);
   await expect(page.getByText('All desired states met', { exact: true })).toHaveCount(0);
@@ -302,7 +298,7 @@ test('playbook workflows expose safe secrets, explicit targets and one run flow'
 
     await dialog.getByRole('button', { name: 'Create', exact: true }).click();
     await expect(page.getByText(/select at least one target/i)).toBeVisible();
-    await dialog.getByLabel(/all (?:managed hosts|servers)/i).check();
+    await dialog.getByLabel('All hosts', { exact: true }).check();
     await dialog.getByRole('button', { name: 'Create', exact: true }).click();
     await expect(page.getByText(/confirm the all-(?:host|server) target/i)).toBeVisible();
     await dialog.getByLabel(/run on every host in this environment/i).check();
@@ -548,15 +544,16 @@ test('IPAM sources can be configured and synced through the browser', async ({ p
     await page.getByRole('link', { name: 'Back to IPAM' }).click();
     await expect(page).toHaveURL(/\/networks$/);
 
-    const prefixRow = page.getByRole('row').filter({ hasText: '10.199.0.0/24' });
-    await expect(prefixRow).toContainText('10.199.0.10 – 10.199.0.30');
-    const prefixPositionBefore = await prefixRow.boundingBox();
-    await prefixRow.getByRole('checkbox').check();
+    const prefixEntry = page.getByRole('button', { name: /E2E DHCP 10\.199\.0\.0\/24/i });
+    await prefixEntry.click();
+    const prefixPositionBefore = await prefixEntry.boundingBox();
+    const prefixCheckbox = page.getByRole('checkbox', { name: 'Select prefix 10.199.0.0/24' });
+    await prefixCheckbox.check();
     await expect(page.getByText('1 selected', { exact: true })).toBeVisible();
-    const prefixPositionAfter = await prefixRow.boundingBox();
+    const prefixPositionAfter = await prefixEntry.boundingBox();
     expect(prefixPositionAfter?.y).toBe(prefixPositionBefore?.y);
-    await prefixRow.getByRole('checkbox').uncheck();
-    await page.getByRole('link', { name: /10\.199\.0\.0\/24/i }).first().click();
+    await prefixCheckbox.uncheck();
+    await page.getByRole('link', { name: 'Open', exact: true }).click();
     await expect(page.getByRole('table').getByText('10.199.0.20', { exact: true })).toBeVisible();
     await expect(page.getByRole('table').getByText('e2e-dhcp', { exact: true })).toBeVisible();
     await expect(page.getByRole('table').getByText('02:00:00:00:00:20', { exact: true })).toBeVisible();
@@ -657,8 +654,9 @@ test('a discovered Proxmox VM can be adopted through the browser without changin
     // Adoption is an inventory action. The overview deliberately stays focused
     // on platform capacity and node health.
     await page.getByRole('tab', { name: /virtual guests/i }).click();
-    await page.getByRole('button', { name: 'Manage in Shipyard' }).click();
-    const dialog = page.getByRole('dialog', { name: /adopt VM (?:into Shipyard|as (?:a )?managed host)|VM in Shipyard übernehmen/i });
+    await page.getByRole('button', { name: 'Actions for e2e-import-vm' }).click();
+    await page.getByRole('menuitem', { name: 'Adopt as host' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Adopt VM as host' });
     await expect(dialog).toBeVisible();
     const inputs = dialog.locator('input');
     await expect(inputs.nth(1)).toHaveValue('10.250.0.207');
@@ -666,9 +664,9 @@ test('a discovered Proxmox VM can be adopted through the browser without changin
     await inputs.nth(3).fill('2222');
     await Promise.all([
       page.waitForResponse(response => response.url().includes('/import-vm') && response.request().method() === 'POST' && response.status() === 201),
-      dialog.getByRole('button', { name: /adopt (?:into Shipyard|as (?:a )?managed host)|in Shipyard übernehmen/i }).click(),
+      dialog.getByRole('button', { name: 'Adopt as host' }).click(),
     ]);
-    await expect(page.getByText(/VM adopted as (?:a Shipyard host|a managed host)|VM wurde als Shipyard-Host übernommen/i)).toBeVisible();
+    await expect(page.getByText('VM adopted as a host.', { exact: true })).toBeVisible();
     await page.goto('/servers');
     const row = page.getByRole('row', { name: /e2e-import-vm/i });
     await expect(row).toBeVisible();
@@ -742,7 +740,7 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
     }));
     expect(updateTableWidth.table).toBeGreaterThanOrEqual(updateTableWidth.container - 2);
     await platformUpdatesTable.getByRole('button', { name: 'Add to Shipyard' }).click();
-    const addFleetDialog = page.getByRole('dialog', { name: /Add (?:managed host|server)/i });
+    const addFleetDialog = page.getByRole('dialog', { name: 'Add host' });
     await expect(addFleetDialog.getByLabel(/(?:host|server) name/i)).toHaveValue('hierarchy-node');
     await expect(addFleetDialog.getByLabel('IP Address')).toHaveValue('10.250.0.10');
     await expect(addFleetDialog.getByLabel('Hostname')).toHaveValue('hierarchy-node');
@@ -752,13 +750,18 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
     ]);
     fleetServerId = ((await createdFleetResponse.json()) as { id: string }).id;
     await expect(platformUpdatesTable.getByText('Ready through Shipyard', { exact: true })).toBeVisible();
-    const treeNode = page.locator('aside').getByRole('link', { name: /hierarchy-node/i });
+    const treeNode = page.locator('aside').getByRole('button', { name: /^(?:Online|Offline|Unknown) hierarchy-node$/i });
     await expect(treeNode).toBeVisible();
     await treeNode.click();
+    await expect(page).toHaveURL(/\/servers\//);
     await expect(page.getByRole('heading', { name: 'hierarchy-node', exact: true })).toBeVisible();
-    await expect(page.locator('aside a[aria-current="page"]').filter({ hasText: 'hierarchy-node' })).toBeVisible();
-    await expect(page.locator('aside a[aria-current="page"]').filter({ hasText: 'E2E Hierarchy Platform' })).toHaveCount(0);
     await expect(page.getByText('Host summary', { exact: true })).toBeVisible();
+
+    await page.goto('/infrastructure');
+    await page.getByRole('link', { name: 'E2E Hierarchy Platform', exact: true }).click();
+    await page.getByRole('tab', { name: /nodes 1/i }).click();
+    await page.locator('main').getByRole('link', { name: 'hierarchy-node', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'hierarchy-node', exact: true })).toBeVisible();
     await expect(page.getByText(/^(primary ZFS datastore|primärer ZFS-datastore)$/i)).toBeVisible();
     // Detail pages use the same object rows on narrow screens: no horizontal
     // table is required just to inspect the first inventory entries.
@@ -792,7 +795,7 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
     const ctRow = page.getByRole('row', { name: /hierarchy-ct/i });
     await expect(ctRow).toBeVisible();
     await expect(ctRow).toContainText('CT');
-    await expect(ctRow.getByRole('button', { name: 'Manage in Shipyard' })).toBeVisible();
+    await expect(ctRow.getByRole('button', { name: 'Actions for hierarchy-ct' })).toBeVisible();
   } finally {
     if (fleetServerId) await page.evaluate(async (id) => {
       const token = localStorage.getItem('shipyard_token');
