@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import {
   Server, CheckCircle2, RotateCcw, RefreshCw,
-  Bell, Clock, Filter, Plus, Bot, PackagePlus, Container, Cog,
+  Bell, Clock, Plus, Bot, PackagePlus, Container, Cog,
   Database, Activity,
 } from 'lucide-react';
 import { api, apiFetch } from '@/lib/api';
@@ -14,12 +14,10 @@ import { actionLabel, statusLabel } from '@/lib/history-labels';
 import { useUi } from '@/lib/store';
 import { asArray, cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { PageHeader } from '@/components/ui/page-header';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
-import { SkeletonRow } from '@/components/ui/skeleton';
 import { canAccessInfrastructure, hasCap, useProfile } from '@/lib/queries';
 
 // ---- types ----
@@ -217,20 +215,10 @@ export function DashboardPage() {
   }, [data?.servers, environmentId]);
   const summary = useMemo(() => ({ total: servers.length, online: servers.filter(s => s.status === 'online').length, offline: servers.filter(s => s.status === 'offline').length, rebootRequired: servers.filter(s => s.reboot_required).length, totalUpdates: servers.reduce((total, s) => total + (s.updates_count ?? 0), 0), criticalDisk: 0, criticalRam: 0 }), [servers]);
   const recentHistory = asArray<HistoryEntry>(data?.recentHistory);
-  const [attentionOnly, setAttentionOnly] = [
-    useUi((s) => s.dashAttentionOnly),
-    useUi((s) => s.setDashAttentionOnly),
-  ];
-  const [showAllHosts, setShowAllHosts] = useState(false);
   const attentionCount = useMemo(() => servers.filter(needsAttention).length, [servers]);
 
   const orderedHosts = useMemo(() => [...servers].sort((a, b) => Number(needsAttention(b)) - Number(needsAttention(a)) || a.name.localeCompare(b.name, 'en')), [servers]);
-  const visible = attentionOnly ? orderedHosts.filter(needsAttention) : orderedHosts;
-  // The dashboard is an operator cockpit, not another full resource list.
-  // Keep it quick to scan; the explicit resource page remains the place for
-  // paging, grouping and bulk host administration.
-  const dashboardHostLimit = 8;
-  const displayedHosts = attentionOnly || showAllHosts ? visible : visible.slice(0, dashboardHostLimit);
+  const attentionHosts = useMemo(() => orderedHosts.filter(needsAttention).slice(0, 6), [orderedHosts]);
   const ackAlert = useMutation({
     mutationFn: (id: string) => api.acknowledgeAlert(id),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['dashboard'] }),
@@ -259,6 +247,14 @@ export function DashboardPage() {
     };
   }, [clusters]);
   const actionableHistory = useMemo(() => recentHistory.filter(item => item.status === 'failed' || item.status === 'running' || item.status === 'queued'), [recentHistory]);
+  const runningTaskCount = actionableHistory.filter(item => item.status === 'running' || item.status === 'queued').length;
+  const criticalAlertCount = activeAlerts.filter(alert => alertTone(alert) === 'danger').length;
+  const updateCount = servers.reduce((total, server) => total
+    + (canViewUpdates ? (server.updates_count ?? 0) : 0)
+    + (canViewUpdates && canViewDocker ? (server.image_updates_count ?? 0) : 0)
+    + (canViewCustomUpdates ? (server.custom_updates_count ?? 0) : 0), 0);
+  const platformIssueCount = infrastructureHealth.unavailablePlatforms + infrastructureHealth.unavailableNodes + infrastructureHealth.constrainedDatastores;
+  const hasAttention = activeAlerts.length > 0 || actionableHistory.length > 0 || attentionCount > 0 || platformIssueCount > 0;
 
   return (
     <div className="space-y-5">
@@ -273,6 +269,15 @@ export function DashboardPage() {
         }
       />
 
+      <OverviewStatusBar
+        loading={isLoading || (canViewInfrastructure && infrastructureQuery.isPending)}
+        criticalAlerts={criticalAlertCount}
+        offlineHosts={summary.offline}
+        updates={updateCount}
+        runningTasks={runningTaskCount}
+        platformIssues={canViewInfrastructure ? platformIssueCount : undefined}
+      />
+
       {isError && (
         <Card className="border-destructive/40">
           <EmptyState
@@ -285,96 +290,43 @@ export function DashboardPage() {
         </Card>
       )}
 
-      {activeAlerts.length > 0 && <ActiveAlertsCard alerts={activeAlerts} acknowledgingId={ackAlert.isPending ? ackAlert.variables : undefined} onAcknowledge={id => ackAlert.mutate(id)} />}
-
-      <RecentTasksPanel history={actionableHistory} t={t} />
-
-      <EnvironmentOperatingState
-        showPlatforms={canViewInfrastructure}
-        platforms={infrastructureHealth.platforms}
-        unavailablePlatforms={infrastructureHealth.unavailablePlatforms}
-        unavailableNodes={infrastructureHealth.unavailableNodes}
-        constrainedDatastores={infrastructureHealth.constrainedDatastores}
-        totalHosts={summary.total}
-        onlineHosts={summary.online}
-        offlineHosts={summary.offline}
-        hostState={isLoading ? 'loading' : isError ? 'error' : 'loaded'}
-        platformState={!canViewInfrastructure ? 'loaded' : infrastructureQuery.isPending ? 'loading' : infrastructureQuery.isError ? 'error' : 'loaded'}
-      />
-
-      {data && !isError && (canViewUpdates || canViewCustomUpdates) && (
-        <UpdateOverview
-          servers={servers}
-          canViewUpdates={canViewUpdates}
-          canViewDocker={canViewDocker}
-          canViewCustomUpdates={canViewCustomUpdates}
-        />
+      {!isError && !isLoading && servers.length === 0 && (
+        <Card>
+          <EmptyState
+            icon={<Server className="h-5 w-5" />}
+            title={t('dash.noServers')}
+            description={t('dash.noServersHint')}
+            action={<Button asChild size="sm"><Link to="/servers"><Plus className="h-4 w-4" />{t('servers.addServer')}</Link></Button>}
+          />
+        </Card>
       )}
 
-      {/* Hosts are ranked by attention. Full inventory and capacity live under
-          infrastructure and resources, not in this operational cockpit. */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 border-b bg-muted/15 px-4 py-3">
-          <div className="flex min-w-0 items-center gap-2"><CardTitle className="flex items-center gap-2 text-base"><Server className="h-4 w-4 text-muted-foreground" />{attentionCount > 0 ? 'Managed hosts requiring attention' : 'Managed hosts'}</CardTitle><span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">{visible.length}</span></div>
-          {attentionCount > 0 && (
-            <Button variant={attentionOnly ? 'default' : 'secondary'} size="sm"
-              onClick={() => setAttentionOnly(!attentionOnly)}>
-              <Filter className="h-3.5 w-3.5" />
-              {t('dash.needsAttention')}
-              <Badge variant="secondary" className="ml-1">{attentionCount}</Badge>
-            </Button>
+      {!isError && !isLoading && servers.length > 0 && !hasAttention && (
+        <HealthySummary totalHosts={summary.total} onlineHosts={summary.online} platforms={canViewInfrastructure ? infrastructureHealth.platforms : undefined} />
+      )}
+
+      {!isError && hasAttention && (
+        <section className="overflow-hidden rounded-[3px] border border-border-strong/80 bg-card shadow-[0_1px_2px_hsl(var(--foreground)/0.035)]" aria-labelledby="attention-heading">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Activity className="h-4 w-4 text-warning" />
+              <h2 id="attention-heading" className="text-sm font-semibold">Needs attention</h2>
+            </div>
+            <Button asChild size="sm" variant="ghost"><Link to="/operations">Open operations</Link></Button>
+          </div>
+          {activeAlerts.length > 0 && <ActiveAlertsSection alerts={activeAlerts} acknowledgingId={ackAlert.isPending ? ackAlert.variables : undefined} onAcknowledge={id => ackAlert.mutate(id)} />}
+          <RecentTasksSection history={actionableHistory} />
+          {platformIssueCount > 0 && <PlatformIssuesSection count={platformIssueCount} />}
+          {attentionHosts.length > 0 && (
+            <AttentionHostsSection
+              hosts={attentionHosts}
+              total={attentionCount}
+              agentEnabled={agentEnabled}
+              t={t}
+            />
           )}
-        </CardHeader>
-        <CardContent className="p-0">
-            {isLoading && servers.length === 0 ? (
-              <div className="py-2">
-                {Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={4} />)}
-              </div>
-            ) : isError && !data ? (
-              <EmptyState
-                icon={<Server className="h-5 w-5" />}
-                title="Host inventory unavailable"
-                description="Managed hosts could not be loaded. Try refreshing the dashboard."
-                action={<Button variant="outline" size="sm" onClick={() => void refetch()}><RefreshCw />Try again</Button>}
-              />
-            ) : servers.length === 0 ? (
-              <EmptyState
-                icon={<Server className="h-5 w-5" />}
-                title={t('dash.noServers')}
-                description={t('dash.noServersHint')}
-                action={
-                  <Link to="/servers">
-                    <Button size="sm"><Plus className="h-4 w-4" /> {t('servers.addServer')}</Button>
-                  </Link>
-                }
-              />
-            ) : (
-              <>
-                {/* Desktop table */}
-                <div className="table-scroll hidden md:block">
-                  <table className="w-full text-sm" data-density="compact">
-                    <thead>
-                      <tr className="border-b text-left text-xs text-muted-foreground">
-                        <th className="px-4 py-3">Host</th>
-                        <th className="w-[120px] px-2 py-3">Status</th>
-                        {agentEnabled && <th className="w-[150px] px-2 py-3">Agent</th>}
-                        <th className="w-[100px] px-4 py-3">{t('dash.colUptime')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {displayedHosts.map(s => <ServerRow key={s.id} s={s} t={t} agentEnabled={agentEnabled} />)}
-                    </tbody>
-                  </table>
-                </div>
-                {/* Mobile cards */}
-                <div className="flex flex-col gap-3 p-4 md:hidden">
-                  {displayedHosts.map(s => <ServerCard key={s.id} s={s} t={t} agentEnabled={agentEnabled} />)}
-                </div>
-              </>
-            )}
-            {servers.length > 0 && visible.length > dashboardHostLimit && !attentionOnly && <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/[0.08] px-4 py-2.5"><span className="text-xs text-muted-foreground">{showAllHosts ? `${visible.length} hosts shown.` : `${dashboardHostLimit} of ${visible.length} hosts shown.`}</span><div className="flex items-center gap-2"><Button size="sm" variant="ghost" onClick={() => setShowAllHosts(open => !open)}>{showAllHosts ? 'Show less' : 'Show all'}</Button><Button size="sm" variant="outline" asChild><Link to="/servers">Open resource list</Link></Button></div></div>}
-        </CardContent>
-      </Card>
+        </section>
+      )}
     </div>
   );
 }
@@ -385,17 +337,77 @@ function alertTone(alert: AlertInfo): 'danger' | 'warning' | 'muted' {
   return alert.severity === 'critical' || alert.severity === 'error' ? 'danger' : alert.severity === 'warning' ? 'warning' : 'muted';
 }
 
-/** A compact vCenter-style attention queue. It deliberately lists only
- * unacknowledged conditions, while the host table remains the place to
- * inspect metrics and decide on the remediation. */
-function ActiveAlertsCard({ alerts, acknowledgingId, onAcknowledge }: { alerts: AlertInfo[]; acknowledgingId?: string; onAcknowledge: (id: string) => void }) {
+function OverviewStatusBar({ loading, criticalAlerts, offlineHosts, updates, runningTasks, platformIssues }: {
+  loading: boolean;
+  criticalAlerts: number;
+  offlineHosts: number;
+  updates: number;
+  runningTasks: number;
+  platformIssues?: number;
+}) {
+  return (
+    <section className="grid overflow-hidden rounded-[3px] border border-border-strong/80 bg-card shadow-[0_1px_2px_hsl(var(--foreground)/0.035)] sm:grid-cols-2 lg:grid-flow-col lg:auto-cols-fr" aria-label="Current environment status">
+      <OverviewStatusItem icon={<Bell className="h-4 w-4" />} label="Critical" value={loading ? '—' : criticalAlerts} to="/operations" tone={criticalAlerts > 0 ? 'danger' : 'neutral'} />
+      <OverviewStatusItem icon={<Server className="h-4 w-4" />} label="Offline" value={loading ? '—' : offlineHosts} to="/servers" tone={offlineHosts > 0 ? 'danger' : 'neutral'} />
+      <OverviewStatusItem icon={<PackagePlus className="h-4 w-4" />} label="Updates" value={loading ? '—' : updates} to="/servers" tone={updates > 0 ? 'warning' : 'neutral'} />
+      <OverviewStatusItem icon={<Clock className="h-4 w-4" />} label="Running tasks" value={loading ? '—' : runningTasks} to="/operations" tone={runningTasks > 0 ? 'info' : 'neutral'} />
+      {platformIssues !== undefined && <OverviewStatusItem icon={<Database className="h-4 w-4" />} label="Platform issues" value={loading ? '—' : platformIssues} to="/infrastructure" tone={platformIssues > 0 ? 'danger' : 'neutral'} />}
+    </section>
+  );
+}
+
+function OverviewStatusItem({ icon, label, value, to, tone }: {
+  icon: React.ReactNode;
+  label: string;
+  value: number | string;
+  to: '/operations' | '/servers' | '/infrastructure';
+  tone: 'neutral' | 'danger' | 'warning' | 'info';
+}) {
+  return (
+    <Link to={to} className="group flex min-w-0 items-center gap-3 border-b px-4 py-3 transition-colors hover:bg-muted/35 sm:odd:border-r lg:border-b-0 lg:border-r lg:last:border-r-0">
+      <span className={cn(
+        'flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-muted text-muted-foreground',
+        tone === 'danger' && 'bg-destructive/10 text-destructive',
+        tone === 'warning' && 'bg-warning/10 text-warning',
+        tone === 'info' && 'bg-info/10 text-info',
+      )}>{icon}</span>
+      <span className="min-w-0">
+        <span className={cn('block font-mono text-lg font-semibold leading-5', tone === 'danger' && 'text-destructive', tone === 'warning' && 'text-warning')}>{value}</span>
+        <span className="block truncate text-[13px] text-muted-foreground group-hover:text-foreground">{label}</span>
+      </span>
+    </Link>
+  );
+}
+
+function HealthySummary({ totalHosts, onlineHosts, platforms }: { totalHosts: number; onlineHosts: number; platforms?: number }) {
+  return (
+    <section className="flex flex-wrap items-center gap-3 rounded-[3px] border border-border-strong/70 bg-card px-4 py-3" aria-label="Environment healthy">
+      <CheckCircle2 className="h-5 w-5 text-success" />
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium">No action required</div>
+        <div className="text-[13px] text-muted-foreground">{onlineHosts} of {totalHosts} hosts reachable{platforms !== undefined ? ` · ${platforms} platform${platforms === 1 ? '' : 's'} available` : ''}</div>
+      </div>
+      <Button asChild size="sm" variant="ghost"><Link to="/servers">Open hosts</Link></Button>
+    </section>
+  );
+}
+
+function DashboardSectionHeader({ icon, title, count, action }: { icon: React.ReactNode; title: string; count?: number; action?: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 bg-muted/20 px-4 py-2">
+      <span className="text-muted-foreground">{icon}</span>
+      <h3 className="text-[13px] font-semibold">{title}</h3>
+      {count !== undefined && <span className="font-mono text-xs text-muted-foreground">{count}</span>}
+      {action && <div className="ml-auto">{action}</div>}
+    </div>
+  );
+}
+
+function ActiveAlertsSection({ alerts, acknowledgingId, onAcknowledge }: { alerts: AlertInfo[]; acknowledgingId?: string; onAcknowledge: (id: string) => void }) {
   const displayed = alerts.slice(0, 4);
-  return <Card>
-    <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 border-b bg-muted/15 px-4 py-3">
-      <div className="flex items-center gap-2"><CardTitle className="flex items-center gap-2 text-base"><Bell className="h-4 w-4 text-muted-foreground" />Open alerts</CardTitle><span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">{alerts.length}</span></div>
-      <Button asChild size="sm" variant="outline"><Link to="/operations">Open operations</Link></Button>
-    </CardHeader>
-    <CardContent className="divide-y p-0">
+  return <div className="border-b">
+    <DashboardSectionHeader icon={<Bell className="h-3.5 w-3.5" />} title="Open alerts" count={alerts.length} />
+    <div className="divide-y">
       {displayed.map(alert => <div key={alert.id} className="flex items-start gap-3 px-4 py-3">
         <StatusBadge tone={alertTone(alert)} dot className="mt-0.5 shrink-0">{alert.severity === 'critical' ? 'Critical' : alert.severity === 'warning' ? 'Warning' : 'Info'}</StatusBadge>
         <div className="min-w-0 flex-1">
@@ -405,19 +417,15 @@ function ActiveAlertsCard({ alerts, acknowledgingId, onAcknowledge }: { alerts: 
         <Button type="button" size="sm" variant="ghost" className="h-7 shrink-0 px-2 text-xs" disabled={acknowledgingId === alert.id} onClick={() => onAcknowledge(alert.id)}>Acknowledge</Button>
       </div>)}
       {alerts.length > displayed.length && <div className="px-4 py-2.5 text-xs text-muted-foreground">{alerts.length - displayed.length} more alerts in operations.</div>}
-    </CardContent>
-  </Card>;
+    </div>
+  </div>;
 }
 
-function RecentTasksPanel({ history, t }: { history: HistoryEntry[]; t: (k: string, o?: Record<string, unknown>) => string }) {
+function RecentTasksSection({ history }: { history: HistoryEntry[] }) {
   if (history.length === 0) return null;
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 border-b bg-muted/15 px-4 py-3">
-        <CardTitle className="flex items-center gap-2 text-base"><Clock className="h-4 w-4 text-muted-foreground" />Running &amp; failed tasks</CardTitle>
-        <Button asChild size="sm" variant="outline"><Link to="/operations">All tasks</Link></Button>
-      </CardHeader>
-      <CardContent className="p-0">
+    <div className="border-b">
+      <DashboardSectionHeader icon={<Clock className="h-3.5 w-3.5" />} title="Running & failed tasks" count={history.length} />
         <div className="table-scroll hidden md:block">
           <table className="w-full text-sm" data-density="compact">
             <thead><tr className="border-b text-left text-xs text-muted-foreground"><th className="w-8 px-4 py-2" /><th className="px-2 py-2">Target</th><th className="px-2 py-2">Task</th><th className="w-36 px-2 py-2">Started</th><th className="w-32 px-4 py-2">Result</th></tr></thead>
@@ -425,8 +433,7 @@ function RecentTasksPanel({ history, t }: { history: HistoryEntry[]; t: (k: stri
           </table>
         </div>
         <div className="divide-y md:hidden">{history.slice(0, 6).map((item, index) => <RecentTaskCard key={item.id ?? index} item={item} />)}</div>
-      </CardContent>
-    </Card>
+    </div>
   );
 }
 
@@ -444,99 +451,51 @@ function RecentTaskCard({ item }: { item: HistoryEntry }) {
   return <div className="flex items-center gap-3 px-4 py-3"><span className={`h-2 w-2 shrink-0 rounded-full ${item.status === 'success' ? 'bg-emerald-500' : item.status === 'failed' ? 'bg-destructive' : 'bg-muted-foreground'}`} /><div className="min-w-0 flex-1"><div className="truncate font-medium">{item.server_name || '—'}</div><div className="truncate text-xs text-muted-foreground">{actionLabel(t, item.action)} · {formatRelativeTime(item.started_at, t)}</div></div><StatusBadge tone={taskTone(item.status)}>{statusLabel(t, item.status)}</StatusBadge></div>;
 }
 
-// The environment landing page should feel like the vCenter "recent tasks /
-// host state" area, not like a wall of alert tiles. These cells are
-// intentionally phrased as operator decisions and link to the exact place
-// where the condition can be inspected.
-type DataState = 'loading' | 'error' | 'loaded';
-
-function EnvironmentOperatingState({ showPlatforms, platforms, unavailablePlatforms, unavailableNodes, constrainedDatastores, totalHosts, onlineHosts, offlineHosts, hostState, platformState }: {
-  showPlatforms: boolean;
-  platforms: number; unavailablePlatforms: number; unavailableNodes: number; constrainedDatastores: number;
-  totalHosts: number; onlineHosts: number; offlineHosts: number; hostState: DataState; platformState: DataState;
-}) {
-  const platformIssues = unavailablePlatforms + unavailableNodes + constrainedDatastores;
-  const hostIssues = offlineHosts;
-  const loading = hostState === 'loading' || (showPlatforms && platformState === 'loading');
-  const unavailable = hostState === 'error' || (showPlatforms && platformState === 'error');
-  const hasResources = (showPlatforms && platforms > 0) || totalHosts > 0;
-  const ready = !loading && !unavailable && hasResources && platformIssues === 0 && hostIssues === 0;
-  const badge = unavailable
-    ? { tone: 'danger' as const, label: 'Status unavailable' }
-    : loading
-      ? { tone: 'muted' as const, label: 'Checking status' }
-      : !hasResources
-        ? { tone: 'muted' as const, label: 'No resources connected' }
-        : ready
-          ? { tone: 'success' as const, label: 'Ready for operation' }
-          : { tone: 'danger' as const, label: 'Review required' };
-  return <Card>
-    <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b bg-muted/15 px-4 py-3">
-      <div><CardTitle className="flex items-center gap-2 text-base"><Activity className="h-4 w-4 text-muted-foreground" />Operating state</CardTitle><p className="mt-0.5 text-xs text-muted-foreground">Connectivity and platform availability.</p></div>
-      <StatusBadge tone={badge.tone} dot>{badge.label}</StatusBadge>
-    </CardHeader>
-    <CardContent className={cn('grid p-0', showPlatforms && 'md:grid-cols-2')}>
-      {showPlatforms && <OperatingStateCell icon={<Database className="h-4 w-4" />} label="Platforms" detail={platformState === 'loading' ? 'Loading platform state…' : platformState === 'error' ? 'Platform state is unavailable' : platformIssues ? `${platformIssues} deviation${platformIssues === 1 ? '' : 's'} across platforms, nodes, or ZFS` : platforms === 0 ? 'No platforms connected' : `${platforms} platform${platforms === 1 ? '' : 's'} without reported deviations`} tone={platformState === 'error' || platformIssues ? 'danger' : platformState === 'loading' || platforms === 0 ? 'muted' : 'success'} action="Open infrastructure" to="/infrastructure" />}
-      <OperatingStateCell icon={<Server className="h-4 w-4" />} label="Managed hosts" detail={hostState === 'loading' ? 'Loading host state…' : hostState === 'error' ? 'Host state is unavailable' : hostIssues ? `${offlineHosts} unreachable · ${onlineHosts} / ${totalHosts} reachable` : totalHosts === 0 ? 'No hosts connected' : `${onlineHosts} / ${totalHosts} hosts reachable`} tone={hostState === 'error' || hostIssues ? 'danger' : hostState === 'loading' || totalHosts === 0 ? 'muted' : 'success'} action="Review hosts" to="/servers" bordered={showPlatforms} />
-    </CardContent>
-  </Card>;
+function PlatformIssuesSection({ count }: { count: number }) {
+  return (
+    <div className="border-b">
+      <DashboardSectionHeader icon={<Database className="h-3.5 w-3.5" />} title="Platform availability" count={count} />
+      <Link to="/infrastructure" className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-muted/35">
+        <StatusBadge tone="danger" dot>{count} issue{count === 1 ? '' : 's'}</StatusBadge>
+        <span className="min-w-0 flex-1 text-muted-foreground">Review unavailable platforms, nodes, or constrained storage.</span>
+        <span className="text-xs font-medium text-primary">Review</span>
+      </Link>
+    </div>
+  );
 }
 
-function OperatingStateCell({ icon, label, detail, tone, action, to, bordered = false }: { icon: React.ReactNode; label: string; detail: string; tone: 'success' | 'danger' | 'muted'; action: string; to: '/infrastructure' | '/servers'; bordered?: boolean }) {
-  return <div className={cn('p-3.5', bordered && 'border-t md:border-l md:border-t-0')}><div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{icon}{label}</div><div className={cn('mt-1.5 text-sm font-medium', tone === 'danger' && 'text-destructive', tone === 'muted' && 'text-muted-foreground')}>{detail}</div><Button asChild variant="link" size="sm" className="mt-1.5 h-auto px-0"><Link to={to}>{action}</Link></Button></div>;
-}
-
-/** Central, vCenter-like update workspace. The host inventory below remains
- * about reachability; every deviation from the desired software state lives
- * here exactly once. */
-function UpdateOverview({ servers, canViewUpdates, canViewDocker, canViewCustomUpdates }: { servers: ServerInfo[]; canViewUpdates: boolean; canViewDocker: boolean; canViewCustomUpdates: boolean }) {
-  const affected = servers.filter(server =>
-    (canViewUpdates && (server.reboot_required || (server.updates_count ?? 0) > 0 || (canViewDocker && (server.image_updates_count ?? 0) > 0)))
-    || (canViewCustomUpdates && (server.custom_updates_count ?? 0) > 0));
-  const osUpdates = servers.reduce((sum, server) => sum + (server.updates_count ?? 0), 0);
-  const imageUpdates = servers.reduce((sum, server) => sum + (server.image_updates_count ?? 0), 0);
-  const customUpdates = servers.reduce((sum, server) => sum + (server.custom_updates_count ?? 0), 0);
-  const reboots = servers.filter(server => server.reboot_required).length;
-
-  return <Card className="overflow-hidden">
-    <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0 border-b bg-muted/15 px-4 py-3">
-      <div><CardTitle className="flex items-center gap-2 text-base"><PackagePlus className="h-4 w-4 text-muted-foreground" />Currency &amp; desired state</CardTitle><p className="mt-0.5 text-xs text-muted-foreground">Packages, containers, reboots, and defined versions.</p></div>
-      <StatusBadge tone={servers.length === 0 ? 'muted' : affected.length ? 'warning' : 'success'} dot>{servers.length === 0 ? 'No hosts connected' : affected.length ? `${affected.length} host${affected.length === 1 ? '' : 's'} requiring attention` : 'All desired states met'}</StatusBadge>
-    </CardHeader>
-    <CardContent className="p-0">
-      <div className="grid divide-y border-b md:grid-flow-col md:auto-cols-fr md:divide-x md:divide-y-0">
-        {canViewUpdates && <UpdateMetric icon={<PackagePlus className="h-4 w-4" />} label="System packages" value={osUpdates} detail="pending package updates" tone={osUpdates ? 'warning' : 'success'} />}
-        {canViewDocker && canViewUpdates && <UpdateMetric icon={<Container className="h-4 w-4" />} label="Container images" value={imageUpdates} detail="new image versions" tone={imageUpdates ? 'warning' : 'success'} />}
-        {canViewUpdates && <UpdateMetric icon={<RotateCcw className="h-4 w-4" />} label="Reboots" value={reboots} detail="required after update" tone={reboots ? 'warning' : 'success'} />}
-        {canViewCustomUpdates && <UpdateMetric icon={<Cog className="h-4 w-4" />} label="Custom desired state" value={customUpdates} detail="version deviations" tone={customUpdates ? 'warning' : 'success'} />}
-      </div>
-      {servers.length === 0 ? <div className="px-4 py-3 text-sm text-muted-foreground">Connect a managed host to evaluate its desired state.</div> : affected.length === 0 ? <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground"><CheckCircle2 className="h-4 w-4 text-success" />No action required. All reported desired states match.</div> : <div className="table-scroll">
-        <table className="w-full min-w-[720px] text-sm" data-density="compact">
-          <thead><tr className="border-b bg-muted/20 text-left text-xs text-muted-foreground"><th className="px-4 py-2.5">Host</th>{canViewUpdates && <th className="px-3 py-2.5">System</th>}{canViewUpdates && canViewDocker && <th className="px-3 py-2.5">Containers</th>}{canViewUpdates && <th className="px-3 py-2.5">Reboot</th>}{canViewCustomUpdates && <th className="px-4 py-2.5">Custom desired state</th>}</tr></thead>
-          <tbody className="divide-y">{affected.map(server => <UpdateOverviewRow key={server.id} server={server} canViewUpdates={canViewUpdates} canViewDocker={canViewDocker} canViewCustomUpdates={canViewCustomUpdates} />)}</tbody>
+function AttentionHostsSection({ hosts, total, agentEnabled, t }: { hosts: ServerInfo[]; total: number; agentEnabled: boolean; t: (key: string) => string }) {
+  return (
+    <div>
+      <DashboardSectionHeader
+        icon={<Server className="h-3.5 w-3.5" />}
+        title="Hosts requiring attention"
+        count={total}
+        action={<Link to="/servers" className="text-xs font-medium text-primary hover:underline">All hosts</Link>}
+      />
+      <div className="table-scroll hidden md:block">
+        <table className="w-full text-sm" data-density="compact">
+          <thead><tr><th>Host</th><th className="w-[120px]">Status</th>{agentEnabled && <th className="w-[150px]">Agent</th>}<th className="w-[100px]">{t('dash.colUptime')}</th></tr></thead>
+          <tbody>{hosts.map(server => <ServerRow key={server.id} s={server} t={t} agentEnabled={agentEnabled} />)}</tbody>
         </table>
-      </div>}
-    </CardContent>
-  </Card>;
+      </div>
+      <div className="divide-y md:hidden">{hosts.map(server => <AttentionHostMobileRow key={server.id} server={server} />)}</div>
+      {total > hosts.length && <div className="border-t px-4 py-2 text-xs text-muted-foreground">Showing the {hosts.length} highest-priority hosts. <Link to="/servers" className="font-medium text-primary hover:underline">Review all {total}</Link></div>}
+    </div>
+  );
 }
 
-function UpdateMetric({ icon, label, value, detail, tone }: { icon: React.ReactNode; label: string; value: number; detail: string; tone: 'success' | 'warning' }) {
-  return <div className="p-3.5"><div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{icon}{label}</div><div className={cn('mt-1.5 font-mono text-xl font-semibold', tone === 'warning' && 'text-warning')}>{value}</div><div className="mt-0.5 text-xs text-muted-foreground">{detail}</div></div>;
-}
-
-function UpdateOverviewRow({ server, canViewUpdates, canViewDocker, canViewCustomUpdates }: { server: ServerInfo; canViewUpdates: boolean; canViewDocker: boolean; canViewCustomUpdates: boolean }) {
-  const taskDeviations = (server.custom_update_tasks || []).filter(task => task.has_update);
-  return <tr className="hover:bg-muted/35">
-    <td className="px-4 py-3"><Link to="/servers/$id" params={{ id: String(server.id) }} className="font-medium hover:text-primary hover:underline">{server.name}</Link><div className="mt-0.5 font-mono text-[11px] text-muted-foreground">{server.ip_address || '—'}</div></td>
-    {canViewUpdates && <td className="px-3 py-3"><UpdateState value={server.updates_count ?? 0} label="package update" /></td>}
-    {canViewUpdates && canViewDocker && <td className="px-3 py-3"><UpdateState value={server.image_updates_count ?? 0} label="image update" /></td>}
-    {canViewUpdates && <td className="px-3 py-3">{server.reboot_required ? <StatusBadge tone="warning"><RotateCcw className="mr-1 h-3 w-3" />Pending</StatusBadge> : <span className="text-xs text-muted-foreground">Not required</span>}</td>}
-    {canViewCustomUpdates && <td className="px-4 py-3">{taskDeviations.length ? <div className="flex flex-wrap gap-1">{taskDeviations.map(task => <span key={task.id} title={`${task.current_version || '—'} → ${task.type === 'trigger' ? task.trigger_output || '—' : task.last_version || '—'}`}><StatusBadge tone="warning"><Cog className="mr-1 h-3 w-3" />{task.name}</StatusBadge></span>)}</div> : (server.custom_updates_count ?? 0) > 0 ? <StatusBadge tone="warning">{server.custom_updates_count} deviation{server.custom_updates_count === 1 ? '' : 's'}</StatusBadge> : <span className="text-xs text-muted-foreground">Current</span>}</td>}
-  </tr>;
-}
-
-function UpdateState({ value, label }: { value: number; label: string }) {
-  return value > 0 ? <StatusBadge tone="warning">{value} {label}{value === 1 ? '' : 's'}</StatusBadge> : <span className="text-xs text-muted-foreground">Current</span>;
+function AttentionHostMobileRow({ server }: { server: ServerInfo }) {
+  return (
+    <Link to="/servers/$id" params={{ id: String(server.id) }} className="block px-4 py-3 hover:bg-muted/35">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className={cn('h-2 w-2 shrink-0 rounded-full', server.status === 'online' ? 'bg-success' : server.status === 'offline' ? 'bg-destructive' : 'bg-muted-foreground')} />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{server.name}</span>
+        <span className="font-mono text-xs text-muted-foreground">{server.ip_address}</span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1"><UpdatesChips s={server} /></div>
+    </Link>
+  );
 }
 
 function AgentBadge({ s }: { s: ServerInfo }) {
@@ -556,7 +515,6 @@ function AgentBadge({ s }: { s: ServerInfo }) {
 
 function ServerRow({ s, t, agentEnabled }: { s: ServerInfo; t: (k: string) => string; agentEnabled: boolean }) {
   const navigate = useNavigate();
-  const tags = asArray<string>(s.tags);
   const hostStatus = s.status === 'online' ? t('common.online') : s.status === 'offline' ? t('common.offline') : t('common.unknown');
   return (
     <tr className="border-b transition-colors last:border-b-0 hover:bg-muted/50 cursor-pointer"
@@ -564,17 +522,8 @@ function ServerRow({ s, t, agentEnabled }: { s: ServerInfo; t: (k: string) => st
       <td className="px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-1.5">
           <span className="truncate font-medium">{s.name}</span>
-          {agentEnabled && <AgentBadge s={s} />}
           <span className="truncate font-mono text-[11px] text-muted-foreground">{s.ip_address}</span>
         </div>
-        {tags.length > 0 && (
-          <div className="mt-1 flex flex-wrap gap-1">
-            {tags.slice(0, 3).map(tag => (
-              <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[10px]">{tag}</span>
-            ))}
-            {tags.length > 3 && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">+{tags.length - 3}</span>}
-          </div>
-        )}
       </td>
       <td className="px-2 py-2.5"><StatusBadge tone={s.status === 'online' ? 'success' : s.status === 'offline' ? 'danger' : 'muted'} dot>{hostStatus}</StatusBadge></td>
       {agentEnabled && <td className="px-2 py-2.5"><AgentBadge s={s} /><span className="text-xs text-muted-foreground">{s.agent_mode === 'legacy' ? 'SSH' : 'Agent'}</span></td>}
@@ -584,36 +533,6 @@ function ServerRow({ s, t, agentEnabled }: { s: ServerInfo; t: (k: string) => st
         </span>
       </td>
     </tr>
-  );
-}
-
-function ServerCard({ s, t, agentEnabled }: { s: ServerInfo; t: (k: string) => string; agentEnabled: boolean }) {
-  const dotCls = s.status === 'online' ? 'bg-emerald-500' : s.status === 'offline' ? 'bg-destructive' : 'bg-muted-foreground';
-  const statusLabel = s.status === 'online' ? t('common.online') : s.status === 'offline' ? t('common.offline') : t('common.unknown');
-  const tags = asArray<string>(s.tags);
-  return (
-    <Link to="/servers/$id" params={{ id: String(s.id) }}
-      className="rounded-[3px] border border-border-strong/80 bg-card p-4 transition-colors hover:bg-muted/50">
-      <div className="flex min-w-0 items-center gap-2">
-        <span className={`inline-block h-2 w-2 rounded-full ${dotCls}`} />
-        <span className="truncate font-medium">{s.name}</span>
-        <StatusBadge tone={s.status === 'online' ? 'success' : s.status === 'offline' ? 'danger' : 'muted'} className="ml-auto">{statusLabel}</StatusBadge>
-      </div>
-      <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-        {agentEnabled && <AgentBadge s={s} />}
-        <span className="font-mono">{s.ip_address}</span>
-        <span className="font-mono">{formatUptime(s.uptime_seconds)}</span>
-      </div>
-      {tags.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {tags.slice(0, 4).map(tag => <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[10px]">{tag}</span>)}
-          {tags.length > 4 && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">+{tags.length - 4}</span>}
-        </div>
-      )}
-      <div className="mt-3 flex flex-wrap gap-1">
-        <UpdatesChips s={s} />
-      </div>
-    </Link>
   );
 }
 
@@ -629,6 +548,6 @@ function UpdatesChips({ s }: { s: ServerInfo }) {
   if (canViewUpdates && (s.updates_count ?? 0) > 0) chips.push(<StatusBadge key="u" tone="warning"><PackagePlus className="mr-1 h-3 w-3" />{s.updates_count} {t('dash.colUpdates')}</StatusBadge>);
   if (canViewUpdates && canViewDocker && (s.image_updates_count ?? 0) > 0) chips.push(<StatusBadge key="i" tone="warning"><Container className="mr-1 h-3 w-3" />{s.image_updates_count} {t('dash.colImageUpdates')}</StatusBadge>);
   if (canViewCustomUpdates && (s.custom_updates_count ?? 0) > 0) chips.push(<StatusBadge key="c" tone="warning"><Cog className="mr-1 h-3 w-3" />{s.custom_updates_count} {t('dash.colCustomUpdates')}</StatusBadge>);
-  if (chips.length === 0) return <StatusBadge tone="success"><CheckCircle2 className="mr-1 h-3 w-3" />{t('dash.allClear')}</StatusBadge>;
+  if (chips.length === 0) return null;
   return <>{chips}</>;
 }

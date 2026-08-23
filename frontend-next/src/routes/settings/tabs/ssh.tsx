@@ -149,7 +149,7 @@ function KeyAssignments({ environmentId }: { environmentId: string }) {
     onError: (error: Error) => showToast(error.message, "error"),
   });
   const labels: Record<KeyAssignment["target_type"], string> = {
-    server: "Fleet-Host",
+    server: "Host",
     deployment: "Deployment",
     vm_template: "VM template",
   };
@@ -157,7 +157,7 @@ function KeyAssignments({ environmentId }: { environmentId: string }) {
   return (
     <div className="space-y-3 py-3.5">
       <p className="text-sm text-muted-foreground">
-        Define which resources should use the central Fleet key. Private keys
+        Define which resources should use the central Shipyard key. Private keys
         are not duplicated.
       </p>
       <div className="grid gap-2 sm:grid-cols-[150px_minmax(0,1fr)_auto]">
@@ -170,7 +170,7 @@ function KeyAssignments({ environmentId }: { environmentId: string }) {
           className="h-9 rounded-sm border border-input bg-background px-2.5 text-[13px]"
           aria-label="Zieltyp"
         >
-          <option value="server">Managed host</option>
+          <option value="server">Host</option>
           <option value="deployment">Deployment</option>
           <option value="vm_template">VM template</option>
         </select>

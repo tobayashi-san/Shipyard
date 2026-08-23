@@ -218,7 +218,7 @@ router.post('/deploy', adminOnly, deployLimiter, async (req, res) => {
   } catch (error) {
     db.auditLog.write('ssh.deploy', `SSH key deploy failed for ${req.body?.ip_address}`, req.ip, false, req.user?.username);
     // A remote SSH connection failure is an expected operational outcome,
-    // not an internal Fleet crash. Keep implementation details in the log.
+    // not an internal Shipyard crash. Keep implementation details in the log.
     log.warn({ err: error, serverId: req.body?.server_id, ipAddress: req.body?.ip_address }, 'SSH key deployment failed');
     if (!res.headersSent) res.status(502).json({ error: 'SSH-Schlüssel konnte nicht installiert werden. Prüfe IP-Adresse, SSH-Benutzer, Passwort und Erreichbarkeit.' });
     else serverError(res, error, 'deploy SSH key');
@@ -265,7 +265,7 @@ router.post('/deploy-all', adminOnly, deployLimiter, async (req, res) => {
 });
 
 // ── SSH key scope ────────────────────────────────────────────────────────
-// The private Fleet key stays central. These records only declare the
+// The private Shipyard key stays central. These records only declare the
 // resources for which its public part is intended, making access intent
 // visible in the console and auditable without duplicating key material.
 router.get('/key-assignments', adminOnly, (req, res) => {

@@ -86,7 +86,7 @@ function permittedRows(req) {
         id: `audit-${row.id}`,
         source: 'Audit',
         name: row.action || 'Audit event',
-        target: row.detail || 'Fleet console',
+        target: row.detail || 'Shipyard console',
         initiator: row.user || 'System',
         status: failed ? 'failed' : succeeded ? 'successful' : 'recorded',
         statusTone: failed ? 'danger' : succeeded ? 'success' : 'muted',

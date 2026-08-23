@@ -77,7 +77,7 @@ export function AppearanceTab() {
           <Input
             value={appName}
             onChange={(e) => setAppName(e.target.value)}
-            placeholder="Fleet"
+            placeholder="Shipyard"
             className="max-w-xs"
           />
         </SettingsRow>

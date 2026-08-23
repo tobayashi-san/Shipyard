@@ -1037,7 +1037,7 @@ function RolePreview({
         </Badge>
       </div>
       <div className="grid gap-2 sm:grid-cols-3">
-        <PreviewMetric label="Managed hosts" value={serverScope} />
+        <PreviewMetric label="Hosts" value={serverScope} />
         <PreviewMetric label="Playbooks" value={resourceSummary(pbMode, playbooksSelected, 'playbooks')} />
         <PreviewMetric label="Plugins" value={resourceSummary(plMode, pluginsSelected, 'plugins')} />
       </div>

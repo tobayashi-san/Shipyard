@@ -14,6 +14,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRow } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { OverflowItem, OverflowMenu } from "@/components/ui/overflow-menu";
 import { Separator } from "@/components/ui/separator";
 import { hasCap, useProfile } from "@/lib/queries";
 import { useUi } from "@/lib/store";
@@ -312,28 +313,20 @@ export function SchedulesTab() {
                           )}
                         </td>
                         <td className="px-3">
-                          <div className="flex justify-end gap-1">
-                            {hasCap(profile, "canEditSchedules") && (
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                className="h-7 w-7"
-                                onClick={() => openEdit(s.id)}
-                                title="Edit workflow"
-                              >
-                                <Settings2 className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
-                            {hasCap(profile, "canDeleteSchedules") && (
-                              <Button
-                                variant="destructive"
-                                size="icon"
-                                className="h-7 w-7"
-                                onClick={() => setDeleteSchedule(s)}
-                                title="Delete workflow"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
+                          <div className="flex justify-end">
+                            {(hasCap(profile, "canEditSchedules") || hasCap(profile, "canDeleteSchedules")) && (
+                            <OverflowMenu title={`Actions for ${s.name}`}>
+                              {hasCap(profile, "canEditSchedules") && (
+                                <OverflowItem icon={Settings2} onClick={() => openEdit(s.id)}>
+                                  Edit workflow
+                                </OverflowItem>
+                              )}
+                              {hasCap(profile, "canDeleteSchedules") && (
+                                <OverflowItem icon={Trash2} danger onClick={() => setDeleteSchedule(s)}>
+                                  Delete workflow
+                                </OverflowItem>
+                              )}
+                            </OverflowMenu>
                             )}
                           </div>
                         </td>
@@ -493,7 +486,7 @@ export function ScheduleDialog({
         )
       : [...checked].filter((v) => v !== "all").join(",");
     if (!targets) {
-      showToast("Select at least one target. All managed hosts must be selected explicitly.", "error");
+      showToast("Select at least one target. All hosts must be selected explicitly.", "error");
       return;
     }
     if (allChecked && !allConfirmed) {

@@ -95,7 +95,7 @@ export function ClusterPage({
               to="/infrastructure"
               className="hover:text-foreground hover:underline"
             >
-              Virtual infrastructure
+              Infrastructure
             </Link>
             <span aria-hidden="true">/</span>
             <span className="text-foreground">{title}</span>
@@ -291,7 +291,7 @@ export function PlatformOperatingState({
 
   return (
     <Card>
-      <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b bg-muted/15 py-3">
+      <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b py-3">
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <Activity className="h-4 w-4" />
@@ -395,7 +395,7 @@ export function ClusterConfiguration({ cluster }: { cluster: Cluster }) {
     <div className="space-y-4">
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,.8fr)]">
         <Card>
-          <CardHeader className="border-b bg-muted/15 py-3">
+          <CardHeader className="border-b py-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <ServerCog className="h-4 w-4" />
               Platform & inventory
@@ -431,7 +431,7 @@ export function ClusterConfiguration({ cluster }: { cluster: Cluster }) {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="border-b bg-muted/15 py-3">
+          <CardHeader className="border-b py-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <HardDrive className="h-4 w-4" />
               Storage overview
@@ -476,7 +476,7 @@ export function ClusterConfiguration({ cluster }: { cluster: Cluster }) {
 export function NodesCard({ cluster }: { cluster: Cluster }) {
   return (
     <Card>
-      <CardHeader className="border-b bg-muted/15 py-3">
+      <CardHeader className="border-b py-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <Server className="h-4 w-4" />
           Nodes
@@ -662,7 +662,7 @@ export function PlatformUpdatesCard({
   return (
     <>
     <Card>
-      <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b bg-muted/15 py-3">
+      <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b py-3">
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <Download className="h-4 w-4" />
@@ -670,7 +670,7 @@ export function PlatformUpdatesCard({
           </CardTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Packages reported by each Proxmox node. Installation uses the
-            audited Fleet update workflow.
+            audited Shipyard update workflow.
           </p>
         </div>
         <StatusBadge tone={total ? "warning" : unavailable ? "muted" : "success"} dot>
@@ -721,13 +721,13 @@ export function PlatformUpdatesCard({
                   <td className="font-mono tabular-nums">{node.update_status === "unavailable" ? "—" : node.update_count || 0}</td>
                   <td className="text-muted-foreground">
                     {node.fleet_server_id
-                      ? canRunUpdates ? "Ready through Fleet" : "Permission required"
+                      ? canRunUpdates ? "Ready through Shipyard" : "Permission required"
                       : canAddFleetHost ? (
                         <Button type="button" size="sm" variant="outline" onClick={() => setFleetNode(node)}>
                           <Server />
-                          Add to Fleet
+                          Add to Shipyard
                         </Button>
-                      ) : "Fleet edit permission required"}
+                      ) : "Shipyard edit permission required"}
                   </td>
                   <td className="text-right">
                     <Button asChild size="sm" variant="outline">
@@ -794,7 +794,7 @@ export function NodeUpdatesCard({
   return (
     <>
       <Card>
-        <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b bg-muted/15 py-3">
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b py-3">
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
               <Download className="h-4 w-4" />
@@ -830,11 +830,11 @@ export function NodeUpdatesCard({
         </CardHeader>
         {!node.fleet_server_id && packages.length > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-warning/5 px-4 py-3 text-sm text-warning">
-            <span>Add this Proxmox node to Fleet to install updates securely through SSH.</span>
+            <span>Add this Proxmox node to Shipyard to install updates securely through SSH.</span>
             {canAddFleetHost && (
               <Button type="button" size="sm" variant="outline" onClick={() => setAddToFleet(true)}>
                 <Server />
-                Add to Fleet
+                Add to Shipyard
               </Button>
             )}
           </div>
@@ -872,7 +872,7 @@ export function NodeUpdatesCard({
         open={confirmUpdate}
         onOpenChange={setConfirmUpdate}
         title={`Install updates on ${node.name}?`}
-        description={`Fleet will run a full system upgrade for ${packages.length} available package${packages.length === 1 ? "" : "s"}. Services may restart and a reboot may be required.`}
+        description={`Shipyard will run a full system upgrade for ${packages.length} available package${packages.length === 1 ? "" : "s"}. Services may restart and a reboot may be required.`}
         confirmLabel="Start update"
         cancelLabel="Cancel"
         variant="warning"

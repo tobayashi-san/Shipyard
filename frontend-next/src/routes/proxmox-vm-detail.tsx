@@ -235,7 +235,7 @@ function VmConfigurationOverview({
   if (unavailable)
     return (
       <Card>
-        <CardHeader className="border-b bg-muted/15 py-3">
+        <CardHeader className="border-b py-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Server className="h-4 w-4" />
             Hardware & network
@@ -262,7 +262,7 @@ function VmConfigurationOverview({
   return (
     <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(23rem,.85fr)]">
       <Card>
-        <CardHeader className="border-b bg-muted/15 py-3">
+        <CardHeader className="border-b py-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Cpu className="h-4 w-4" />
             Hardware & guest
@@ -327,7 +327,7 @@ function VmConfigurationOverview({
         </CardContent>
       </Card>
       <Card>
-        <CardHeader className="border-b bg-muted/15 py-3">
+        <CardHeader className="border-b py-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <HardDrive className="h-4 w-4" />
             Virtual disks
@@ -364,7 +364,7 @@ function VmConfigurationOverview({
         </CardContent>
       </Card>
       <Card className="xl:col-span-2">
-        <CardHeader className="border-b bg-muted/15 py-3">
+        <CardHeader className="border-b py-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Network className="h-4 w-4" />
             Network
@@ -452,7 +452,7 @@ function VmObjectSummary({
     <Card className="console-object-summary">
       <CardContent className="grid p-0 xl:grid-cols-[minmax(0,1.35fr)_minmax(22rem,.65fr)]">
         <section className="console-object-summary-main">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3 border-b pb-3">
             <div className="flex items-center gap-2 text-sm font-semibold">
               <Server className="h-4 w-4 text-muted-foreground" />
               {vm.guest_type === "lxc" ? "LXC container" : "Virtual machine"}
@@ -463,13 +463,13 @@ function VmObjectSummary({
               </span>
             )}
           </div>
-          <div className="console-object-info-grid">
+          <div className="console-object-info-grid xl:grid-cols-3">
             <ObjectInfo label="Node" value={vm.node_name} mono />
             <ObjectInfo label={`${kind}-ID`} value={vm.vm_id} mono />
             <ObjectInfo label="Platform" value={platformName} />
             <ObjectInfo
               label="Management"
-              value={vm.fleet_server_id ? "Managed host" : "Inventory only"}
+              value={vm.fleet_server_id ? "Host" : "Inventory only"}
             />
             <ObjectInfo
               label="Operating system"
@@ -505,14 +505,14 @@ function VmObjectSummary({
           </div>
         </section>
         <section
-          className="console-object-capacity"
+          className="console-object-capacity border-t xl:border-l xl:border-t-0"
           aria-label="Live usage"
         >
-          <div className="flex items-center gap-2 text-sm font-semibold">
+          <div className="flex items-center gap-2 border-b pb-3 text-sm font-semibold">
             <Activity className="h-4 w-4 text-muted-foreground" />
             Live usage
           </div>
-          <div className="mt-4 space-y-3">
+          <div className="mt-3 space-y-3">
             <CapacityLine
               label="CPU"
               used={cpuUsed}
@@ -667,7 +667,7 @@ function VmTaskRows({
 function RecentVmTasks({ events }: { events: AuditEvent[] }) {
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between gap-3 border-b bg-muted/15 py-3">
+      <CardHeader className="flex-row items-center justify-between gap-3 border-b py-3">
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <ClipboardList className="h-4 w-4" />
@@ -711,7 +711,7 @@ function VmProtectionSummary({
   ).length;
   return (
     <Card>
-      <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 border-b bg-muted/15 py-3">
+      <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 border-b py-3">
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <Camera className="h-4 w-4" />
@@ -826,7 +826,7 @@ export function ProxmoxVmDetailPage() {
   const adoptedServer =
     context.data?.adopted_server ||
     (vm?.fleet_server_id
-      ? { id: vm.fleet_server_id, name: "Managed host adopted" }
+      ? { id: vm.fleet_server_id, name: "Host adopted" }
       : null);
   const configuration = useQuery({
     queryKey: ["proxmox-vm-configuration", connectionId, nodeName, vmId],
@@ -986,7 +986,7 @@ export function ProxmoxVmDetailPage() {
               to="/infrastructure"
               className="hover:text-foreground hover:underline"
             >
-              Virtual infrastructure
+              Infrastructure
             </Link>
             <span aria-hidden="true">/</span>
             <Link
@@ -1129,7 +1129,7 @@ export function ProxmoxVmDetailPage() {
         <TabsContent value="overview" className="mt-0 space-y-4">
           <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,.55fr)]">
             <Card>
-              <CardHeader className="border-b bg-muted/15 py-3">
+              <CardHeader className="border-b py-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <ClipboardList className="h-4 w-4" />
                   Management & provisioning
@@ -1148,16 +1148,16 @@ export function ProxmoxVmDetailPage() {
                   <div className="grid divide-y lg:grid-cols-2 lg:divide-x lg:divide-y-0">
                     <section className="p-4">
                       <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        Fleet management
+                        Shipyard management
                       </div>
                       <div className="mt-2 text-sm font-medium">
                         {adoptedServer
                           ? adoptedServer.name
-                          : "Not adopted as a managed host"}
+                          : "Not adopted as a host"}
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {adoptedServer
-                          ? "SSH, updates, and playbooks are available through Fleet."
+                          ? "SSH, updates, and playbooks are available through Shipyard."
                           : `The ${kind} remains in platform inventory until it is explicitly adopted.`}
                       </p>
                       {adoptedServer && (
@@ -1171,7 +1171,7 @@ export function ProxmoxVmDetailPage() {
                             to="/servers/$id"
                             params={{ id: adoptedServer.id }}
                           >
-                            Open managed host
+                            Open host
                           </Link>
                         </Button>
                       )}
@@ -1238,7 +1238,7 @@ export function ProxmoxVmDetailPage() {
         </TabsContent>
         <TabsContent value="snapshots" className="mt-0">
           <Card>
-            <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b bg-muted/15 py-3">
+            <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b py-3">
               <div>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Camera className="h-4 w-4" />
@@ -1312,7 +1312,7 @@ export function ProxmoxVmDetailPage() {
         {canViewAudit && (
           <TabsContent value="tasks" className="mt-0">
             <Card>
-              <CardHeader className="border-b bg-muted/15 py-3">
+              <CardHeader className="border-b py-3">
                 <CardTitle className="text-base">Tasks</CardTitle>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Direct Proxmox actions for this VM, traceable through the

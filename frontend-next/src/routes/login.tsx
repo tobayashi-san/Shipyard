@@ -23,7 +23,7 @@ export function LoginPage() {
   });
 
   const isSetup = status ? !status.configured : false;
-  const appName = status?.appName || 'Fleet';
+  const appName = status?.appName || 'Shipyard';
   const appTagline = status?.appTagline || 'Infrastructure';
 
   // Apply branding from auth status (no settings query on login)

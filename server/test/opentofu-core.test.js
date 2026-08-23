@@ -314,7 +314,7 @@ test('generateShipyardOutputsBlock builds a managed output for supported VM reso
   assert.match(block, /tags\s+= \["proxmox"\]/);
 });
 
-test('Fleet Proxmox blueprints use the selected guest user and guest-agent DHCP address', () => {
+test('Shipyard Proxmox blueprints use the selected guest user and guest-agent DHCP address', () => {
   const state = {
     values: { root_module: { resources: [{
       address: 'proxmox_virtual_environment_vm.app',

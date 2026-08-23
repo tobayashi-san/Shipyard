@@ -38,6 +38,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TablePagination } from "@/components/ui/table-pagination";
+import { OverflowItem, OverflowMenu } from "@/components/ui/overflow-menu";
 import {
   canAccessDeployments,
   hasCap,
@@ -457,7 +458,7 @@ function OperationsContext({
     >
       <div className="grid xl:grid-cols-[minmax(0,1.25fr)_minmax(22rem,.75fr)]">
         <div className="console-object-summary-main">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+          <div className="flex items-center gap-2 border-b pb-3 text-sm font-semibold">
             <ClipboardList className="h-4 w-4 text-brand" />
             Operating status
           </div>
@@ -492,8 +493,8 @@ function OperationsContext({
             />
           </div>
         </div>
-        <div className="console-object-capacity">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="console-object-capacity border-t xl:border-l xl:border-t-0">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
             <span className="text-sm font-semibold">
               {active
                 ? "Active maintenance window"
@@ -777,7 +778,7 @@ function MaintenanceWindowsCard({
                     <th className="px-3">Maintenance window</th>
                     <th className="px-3">Time range</th>
                     <th className="px-3">Status</th>
-                    <th className="w-24 px-3 text-right">Action</th>
+                    <th className="w-24 px-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -815,26 +816,15 @@ function MaintenanceWindowsCard({
                       </td>
                       <td className="px-3 text-right">
                         {canManage ? (
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => onEdit(window)}
-                              aria-label={`Edit ${window.name}`}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() => onDelete(window)}
-                              aria-label={`Delete ${window.name}`}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                          <div className="flex justify-end">
+                            <OverflowMenu title={`Actions for ${window.name}`}>
+                              <OverflowItem icon={Pencil} onClick={() => onEdit(window)}>
+                                Edit window
+                              </OverflowItem>
+                              <OverflowItem icon={Trash2} danger onClick={() => onDelete(window)}>
+                                Delete window
+                              </OverflowItem>
+                            </OverflowMenu>
                           </div>
                         ) : (
                           "—"

@@ -41,6 +41,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { LiveDot, StatusBadge } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ActiveFilterChips } from "@/components/ui/filter-chips";
 import { QueryErrorState } from "@/components/ui/query-error-state";
 import { SkeletonRow } from "@/components/ui/skeleton";
 import {
@@ -1412,6 +1413,17 @@ export function ServersPage() {
               )}
             </div>
             <Button
+              type="button"
+              variant={activeFilterCount > 0 ? "secondary" : "outline"}
+              size="sm"
+              className="hidden sm:inline-flex"
+              onClick={() => setFiltersOpen((open) => !open)}
+              aria-expanded={filtersOpen}
+            >
+              <Filter className="h-3.5 w-3.5" />
+              Filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
+            </Button>
+            <Button
               variant="ghost"
               size="icon"
               onClick={handleRefresh}
@@ -1423,12 +1435,6 @@ export function ServersPage() {
               />
             </Button>
             <OverflowMenu title="Resource options">
-              <OverflowItem
-                icon={Filter}
-                onClick={() => setFiltersOpen((open) => !open)}
-              >
-                Filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
-              </OverflowItem>
               <OverflowItem
                 icon={FolderTree}
                 onClick={() => setGroupedView((view) => !view)}
@@ -1701,23 +1707,35 @@ export function ServersPage() {
               ))}
             </select>
           )}
-          {activeFilterCount > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-auto h-8 px-2 text-xs"
-              onClick={() => {
-                setActiveTag(null);
-                setActiveStatus("all");
-                setActiveGroup("all");
-                setPage(1);
-              }}
-            >
-              <X className="h-3 w-3" /> Reset filters
-            </Button>
-          )}
         </div>
       )}
+
+      <ActiveFilterChips
+        filters={[
+          ...(activeStatus !== "all" ? [{
+            id: "status",
+            label: `Status: ${activeStatus === "online" ? t("common.online") : activeStatus === "offline" ? t("common.offline") : t("common.unknown")}`,
+            onRemove: () => { setActiveStatus("all"); setPage(1); },
+          }] : []),
+          ...(activeGroup !== "all" ? [{
+            id: "group",
+            label: `Folder: ${activeGroup === "__ungrouped__" ? t("srv.moveToRoot") : groups.find((group) => group.id === activeGroup)?.name || activeGroup}`,
+            onRemove: () => { setActiveGroup("all"); setPage(1); },
+          }] : []),
+          ...(activeTag ? [{
+            id: "tag",
+            label: `Tag: ${activeTag}`,
+            onRemove: () => { setActiveTag(null); setPage(1); },
+          }] : []),
+        ]}
+        onClear={() => {
+          setActiveTag(null);
+          setActiveStatus("all");
+          setActiveGroup("all");
+          setPage(1);
+        }}
+        clearLabel="Reset filters"
+      />
 
       {/* Main table card */}
       <Card className="border-strong shadow-sm">
@@ -1735,7 +1753,7 @@ export function ServersPage() {
               onRetry={() => {
                 void refetchServers();
               }}
-              title="Managed hosts could not be loaded"
+              title="Hosts could not be loaded"
             />
           ) : servers.length === 0 ? (
             <EmptyState
@@ -2267,7 +2285,7 @@ export function ServersPage() {
         confirmLabel={t("common.delete")}
         variant="destructive"
         confirmTextValue={confirmDeleteServer?.name || ""}
-        confirmInputLabel="Confirm managed host name"
+        confirmInputLabel="Confirm host name"
         onConfirm={() => {
           if (!confirmDeleteServer) return;
           deleteMut.mutate(confirmDeleteServer.id);
@@ -2286,7 +2304,7 @@ export function ServersPage() {
         title={`Delete ${selectedIds.size} hosts?`}
         description={
           <>
-            The selected managed hosts will be removed from Fleet. External
+            The selected hosts will be removed from Shipyard. External
             virtual machines or platforms are <strong>not</strong> deleted.
           </>
         }
@@ -2300,7 +2318,7 @@ export function ServersPage() {
             <span className="font-mono text-foreground">
               DELETE {selectedIds.size}
             </span>
-            to remove these managed hosts.
+            to remove these hosts.
           </>
         }
         onConfirm={() => bulkDeleteMut.mutate([...selectedIds])}

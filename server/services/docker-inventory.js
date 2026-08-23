@@ -15,7 +15,7 @@ if output="$("$runtime" ps -a --format "$format" 2>/dev/null)"; then
   [ -z "$output" ] || printf '%s\n' "$output" | sed 's/^/__SHIPYARD_CONTAINER__/'
   exit 0
 fi
-# A non-root Fleet account may not be in the docker group. Use only non-
+# A non-root Shipyard account may not be in the docker group. Use only non-
 # interactive sudo as a controlled fallback; never prompt or hang an API call.
 output="$(sudo -n "$runtime" ps -a --format "$format" 2>/dev/null)" || exit $?
 [ -z "$output" ] || printf '%s\n' "$output" | sed 's/^/__SHIPYARD_CONTAINER__/'

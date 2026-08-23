@@ -381,7 +381,7 @@ test('IPAM dialogs remain usable inside a mobile viewport', async ({ page }) => 
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
-test('a Fleet host can be assigned to a folder through the resource list', async ({ page }) => {
+test('a Shipyard host can be assigned to a folder through the resource list', async ({ page }) => {
   // Keep the test usable on its own as well as in the full serial suite.
   await loginForIsolatedTest(page);
   await page.goto('/servers');
@@ -455,7 +455,7 @@ test('a Fleet host can be assigned to a folder through the resource list', async
   }, { groupId: folder.id });
 });
 
-test('the inventory tree moves a selected Fleet host without drag and drop', async ({ page }) => {
+test('the inventory tree moves a selected Shipyard host without drag and drop', async ({ page }) => {
   await loginForIsolatedTest(page);
   const fixture = await page.evaluate(async () => {
     const token = localStorage.getItem('shipyard_token');
@@ -657,8 +657,8 @@ test('a discovered Proxmox VM can be adopted through the browser without changin
     // Adoption is an inventory action. The overview deliberately stays focused
     // on platform capacity and node health.
     await page.getByRole('tab', { name: /virtual guests/i }).click();
-    await page.getByRole('button', { name: 'Manage in Fleet' }).click();
-    const dialog = page.getByRole('dialog', { name: /adopt VM (?:into Fleet|as (?:a )?managed host)|VM in Fleet übernehmen/i });
+    await page.getByRole('button', { name: 'Manage in Shipyard' }).click();
+    const dialog = page.getByRole('dialog', { name: /adopt VM (?:into Shipyard|as (?:a )?managed host)|VM in Shipyard übernehmen/i });
     await expect(dialog).toBeVisible();
     const inputs = dialog.locator('input');
     await expect(inputs.nth(1)).toHaveValue('10.250.0.207');
@@ -666,9 +666,9 @@ test('a discovered Proxmox VM can be adopted through the browser without changin
     await inputs.nth(3).fill('2222');
     await Promise.all([
       page.waitForResponse(response => response.url().includes('/import-vm') && response.request().method() === 'POST' && response.status() === 201),
-      dialog.getByRole('button', { name: /adopt (?:into Fleet|as (?:a )?managed host)|in Fleet übernehmen/i }).click(),
+      dialog.getByRole('button', { name: /adopt (?:into Shipyard|as (?:a )?managed host)|in Shipyard übernehmen/i }).click(),
     ]);
-    await expect(page.getByText(/VM adopted as (?:a Fleet host|a managed host)|VM wurde als Fleet-Host übernommen/i)).toBeVisible();
+    await expect(page.getByText(/VM adopted as (?:a Shipyard host|a managed host)|VM wurde als Shipyard-Host übernommen/i)).toBeVisible();
     await page.goto('/servers');
     const row = page.getByRole('row', { name: /e2e-import-vm/i });
     await expect(row).toBeVisible();
@@ -741,7 +741,7 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
       container: table.parentElement?.getBoundingClientRect().width || 0,
     }));
     expect(updateTableWidth.table).toBeGreaterThanOrEqual(updateTableWidth.container - 2);
-    await platformUpdatesTable.getByRole('button', { name: 'Add to Fleet' }).click();
+    await platformUpdatesTable.getByRole('button', { name: 'Add to Shipyard' }).click();
     const addFleetDialog = page.getByRole('dialog', { name: /Add (?:managed host|server)/i });
     await expect(addFleetDialog.getByLabel(/(?:host|server) name/i)).toHaveValue('hierarchy-node');
     await expect(addFleetDialog.getByLabel('IP Address')).toHaveValue('10.250.0.10');
@@ -751,7 +751,7 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
       addFleetDialog.getByRole('button', { name: 'Add', exact: true }).click(),
     ]);
     fleetServerId = ((await createdFleetResponse.json()) as { id: string }).id;
-    await expect(platformUpdatesTable.getByText('Ready through Fleet', { exact: true })).toBeVisible();
+    await expect(platformUpdatesTable.getByText('Ready through Shipyard', { exact: true })).toBeVisible();
     const treeNode = page.locator('aside').getByRole('link', { name: /hierarchy-node/i });
     await expect(treeNode).toBeVisible();
     await treeNode.click();
@@ -792,7 +792,7 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
     const ctRow = page.getByRole('row', { name: /hierarchy-ct/i });
     await expect(ctRow).toBeVisible();
     await expect(ctRow).toContainText('CT');
-    await expect(ctRow.getByRole('button', { name: 'Manage in Fleet' })).toBeVisible();
+    await expect(ctRow.getByRole('button', { name: 'Manage in Shipyard' })).toBeVisible();
   } finally {
     if (fleetServerId) await page.evaluate(async (id) => {
       const token = localStorage.getItem('shipyard_token');

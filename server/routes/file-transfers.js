@@ -108,6 +108,9 @@ router.get('/:id/files/archive', guardServerAccess, allow('canViewFiles'), async
 
 router.put('/:id/files/upload', guardServerAccess, allow('canManageFiles'), async (req, res) => {
   let requestedPath;
+  let limiter;
+  let abortUpload;
+  let closeUpload;
   try {
     requestedPath = remotePath(req.query.path);
     if (!req.is('application/octet-stream')) return res.status(415).json({ error: 'Upload must use application/octet-stream' });
@@ -120,21 +123,42 @@ router.put('/:id/files/upload', guardServerAccess, allow('canManageFiles'), asyn
     }
 
     let received = 0;
-    const limiter = new Transform({
+    limiter = new Transform({
       transform(chunk, encoding, callback) {
         received += chunk.length;
         if (received > maximum) return callback(Object.assign(new Error('File exceeds the configured transfer limit'), { statusCode: 413 }));
         callback(null, chunk);
       },
     });
+    // The SSH connection can take a moment to open. Keep an error listener on
+    // the intermediate stream from the start so an early browser disconnect
+    // cannot leave an unhandled stream error behind.
+    limiter.on('error', () => {});
+    abortUpload = () => {
+      if (limiter.destroyed) return;
+      limiter.destroy(Object.assign(new Error('Upload canceled'), {
+        code: 'UPLOAD_ABORTED',
+        statusCode: 499,
+      }));
+    };
+    closeUpload = () => {
+      if (!res.writableEnded) abortUpload();
+    };
+    req.once('aborted', abortUpload);
+    res.once('close', closeUpload);
     req.pipe(limiter);
-    await sshManager.uploadStream(req.server, requestedPath, limiter);
+    await sshManager.uploadStream(req.server, requestedPath, limiter, { overwrite });
     audit(req, 'server.file_upload', `server=${req.server.name} path=${requestedPath} bytes=${received}`);
     res.status(201).json({ success: true, path: requestedPath, bytes: received });
   } catch (error) {
     audit(req, 'server.file_upload', `server=${req.server?.name || req.params.id} path=${requestedPath || 'invalid'} error=${error.message}`, false);
+    if (error.code === 'UPLOAD_ABORTED' || req.aborted || res.destroyed) return;
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
     serverError(res, error, 'upload remote file');
+  } finally {
+    if (abortUpload) req.off('aborted', abortUpload);
+    if (closeUpload) res.off('close', closeUpload);
+    if (limiter && !limiter.destroyed) limiter.destroy();
   }
 });
 

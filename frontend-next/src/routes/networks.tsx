@@ -32,6 +32,7 @@ import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ActiveFilterChips } from "@/components/ui/filter-chips";
 import { TablePagination } from "@/components/ui/table-pagination";
 import i18n from "@/lib/i18n";
 import { hasCap, useProfile } from "@/lib/queries";
@@ -153,6 +154,7 @@ export function NetworksPage() {
   const pageSize = 50;
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [focusedPrefixId, setFocusedPrefixId] = useState("");
   const query = useQuery({
     queryKey: ["ipam", "subnets", environmentId, page, deferredSearch, status],
     queryFn: () =>
@@ -161,6 +163,7 @@ export function NetworksPage() {
       ),
   });
   const rows = Array.isArray(query.data?.items) ? query.data.items : [];
+  const focusedPrefix = rows.find((prefix) => prefix.id === focusedPrefixId) || rows[0];
   const hierarchicalRows = useMemo(() => {
     const byParent = new Map<string | null, Prefix[]>();
     rows.forEach((prefix) => {
@@ -208,6 +211,11 @@ export function NetworksPage() {
   useEffect(() => {
     if (query.data && page > query.data.total_pages) setPage(query.data.total_pages);
   }, [page, query.data]);
+  useEffect(() => {
+    if (!rows.some((prefix) => prefix.id === focusedPrefixId)) {
+      setFocusedPrefixId(rows[0]?.id || "");
+    }
+  }, [focusedPrefixId, rows]);
   const updateStatus = useMutation({
     mutationFn: ({ ids, value }: { ids: string[]; value: string }) =>
       Promise.all(
@@ -294,7 +302,7 @@ export function NetworksPage() {
           <section className="console-object-summary overflow-hidden">
             <div className="grid xl:grid-cols-[minmax(0,1.25fr)_minmax(20rem,.75fr)]">
               <div className="console-object-summary-main">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+                <div className="flex items-center gap-2 border-b pb-3 text-sm font-semibold">
                   <Network className="h-4 w-4 text-brand" />
                   {tr("inventory")}
                 </div>
@@ -326,14 +334,14 @@ export function NetworksPage() {
                   />
                 </div>
               </div>
-              <div className="console-object-capacity">
-                <div className="mb-3 flex items-center justify-between gap-3 text-sm font-semibold">
+              <div className="console-object-capacity border-t xl:border-l xl:border-t-0">
+                <div className="flex items-center justify-between gap-3 border-b pb-3 text-sm font-semibold">
                   <span>{tr("usage")}</span>
                   <span className="font-mono text-muted-foreground">
                     {usagePercent} %
                   </span>
                 </div>
-                <div className="space-y-2">
+                <div className="mt-3 space-y-2">
                   <div className="flex items-center justify-between gap-3 text-xs">
                     <span>{tr("used")}</span>
                     <span className="font-mono text-muted-foreground">
@@ -458,6 +466,16 @@ export function NetworksPage() {
                   )}
                 </div>
               )}
+              <ActiveFilterChips
+                className="rounded-none border-x-0 border-b-0"
+                filters={status !== "all" ? [{
+                  id: "status",
+                  label: `${tr("status")}: ${status === "all-including-deprecated" ? tr("allStatusesDeprecated") : statusLabel[status] || status}`,
+                  onRemove: () => { setStatus("all"); setPage(1); },
+                }] : []}
+                onClear={() => { setStatus("all"); setPage(1); }}
+                clearLabel={tr("reset")}
+              />
             </CardHeader>
             <CardContent className="p-0">
               {query.isPending ? (
@@ -480,7 +498,7 @@ export function NetworksPage() {
                       />
                     ))}
                   </div>
-                  <div className="table-scroll hidden md:block">
+                  <div className="table-scroll hidden md:block xl:hidden">
                     <table
                       className="w-full min-w-[940px] text-sm"
                       data-density="compact"
@@ -526,6 +544,14 @@ export function NetworksPage() {
                       </tbody>
                     </table>
                   </div>
+                  <PrefixMasterDetail
+                    rows={hierarchicalRows}
+                    focused={focusedPrefix}
+                    onFocus={setFocusedPrefixId}
+                    selectedIds={selectedIds}
+                    onToggle={toggle}
+                    canSelect={canEdit}
+                  />
                 </>
               )}
             </CardContent>
@@ -1396,6 +1422,102 @@ function SourceTestFact({ label, value }: { label: string; value: number }) {
       </div>
     </div>
   );
+}
+
+function PrefixMasterDetail({ rows, focused, onFocus, selectedIds, onToggle, canSelect }: {
+  rows: Array<{ prefix: Prefix; depth: number }>;
+  focused?: Prefix;
+  onFocus: (id: string) => void;
+  selectedIds: Set<string>;
+  onToggle: (id: string) => void;
+  canSelect: boolean;
+}) {
+  return (
+    <div className="hidden min-h-[30rem] xl:grid xl:grid-cols-[minmax(18rem,.72fr)_minmax(0,1.28fr)]">
+      <div className="max-h-[calc(100vh-20rem)] overflow-y-auto border-r bg-muted/10 p-2" aria-label={tr("prefixList")}>
+        {rows.map(({ prefix, depth }) => {
+          const active = focused?.id === prefix.id;
+          const usage = prefix.usable_address_count ? Math.round((prefix.used_address_count / prefix.usable_address_count) * 100) : 0;
+          return (
+            <div key={prefix.id} className={`flex min-w-0 items-start rounded-sm ${active ? "bg-accent" : "hover:bg-muted/60"}`} style={{ paddingLeft: `${Math.min(depth, 5) * 14}px` }}>
+              {canSelect && <input
+                type="checkbox"
+                className="ml-2 mt-3 shrink-0"
+                aria-label={tr("selectPrefix", { cidr: prefix.cidr })}
+                checked={selectedIds.has(prefix.id)}
+                onChange={() => onToggle(prefix.id)}
+              />}
+              <button
+                type="button"
+                onClick={() => onFocus(prefix.id)}
+                className="flex min-w-0 flex-1 items-start gap-2 px-3 py-2.5 text-left"
+                aria-pressed={active}
+              >
+                <Network className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-medium text-foreground">{prefix.name || prefix.cidr}</span>
+                  <span className="mt-0.5 block truncate font-mono text-xs text-muted-foreground">{prefix.cidr}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">{tr("usedPercent", { count: usage })} · {tr("freeCount", { count: prefix.free_address_count })}</span>
+                </span>
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      {focused ? <PrefixPreview prefix={focused} /> : <div className="grid place-items-center text-sm text-muted-foreground">{tr("selectPrefixPrompt")}</div>}
+    </div>
+  );
+}
+
+function PrefixPreview({ prefix }: { prefix: Prefix }) {
+  const usage = prefix.usable_address_count
+    ? Math.min(100, Math.round((prefix.used_address_count / prefix.usable_address_count) * 100))
+    : 0;
+  return (
+    <div className="min-w-0">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b px-5 py-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="truncate text-base font-semibold">{prefix.name || prefix.cidr}</h3>
+            <Badge variant={statusVariant(prefix.status)}>{statusLabel[prefix.status] || prefix.status}</Badge>
+          </div>
+          <p className="mt-1 font-mono text-[13px] text-muted-foreground">{prefix.cidr}</p>
+        </div>
+        <Button asChild size="sm" variant="outline"><Link to="/networks/$id" params={{ id: prefix.id }}>{tr("open")}</Link></Button>
+      </div>
+      <div className="grid grid-cols-2 border-b lg:grid-cols-4">
+        <PrefixPreviewFact label={tr("usableIps")} value={prefix.usable_address_count} />
+        <PrefixPreviewFact label={tr("used")} value={prefix.used_address_count} />
+        <PrefixPreviewFact label={tr("free")} value={prefix.free_address_count} />
+        <PrefixPreviewFact label={tr("reservations")} value={prefix.reservation_count} />
+      </div>
+      <div className="grid gap-6 p-5 2xl:grid-cols-2">
+        <div>
+          <div className="flex items-center justify-between text-[13px] font-medium"><span>{tr("usage")}</span><span className="font-mono">{usage}%</span></div>
+          <div className="console-capacity-track mt-2"><span data-capacity-tone={capacityTone(usage)} style={{ width: `${usage}%` }} /></div>
+          <dl className="mt-4 divide-y border-y text-[13px]">
+            <PrefixPreviewRow label={tr("vlanBridge")} value={`${prefix.vlan_id ? `VLAN ${prefix.vlan_id}` : tr("noVlan")} · ${prefix.bridge || "—"}`} mono />
+            <PrefixPreviewRow label={tr("gateway")} value={prefix.gateway || "—"} mono />
+            <PrefixPreviewRow label={tr("rangesCount", { count: prefix.range_count })} value={String(prefix.range_count)} />
+            <PrefixPreviewRow label={tr("childCount", { count: prefix.child_prefix_count })} value={String(prefix.child_prefix_count)} />
+          </dl>
+        </div>
+        <div>
+          <h4 className="text-[13px] font-semibold">{tr("descriptionLabel")}</h4>
+          <p className="mt-2 text-[13px] leading-5 text-muted-foreground">{prefix.description || tr("noDescription")}</p>
+          {prefix.dhcp_start && prefix.dhcp_end && <div className="mt-4 rounded-sm bg-muted/35 px-3 py-2 text-[13px]"><span className="font-medium">{tr("dhcp")}</span><div className="mt-1 font-mono text-xs text-muted-foreground">{prefix.dhcp_start} – {prefix.dhcp_end}</div></div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PrefixPreviewFact({ label, value }: { label: string; value: number }) {
+  return <div className="border-r px-4 py-3 last:border-r-0"><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1 font-mono text-lg font-semibold">{value}</div></div>;
+}
+
+function PrefixPreviewRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return <div className="flex items-center justify-between gap-4 py-2"><dt className="text-muted-foreground">{label}</dt><dd className={mono ? "font-mono text-xs" : "font-medium"}>{value}</dd></div>;
 }
 
 function PrefixRow({

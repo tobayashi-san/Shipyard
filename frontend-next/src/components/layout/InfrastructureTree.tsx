@@ -125,7 +125,7 @@ interface ProxmoxCluster {
   nodes?: ProxmoxNode[];
   // The tree deliberately never renders individual Proxmox VMs.  Keeping the
   // inventory count here still gives an operator the useful vCenter-like
-  // "where are my workloads" context without duplicating managed hosts.
+  // "where are my workloads" context without duplicating hosts.
   vms?: ProxmoxInventoryVm[];
 }
 interface InfrastructureResponse {
@@ -509,13 +509,13 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
         <button
           type="button"
           onClick={() => selectServer(server)}
-          className="flex min-w-0 flex-1 items-start gap-2 rounded-sm py-1 text-left"
+          className="flex min-w-0 flex-1 items-start gap-2 overflow-hidden rounded-sm py-1 text-left"
         >
           <span className="mt-1">
             <StatusDot status={server.status} />
           </span>
           <Server className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span className="min-w-0 flex-1 break-words leading-5 text-foreground">
+          <span className="min-w-0 flex-1 truncate leading-5 text-foreground">
             {server.name}
           </span>
         </button>
@@ -616,7 +616,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
               className="h-3.5 w-3.5 shrink-0"
               style={{ color: node.color || undefined }}
             />
-            <span className="min-w-0 flex-1 truncate">{node.name}</span>
+            <span className="min-w-0 flex-1 truncate" title={node.name}>{node.name}</span>
             <span className="text-[10px] text-muted-foreground">
               {groupMemberCount.get(node.id) || 0}
             </span>
@@ -662,7 +662,11 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
       clusterCurrent ||
       path.startsWith(`${clusterPath}/`) ||
       decodedLocation.startsWith(`${clusterPath}/`);
-    const open = !collapsed.has(`platform:${clusterId}`);
+    // A standalone Proxmox host is already represented by its platform row.
+    // Only expose a second tree level when there is an actual multi-node
+    // cluster; otherwise the platform and its sole node look like duplicates.
+    const showNodes = nodes.length > 1;
+    const open = showNodes && !collapsed.has(`platform:${clusterId}`);
     return (
       <div key={clusterId}>
         <div
@@ -671,19 +675,23 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
             active && !clusterCurrent && "bg-muted/35",
           )}
         >
-          <button
-            type="button"
-            onClick={() => toggle(`platform:${clusterId}`)}
-            className="flex h-7 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
-            aria-label={`${open ? "Collapse" : "Expand"} ${clusterName}`}
-            aria-expanded={open}
-          >
-            {open ? (
-              <ChevronDown className="h-3.5 w-3.5" />
-            ) : (
-              <ChevronRight className="h-3.5 w-3.5" />
-            )}
-          </button>
+          {showNodes ? (
+            <button
+              type="button"
+              onClick={() => toggle(`platform:${clusterId}`)}
+              className="flex h-7 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label={`${open ? "Collapse" : "Expand"} ${clusterName}`}
+              aria-expanded={open}
+            >
+              {open ? (
+                <ChevronDown className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5" />
+              )}
+            </button>
+          ) : (
+            <span className="h-7 w-6 shrink-0" aria-hidden="true" />
+          )}
           <Link
             to="/infrastructure/$clusterId"
             params={{ clusterId }}
@@ -703,59 +711,55 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
             <StatusDot status={cluster.status} />
             <Database className="h-3.5 w-3.5 shrink-0 text-primary" />
             <span className="min-w-0 flex-1 truncate">{clusterName}</span>
-            <span className="shrink-0 text-[10px] text-muted-foreground">
-              {nodes.length} {nodes.length === 1 ? "Node" : "Nodes"}
-            </span>
+            {showNodes && (
+              <span className="shrink-0 text-[10px] text-muted-foreground">
+                {nodes.length} Nodes
+              </span>
+            )}
           </Link>
         </div>
-        {open && (
+        {showNodes && open && (
           <div className="ml-6 border-l border-border/70 pl-1">
-            {nodes.length ? (
-              nodes.map((node) => {
-                const vmCount = vms.filter(
-                  (vm) => vm.node_name === node.name,
-                ).length;
-                const nodePath = `${clusterPath}/nodes/${node.name}`;
-                const nodeCurrent =
-                  path === nodePath || decodedLocation === nodePath;
-                const nodeActive =
-                  nodeCurrent ||
-                  path.startsWith(`${nodePath}/`) ||
-                  decodedLocation.startsWith(`${nodePath}/`);
-                return (
-                  <Link
-                    key={node.name}
-                    to="/infrastructure/$clusterId/nodes/$nodeName"
-                    params={{ clusterId, nodeName: String(node.name || "") }}
-                    activeOptions={{ exact: true }}
-                    onClick={onNavigate}
-                    aria-current={nodeCurrent ? "page" : undefined}
-                    title={`${node.name} · ${vmCount} guests`}
-                    className={cn(
-                      "flex min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-xs transition-colors",
-                      nodeCurrent
-                        ? "bg-primary/10 font-semibold text-primary shadow-[inset_2px_0_0_hsl(var(--primary))]"
-                        : nodeActive
-                          ? "bg-accent/60 font-medium text-foreground"
-                          : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-                    )}
-                  >
-                    <StatusDot status={node.status} />
-                    <Server className="h-3.5 w-3.5 shrink-0" />
-                    <span className="min-w-0 flex-1 truncate font-mono">
-                      {node.name}
-                    </span>
-                    <span className="shrink-0 text-[10px] text-muted-foreground">
-                      {vmCount} VM
-                    </span>
-                  </Link>
-                );
-              })
-            ) : (
-              <p className="px-2 py-1 text-[10px] text-muted-foreground">
-                No nodes reported
-              </p>
-            )}
+            {nodes.map((node) => {
+              const vmCount = vms.filter(
+                (vm) => vm.node_name === node.name,
+              ).length;
+              const nodePath = `${clusterPath}/nodes/${node.name}`;
+              const nodeCurrent =
+                path === nodePath || decodedLocation === nodePath;
+              const nodeActive =
+                nodeCurrent ||
+                path.startsWith(`${nodePath}/`) ||
+                decodedLocation.startsWith(`${nodePath}/`);
+              return (
+                <Link
+                  key={node.name}
+                  to="/infrastructure/$clusterId/nodes/$nodeName"
+                  params={{ clusterId, nodeName: String(node.name || "") }}
+                  activeOptions={{ exact: true }}
+                  onClick={onNavigate}
+                  aria-current={nodeCurrent ? "page" : undefined}
+                  title={`${node.name} · ${vmCount} guests`}
+                  className={cn(
+                    "flex min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-xs transition-colors",
+                    nodeCurrent
+                      ? "bg-primary/10 font-semibold text-primary shadow-[inset_2px_0_0_hsl(var(--primary))]"
+                      : nodeActive
+                        ? "bg-accent/60 font-medium text-foreground"
+                        : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                  )}
+                >
+                  <StatusDot status={node.status} />
+                  <Server className="h-3.5 w-3.5 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate font-mono">
+                    {node.name}
+                  </span>
+                  <span className="shrink-0 text-[10px] text-muted-foreground">
+                    {vmCount} VM
+                  </span>
+                </Link>
+              );
+            })}
           </div>
         )}
       </div>
@@ -846,7 +850,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
               )}
             >
               <FolderTree className="h-3.5 w-3.5 shrink-0" />{" "}
-              <span className="truncate">Managed hosts</span>{" "}
+              <span className="truncate">Hosts</span>{" "}
               <span className="rounded bg-muted px-1.5 py-0.5 normal-case tracking-normal">
                 {servers.length}
               </span>
@@ -910,7 +914,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
         {groupTree.map((group) => groupNode(group))}
         {!servers.length && (
           <p className="px-2 py-2 text-xs text-muted-foreground">
-            No managed hosts in this environment yet.
+            No hosts in this environment yet.
           </p>
         )}
       </div>
@@ -919,7 +923,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
           <DialogHeader>
             <DialogTitle>Create folder</DialogTitle>
             <DialogDescription>
-              Organize virtual guests and managed hosts in a vCenter-like tree view.
+              Organize virtual guests and hosts in a vCenter-like tree view.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -1031,13 +1035,13 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                 Resources in this folder
               </div>
               <p className="text-xs text-muted-foreground">
-                Select managed hosts. Adopted Proxmox guests appear here as managed
+                Select hosts. Adopted Proxmox guests appear here as managed
                 hosts.
               </p>
               <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
                 {servers.length === 0 ? (
                   <p className="py-2 text-xs text-muted-foreground">
-                    No managed hosts in this environment.
+                    No hosts in this environment.
                   </p>
                 ) : (
                   servers.map((server) => (
@@ -1114,7 +1118,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
             <DialogTitle>Move resource</DialogTitle>
             <DialogDescription>
               {serverToMove
-                ? `Place “${serverToMove.name}” in a Fleet folder. The VM in Proxmox will not be changed.`
+                ? `Place “${serverToMove.name}” in a Shipyard folder. The VM in Proxmox will not be changed.`
                 : ""}
             </DialogDescription>
           </DialogHeader>

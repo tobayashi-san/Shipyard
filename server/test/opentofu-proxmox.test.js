@@ -119,7 +119,7 @@ test('Proxmox resource overview totals desired capacity and reads state resource
   assert.deepEqual(overview.actual.resources[0].ip_addresses, ['10.20.0.10']);
 });
 
-test('Proxmox resource overview links state VMs to adopted Fleet hosts', () => {
+test('Proxmox resource overview links state VMs to adopted hosts', () => {
   const vm = _test.normalizeProxmoxVm({ name: 'app-1', node_name: 'pve001', disk_datastore: 'fast', bridge: 'vmbr0' });
   const overview = _test.buildProxmoxResourceOverview([vm], {
     values: { root_module: { resources: [{

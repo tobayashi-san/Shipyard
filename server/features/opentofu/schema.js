@@ -46,7 +46,7 @@ function setupOpenTofuDatabase(database) {
   try { db.db.prepare('ALTER TABLE tofu_proxmox_connections ADD COLUMN last_ipam_synced_at TEXT').run(); } catch {}
   try { db.db.prepare("ALTER TABLE tofu_proxmox_connections ADD COLUMN last_ipam_status TEXT NOT NULL DEFAULT ''").run(); } catch {}
   try { db.db.prepare("ALTER TABLE tofu_proxmox_connections ADD COLUMN last_ipam_error TEXT NOT NULL DEFAULT ''").run(); } catch {}
-  // Existing Proxmox guests can be adopted as Fleet hosts without becoming OpenTofu
+  // Existing Proxmox guests can be adopted as hosts without becoming OpenTofu
   // resources. The mapping keeps Proxmox-only actions such as snapshots
   // available while preserving the VM's current configuration.
   db.db.prepare(`
@@ -61,7 +61,7 @@ function setupOpenTofuDatabase(database) {
     )
   `).run();
   try { db.db.prepare("ALTER TABLE proxmox_inventory_servers ADD COLUMN guest_type TEXT NOT NULL DEFAULT 'qemu'").run(); } catch {}
-  // Existing Fleet installations get the same default environment as legacy
+  // Existing Shipyard installations get the same default environment as legacy
   // servers. The guards keep this migration safe for fresh and old databases.
   try { db.db.prepare("CREATE TABLE IF NOT EXISTS environments (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TEXT DEFAULT (datetime('now'))) ").run(); } catch {}
   try { db.db.prepare("INSERT OR IGNORE INTO environments (id, name) VALUES ('default', 'Standardumgebung')").run(); } catch {}

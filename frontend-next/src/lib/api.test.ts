@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiFetch, apiFetchArray } from './api';
+import { apiFetch, apiFetchArray, apiUploadFile } from './api';
 
 describe('apiFetch', () => {
   afterEach(() => {
@@ -55,5 +55,39 @@ describe('apiFetch', () => {
     })));
 
     await expect(apiFetchArray('/servers', { skipAuth: true })).resolves.toEqual([]);
+  });
+});
+
+describe('apiUploadFile', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('aborts the browser request when its signal is canceled', async () => {
+    class MockXMLHttpRequest {
+      static latest: MockXMLHttpRequest;
+      upload = { onprogress: null as ((event: ProgressEvent) => void) | null };
+      onerror: ((event: ProgressEvent) => void) | null = null;
+      onabort: ((event: ProgressEvent) => void) | null = null;
+      onload: ((event: ProgressEvent) => void) | null = null;
+      responseText = '';
+      status = 0;
+      abort = vi.fn(() => this.onabort?.({} as ProgressEvent));
+      open = vi.fn();
+      send = vi.fn();
+      setRequestHeader = vi.fn();
+
+      constructor() {
+        MockXMLHttpRequest.latest = this;
+      }
+    }
+    vi.stubGlobal('XMLHttpRequest', MockXMLHttpRequest);
+    const controller = new AbortController();
+
+    const upload = apiUploadFile('/files/upload', new File(['large file'], 'large.bin'), undefined, controller.signal);
+    controller.abort();
+
+    await expect(upload).rejects.toMatchObject({ status: 499, message: 'Upload canceled' });
+    expect(MockXMLHttpRequest.latest.abort).toHaveBeenCalledOnce();
   });
 });

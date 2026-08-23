@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, RefreshCw, Server, TriangleAlert, Workflow } from "lucide-react";
+import { RefreshCw, Server, TriangleAlert, Workflow } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,7 +45,7 @@ function vmStatus(vm: ManagedVm) {
       if ((summary.create || 0) + (summary.update || 0) + (summary.delete || 0) + (summary.replace || 0) > 0) return { label: "Drift", tone: "warning" as StatusTone };
     } catch { /* keep the normal status */ }
   }
-  return { label: vm.started ? "Managed" : "Stopped", tone: "success" as StatusTone };
+  return { label: vm.started ? "Managed" : "Stopped", tone: (vm.started ? "success" : "muted") as StatusTone };
 }
 function formatDate(value?: string) {
   if (!value) return "—";
@@ -113,16 +113,15 @@ export function DeploymentsPage() {
         <CardContent className="p-0">
           <div className="table-scroll">
             <table data-density="compact" className="w-full min-w-[850px] text-sm">
-              <thead><tr><th className="px-3">Name</th><th className="px-3">Status</th><th className="px-3">Platform</th><th className="px-3">Proxmox</th><th className="px-3">Last run</th><th className="w-28 px-3 text-right">Actions</th></tr></thead>
+              <thead><tr><th className="px-3">Name</th><th className="px-3">Status</th><th className="px-3">Platform</th><th className="px-3">Proxmox</th><th className="px-3">Last run</th></tr></thead>
               <tbody>{vms.map((vm) => {
                 const status = vmStatus(vm);
                 return <tr key={vm.id}>
-                  <td className="px-3"><div className="font-medium">{vm.name}</div><div className="text-xs text-muted-foreground">Independent state</div></td>
+                  <td className="px-3"><Link className="font-medium hover:text-primary hover:underline" to="/deployments/$id" params={{ id: vm.id }}>{vm.name}</Link><div className="text-xs text-muted-foreground">Independent state</div></td>
                   <td className="px-3"><StatusBadge tone={status.tone} dot>{status.label}</StatusBadge></td>
                   <td className="px-3"><div className="font-medium">{vm.platform?.name || "—"}</div><div className="max-w-[14rem] truncate text-xs text-muted-foreground">{vm.platform?.endpoint?.replace(/^https?:\/\//, "") || "Platform unavailable"}</div></td>
                   <td className="px-3"><span className="font-mono text-xs">{vm.node_name || "—"} · {vm.vm_id || "auto"}</span></td>
                   <td className="px-3"><div className="text-xs">{vm.last_run ? `${vm.last_run.action || "Run"} · ${vm.last_run.status || "unknown"}` : "No runs yet"}</div><div className="text-xs text-muted-foreground">{formatDate(vm.last_run?.completed_at || vm.last_run?.started_at)}</div></td>
-                  <td className="px-3 text-right"><Button asChild size="sm" variant="outline"><Link to="/deployments/$id" params={{ id: vm.id }}>Open<ArrowRight /></Link></Button></td>
                 </tr>;
               })}</tbody>
             </table>

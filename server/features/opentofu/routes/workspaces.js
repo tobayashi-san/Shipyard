@@ -140,8 +140,8 @@ function registerWorkspaceRoutes({ db, router, activeRuns, findBinary, getInstal
       return res.status(409).json({ error: 'The workspace cannot be removed while an OpenTofu run is active.' });
     }
   
-    // Removing a deployment is deliberately a Fleet registration operation.
-    // It neither destroys Proxmox resources nor deletes independent Fleet
+    // Removing a deployment is deliberately a Shipyard registration operation.
+    // It neither destroys Proxmox resources nor deletes independent Shipyard
     // hosts. The workspace directory is retained for recovery or a later
     // manual OpenTofu run as well.
     const removeWorkspace = db.db.transaction(() => {
@@ -158,7 +158,7 @@ function registerWorkspaceRoutes({ db, router, activeRuns, findBinary, getInstal
     res.json({ success: true, inventory_kept: true, workspace_files_kept: true });
   });
   
-  // Keep connection management in the native Fleet console without ever
+  // Keep connection management in the native Shipyard console without ever
   // returning secrets to the browser. Empty secret fields on update preserve
   // their stored value, which makes the form safe to reopen and save.
   router.get('/workspaces/:id/proxmox-connection', (req, res) => {

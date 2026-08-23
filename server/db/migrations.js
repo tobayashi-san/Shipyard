@@ -118,7 +118,7 @@ function applyMigrations(db) {
       "UPDATE servers SET environment_id = 'default' WHERE environment_id IS NULL OR environment_id = ''",
     );
   } catch {}
-  // Folders are scoped to an environment just like their Fleet hosts. Older
+  // Folders are scoped to an environment just like their hosts. Older
   // installations keep their existing folders in the default environment.
   try {
     db.exec(
@@ -138,7 +138,7 @@ function applyMigrations(db) {
   // Rename the untouched legacy product default without overwriting a custom white-label name.
   try {
     db.exec(
-      "UPDATE app_settings SET value = 'Fleet' WHERE key = 'wl_app_name' AND value = 'Shipyard'",
+      "UPDATE app_settings SET value = 'Shipyard' WHERE key = 'wl_app_name' AND value = 'Fleet'",
     );
   } catch {}
   try {
@@ -160,7 +160,7 @@ function applyMigrations(db) {
     db.exec("CREATE INDEX IF NOT EXISTS idx_audit_log_environment_created ON audit_log(environment_id, created_at DESC)");
   } catch {}
   // NetBox-style IPAM metadata. These additive migrations preserve all early
-  // Fleet subnet and reservation data.
+  // Shipyard subnet and reservation data.
   try {
     db.exec(
       "ALTER TABLE ipam_subnets ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",

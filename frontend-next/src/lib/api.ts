@@ -158,9 +158,18 @@ export function apiUploadFile(
   path: string,
   file: File,
   onProgress?: (percent: number) => void,
+  signal?: AbortSignal,
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', abortRequest);
+      callback();
+    };
+    const abortRequest = () => request.abort();
     request.open('PUT', `${API_BASE}${path}`);
     const token = getToken();
     if (token) request.setRequestHeader('Authorization', `Bearer ${token}`);
@@ -173,16 +182,19 @@ export function apiUploadFile(
     request.upload.onprogress = event => {
       if (event.lengthComputable && onProgress) onProgress(Math.round((event.loaded / event.total) * 100));
     };
-    request.onerror = () => reject(new ApiError('Upload failed', 0));
+    request.onerror = () => finish(() => reject(new ApiError('Upload failed', 0)));
+    request.onabort = () => finish(() => reject(new ApiError('Upload canceled', 499)));
     request.onload = () => {
       let payload: unknown = null;
       try { payload = request.responseText ? JSON.parse(request.responseText) : null; } catch { payload = request.responseText; }
-      if (request.status >= 200 && request.status < 300) return resolve(payload);
+      if (request.status >= 200 && request.status < 300) return finish(() => resolve(payload));
       const message = payload && typeof payload === 'object' && 'error' in payload
         ? String((payload as { error: unknown }).error)
         : `Upload failed: ${request.status}`;
-      reject(new ApiError(message, request.status));
+      finish(() => reject(new ApiError(message, request.status)));
     };
+    if (signal?.aborted) return finish(() => reject(new ApiError('Upload canceled', 499)));
+    signal?.addEventListener('abort', abortRequest, { once: true });
     request.send(file);
   });
 }

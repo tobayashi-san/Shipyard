@@ -46,6 +46,7 @@ import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useUrlTab } from "@/lib/use-url-tab";
 import { TablePagination } from "@/components/ui/table-pagination";
+import { ActiveFilterChips } from "@/components/ui/filter-chips";
 import i18n from "@/lib/i18n";
 import { hasCap, useProfile } from "@/lib/queries";
 
@@ -579,8 +580,8 @@ export function NetworkDetailPage() {
       )}
       <section className="console-object-summary overflow-hidden">
         <div className="grid xl:grid-cols-[minmax(0,1.25fr)_minmax(20rem,.75fr)]">
-          <div className="console-object-summary-main">
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+          <div className="console-object-summary-main !py-2.5">
+            <div className="flex items-center gap-2 border-b pb-2.5 text-sm font-semibold">
               <Network className="h-4 w-4 text-brand" />
               {tr("addressSpace")}
             </div>
@@ -612,14 +613,14 @@ export function NetworkDetailPage() {
               />
             </div>
           </div>
-          <div className="console-object-capacity">
-            <div className="mb-3 flex items-center justify-between gap-3 text-sm font-semibold">
+          <div className="console-object-capacity border-t !py-2.5 xl:border-l xl:border-t-0">
+            <div className="flex items-center justify-between gap-3 border-b pb-2.5 text-sm font-semibold">
               <span>{tr("usage")}</span>
               <span className="font-mono text-muted-foreground">
                 {usagePercent} %
               </span>
             </div>
-            <div className="flex items-center justify-between gap-3 text-xs">
+            <div className="mt-2.5 flex items-center justify-between gap-3 text-xs">
               <span>{tr("used")}</span>
               <span className="font-mono text-muted-foreground">
                 {network.used_address_count} / {network.usable_address_count}
@@ -631,7 +632,7 @@ export function NetworkDetailPage() {
                 style={{ width: `${usagePercent}%` }}
               />
             </div>
-            <div className="mt-3 flex items-center justify-between gap-3">
+            <div className="mt-2.5 flex items-center justify-between gap-3">
               <span className="text-xs text-muted-foreground">
                 {tr("nextFree")}
               </span>
@@ -657,13 +658,13 @@ export function NetworkDetailPage() {
         </div>
       </section>
       <Card>
-        <CardHeader className="border-b bg-muted/15 py-3">
-          <CardTitle className="flex items-center gap-2 text-base">
+        <CardHeader className="border-b px-3 py-2.5">
+          <CardTitle className="flex items-center gap-2 text-sm">
             <Network className="h-4 w-4" />
             {tr("networkConfiguration")}
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-0 p-0 text-sm sm:grid-cols-2">
+        <CardContent className="grid grid-cols-1 gap-px bg-border p-0 text-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <Info
             label={tr("vlanBridge")}
             value={`${network.vlan_id ? `VLAN ${network.vlan_id}` : "—"} · ${network.bridge || "—"}`}
@@ -1381,6 +1382,16 @@ function AllocationTable({
             )}
           </div>
         )}
+        <ActiveFilterChips
+          className="rounded-none border-x-0 border-b-0"
+          filters={statusFilter !== "all" ? [{
+            id: "status",
+            label: `${tr("status")}: ${statusLabel[statusFilter] || statusFilter}`,
+            onRemove: () => onStatusFilter("all"),
+          }] : []}
+          onClear={() => onStatusFilter("all")}
+          clearLabel={tr("reset")}
+        />
       </CardHeader>
       <CardContent className="p-0">
         {loading ? (
@@ -2606,7 +2617,7 @@ function NetworkFact({
   tone?: "success";
 }) {
   return (
-    <div className="console-object-info">
+    <div className="console-object-info !min-h-10 !py-1">
       <div>{label}</div>
       <div
         className={
@@ -2621,9 +2632,9 @@ function NetworkFact({
 }
 function Info({ label, value }: { label: string; value: string }) {
   return (
-    <div className="border-b p-4 last:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0 sm:[&:nth-child(odd)]:border-r">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 break-words font-mono text-sm font-medium">
+    <div className="min-w-0 bg-card px-3 py-2.5">
+      <div className="text-[11px] leading-4 text-muted-foreground">{label}</div>
+      <div className="mt-0.5 truncate font-mono text-xs font-medium" title={value}>
         {value}
       </div>
     </div>

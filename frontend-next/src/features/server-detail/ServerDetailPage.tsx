@@ -39,7 +39,6 @@ import {
   ChevronRight,
   Layers,
   Settings2,
-  StickyNote,
   Eye,
   Bot,
   Download,
@@ -351,7 +350,7 @@ export function ServerDetailPage() {
               to="/servers"
               className="transition-colors hover:text-foreground"
             >
-              Managed hosts
+              Hosts
             </Link>
             <span aria-hidden="true">/</span>
             {server.group_name && (
@@ -486,7 +485,7 @@ export function ServerDetailPage() {
               title={t("det.reboot")}
               description={
                 managedProxmoxDeployment
-                  ? `Fleet restarts “${server.name}” directly through the linked Proxmox platform. SSH access is not required.`
+                  ? `Shipyard restarts “${server.name}” directly through the linked Proxmox platform. SSH access is not required.`
                   : t("det.confirmReboot", { name: server.name })
               }
               confirmLabel={t("det.reboot")}
@@ -510,7 +509,7 @@ export function ServerDetailPage() {
               confirmLabel={t("common.delete")}
               variant="destructive"
               confirmTextValue={server.name}
-              confirmInputLabel="Confirm managed host name"
+              confirmInputLabel="Confirm host name"
               onConfirm={() => deleteServerMut.mutate()}
               isPending={deleteServerMut.isPending}
             />
@@ -531,7 +530,7 @@ export function ServerDetailPage() {
               confirmLabel={t("det.agentRemove")}
               variant="destructive"
               confirmTextValue={server.name}
-              confirmInputLabel="Confirm managed host name"
+              confirmInputLabel="Confirm host name"
               onConfirm={() => agentRemoveMut.mutate()}
               isPending={agentRemoveMut.isPending}
             />
@@ -567,40 +566,40 @@ export function ServerDetailPage() {
         onValueChange={serverTabs.onValueChange}
         className="space-y-4"
       >
-        <TabsList aria-label="Host sections" className="console-tabs">
-          <TabsTrigger value="overview">{t("det.tabOverview")}</TabsTrigger>
-          <TabsTrigger value="configuration">Configuration</TabsTrigger>
-          {hasCap(profile, "canViewDocker") && !!server.docker_enabled && (
-            <TabsTrigger value="docker">{t("det.tabDocker")}</TabsTrigger>
-          )}
-          {(hasCap(profile, "canViewUpdates") ||
-            hasCap(profile, "canRunUpdates") ||
-            hasCap(profile, "canRebootServers") ||
-            hasCap(profile, "canViewCustomUpdates") ||
-            hasCap(profile, "canRunCustomUpdates") ||
-            hasCap(profile, "canEditCustomUpdates") ||
-            hasCap(profile, "canDeleteCustomUpdates")) && (
-            <TabsTrigger value="updates">{t("det.tabUpdates")}</TabsTrigger>
-          )}
-          {hasCap(profile, "canViewFiles") && (
-            <TabsTrigger value="files">Files</TabsTrigger>
-          )}
-          {hasCap(profile, "canViewServerHistory") && (
-            <TabsTrigger value="history">{t("det.tabHistory")}</TabsTrigger>
-          )}
-          {agentEnabled && profile?.role === "admin" && (
-            <TabsTrigger value="agent">{t("det.tabAgent")}</TabsTrigger>
-          )}
-          {hasCap(profile, "canViewNotes") && (
-            <TabsTrigger value="notes" className="gap-1">
-              <StickyNote className="h-3 w-3" />
-              {t("det.tabNotes")}
-              {server.notes?.trim() && (
-                <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-              )}
-            </TabsTrigger>
-          )}
-        </TabsList>
+        <div className="flex min-w-0 items-center border-b">
+          <TabsList aria-label="Host sections" className="console-tabs min-w-0 flex-1 border-b-0">
+            <TabsTrigger value="overview">{t("det.tabOverview")}</TabsTrigger>
+            {(hasCap(profile, "canViewUpdates") ||
+              hasCap(profile, "canRunUpdates") ||
+              hasCap(profile, "canRebootServers") ||
+              hasCap(profile, "canViewCustomUpdates") ||
+              hasCap(profile, "canRunCustomUpdates") ||
+              hasCap(profile, "canEditCustomUpdates") ||
+              hasCap(profile, "canDeleteCustomUpdates")) && (
+              <TabsTrigger value="updates">{t("det.tabUpdates")}</TabsTrigger>
+            )}
+            {hasCap(profile, "canViewDocker") && !!server.docker_enabled && (
+              <TabsTrigger value="docker">{t("det.tabDocker")}</TabsTrigger>
+            )}
+            {hasCap(profile, "canViewFiles") && (
+              <TabsTrigger value="files">Files</TabsTrigger>
+            )}
+            {hasCap(profile, "canViewServerHistory") && (
+              <TabsTrigger value="history">Operations</TabsTrigger>
+            )}
+          </TabsList>
+          <select
+            aria-label="Additional host sections"
+            value={["configuration", "agent", "notes"].includes(serverTabs.value) ? serverTabs.value : ""}
+            onChange={(event) => { if (event.target.value) serverTabs.onValueChange(event.target.value); }}
+            className="mr-1 h-8 max-w-36 shrink-0 border-0 bg-transparent px-2 text-[13px] text-muted-foreground shadow-none"
+          >
+            <option value="">More</option>
+            <option value="configuration">Details</option>
+            {agentEnabled && profile?.role === "admin" && <option value="agent">{t("det.tabAgent")}</option>}
+            {hasCap(profile, "canViewNotes") && <option value="notes">{t("det.tabNotes")}{server.notes?.trim() ? " •" : ""}</option>}
+          </select>
+        </div>
 
         <ServerOverviewTabs controller={controller} />
         <ServerDockerTab controller={controller} />

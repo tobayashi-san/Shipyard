@@ -15,6 +15,7 @@ import { SkeletonRow } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { QueryErrorState } from "@/components/ui/query-error-state";
 import { TablePagination } from "@/components/ui/table-pagination";
+import { ActiveFilterChips } from "@/components/ui/filter-chips";
 import { asArray } from "@/lib/utils";
 import { SettingsSection } from "@/routes/settings/_row";
 import { useUi } from "@/lib/store";
@@ -119,6 +120,13 @@ export function AuditLogPanel() {
   const rows = asArray<AuditRow>(rowsQ.data);
   const total = meta.count || 0;
   const totalPages = Math.max(1, Math.ceil(total / AUDIT_PAGE_SIZE));
+  const activeFilters = [
+    ...(filters.action ? [{ id: "action", label: `${t("set.auditFilterAction")}: ${filters.action}`, onRemove: () => resetAndSet({ action: "" }) }] : []),
+    ...(filters.user ? [{ id: "user", label: `${t("set.auditFilterUser")}: ${filters.user}`, onRemove: () => resetAndSet({ user: "" }) }] : []),
+    ...(filters.success ? [{ id: "success", label: `${t("set.auditFilterStatus")}: ${filters.success === "1" ? t("set.auditStatusOk") : t("set.auditStatusFailed")}`, onRemove: () => resetAndSet({ success: "" }) }] : []),
+    ...(filters.from ? [{ id: "from", label: `${t("set.auditFilterFrom")}: ${filters.from}`, onRemove: () => resetAndSet({ from: "" }) }] : []),
+    ...(filters.to ? [{ id: "to", label: `${t("set.auditFilterTo")}: ${filters.to}`, onRemove: () => resetAndSet({ to: "" }) }] : []),
+  ];
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
@@ -228,20 +236,18 @@ export function AuditLogPanel() {
               className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs"
             />
           </Field>
-          <div className="flex items-end">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setPage(1);
-                setFilters(initialFilters);
-              }}
-            >
-              {t("set.auditFilterReset")}
-            </Button>
-          </div>
         </div>
       )}
+
+      <ActiveFilterChips
+        className="rounded-none border-x-0"
+        filters={activeFilters}
+        onClear={() => {
+          setPage(1);
+          setFilters(initialFilters);
+        }}
+        clearLabel={t("set.auditFilterReset")}
+      />
 
       {rowsQ.isLoading ? (
         <div className="py-2">

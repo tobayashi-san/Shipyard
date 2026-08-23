@@ -65,7 +65,7 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, publicP
     const inUse = db.db.prepare('SELECT COUNT(*) AS count FROM tofu_workspaces WHERE proxmox_connection_id = ?').get(req.params.id);
     if (Number(inUse?.count || 0) > 0) return res.status(409).json({ error: `This platform connection is still used by ${inUse.count} deployment(s). Reassign or detach them first.` });
     const adopted = db.db.prepare('SELECT COUNT(*) AS count FROM proxmox_inventory_servers WHERE connection_id = ?').get(req.params.id);
-    if (Number(adopted?.count || 0) > 0) return res.status(409).json({ error: `This platform connection is still used by ${adopted.count} adopted Fleet host(s). Remove their Proxmox mapping first.` });
+    if (Number(adopted?.count || 0) > 0) return res.status(409).json({ error: `This platform connection is still used by ${adopted.count} adopted host(s). Remove their Proxmox mapping first.` });
     const result = db.db.prepare('DELETE FROM tofu_proxmox_connections WHERE id = ?').run(req.params.id);
     if (!result.changes) return res.status(404).json({ error: 'Connection not found' });
     res.json({ success: true });
@@ -189,7 +189,7 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, publicP
     } catch (error) { res.status(error.status || 502).json({ error: error.message || 'Snapshots could not be loaded.' }); }
   });
   
-  // An inventory VM can be entirely unmanaged, adopted as a Fleet host, or
+  // An inventory VM can be entirely unmanaged, adopted as a host, or
   // declared by one or more OpenTofu workspaces.  Keep that relationship
   // explicit instead of guessing it in the browser from names or IPs.
   router.get('/proxmox-connections/:connectionId/vms/:nodeName/:vmId/context', async (req, res) => {
@@ -348,7 +348,7 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, publicP
   
   // Synchronise guest addresses without making Proxmox the source of truth for
   // manual IPAM metadata. Existing manual addresses are deliberately left
-  // untouched; only Fleet's own Proxmox-sourced rows are refreshed.
+  // untouched; only Shipyard's own Proxmox-sourced rows are refreshed.
   router.post('/proxmox-connections/:id/sync-ipam', async (req, res) => {
     if (!can(getPermissions(req.user), 'canEditServers')) return res.status(403).json({ error: 'Permission denied' });
     try {
@@ -384,13 +384,13 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, publicP
         if (String(group.environment_id || 'default') !== String(source.environment_id || 'default')) return res.status(400).json({ error: 'The selected folder belongs to another environment.' });
       }
       const existing = db.db.prepare('SELECT * FROM servers WHERE environment_id = ? AND (ip_address = ? OR name = ?)').get(source.environment_id, ipAddress, name);
-      if (existing) return res.status(409).json({ error: `A Fleet host with this name or IP already exists (${existing.name}).` });
+      if (existing) return res.status(409).json({ error: `A host with this name or IP already exists (${existing.name}).` });
       const server = db.servers.create({ name, hostname: name, ip_address: ipAddress, ssh_port: sshPort, ssh_user: sshUser, environment_id: source.environment_id, tags: ['proxmox', target.vm.guest_type, `proxmox:${source.name}`] });
       if (groupId) db.serverGroups.setServerGroup(server.id, groupId);
       db.db.prepare('INSERT INTO proxmox_inventory_servers (server_id, connection_id, node_name, vm_id, guest_type) VALUES (?, ?, ?, ?, ?)').run(server.id, source.id, nodeName, vmId, target.vm.guest_type);
       db.auditLog.write('infrastructure.vm_import', `source=${source.name} node=${nodeName} type=${target.vm.guest_type} vm=${vmId} server=${server.name}`, req.ip, true, req.user?.username);
       res.status(201).json({ success: true, server: db.servers.getById(server.id) });
-    } catch (error) { res.status(error.status || 400).json({ error: error.message || 'The VM could not be adopted into Fleet.' }); }
+    } catch (error) { res.status(error.status || 400).json({ error: error.message || 'The VM could not be adopted into Shipyard.' }); }
   });
   
   

@@ -871,7 +871,7 @@ export function useServerDetailController() {
     : null;
   const cpuPct = info?.cpu_usage_pct ?? null;
   // These visual thresholds are fixed, deliberately local health hints.
-  // Fleet no longer exposes a monitoring/alerting subsystem per host.
+  // Shipyard no longer exposes a monitoring/alerting subsystem per host.
   const healthThresholds = { cpu: 90, ram: 85, disk: 85, storage: 85 };
   
   const updatesList = useMemo(() => {

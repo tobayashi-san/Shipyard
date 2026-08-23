@@ -2,7 +2,6 @@ import { useEffect, useRef } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Boxes,
-  ClipboardList,
   Database,
   FileCode2,
   LayoutDashboard,
@@ -18,7 +17,6 @@ import {
   canAccessDeployments,
   canAccessInfrastructure,
   canAccessNetworks,
-  canAccessOperations,
   canSeePlugin,
   hasCap,
   usePlugins,
@@ -51,9 +49,9 @@ function NavItem({
       to={to as never}
       params={params as never}
       onClick={onNavigate}
-      title={collapsed ? label : undefined}
+      title={label}
       className={cn(
-        "group relative flex min-h-8 items-center gap-2.5 rounded-sm px-2.5 py-1.5 text-[13px] transition-colors",
+        "group relative flex min-h-8 min-w-0 items-center gap-2.5 overflow-hidden rounded-sm px-2.5 py-1.5 text-[13px] transition-colors",
         active
           ? "bg-primary/[0.09] font-semibold text-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:bg-primary"
           : "text-muted-foreground hover:bg-accent/70 hover:text-foreground",
@@ -68,7 +66,7 @@ function NavItem({
             : "text-muted-foreground group-hover:text-foreground",
         )}
       />
-      {!collapsed && <span className="truncate">{label}</span>}
+      {!collapsed && <span className="min-w-0 flex-1 truncate">{label}</span>}
     </Link>
   );
 }
@@ -92,7 +90,6 @@ export function Sidebar({
   const canViewDeployments = canAccessDeployments(profile);
   const canViewInfrastructure = canAccessInfrastructure(profile);
   const canViewNetworks = canAccessNetworks(profile);
-  const canViewOperations = canAccessOperations(profile);
   const otherPlugins = plugins.filter(
     (plugin) =>
       plugin.enabled &&
@@ -115,7 +112,7 @@ export function Sidebar({
     >
       <div className="flex h-11 shrink-0 items-center justify-between border-b px-3 md:hidden">
         <span className="font-mono text-sm font-semibold uppercase tracking-[0.16em]">
-          Fleet
+          Shipyard
         </span>
         <button
           type="button"
@@ -140,102 +137,26 @@ export function Sidebar({
             onNavigate={onMobileClose}
           />
         </section>}
-        <section
-          className={cn(
-            "border-y border-border-strong/60 bg-muted/25 -mx-2 px-3 py-2",
-            !collapsed && "md:flex md:min-h-0 md:flex-1 md:flex-col",
-            collapsed && "px-2",
-          )}
-        >
+        {(canViewInfrastructure || canViewServers || canViewDeployments || canViewNetworks) && <section className="shrink-0 space-y-1">
           {!collapsed && (
-            <div className="section-label px-1 pb-1">Resources</div>
-          )}
-          {canViewServers && (
-            <div
-              className={cn(
-                "mt-1 max-h-[min(46vh,470px)] overflow-y-auto pr-1 md:min-h-0 md:max-h-none md:flex-1",
-                collapsed && "hidden",
-              )}
-            >
-              <InfrastructureTree onNavigate={onMobileClose} />
-            </div>
-          )}
-          {canViewServers && collapsed && (
-            <Link
-              to="/servers"
-              title="Resources"
-              className="flex h-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
-            >
-              <Boxes className="h-4 w-4" />
-            </Link>
-          )}
-        </section>
-        {(canViewServers || canViewPlaybooks || canViewOperations) && <section className="shrink-0 space-y-1">
-          {!collapsed && (
-            <div className="section-label px-2.5 pb-1">Operate</div>
-          )}
-          {canViewServers && (
-            <NavItem
-              to="/servers"
-              label="Managed hosts"
-              icon={Boxes}
-              active={path === "/servers" || path.startsWith("/servers/")}
-              collapsed={collapsed}
-              onNavigate={onMobileClose}
-            />
-          )}
-          {canViewPlaybooks && (
-            <NavItem
-              to="/playbooks"
-              label="Playbooks"
-              icon={FileCode2}
-              active={path === "/playbooks"}
-              collapsed={collapsed}
-              onNavigate={onMobileClose}
-            />
-          )}
-          {canViewOperations && (
-            <NavItem
-              to="/operations"
-              label="Operations"
-              icon={ClipboardList}
-              active={path === "/operations"}
-              collapsed={collapsed}
-              onNavigate={onMobileClose}
-            />
-          )}
-        </section>}
-
-        {otherPlugins.length > 0 && (
-          <section className="shrink-0 space-y-1">
-            {!collapsed && (
-              <div className="section-label px-2.5 pb-1">Integrations</div>
-            )}
-            {otherPlugins.map((plugin: PluginInfo) => (
-              <NavItem
-                key={plugin.id}
-                to="/plugins/$id"
-                params={{ id: plugin.id }}
-                label={plugin.sidebar?.label || plugin.name || plugin.id}
-                icon={Puzzle}
-                active={path === `/plugins/${plugin.id}`}
-                collapsed={collapsed}
-                onNavigate={onMobileClose}
-              />
-            ))}
-          </section>
-        )}
-
-        {(canViewInfrastructure || canViewDeployments || canViewNetworks) && <section className="shrink-0 space-y-1">
-          {!collapsed && (
-            <div className="section-label px-2.5 pb-1">Provision</div>
+            <div className="section-label px-2.5 pb-1">Infrastructure</div>
           )}
           {canViewInfrastructure && (
             <NavItem
               to="/infrastructure"
-              label="Virtual infrastructure"
+              label="Infrastructure"
               icon={Database}
               active={path === "/infrastructure" || path.startsWith("/infrastructure/")}
+              collapsed={collapsed}
+              onNavigate={onMobileClose}
+            />
+          )}
+          {canViewServers && (
+            <NavItem
+              to="/servers"
+              label="Hosts"
+              icon={Boxes}
+              active={path === "/servers" || path.startsWith("/servers/")}
               collapsed={collapsed}
               onNavigate={onMobileClose}
             />
@@ -261,6 +182,71 @@ export function Sidebar({
             />
           )}
         </section>}
+        {canViewServers && <section
+          className={cn(
+            "border-y border-border-strong/60 bg-muted/25 -mx-2 px-3 py-2",
+            !collapsed && "md:flex md:min-h-0 md:flex-1 md:flex-col",
+            collapsed && "px-2",
+          )}
+        >
+          {!collapsed && (
+            <div className="section-label px-1 pb-1">Inventory</div>
+          )}
+          {canViewServers && (
+            <div
+              className={cn(
+                "mt-1 max-h-[min(46vh,470px)] overflow-y-auto pr-1 md:min-h-0 md:max-h-none md:flex-1",
+                collapsed && "hidden",
+              )}
+            >
+              <InfrastructureTree onNavigate={onMobileClose} />
+            </div>
+          )}
+          {canViewServers && collapsed && (
+            <Link
+              to="/servers"
+              title="Resources"
+              className="flex h-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+            >
+              <Boxes className="h-4 w-4" />
+            </Link>
+          )}
+        </section>}
+        {canViewPlaybooks && <section className="shrink-0 space-y-1">
+          {!collapsed && (
+            <div className="section-label px-2.5 pb-1">Automation</div>
+          )}
+          {canViewPlaybooks && (
+            <NavItem
+              to="/playbooks"
+              label="Playbooks"
+              icon={FileCode2}
+              active={path === "/playbooks"}
+              collapsed={collapsed}
+              onNavigate={onMobileClose}
+            />
+          )}
+        </section>}
+
+        {otherPlugins.length > 0 && (
+          <section className="shrink-0 space-y-1">
+            {!collapsed && (
+              <div className="section-label px-2.5 pb-1">Integrations</div>
+            )}
+            {otherPlugins.map((plugin: PluginInfo) => (
+              <NavItem
+                key={plugin.id}
+                to="/plugins/$id"
+                params={{ id: plugin.id }}
+                label={plugin.sidebar?.label || plugin.name || plugin.id}
+                icon={Puzzle}
+                active={path === `/plugins/${plugin.id}`}
+                collapsed={collapsed}
+                onNavigate={onMobileClose}
+              />
+            ))}
+          </section>
+        )}
 
         {canManageConsole && (
           <section className="shrink-0 space-y-1">

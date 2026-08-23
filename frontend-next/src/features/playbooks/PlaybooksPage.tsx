@@ -99,6 +99,7 @@ export function PlaybooksPage() {
   const navigate = useNavigate();
   const isAdmin = profile?.role === "admin";
   const [runPreset, setRunPreset] = useState("");
+  const [createRequest, setCreateRequest] = useState(0);
 
   const tabs = useMemo<{
     value: string;
@@ -146,9 +147,14 @@ export function PlaybooksPage() {
         title={t("pb.title")}
         description={t("pb.subtitle")}
         actions={
-          isAdmin ? (
-            <GitWidget onGoSettings={() => navigate({ to: "/settings" })} />
-          ) : undefined
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {isAdmin && <GitWidget onGoSettings={() => navigate({ to: "/settings" })} />}
+            {hasCap(profile, "canEditPlaybooks") && (
+              <Button onClick={() => { playbookTabs.onValueChange("templates"); setCreateRequest((value) => value + 1); }}>
+                <Plus />{t("pb.new")}
+              </Button>
+            )}
+          </div>
         }
       />
 
@@ -162,7 +168,7 @@ export function PlaybooksPage() {
         </TabsList>
 
         <TabsContent value="templates">
-          <TemplatesTab onRun={(filename) => { setRunPreset(filename); playbookTabs.onValueChange("runs"); }} />
+          <TemplatesTab createRequest={createRequest} onRun={(filename) => { setRunPreset(filename); playbookTabs.onValueChange("runs"); }} />
         </TabsContent>
         <TabsContent value="runs">
           <RunsTab initialPlaybook={runPreset} />

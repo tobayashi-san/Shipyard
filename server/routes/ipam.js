@@ -60,7 +60,7 @@ function publicSource(row) {
 // A source is an operational inventory, not merely a saved URL. Expose a
 // small, credential-free health summary so the console can answer the three
 // questions an operator actually has: did it run, how much did it contribute,
-// and does it currently disagree with Fleet's source of truth?
+// and does it currently disagree with Shipyard's source of truth?
 function sourceSummary(row) {
   const source = publicSource(row);
   const inventory = db.db
@@ -706,7 +706,7 @@ function assignedServerError(environmentId, serverId) {
     .prepare("SELECT environment_id FROM servers WHERE id = ?")
     .get(serverId);
   if (!server || String(server.environment_id || "default") !== environmentId)
-    return "Zugewiesener Fleet-Host wurde in dieser Umgebung nicht gefunden.";
+    return "Zugewiesener Host wurde in dieser Umgebung nicht gefunden.";
   return null;
 }
 
@@ -1388,7 +1388,7 @@ router.get("/reservations", guard("canViewNetworks"), (req, res) => {
     .prepare("SELECT environment_id FROM servers WHERE id = ?")
     .get(serverId);
   if (!server)
-    return res.status(404).json({ error: "Fleet-Host nicht gefunden." });
+    return res.status(404).json({ error: "Host nicht gefunden." });
   if (!guardEnvironment(req, res, server.environment_id)) return;
   const rows = db.db
     .prepare(
@@ -1942,7 +1942,7 @@ router.delete("/ranges/:id", guard("canEditNetworks"), (req, res) => {
 });
 
 // External sources are observed inventories. Their source stays authoritative
-// for DHCP state; Fleet only mirrors it into matching, existing prefixes.
+// for DHCP state; Shipyard only mirrors it into matching, existing prefixes.
 router.get("/sources", guard("canViewNetworks"), (req, res) => {
   const environmentId =
     req.environmentId || String(req.query.environment_id || "default").trim() || "default";
@@ -2147,7 +2147,7 @@ router.delete("/sources/:id", guard("canEditNetworks"), (req, res) => {
 
 // Validate a controller without changing IPAM state.  This is deliberately
 // separate from sync: operators can verify endpoint, TLS, token and payload
-// mapping before Fleet creates, updates or releases any lease records.
+// mapping before Shipyard creates, updates or releases any lease records.
 router.post("/sources/:id/test", guard("canEditNetworks"), async (req, res) => {
   const source = db.db
     .prepare("SELECT * FROM ipam_sync_sources WHERE id = ?")

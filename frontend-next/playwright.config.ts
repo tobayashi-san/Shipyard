@@ -6,7 +6,7 @@ import { defineConfig } from '@playwright/test';
 
 const runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-e2e-'));
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-// Keep browser tests isolated from a developer's locally running Fleet stack.
+// Keep browser tests isolated from a developer's locally running Shipyard stack.
 // Ports can be overridden for parallel local test sessions or CI workers.
 const apiPort = process.env.FLEET_E2E_API_PORT || '3011';
 const webPort = process.env.FLEET_E2E_WEB_PORT || '5175';

@@ -63,7 +63,7 @@ function applySchema(db) {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
-    -- A key is stored once; assignments describe where Fleet is allowed to
+    -- A key is stored once; assignments describe where Shipyard is allowed to
     -- use it. target_type/target_id stay polymorphic so the core can point to
     -- optional OpenTofu deployments and VM templates without a hard DB link.
     CREATE TABLE IF NOT EXISTS ssh_key_assignments (
@@ -185,7 +185,7 @@ function applySchema(db) {
 
     -- Operator-assigned device names belong to the hardware identity, not to
     -- a lease. A reservation can therefore move to another DHCP address
-    -- without losing the name chosen in Fleet.
+    -- without losing the name chosen in Shipyard.
     CREATE TABLE IF NOT EXISTS ipam_device_names (
       environment_id TEXT NOT NULL,
       mac_address TEXT NOT NULL,
@@ -220,7 +220,7 @@ function applySchema(db) {
           AND s.environment_id = n.environment_id
       )
     BEGIN
-      SELECT RAISE(ABORT, 'Managed host and IPAM prefix must belong to the same environment');
+      SELECT RAISE(ABORT, 'Host and IPAM prefix must belong to the same environment');
     END;
     CREATE TRIGGER IF NOT EXISTS ipam_reservation_server_environment_update
     BEFORE UPDATE OF server_id, subnet_id ON ipam_reservations
@@ -233,7 +233,7 @@ function applySchema(db) {
           AND s.environment_id = n.environment_id
       )
     BEGIN
-      SELECT RAISE(ABORT, 'Managed host and IPAM prefix must belong to the same environment');
+      SELECT RAISE(ABORT, 'Host and IPAM prefix must belong to the same environment');
     END;
 
     -- External inventory sources deliberately live separately from prefixes.

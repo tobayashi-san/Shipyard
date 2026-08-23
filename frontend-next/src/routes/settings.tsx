@@ -22,21 +22,21 @@ interface TabDef {
   i18nKey: string;
   Component: React.ComponentType;
   /** Console grouping keeps a growing administration surface scannable. */
-  section: 'Console' | 'Access & security' | 'Integrations' | 'Operations & system';
+  section: 'General' | 'Access & security' | 'Integrations' | 'System';
   /** Render only when whitelabel.agentEnabled is true (matches legacy behaviour). */
   agentOnly?: boolean;
 }
 
 const TABS: TabDef[] = [
-  { id: 'appearance',     i18nKey: 'set.tabAppearance',    Component: AppearanceTab, section: 'Console' },
-  { id: 'system',         i18nKey: 'set.tabSystem',        Component: SystemTab, section: 'Operations & system' },
+  { id: 'appearance',     i18nKey: 'set.tabAppearance',    Component: AppearanceTab, section: 'General' },
+  { id: 'system',         i18nKey: 'set.tabSystem',        Component: SystemTab, section: 'System' },
   { id: 'ssh',            i18nKey: 'set.tabSsh',           Component: SshTab, section: 'Access & security' },
   { id: 'agent-manifest', i18nKey: 'set.tabAgentManifest', Component: AgentManifestTab, section: 'Access & security', agentOnly: true },
   { id: 'users-roles',    i18nKey: 'set.userManagement',   Component: UsersRolesTab, section: 'Access & security' },
   { id: 'git',            i18nKey: 'git.title',            Component: GitTab, section: 'Integrations' },
   { id: 'plugins',        i18nKey: 'set.tabPlugins',       Component: PluginsTab, section: 'Integrations' },
   { id: 'notifications',  i18nKey: 'set.notifications',    Component: NotificationsTab, section: 'Integrations' },
-  { id: 'danger',         i18nKey: 'set.danger',           Component: DangerTab, section: 'Operations & system' },
+  { id: 'danger',         i18nKey: 'set.danger',           Component: DangerTab, section: 'System' },
 ];
 
 export function SettingsPage() {
@@ -80,7 +80,7 @@ function AdminSettingsPage() {
   const visibleTabs = TABS.filter((tab) => !tab.agentOnly || agentEnabled);
   const activeId = visibleTabs.find((tab) => tab.id === params.tab)?.id ?? visibleTabs[0]?.id;
   const ActiveComponent = visibleTabs.find((tab) => tab.id === activeId)?.Component;
-  const sections = ['Console', 'Access & security', 'Integrations', 'Operations & system'] as const;
+  const sections = ['General', 'Access & security', 'Integrations', 'System'] as const;
 
   useEffect(() => {
     if (params.tab === 'audit') void navigate({ to: '/operations', replace: true });
@@ -91,14 +91,31 @@ function AdminSettingsPage() {
       <PageHeader title={t('set.title')} description={t('set.subtitle')} />
 
       <div className="flex flex-col gap-5 lg:flex-row">
+        <label className="space-y-1.5 lg:hidden">
+          <span className="text-[13px] font-medium text-muted-foreground">Settings section</span>
+          <select
+            value={activeId}
+            onChange={(event) => void navigate({ to: '/settings/$tab', params: { tab: event.target.value } })}
+            className="h-10 w-full rounded-sm border border-input bg-background px-3 text-sm"
+            aria-label="Settings section"
+          >
+            {sections.map(section => (
+              <optgroup key={section} label={section}>
+                {visibleTabs.filter(tab => tab.section === section).map(tab => (
+                  <option key={tab.id} value={tab.id}>{t(tab.i18nKey)}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </label>
         <nav className="shrink-0 lg:w-60 lg:rounded-[3px] lg:border lg:border-border-strong/80 lg:bg-card lg:p-2 lg:shadow-[0_1px_2px_hsl(var(--foreground)/0.035)]" aria-label="Settings">
-          <div className="hidden px-2 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground lg:block">Administration</div>
-          <div className="-mx-3 flex flex-row gap-1 overflow-x-auto px-3 pb-1 sm:-mx-4 sm:px-4 lg:mx-0 lg:flex-col lg:gap-3 lg:px-0 lg:overflow-visible">
+          <div className="hidden px-2 pb-2 pt-1 text-xs font-semibold text-muted-foreground lg:block">Administration</div>
+          <div className="hidden lg:flex lg:flex-col lg:gap-3">
             {sections.map(section => {
               const tabs = visibleTabs.filter(tab => tab.section === section);
               if (!tabs.length) return null;
               return <div key={section} className="flex shrink-0 gap-1 lg:block">
-                <div className="hidden px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground lg:block">{section}</div>
+                <div className="hidden px-2 pb-1 pt-1 text-[11px] font-semibold tracking-wide text-muted-foreground lg:block">{section}</div>
                 <ul className="flex gap-1 lg:block lg:space-y-0.5">
                   {tabs.map(tab => {
                     const isActive = tab.id === activeId;

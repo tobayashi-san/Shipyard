@@ -1,8 +1,5 @@
 import * as React from 'react';
-import { Layers3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useEnvironments } from '@/lib/queries';
-import { useUi } from '@/lib/store';
 
 /**
  * PageHeader — top of every route page.
@@ -22,24 +19,16 @@ export interface PageHeaderProps {
 }
 
 export function PageHeader({ title, eyebrow, description, breadcrumbs, actions, badge, back, className }: PageHeaderProps) {
-  const environmentId = useUi((state) => state.environmentId);
-  const { data: environments } = useEnvironments();
-  const environment = environments?.find((item) => String(item.id) === environmentId);
-  const environmentName = String(environment?.name || (environmentId === 'default' ? 'Default' : environmentId));
   return (
     <div className={cn('flex min-h-[3.75rem] flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-border-strong/70 pb-3', className)}>
       <div className="flex min-w-0 max-w-full items-start gap-3">
         {back}
         <div className="min-w-0">
           {breadcrumbs && <nav aria-label="Object path" className="mb-1.5 flex max-w-full items-center gap-1 overflow-x-auto whitespace-nowrap text-xs text-muted-foreground">{breadcrumbs}</nav>}
-          {eyebrow && <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{eyebrow}</div>}
+          {eyebrow && <div className="mb-1 text-[11px] font-semibold tracking-wide text-muted-foreground">{eyebrow}</div>}
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="break-words text-xl font-semibold tracking-[-0.018em] text-foreground sm:text-2xl">{title}</h1>
             {badge}
-            <span className="inline-flex max-w-full items-center gap-1 rounded-sm border border-border-strong/70 bg-muted/35 px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground" title={`Active environment: ${environmentName}`}>
-              <Layers3 className="h-3 w-3 shrink-0" />
-              <span className="truncate">{environmentName}</span>
-            </span>
           </div>
           {description && (
             <p className="mt-1 max-w-3xl text-[13px] leading-5 text-muted-foreground">{description}</p>

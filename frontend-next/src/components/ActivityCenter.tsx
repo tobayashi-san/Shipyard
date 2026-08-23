@@ -113,7 +113,7 @@ function describeEvent(data: Record<string, unknown>, existing?: ActivityItem): 
     return {
       kind: data.historyId && String(data.historyId).includes('custom') ? 'task' : 'update',
       title: existing?.title || 'Server action',
-      subtitle: data.serverId ? `Server ${text(data.serverId)}` : existing?.subtitle,
+      subtitle: data.serverId ? `Host ${text(data.serverId)}` : existing?.subtitle,
     };
   }
 

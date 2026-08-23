@@ -17,13 +17,13 @@ import {
 import {
   Plus,
   Trash2,
-  KeyRound,
   Server,
   Wifi,
   Tag,
   Link2,
   HardDrive,
   Container,
+  ChevronDown,
 } from "lucide-react";
 
 type AnyObj = Record<string, unknown>;
@@ -134,6 +134,7 @@ export function CreateServerDialog({
   const [dockerEnabled, setDockerEnabled] = React.useState(false);
   const [environmentId, setEnvironmentId] = React.useState(activeEnvironmentId);
   const [error, setError] = React.useState<string | null>(null);
+  const [advancedOpen, setAdvancedOpen] = React.useState(isEdit);
 
   const reset = React.useCallback(() => {
     if (editServer) {
@@ -165,7 +166,8 @@ export function CreateServerDialog({
     }
     setSshPassword("");
     setError(null);
-  }, [editServer, initialValues, activeEnvironmentId]);
+    setAdvancedOpen(isEdit);
+  }, [editServer, initialValues, activeEnvironmentId, isEdit]);
 
   React.useEffect(() => {
     if (open) reset();
@@ -326,6 +328,37 @@ export function CreateServerDialog({
             />
           </FieldRow>
 
+          {!isEdit && (
+            <FieldRow
+              label={t("add.sshPasswordPlaceholder")}
+              hint={t("add.sshKeyHint")}
+              htmlFor="server-ssh-password"
+            >
+              <Input
+                id="server-ssh-password"
+                type="password"
+                placeholder={t("add.sshPasswordPlaceholder")}
+                value={sshPassword}
+                onChange={(e) => setSshPassword(e.target.value)}
+                autoComplete="off"
+                className="w-full"
+              />
+            </FieldRow>
+          )}
+
+          <details open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)} className="group mt-4 border-t">
+            <summary className="flex cursor-pointer list-none items-center gap-3 py-4 text-left">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-muted text-muted-foreground">
+                <Tag className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium">Advanced options</span>
+                <span className="block text-[13px] text-muted-foreground">Hostname, SSH settings, metadata, links, and storage.</span>
+              </span>
+              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="border-t pb-2">
+
           <FieldRow
             label={t("add.hostname")}
             hint={t("add.hostnameHint")}
@@ -403,7 +436,7 @@ export function CreateServerDialog({
           </FieldRow>
           <FieldRow
             label="Environment"
-            hint="Controls which console environment this managed host appears in."
+            hint="Controls which console environment this host appears in."
             htmlFor="server-environment"
           >
             <select
@@ -559,31 +592,8 @@ export function CreateServerDialog({
               </FieldRow>
             </>
           )}
-
-          {/* ── SSH Key (add-only) ──────────────────────── */}
-          {!isEdit && (
-            <>
-              <SectionHeading
-                icon={<KeyRound className="h-3.5 w-3.5" />}
-                title={t("add.sshKeySection")}
-              />
-              <FieldRow
-                label={t("add.sshPasswordPlaceholder")}
-                hint={t("add.sshKeyHint")}
-                htmlFor="server-ssh-password"
-              >
-                <Input
-                  id="server-ssh-password"
-                  type="password"
-                  placeholder={t("add.sshPasswordPlaceholder")}
-                  value={sshPassword}
-                  onChange={(e) => setSshPassword(e.target.value)}
-                  autoComplete="off"
-                  className="w-full"
-                />
-              </FieldRow>
-            </>
-          )}
+            </div>
+          </details>
         </form>
 
         {/* ── Sticky footer ───────────────────────────── */}

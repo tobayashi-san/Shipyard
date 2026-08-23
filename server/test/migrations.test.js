@@ -70,6 +70,20 @@ test('database migrations keep a legacy default name when the replacement name i
   }
 });
 
+test('database migrations rename the untouched legacy product name', () => {
+  const db = new Database(':memory:');
+  try {
+    applySchema(db);
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('wl_app_name', 'Fleet')").run();
+
+    applyMigrations(db);
+
+    assert.equal(db.prepare("SELECT value FROM app_settings WHERE key = 'wl_app_name'").get().value, 'Shipyard');
+  } finally {
+    db.close();
+  }
+});
+
 test('database migrations fail loudly and roll back when required schema is corrupt', () => {
   const db = new Database(':memory:');
   try {

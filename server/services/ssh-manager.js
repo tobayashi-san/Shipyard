@@ -620,6 +620,35 @@ class SSHManager {
     }
   }
 
+  /**
+   * Open an isolated SSH connection for long-running transfers. A large or
+   * stalled upload must not consume the pooled connection used by directory
+   * listings, health checks, and interactive actions for the same host.
+   */
+  async createTransferConnection(server) {
+    const privateKey = readPrivateKey(this.getPrivateKeyPath());
+    const ssh = new NodeSSH();
+    const host = server.ip_address;
+    try {
+      await ssh.connect({
+        host,
+        port: server.ssh_port || 22,
+        username: server.ssh_user || 'root',
+        privateKey,
+        readyTimeout: 10000,
+        hostVerifier: makeHostVerifier({ serverId: server.id, hostLabel: host }),
+      });
+      return ssh;
+    } catch (error) {
+      ssh.dispose();
+      const stored = db.servers.getHostFingerprint(server.id);
+      if (stored && /handshake|host key|verification|All configured/i.test(error.message || '')) {
+        throw new HostKeyMismatchError(host);
+      }
+      throw new Error(`SSH connection failed to ${host}: ${error.message}`);
+    }
+  }
+
   async listFiles(server, remotePath = null) {
     return this.withSftp(server, async sftp => {
       const requested = remotePath || '.';
@@ -768,10 +797,40 @@ class SSHManager {
     }
   }
 
-  async uploadStream(server, remotePath, input) {
-    return this.withSftp(server, async sftp => {
-      await pipeline(input, sftp.createWriteStream(remotePath, { flags: 'w', mode: 0o600 }));
+  async uploadStream(server, remotePath, input, { overwrite = false } = {}) {
+    const ssh = await this.createTransferConnection(server);
+    const temporaryPath = path.posix.join(
+      path.posix.dirname(remotePath),
+      `.${path.posix.basename(remotePath)}.shipyard-upload-${crypto.randomBytes(8).toString('hex')}`,
+    );
+    let sftp;
+    let moved = false;
+    const call = (method, ...args) => new Promise((resolve, reject) => {
+      sftp[method](...args, error => error ? reject(error) : resolve());
     });
+    try {
+      sftp = await ssh.requestSFTP();
+      // Stage beside the destination so a canceled upload never truncates an
+      // existing file and the final rename remains on the same filesystem.
+      await pipeline(input, sftp.createWriteStream(temporaryPath, { flags: 'wx', mode: 0o600 }));
+      try {
+        await call('rename', temporaryPath, remotePath);
+      } catch (error) {
+        if (!overwrite) throw error;
+        // Some SFTP servers replace on rename while others require an unlink.
+        // Only remove the destination after the complete staged file exists.
+        await call('unlink', remotePath).catch(unlinkError => {
+          if (unlinkError?.code !== 2) throw unlinkError;
+        });
+        await call('rename', temporaryPath, remotePath);
+      }
+      moved = true;
+    } finally {
+      if (sftp && !moved) {
+        await call('unlink', temporaryPath).catch(() => {});
+      }
+      ssh.dispose();
+    }
   }
 
   async transferFile(sourceServer, sourcePath, targetServer, targetPath, maximumBytes = Infinity) {

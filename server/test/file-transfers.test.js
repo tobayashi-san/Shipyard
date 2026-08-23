@@ -218,11 +218,13 @@ test('upload refuses replacement by default and streams binary data when allowed
   const originalExists = sshManager.remoteFileExists;
   const originalUpload = sshManager.uploadStream;
   let received = Buffer.alloc(0);
+  let uploadOptions;
   sshManager.remoteFileExists = async () => true;
-  sshManager.uploadStream = async (_server, _path, input) => {
+  sshManager.uploadStream = async (_server, _path, input, options) => {
     const chunks = [];
     for await (const chunk of input) chunks.push(chunk);
     received = Buffer.concat(chunks);
+    uploadOptions = options;
   };
   try {
     const conflict = await request(app)
@@ -240,9 +242,92 @@ test('upload refuses replacement by default and streams binary data when allowed
     assert.equal(uploaded.status, 201);
     assert.equal(uploaded.body.bytes, 8);
     assert.equal(received.toString(), 'new data');
+    assert.deepEqual(uploadOptions, { overwrite: true });
   } finally {
     sshManager.remoteFileExists = originalExists;
     sshManager.uploadStream = originalUpload;
+  }
+});
+
+test('SSH uploads use an isolated connection and atomically publish the staged file', async () => {
+  const originalCreateTransferConnection = sshManager.createTransferConnection;
+  const originalGetConnection = sshManager.getConnection;
+  const calls = [];
+  let received = Buffer.alloc(0);
+  let disposed = false;
+  const sftp = {
+    createWriteStream: (remotePath, options) => {
+      calls.push(['createWriteStream', remotePath, options]);
+      const chunks = [];
+      return new Writable({
+        write(chunk, _encoding, callback) {
+          chunks.push(Buffer.from(chunk));
+          callback();
+        },
+        final(callback) {
+          received = Buffer.concat(chunks);
+          callback();
+        },
+      });
+    },
+    rename: (from, to, callback) => {
+      calls.push(['rename', from, to]);
+      callback(null);
+    },
+    unlink: (remotePath, callback) => {
+      calls.push(['unlink', remotePath]);
+      callback(null);
+    },
+  };
+  sshManager.createTransferConnection = async () => ({
+    requestSFTP: async () => sftp,
+    dispose: () => { disposed = true; },
+  });
+  sshManager.getConnection = async () => { throw new Error('pooled connection must not be used'); };
+  try {
+    await sshManager.uploadStream(source, '/tmp/release.bin', Readable.from([Buffer.from('release data')]));
+    assert.equal(received.toString(), 'release data');
+    assert.equal(calls[0][0], 'createWriteStream');
+    assert.match(calls[0][1], /^\/tmp\/\.release\.bin\.shipyard-upload-[a-f0-9]{16}$/);
+    assert.deepEqual(calls[0][2], { flags: 'wx', mode: 0o600 });
+    assert.deepEqual(calls[1], ['rename', calls[0][1], '/tmp/release.bin']);
+    assert.equal(disposed, true);
+  } finally {
+    sshManager.createTransferConnection = originalCreateTransferConnection;
+    sshManager.getConnection = originalGetConnection;
+  }
+});
+
+test('an interrupted SSH upload removes its staged file and closes the transfer connection', async () => {
+  const originalCreateTransferConnection = sshManager.createTransferConnection;
+  const removed = [];
+  let temporaryPath;
+  let disposed = false;
+  const input = new PassThrough();
+  const sftp = {
+    createWriteStream: remotePath => {
+      temporaryPath = remotePath;
+      return new Writable({ write(_chunk, _encoding, callback) { callback(); } });
+    },
+    rename: (_from, _to, callback) => callback(null),
+    unlink: (remotePath, callback) => {
+      removed.push(remotePath);
+      callback(null);
+    },
+  };
+  sshManager.createTransferConnection = async () => ({
+    requestSFTP: async () => sftp,
+    dispose: () => { disposed = true; },
+  });
+  try {
+    const upload = sshManager.uploadStream(source, '/tmp/large.bin', input);
+    await new Promise(resolve => setImmediate(resolve));
+    input.destroy(new Error('client aborted'));
+    await assert.rejects(upload, /client aborted/);
+    assert.deepEqual(removed, [temporaryPath]);
+    assert.equal(disposed, true);
+  } finally {
+    sshManager.createTransferConnection = originalCreateTransferConnection;
   }
 });
 

@@ -105,7 +105,7 @@ export function canAccessOperations(profile: Profile | undefined | null): boolea
     || hasCap(profile, 'canViewMaintenance');
 }
 
-/** Proxmox/platform inventory is deliberately separate from managed hosts. */
+/** Proxmox/platform inventory is deliberately separate from hosts. */
 export function canAccessInfrastructure(profile: Profile | undefined | null): boolean {
   return hasCap(profile, 'canViewInfrastructure') || hasCap(profile, 'canManageDeploymentPlatforms');
 }

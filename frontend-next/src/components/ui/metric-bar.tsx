@@ -52,7 +52,7 @@ export function MetricBar({
   const heightCls = size === 'xs' ? 'h-1' : size === 'md' ? 'h-2.5' : 'h-1.5';
 
   return (
-    <div className={cn('relative w-full overflow-hidden rounded-full bg-muted', heightCls, className)}>
+    <div className={cn('relative w-full overflow-hidden rounded-full [background:hsl(var(--foreground)/0.09)]', heightCls, className)}>
       {pct != null && (
         <div
           className={cn('h-full rounded-full transition-[width] duration-300 ease-out', fillColor[tone])}

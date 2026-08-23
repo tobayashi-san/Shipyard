@@ -46,7 +46,7 @@ function registerLegacyVmMigrationRoutes({ db, router, backupLocalState, findBin
       return res.status(409).json({ error: 'Promote the legacy Proxmox credentials to an environment platform connection before splitting VM states.' });
     }
     const vms = getProxmoxVms(workspace.id);
-    if (!vms.length) return res.status(409).json({ error: 'The workspace has no Fleet VM definitions to migrate.' });
+    if (!vms.length) return res.status(409).json({ error: 'The workspace has no Shipyard VM definitions to migrate.' });
     const binary = findBinary();
     const originalStatePath = path.join(workspace.path, 'terraform.tfstate');
     const hasState = fs.existsSync(originalStatePath);
@@ -73,7 +73,7 @@ function registerLegacyVmMigrationRoutes({ db, router, backupLocalState, findBin
         const expected = new Set(vms.map(vm => `proxmox_virtual_environment_vm.${vm.name}`));
         const unsupported = listed.filter(address => !expected.has(address));
         const missing = [...expected].filter(address => !listed.includes(address));
-        if (unsupported.length || missing.length) throw new Error(`State migration requires exactly the Fleet VM resources. Unsupported: ${unsupported.join(', ') || 'none'}; missing: ${missing.join(', ') || 'none'}.`);
+        if (unsupported.length || missing.length) throw new Error(`State migration requires exactly the Shipyard VM resources. Unsupported: ${unsupported.join(', ') || 'none'}; missing: ${missing.join(', ') || 'none'}.`);
       }
 
       for (const unit of units) {

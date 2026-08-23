@@ -318,11 +318,11 @@ export function ObjectOverview({ cluster, node }: { cluster: Cluster; node?: Nod
     <Card className="console-object-summary">
       <CardContent className="grid p-0 lg:grid-cols-[minmax(0,1.35fr)_minmax(21rem,0.65fr)]">
         <section className="console-object-summary-main">
-          <div className="flex items-center gap-2 text-sm font-semibold">
+          <div className="flex items-center gap-2 border-b pb-3 text-sm font-semibold">
             <Server className="h-4 w-4 text-muted-foreground" />
             {isNode ? "Host summary" : "Platform summary"}
           </div>
-          <div className="console-object-info-grid">
+          <div className="console-object-info-grid xl:grid-cols-3">
             <ObjectInfo
               label={isNode ? "Platform" : "Connection"}
               value={cluster.connections?.[0]?.name || "Proxmox"}
@@ -339,7 +339,7 @@ export function ObjectOverview({ cluster, node }: { cluster: Cluster; node?: Nod
               label="VM operation"
               value={`${runningVmCount} running / ${nodeVmCount}`}
             />
-            <ObjectInfo label="Managed in Fleet" value={managedVmCount} />
+            <ObjectInfo label="Managed in Shipyard" value={managedVmCount} />
             <ObjectInfo
               label={isNode ? "Uptime" : "Endpoint"}
               value={
@@ -360,12 +360,12 @@ export function ObjectOverview({ cluster, node }: { cluster: Cluster; node?: Nod
             />
           </div>
         </section>
-        <section className="console-object-capacity" aria-label="Capacity">
-          <div className="flex items-center gap-2 text-sm font-semibold">
+        <section className="console-object-capacity border-t lg:border-l lg:border-t-0" aria-label="Capacity">
+          <div className="flex items-center gap-2 border-b pb-3 text-sm font-semibold">
             <Activity className="h-4 w-4 text-muted-foreground" />
             Capacity
           </div>
-          <div className="mt-4 space-y-3">
+          <div className="mt-3 space-y-3">
             <CapacityLine
               label="CPU"
               used={cpuUsed}

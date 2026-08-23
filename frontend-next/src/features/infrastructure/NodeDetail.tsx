@@ -108,7 +108,7 @@ export function NodePage({
               to="/infrastructure"
               className="hover:text-foreground hover:underline"
             >
-              Virtual infrastructure
+              Infrastructure
             </Link>
             <span aria-hidden="true">/</span>
             <Link

@@ -57,7 +57,7 @@ export function OnboardingPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [branding, setBranding] = useState<Branding>({
-    appName: 'Fleet',
+    appName: 'Shipyard',
     appTagline: 'Infrastructure',
     accentColor: '#3b82f6',
     showIcon: true,
@@ -238,7 +238,7 @@ function AppearanceStep({
   NavRow: NavRowComponent;
 }) {
   const { t } = useTranslation();
-  const [name, setName] = useState(branding.appName === 'Fleet' ? '' : branding.appName);
+  const [name, setName] = useState(branding.appName === 'Shipyard' ? '' : branding.appName);
   const [tagline, setTagline] = useState(branding.appTagline === 'Infrastructure' ? '' : branding.appTagline);
   const [accent, setAccent] = useState(branding.accentColor);
   const [theme, setTheme] = useState<Theme>('auto');
@@ -255,7 +255,7 @@ function AppearanceStep({
         showIcon: branding.showIcon,
         theme,
       });
-      setBranding({ ...branding, appName: name || 'Fleet', appTagline: tagline || 'Infrastructure', accentColor: accent });
+      setBranding({ ...branding, appName: name || 'Shipyard', appTagline: tagline || 'Infrastructure', accentColor: accent });
     } catch { /* non-critical */ }
     setBusy(false);
     onNext();
@@ -268,7 +268,7 @@ function AppearanceStep({
       <div className="mt-5 grid gap-4 rounded-[3px] border border-border-strong/80 bg-muted/10 p-4 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="ob-name">{t('set.appName')}</Label>
-          <Input id="ob-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Fleet" />
+          <Input id="ob-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Shipyard" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="ob-tag">{t('set.tagline')}</Label>

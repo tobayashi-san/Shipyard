@@ -263,7 +263,7 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
           <section className="console-object-summary">
             <div className="grid xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,.85fr)]">
               <div className="console-object-summary-main">
-                <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex items-center justify-between gap-3 border-b pb-3">
                   <div className="flex items-center gap-2">
                     <HeartPulse className="h-4 w-4 text-muted-foreground" />
                     <h2 className="text-sm font-semibold">
@@ -287,7 +287,7 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                         : t("common.unknown")}
                   </StatusBadge>
                 </div>
-                <dl className="console-object-info-grid">
+                <dl className="console-object-info-grid xl:grid-cols-3">
                   <SummaryField
                     label="Connection"
                     value={
@@ -344,8 +344,8 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                     label="Management"
                     value={
                       managedProxmoxDeployment
-                        ? `Fleet + Proxmox · ${managedProxmoxDeployment.vm?.node_name || "—"}`
-                        : "Fleet via SSH"
+                        ? `Shipyard + Proxmox · ${managedProxmoxDeployment.vm?.node_name || "—"}`
+                        : "Shipyard via SSH"
                     }
                     tone="info"
                   />
@@ -362,8 +362,8 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                   />
                 </dl>
               </div>
-              <div className="console-object-capacity">
-                <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="console-object-capacity border-t xl:border-l xl:border-t-0">
+                <div className="flex items-center justify-between gap-3 border-b pb-3">
                   <div className="flex items-center gap-2">
                     <Cpu className="h-4 w-4 text-muted-foreground" />
                     <h2 className="text-sm font-semibold">
@@ -383,7 +383,7 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                     />
                   </Button>
                 </div>
-                <div className="space-y-3">
+                <div className="mt-3 space-y-3">
                   <CapacitySummary
                     label={t("det.cpu")}
                     value={cpuPct === null ? "—" : `${cpuPct}%`}
@@ -410,10 +410,10 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
           {/* Quick links */}
           {(server.links || []).length > 0 && (
             <Card>
-              <CardHeader className="px-4 py-3">
+              <CardHeader className="border-b px-4 py-3">
                 <CardTitle className="text-sm">{t("det.quickLinks")}</CardTitle>
               </CardHeader>
-              <CardContent className="px-4 pb-4 pt-0 flex flex-wrap gap-2">
+              <CardContent className="flex flex-wrap gap-2 px-4 py-3">
                 {server.links!.map((l, i) => (
                   <a
                     key={i}
@@ -442,7 +442,7 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                 deliberately to static operating-system and access facts so
                 CPU, uptime and capacity do not appear twice on one object page. */}
             <Card>
-              <CardHeader className="border-b bg-muted/15 px-4 py-3">
+              <CardHeader className="border-b px-4 py-3">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Settings2 className="h-4 w-4" />
                   System & access
@@ -468,8 +468,8 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                     <dt>Verwaltungsmodus</dt>
                     <dd>
                       {managedProxmoxDeployment
-                        ? "Fleet + Proxmox"
-                        : "Fleet via SSH"}
+                        ? "Shipyard + Proxmox"
+                        : "Shipyard via SSH"}
                       {agentEnabled && agentStatus?.installed
                         ? " · Agent active"
                         : ""}
@@ -560,7 +560,7 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
             </Card>
 
             <Card>
-              <CardHeader className="border-b bg-muted/15 px-4 py-3">
+              <CardHeader className="border-b px-4 py-3">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Workflow className="h-4 w-4" />
                   Management & provisioning
@@ -664,7 +664,7 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
               storage objects that an operator can inspect; it must not leave
               an empty second grid column beneath the access/configuration cards. */}
           <Card>
-            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 border-b bg-muted/15 px-4 py-3">
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
               <CardTitle className="flex items-center gap-2 text-sm">
                 <HardDrive className="h-4 w-4" />
                 Storage

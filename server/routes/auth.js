@@ -71,7 +71,7 @@ function makeTempToken(payload) {
 // GET /api/auth/status – is a password configured? Is onboarding done?
 router.get('/status', (req, res) => {
   const configured = db.users.count() > 0;
-  const appName = db.settings.get('wl_app_name') || 'Fleet';
+  const appName = db.settings.get('wl_app_name') || 'Shipyard';
   const appTagline = db.settings.get('wl_app_tagline') || 'Infrastructure';
   const accentColor = db.settings.get('wl_accent_color') || '#3b82f6';
   const logoIcon = db.settings.get('wl_logo_icon') || 'fa-ship';
@@ -274,7 +274,7 @@ router.get('/totp/status', authSensitiveLimiter, authMiddleware, (req, res) => {
 router.post('/totp/setup', authSensitiveLimiter, authMiddleware, async (req, res) => {
   try {
     const secret = otplib.generateSecret();
-    const appName = db.settings.get('wl_app_name') || 'Fleet';
+    const appName = db.settings.get('wl_app_name') || 'Shipyard';
     const username = req.user?.username || 'admin';
 
     db.users.setPendingTotp(req.user.id, secret);

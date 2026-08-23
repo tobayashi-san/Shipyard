@@ -7,7 +7,7 @@ const os = require('os');
 const fs = require('fs');
 
 // This suite wipes its database between cases. Set an isolated path before
-// loading the database module so it can never touch a running Fleet instance.
+// loading the database module so it can never touch a running Shipyard instance.
 process.env.DB_PATH = path.join(os.tmpdir(), `fleet_test_agent_api_${Date.now()}_${process.pid}.db`);
 
 const db = require('../db');

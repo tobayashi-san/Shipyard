@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { OverflowItem, OverflowLink, OverflowMenu } from "@/components/ui/overflow-menu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -71,7 +72,7 @@ export function ObjectInventoryPreview({
 
   return (
     <Card>
-      <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b bg-muted/15 py-3">
+      <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b py-3">
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <Boxes className="h-4 w-4" />
@@ -79,8 +80,8 @@ export function ObjectInventoryPreview({
           </CardTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {isNode
-              ? `${running} running · ${stopped} stopped · ${managed} managed in Fleet`
-              : `${cluster.nodes.length} nodes · ${cluster.vms.length} virtual guests · ${managed} managed in Fleet`}
+              ? `${running} running · ${stopped} stopped · ${managed} managed in Shipyard`
+              : `${cluster.nodes.length} nodes · ${cluster.vms.length} virtual guests · ${managed} managed in Shipyard`}
           </p>
         </div>
         <Button
@@ -135,7 +136,7 @@ export function ObjectInventoryPreview({
                     </span>
                     <span>
                       {vm.fleet_server_id
-                        ? "Managed in Fleet"
+                        ? "Managed in Shipyard"
                         : "Inventory only"}
                     </span>
                   </div>
@@ -194,7 +195,7 @@ export function ObjectInventoryPreview({
                             params={{ id: vm.fleet_server_id }}
                             className="text-xs font-medium text-primary hover:underline"
                           >
-                            Open managed host
+                            Host
                           </Link>
                         ) : (
                           <span className="text-xs text-muted-foreground">
@@ -342,7 +343,7 @@ export function NodeConfiguration({ node, vms }: { node: Node; vms: Vm[] }) {
   return (
     <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,.72fr)]">
       <Card>
-        <CardHeader className="border-b bg-muted/15 py-3">
+        <CardHeader className="border-b py-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <ServerCog className="h-4 w-4" />
             Hardware & configuration
@@ -399,7 +400,7 @@ export function NodeConfiguration({ node, vms }: { node: Node; vms: Vm[] }) {
         </CardContent>
       </Card>
       <Card>
-        <CardHeader className="border-b bg-muted/15 py-3">
+        <CardHeader className="border-b py-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Activity className="h-4 w-4" />
             Operational status
@@ -425,7 +426,7 @@ export function NodeConfiguration({ node, vms }: { node: Node; vms: Vm[] }) {
         </CardContent>
       </Card>
       <Card className="xl:col-span-2">
-        <CardHeader className="border-b bg-muted/15 py-3">
+        <CardHeader className="border-b py-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Server className="h-4 w-4" />
             Network & bridges
@@ -535,7 +536,7 @@ export function RecentObjectTasks({ tasks }: { tasks: AuditTask[] }) {
   const recent = tasks.slice(0, 4);
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between gap-3 border-b bg-muted/15 py-3">
+      <CardHeader className="flex-row items-center justify-between gap-3 border-b py-3">
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <ClipboardList className="h-4 w-4" />
@@ -616,7 +617,7 @@ export function Property({
 export function ObjectTasksCard({ tasks }: { tasks: AuditTask[] }) {
   return (
     <Card>
-      <CardHeader className="border-b bg-muted/15 py-3">
+      <CardHeader className="border-b py-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <ClipboardList className="h-4 w-4" />
           Recent tasks
@@ -724,7 +725,7 @@ export function DatastoresCard({
 }) {
   return (
     <Card>
-      <CardHeader className="border-b bg-muted/15 py-3">
+      <CardHeader className="border-b py-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <HardDrive className="h-4 w-4" />
           ZFS-Datastores
@@ -876,20 +877,17 @@ export function VmTable({
     );
   const action = (vm: Vm) =>
     vm.fleet_server_id ? (
-      <Button asChild size="sm" variant="outline">
-        <Link to="/servers/$id" params={{ id: vm.fleet_server_id }}>
-          Open managed host
-        </Link>
-      </Button>
+      <OverflowMenu title={`Actions for ${vm.name}`}>
+        <OverflowLink icon={Server} to="/servers/$id" params={{ id: vm.fleet_server_id }}>
+          Host details
+        </OverflowLink>
+      </OverflowMenu>
     ) : canImportVm && cluster.connections?.[0]?.id ? (
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        onClick={() => onImportVm(vm)}
-      >
-        Manage in Fleet
-      </Button>
+      <OverflowMenu title={`Actions for ${vm.name}`}>
+        <OverflowItem icon={ServerCog} onClick={() => onImportVm(vm)}>
+          Adopt as host
+        </OverflowItem>
+      </OverflowMenu>
     ) : (
       <span className="text-xs text-muted-foreground">Not adopted</span>
     );
@@ -911,14 +909,14 @@ export function VmTable({
     );
   return (
     <Card>
-      <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b bg-muted/15 py-3">
+      <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b py-3">
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <Boxes className="h-4 w-4" />
             Virtual guests
           </CardTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Explicitly select inventory VMs and CTs and adopt them into Fleet with their
+            Explicitly select inventory VMs and CTs and adopt them into Shipyard with their
             access details.
           </p>
         </div>
@@ -929,7 +927,7 @@ export function VmTable({
             </span>
             <Button size="sm" onClick={() => onImportVms(selectedVms)}>
               <CheckSquare2 />
-              Adopt into Fleet
+              Adopt into Shipyard
             </Button>
             <Button
               size="icon"
@@ -1045,7 +1043,7 @@ export function VmTable({
                 <th>vCPU</th>
                 <th>Memory</th>
                 <th>Disk</th>
-                <th className="text-right">Manage</th>
+                <th className="text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -1179,7 +1177,7 @@ export function BulkImportProxmoxVmsDialog({
         );
       else
         showToast(
-          `${succeeded} guests were adopted as managed hosts.`,
+          `${succeeded} guests were adopted as hosts.`,
           "success",
         );
       onOpenChange(false);
@@ -1192,11 +1190,11 @@ export function BulkImportProxmoxVmsDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ServerCog className="h-5 w-5" />
-            Adopt {vms.length} guests into Fleet
+            Adopt {vms.length} guests into Shipyard
           </DialogTitle>
           <DialogDescription>
-            The VMs and CTs remain unchanged in Proxmox. Fleet only creates
-            managed hosts and reads their reported IPv4 addresses.
+            The VMs and CTs remain unchanged in Proxmox. Shipyard only creates
+            hosts and reads their reported IPv4 addresses.
           </DialogDescription>
         </DialogHeader>
         <div className="rounded-md border bg-muted/20 p-3">

@@ -1,13 +1,11 @@
-# Fleet (Shipyard)
+# Shipyard
 
-Fleet is the Shipyard console for Linux infrastructure — managed hosts, SSH
+Shipyard is a console for Linux infrastructure — hosts, SSH
 access, Docker workloads, updates, Ansible automation, Proxmox inventory, and
-OpenTofu deployments in a single interface. The repository, container image,
-data paths, and `SHIPYARD_*` configuration names retain the Shipyard name for
-upgrade compatibility.
+OpenTofu deployments in a single interface.
 
 > **Do not expose Shipyard to the public internet.**
-> It stores SSH private keys and has direct shell access to all managed servers.
+> It stores SSH private keys and has direct shell access to all hosts.
 > Run it inside a private network or VPN. See [Docker deployment](docs/DOCKER_DEPLOYMENT.md).
 
 ## Docker deployment
@@ -79,14 +77,14 @@ stale whenever the console design changes.
 
 ## Features
 
-- **Managed hosts** — add, edit, group, tag, attach quick links, and bulk import/export (JSON or CSV)
+- **Hosts** — add, edit, group, tag, attach quick links, and bulk import/export (JSON or CSV)
 - **Host state** — inspect CPU, RAM, disk, mounted storage, uptime, and load average via SSH or the optional Shipyard Agent
 - **OS Updates** — via Ansible (`apt`, `dnf`, `pacman`, …) with live terminal output
 - **Custom Update Tasks** — track scripts or GitHub releases, shows current vs. latest
 - **Docker & Compose** — container overview, logs, restart, edit and run Compose stacks
 - **Ansible** — built-in YAML editor, version history, cron scheduler, live output
 - **SSH Terminal** — browser-based, resizable, ANSI-aware, with live session status
-- **SFTP File Transfer** — browse, upload, download, and stream files between managed hosts
+- **SFTP File Transfer** — browse, upload, download, and stream files between hosts
 - **SSH Key Management** — auto-generate Ed25519, deploy via UI, AES-256-GCM encryption at rest
 - **Notifications** — webhooks (Discord, Slack) and SMTP email alerts
 - **Auth & Security** — JWT, host- and capability-scoped RBAC, custom roles, TOTP/2FA, audit log, rate limiting, and HTTPS

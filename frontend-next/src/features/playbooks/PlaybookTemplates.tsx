@@ -47,7 +47,7 @@ import type { Playbook, PlaybookVersion } from "./playbook-types";
 
 const PlaybookEditor = lazy(() => import("./components/PlaybookEditor"));
 
-export function TemplatesTab({ onRun }: { onRun: (filename: string) => void }) {
+export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: string) => void; createRequest?: number }) {
   const { t } = useTranslation();
   const { data: profile } = useProfile();
   const qc = useQueryClient();
@@ -69,6 +69,7 @@ export function TemplatesTab({ onRun }: { onRun: (filename: string) => void }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [yamlError, setYamlError] = useState<string | null>(null);
+  const handledCreateRequest = useRef(0);
 
   const {
     data: playbooks,
@@ -150,6 +151,18 @@ export function TemplatesTab({ onRun }: { onRun: (filename: string) => void }) {
     setYamlError(null);
     setPanel("editor");
   };
+
+  useEffect(() => {
+    if (createRequest <= handledCreateRequest.current) return;
+    handledCreateRequest.current = createRequest;
+    setSelected(null);
+    setIsNew(true);
+    setFilenameInput("");
+    setContent(TEMPLATE_YAML);
+    setOrigContent("");
+    setYamlError(null);
+    setPanel("editor");
+  }, [createRequest]);
 
   // Save
   const saveMut = useMutation({

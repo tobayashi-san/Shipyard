@@ -274,8 +274,8 @@ async function reconcileManagedServers({ db, workspace, desiredServers, logMeta 
   for (const mapping of mappings) {
     if (desiredKeys.has(mapping.resource_key)) continue;
     // A Terraform/OpenTofu state is a desired deployment definition, not an
-    // ownership claim over Fleet's central inventory.  Removing a resource
-    // from state must only detach the deployment mapping; deleting the Fleet
+    // ownership claim over Shipyard's central inventory.  Removing a resource
+    // from state must only detach the deployment mapping; deleting the Shipyard
     // host here made ordinary inventory vanish on the next Apply.
     if (db.servers.getById(mapping.server_id)) detached++;
     deleteMapping.run(workspace.id, mapping.resource_key);
@@ -343,9 +343,9 @@ function ensureManagedServersTable(db) {
   `).run();
 }
 
-// A Fleet host can be removed independently from an OpenTofu deployment or
+// A host can be removed independently from an OpenTofu deployment or
 // from the imported Proxmox inventory. These tables deliberately have no
-// foreign keys so the feature remains compatible with existing Fleet DBs. The
+// foreign keys so the feature remains compatible with existing Shipyard DBs. The
 // cleanup only removes mappings whose target host is already absent.
 function removeOrphanedServerMappings(db) {
   let staleManaged = 0;

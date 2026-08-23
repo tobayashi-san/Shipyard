@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   useMutation,
@@ -22,6 +22,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PageHeader } from "@/components/ui/page-header";
+import { OverflowItem, OverflowMenu, OverflowSep } from "@/components/ui/overflow-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import {
@@ -185,7 +186,7 @@ export function InfrastructurePage() {
     [environmentId, hostsQuery.data],
   );
   // An adopted VM already belongs to the Proxmox inventory below. Rendering it
-  // again as a managed host makes the console look as if it contained two
+  // again as a host makes the console look as if it contained two
   // resources. Keep this section exclusively for standalone VPS/bare-metal
   // hosts, just as vCenter separates inventory objects from external hosts.
   const adoptedFleetHostIds = useMemo(
@@ -234,10 +235,10 @@ export function InfrastructurePage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Virtual infrastructure"
+        title="Infrastructure"
         description={
           clusters.length
-            ? `${totals.clusters} platform${totals.clusters === 1 ? "" : "s"} · ${totals.onlineNodes} / ${totals.nodes} nodes reachable · ${totals.online} / ${totals.vms} virtual guests running${standaloneHosts.length ? ` · ${standaloneHosts.length} external managed hosts` : ""}`
+            ? `${totals.clusters} platform${totals.clusters === 1 ? "" : "s"} · ${totals.onlineNodes} / ${totals.nodes} nodes reachable · ${totals.online} / ${totals.vms} virtual guests running${standaloneHosts.length ? ` · ${standaloneHosts.length} external hosts` : ""}`
             : "Read-only platform inventory for connected clusters, nodes, datastores, VMs, and LXC containers."
         }
         actions={
@@ -290,8 +291,8 @@ export function InfrastructurePage() {
             <Card>
               <EmptyState
                 icon={<TriangleAlert className="h-5 w-5" />}
-                title="Virtual infrastructure could not be loaded"
-                description="Check the connected platforms or managed hosts and try again."
+                title="Infrastructure could not be loaded"
+                description="Check the connected platforms or hosts and try again."
               />
             </Card>
           ) : clusters.length === 0 && hosts.length === 0 ? (
@@ -299,7 +300,7 @@ export function InfrastructurePage() {
               <EmptyState
                 icon={<Database className="h-5 w-5" />}
                 title="No infrastructure connected yet"
-                description="Add a managed host or create a Proxmox connection in this environment."
+                description="Add a host or create a Proxmox connection in this environment."
                 action={
                   isAdmin ? (
                     <Button
@@ -546,7 +547,7 @@ function ProxmoxConnectionsCard({
                     <th className="px-3">Endpoint</th>
                     <th className="px-3">Access status</th>
                     <th className="px-3">IPAM sync</th>
-                    <th className="w-32 px-3 text-right">Action</th>
+                    <th className="w-32 px-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -592,50 +593,36 @@ function ProxmoxConnectionsCard({
                       </td>
                       <td className="px-3 text-right">
                         {isAdmin || canSyncIpam ? (
-                          <div className="flex justify-end gap-1">
+                          <div className="flex justify-end">
+                            <OverflowMenu title={`Actions for ${connection.name}`}>
                             {canSyncIpam && (
-                              <Button
-                                type="button"
-                                size="icon"
-                                variant="ghost"
+                              <OverflowItem
+                                icon={RefreshCw}
                                 disabled={syncIpam.isPending}
                                 onClick={() => syncIpam.mutate(connection)}
-                                aria-label={`Synchronize ${connection.name} with IPAM now`}
-                                title="Synchronize all matching networks now"
                               >
-                                <RefreshCw
-                                  className={
-                                    syncIpam.isPending &&
-                                    syncIpam.variables?.id === connection.id
-                                      ? "h-4 w-4 animate-spin"
-                                      : "h-4 w-4"
-                                  }
-                                />
-                              </Button>
+                                Sync with IPAM
+                              </OverflowItem>
                             )}
+                            {canSyncIpam && isAdmin && <OverflowSep />}
                             {isAdmin && (
-                              <Button
-                                type="button"
-                                size="icon"
-                                variant="ghost"
+                              <OverflowItem
+                                icon={Pencil}
                                 onClick={() => onEdit(connection)}
-                                aria-label={`Edit ${connection.name}`}
                               >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
+                                Edit connection
+                              </OverflowItem>
                             )}
                             {isAdmin && (
-                              <Button
-                                type="button"
-                                size="icon"
-                                variant="ghost"
-                                className="text-destructive hover:text-destructive"
+                              <OverflowItem
+                                icon={Trash2}
+                                danger
                                 onClick={() => onDelete(connection)}
-                                aria-label={`Remove ${connection.name}`}
                               >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                                Remove connection
+                              </OverflowItem>
                             )}
+                            </OverflowMenu>
                           </div>
                         ) : (
                           "—"
@@ -695,7 +682,7 @@ function ConfirmDeleteConnection({
         connection ? (
           <>
             The connection <strong>{connection.name}</strong> will be removed.
-            If deployments still use it, Fleet protects the connection and
+            If deployments still use it, Shipyard protects the connection and
             requires reassignment first.
           </>
         ) : (
@@ -717,10 +704,10 @@ function ManagedHostsReference({ count }: { count: number }) {
       <CardContent className="flex flex-wrap items-center gap-3 p-4">
         <Server className="h-5 w-5 text-muted-foreground" />
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold">{count} external managed host{count === 1 ? "" : "s"}</div>
-          <p className="mt-0.5 text-xs text-muted-foreground">Host health, updates, access, and bulk administration live in Managed hosts.</p>
+          <div className="text-sm font-semibold">{count} external host{count === 1 ? "" : "s"}</div>
+          <p className="mt-0.5 text-xs text-muted-foreground">Host health, updates, access, and bulk administration live in Hosts.</p>
         </div>
-        <Button asChild size="sm" variant="outline"><Link to="/servers">Open managed hosts</Link></Button>
+        <Button asChild size="sm" variant="outline"><Link to="/servers">Open hosts</Link></Button>
       </CardContent>
     </Card>
   );
@@ -739,7 +726,7 @@ function FleetHostsCard({
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <Server className="h-4 w-4" />
-            Managed hosts
+            Hosts
           </CardTitle>
           <p className="mt-1 text-xs text-muted-foreground">
             Individual VPS instances, bare-metal servers, and hosts managed by
@@ -953,32 +940,31 @@ function CapacityValue({
 }
 
 function PlatformInventory({ clusters }: { clusters: Cluster[] }) {
-  // The infrastructure root is the equivalent of vCenter's inventory view.
-  // It deliberately stays compact: expanding every platform into nodes, VMs
-  // and datastores here made a second, long-lived copy of the object details.
-  // Operators can scan the inventory first and then open one concrete object.
+  const [selectedId, setSelectedId] = useState(clusters[0]?.id || "");
+  const selected = clusters.find((cluster) => cluster.id === selectedId) || clusters[0];
+  useEffect(() => {
+    if (!clusters.some((cluster) => cluster.id === selectedId)) {
+      setSelectedId(clusters[0]?.id || "");
+    }
+  }, [clusters, selectedId]);
+
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 border-b bg-muted/[0.12] py-3">
+    <section className="console-panel overflow-hidden" aria-labelledby="platform-inventory-heading">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
         <div>
-          <CardTitle className="flex items-center gap-2 text-base">
+          <h2 id="platform-inventory-heading" className="flex items-center gap-2 text-sm font-semibold">
             <Database className="h-4 w-4" />
-            Virtual infrastructure inventory &amp; capacity
-          </CardTitle>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Environment platforms with capacity and direct object paths.
-          </p>
+            Platforms
+          </h2>
         </div>
-        <span className="rounded-md bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">
+        <span className="font-mono text-xs text-muted-foreground">
           {clusters.length}{" "}
           {clusters.length === 1 ? "Platform" : "Platforms"}
         </span>
-      </CardHeader>
-      <CardContent className="p-0">
-        <div className="divide-y md:hidden">
+      </div>
+      <div className="divide-y lg:hidden">
           {clusters.map((cluster) => {
             const metrics = platformMetrics(cluster);
-            const store = metrics.datastores[0];
             return (
               <Link
                 key={cluster.id}
@@ -1000,127 +986,90 @@ function PlatformInventory({ clusters }: { clusters: Cluster[] }) {
                     {cluster.status === "online" ? "Connected" : "Offline"}
                   </StatusBadge>
                 </div>
-                <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-                  <InventoryValue
-                    label="Nodes"
-                    value={`${metrics.onlineNodes} / ${cluster.nodes.length} reachable`}
-                  />
-                  <InventoryValue
-                    label="Guests"
-                    value={`${metrics.running} / ${cluster.vms.length} running`}
-                  />
-                  <InventoryValue
-                    label="RAM"
-                    value={
-                      metrics.memTotal
-                        ? `${bytes(metrics.memUsed)} / ${bytes(metrics.memTotal)}`
-                        : "—"
-                    }
-                  />
-                  <InventoryValue
-                    label="ZFS-Datastore"
-                    value={store?.id || "—"}
-                  />
-                </div>
+                <div className="mt-2 text-[13px] text-muted-foreground">{metrics.onlineNodes} / {cluster.nodes.length} nodes reachable · {metrics.running} / {cluster.vms.length} guests running</div>
               </Link>
             );
           })}
+      </div>
+      <div className="hidden min-h-[24rem] lg:grid lg:grid-cols-[minmax(15rem,.7fr)_minmax(0,1.3fr)]">
+        <div className="border-r bg-muted/10 p-2" aria-label="Platform list">
+          {clusters.map((cluster) => {
+            const metrics = platformMetrics(cluster);
+            const active = cluster.id === selected?.id;
+            return (
+              <button
+                key={cluster.id}
+                type="button"
+                onClick={() => setSelectedId(cluster.id)}
+                className={`flex w-full min-w-0 items-start gap-3 rounded-sm px-3 py-2.5 text-left transition-colors ${active ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"}`}
+                aria-pressed={active}
+              >
+                <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${cluster.status === "online" ? "bg-success" : "bg-destructive"}`} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">{metrics.name}</span>
+                  <span className="mt-0.5 block truncate font-mono text-xs text-muted-foreground">{cluster.endpoint.replace(/^https?:\/\//, "")}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">{metrics.onlineNodes}/{cluster.nodes.length} nodes · {metrics.running}/{cluster.vms.length} guests</span>
+                </span>
+              </button>
+            );
+          })}
         </div>
-        <div className="table-scroll hidden md:block">
-          <table
-            data-density="compact"
-            className="w-full min-w-[1080px] text-sm"
-          >
-            <thead>
-              <tr>
-                <th>Platform</th>
-                <th>Status</th>
-                <th>Nodes</th>
-                <th>Virtual guests</th>
-                <th>CPU</th>
-                <th>Memory</th>
-                <th>ZFS-Datastore</th>
-                <th className="text-right">Open</th>
-              </tr>
-            </thead>
-            <tbody>
-              {clusters.map((cluster) => {
-                const metrics = platformMetrics(cluster);
-                const store = metrics.datastores[0];
-                return (
-                  <tr key={cluster.id}>
-                    <td>
-                      <Link
-                        to="/infrastructure/$clusterId"
-                        params={{ clusterId: cluster.id }}
-                        className="font-medium hover:text-primary hover:underline"
-                      >
-                        {metrics.name}
-                      </Link>
-                      <div className="mt-0.5 font-mono text-xs text-muted-foreground">
-                        {cluster.endpoint.replace(/^https?:\/\//, "")}
-                      </div>
-                    </td>
-                    <td>
-                      <StatusBadge tone={tone(cluster.status)} dot>
-                        {cluster.status === "online"
-                          ? "Connected"
-                          : "Not reachable"}
-                      </StatusBadge>
-                    </td>
-                    <td className="font-mono text-xs tabular-nums">
-                      {metrics.onlineNodes} / {cluster.nodes.length}
-                    </td>
-                    <td className="font-mono text-xs tabular-nums">
-                      {metrics.running} / {cluster.vms.length}
-                    </td>
-                    <td>
-                      <CapacityValue
-                        used={metrics.cpuUsed}
-                        total={metrics.cpuTotal}
-                        format={(value) =>
-                          `${value.toFixed(value < 10 ? 1 : 0)} Cores`
-                        }
-                      />
-                    </td>
-                    <td>
-                      <CapacityValue
-                        used={metrics.memUsed}
-                        total={metrics.memTotal}
-                      />
-                    </td>
-                    <td>
-                      {store ? (
-                        <CapacityValue
-                          used={store.used}
-                          total={store.total}
-                          detail={store.id}
-                        />
-                      ) : (
-                        <span className="font-mono text-xs text-muted-foreground">
-                          —
-                        </span>
-                      )}
-                    </td>
-                    <td className="text-right">
-                      <Button asChild size="sm" variant="outline">
-                        <Link
-                          to="/infrastructure/$clusterId"
-                          params={{ clusterId: cluster.id }}
-                        >
-                          Open
-                        </Link>
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </CardContent>
-    </Card>
+        {selected && <PlatformPreview cluster={selected} />}
+      </div>
+    </section>
   );
+}
+
+function PlatformPreview({ cluster }: { cluster: Cluster }) {
+  const metrics = platformMetrics(cluster);
+  const store = metrics.datastores[0];
+  return (
+    <div className="min-w-0">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b px-5 py-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="truncate text-base font-semibold">
+              <Link className="hover:text-primary hover:underline" to="/infrastructure/$clusterId" params={{ clusterId: cluster.id }}>{metrics.name}</Link>
+            </h3>
+            <StatusBadge tone={tone(cluster.status)} dot>{cluster.status === "online" ? "Connected" : "Offline"}</StatusBadge>
+          </div>
+          <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{cluster.endpoint.replace(/^https?:\/\//, "")}</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 border-b xl:grid-cols-4">
+        <PreviewFact label="Nodes" value={`${metrics.onlineNodes} / ${cluster.nodes.length}`} />
+        <PreviewFact label="Guests" value={`${metrics.running} / ${cluster.vms.length}`} />
+        <PreviewFact label="CPU" value={metrics.cpuTotal ? `${Math.round((metrics.cpuUsed / metrics.cpuTotal) * 100)} %` : "—"} />
+        <PreviewFact label="Memory" value={metrics.memTotal ? `${Math.round((metrics.memUsed / metrics.memTotal) * 100)} %` : "—"} />
+      </div>
+      <div className="grid gap-5 p-5 xl:grid-cols-2">
+        <div>
+          <h4 className="text-[13px] font-semibold">Capacity</h4>
+          <div className="mt-3 space-y-3">
+            <CapacityValue used={metrics.cpuUsed} total={metrics.cpuTotal} format={(value) => `${value.toFixed(value < 10 ? 1 : 0)} Cores`} />
+            <CapacityValue used={metrics.memUsed} total={metrics.memTotal} />
+            {store && <CapacityValue used={store.used} total={store.total} detail={store.id} />}
+          </div>
+        </div>
+        <div>
+          <h4 className="text-[13px] font-semibold">Nodes</h4>
+          <div className="mt-2 divide-y border-y">
+            {cluster.nodes.map((node) => (
+              <div key={node.name} className="flex items-center gap-2 py-2 text-[13px]">
+                <span className={`h-1.5 w-1.5 rounded-full ${node.status === "online" ? "bg-success" : "bg-destructive"}`} />
+                <span className="min-w-0 flex-1 truncate font-mono">{node.name}</span>
+                <span className="text-muted-foreground">{percent(node.mem, node.maxmem)} RAM</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PreviewFact({ label, value }: { label: string; value: string }) {
+  return <div className="border-r border-t px-4 py-3 first:border-t-0 lg:first:border-t"><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1 font-mono text-lg font-semibold">{value}</div></div>;
 }
 
 function platformMetrics(cluster: Cluster) {

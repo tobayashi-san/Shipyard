@@ -132,7 +132,7 @@ export function CommandPalette() {
 
                 <Command.Group heading={t('cmd.navigate')} className="text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
                   <PaletteItem icon={<LayoutDashboard className="h-4 w-4" />} label={t('nav.dashboard')} shortcut="g d" onSelect={() => go('/')} />
-                  {infrastructureAvailable && <PaletteItem icon={<Database className="h-4 w-4" />} label="Virtual infrastructure" shortcut="g i" onSelect={() => go('/infrastructure')} />}
+                  {infrastructureAvailable && <PaletteItem icon={<Database className="h-4 w-4" />} label="Infrastructure" shortcut="g i" onSelect={() => go('/infrastructure')} />}
                   {hasCap(profile, 'canViewServers') && <PaletteItem icon={<Server className="h-4 w-4" />} label={t('nav.servers')} shortcut="g s" onSelect={() => go('/servers')} />}
                   {openTofuAvailable && <PaletteItem icon={<Workflow className="h-4 w-4" />} label={t('deploy.title')} shortcut="g e" onSelect={() => go('/deployments')} />}
                   {canViewOperations && <PaletteItem icon={<ClipboardList className="h-4 w-4" />} label="Operations" shortcut="g o" onSelect={() => go('/operations')} />}

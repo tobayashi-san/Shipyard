@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRightLeft, Download, File, Folder, FolderUp, RefreshCw, Upload } from 'lucide-react';
 import { api, apiDownload, apiFetch, apiUploadFile } from '@/lib/api';
@@ -13,6 +13,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { OverflowItem, OverflowMenu } from '@/components/ui/overflow-menu';
 
 interface FileEntry {
   name: string;
@@ -56,6 +57,7 @@ export function ServerFilesTab({ serverId, profile }: { serverId: string; profil
   const qc = useQueryClient();
   const environmentId = useUi(state => state.environmentId);
   const fileInput = useRef<HTMLInputElement>(null);
+  const uploadController = useRef<AbortController | null>(null);
   const [path, setPath] = useState('');
   const [pathInput, setPathInput] = useState('');
   const [upload, setUpload] = useState<{ file: globalThis.File; target: string; overwrite: boolean } | null>(null);
@@ -63,6 +65,8 @@ export function ServerFilesTab({ serverId, profile }: { serverId: string; profil
   const [transfer, setTransfer] = useState<{ entry: FileEntry; targetServerId: string; targetPath: string; overwrite: boolean } | null>(null);
   const [downloadingPath, setDownloadingPath] = useState<string | null>(null);
   const canManage = hasCap(profile, 'canManageFiles');
+
+  useEffect(() => () => uploadController.current?.abort(), []);
 
   const listing = useQuery<FileListing>({
     queryKey: ['server-files', serverId, path],
@@ -85,8 +89,10 @@ export function ServerFilesTab({ serverId, profile }: { serverId: string; profil
   const uploadMutation = useMutation({
     mutationFn: async (value: NonNullable<typeof upload>) => {
       setUploadProgress(0);
+      const controller = new AbortController();
+      uploadController.current = controller;
       const query = new URLSearchParams({ path: value.target, overwrite: String(value.overwrite) });
-      return apiUploadFile(`/servers/${encodeURIComponent(serverId)}/files/upload?${query}`, value.file, setUploadProgress);
+      return apiUploadFile(`/servers/${encodeURIComponent(serverId)}/files/upload?${query}`, value.file, setUploadProgress, controller.signal);
     },
     onSuccess: () => {
       showToast('File uploaded successfully.', 'success');
@@ -94,7 +100,10 @@ export function ServerFilesTab({ serverId, profile }: { serverId: string; profil
       setUploadProgress(0);
       void qc.invalidateQueries({ queryKey: ['server-files', serverId] });
     },
-    onError: (error: Error) => showToast(error.message, 'error'),
+    onError: (error: Error) => {
+      if (error.message !== 'Upload canceled') showToast(error.message, 'error');
+    },
+    onSettled: () => { uploadController.current = null; },
   });
 
   const transferMutation = useMutation({
@@ -117,6 +126,12 @@ export function ServerFilesTab({ serverId, profile }: { serverId: string; profil
   function openPath(nextPath: string) {
     setPath(nextPath);
     setPathInput(nextPath);
+  }
+
+  function cancelUpload() {
+    uploadController.current?.abort();
+    setUpload(null);
+    setUploadProgress(0);
   }
 
   async function downloadEntry(entry: FileEntry) {
@@ -188,7 +203,7 @@ export function ServerFilesTab({ serverId, profile }: { serverId: string; profil
                     <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-muted-foreground">{entry.type === 'directory' ? '—' : formatSize(entry.size)}</td>
                     <td className="whitespace-nowrap px-4 py-2.5 text-xs text-muted-foreground">{entry.modified_at ? new Date(entry.modified_at * 1000).toLocaleString() : '—'}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{permissionLabel(entry.permissions)}</td>
-                    <td className="px-4 py-2"><div className="flex justify-end gap-1">{entry.type !== 'symlink' && <Button size="icon" variant="ghost" aria-label={`Download ${entry.name}`} title={entry.type === 'directory' ? 'Download directory as .tar.gz' : 'Download file'} disabled={downloadingPath !== null} onClick={() => void downloadEntry(entry)}>{downloadingPath === fullPath ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}</Button>}{canManage && entry.type === 'file' && <Button size="icon" variant="ghost" aria-label={`Transfer ${entry.name}`} onClick={() => setTransfer({ entry, targetServerId: '', targetPath: entry.name, overwrite: false })}><ArrowRightLeft className="h-4 w-4" /></Button>}</div></td>
+                    <td className="px-4 py-2"><div className="flex justify-end">{entry.type !== 'symlink' ? <OverflowMenu title={`Actions for ${entry.name}`}><OverflowItem icon={Download} disabled={downloadingPath !== null} onClick={() => void downloadEntry(entry)}>{entry.type === 'directory' ? 'Download as .tar.gz' : 'Download file'}</OverflowItem>{canManage && entry.type === 'file' && <OverflowItem icon={ArrowRightLeft} onClick={() => setTransfer({ entry, targetServerId: '', targetPath: entry.name, overwrite: false })}>Transfer file</OverflowItem>}</OverflowMenu> : <span className="text-muted-foreground">—</span>}</div></td>
                   </tr>;
                 })}</tbody>
               </table>
@@ -197,7 +212,7 @@ export function ServerFilesTab({ serverId, profile }: { serverId: string; profil
         </Card>
       </div>
 
-      <Dialog open={!!upload} onOpenChange={open => { if (!open && !uploadMutation.isPending) setUpload(null); }}>
+      <Dialog open={!!upload} onOpenChange={open => { if (!open) cancelUpload(); }}>
         <DialogContent>
           <DialogHeader><DialogTitle>Upload file</DialogTitle></DialogHeader>
           {upload && <div className="space-y-4">
@@ -206,7 +221,7 @@ export function ServerFilesTab({ serverId, profile }: { serverId: string; profil
             <label className="flex items-center justify-between gap-3 rounded-md border p-3 text-sm"><span><span className="block font-medium">Replace existing file</span><span className="text-xs text-muted-foreground">Disabled by default to prevent accidental overwrites.</span></span><Switch checked={upload.overwrite} onCheckedChange={checked => setUpload({ ...upload, overwrite: checked })} /></label>
             {uploadMutation.isPending && <div className="space-y-1"><div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary transition-[width]" style={{ width: `${uploadProgress}%` }} /></div><div className="text-right font-mono text-xs text-muted-foreground">{uploadProgress}%</div></div>}
           </div>}
-          <DialogFooter><Button variant="outline" onClick={() => setUpload(null)} disabled={uploadMutation.isPending}>Cancel</Button><Button onClick={() => upload && uploadMutation.mutate(upload)} disabled={!upload?.target || uploadMutation.isPending}>{uploadMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Upload</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={cancelUpload}>{uploadMutation.isPending ? 'Cancel upload' : 'Cancel'}</Button><Button onClick={() => upload && uploadMutation.mutate(upload)} disabled={!upload?.target || uploadMutation.isPending}>{uploadMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Upload</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

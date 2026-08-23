@@ -79,7 +79,7 @@ test('SSH-key assignments are target-validated, environment-scoped and auditable
   assert.ok(db.auditLog.query({ action: 'ssh.assignment' }).some(row => row.action === 'ssh.assignment.upsert'));
 });
 
-test('audit entries expose safe links to their current Fleet host and deployment', async () => {
+test('audit entries expose safe links to their current host and deployment', async () => {
   const auth = { Authorization: `Bearer ${token}` };
   db.auditLog.write('ssh.assignment.upsert', `key=fleet type=server target=${host.id}`, '127.0.0.1', true, 'admin', envA);
   db.auditLog.write('tofu.apply', 'workspace=Deployment A vm=app-a status=success', '127.0.0.1', true, 'admin', envA);

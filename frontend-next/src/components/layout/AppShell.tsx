@@ -136,7 +136,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       <header className="sticky top-0 z-40 flex h-11 shrink-0 items-center border-b border-border-strong/80 bg-[hsl(var(--surface-2))] shadow-[0_1px_2px_hsl(var(--foreground)/0.06)]">
         <div className={cn('hidden h-full shrink-0 items-center border-r border-border-strong/70 px-4 md:flex', collapsed ? 'w-16 justify-center px-2' : 'w-72')}>
-          {!collapsed && <span className="truncate font-mono text-[12px] font-bold tracking-[0.15em] text-foreground">{(appName || 'Fleet').toUpperCase()}</span>}
+          {!collapsed && <span className="truncate font-mono text-[12px] font-bold tracking-[0.15em] text-foreground">{(appName || 'Shipyard').toUpperCase()}</span>}
           {collapsed && <span className="font-mono text-sm font-semibold tracking-[0.08em]">F</span>}
         </div>
         <div className="flex min-w-0 flex-1 items-center gap-2 px-3 md:px-3">
@@ -146,7 +146,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Button variant="ghost" size="icon" className="hidden h-8 w-8 md:inline-flex" onClick={toggleSidebar} aria-label="Toggle navigation">
             <PanelLeft className="h-4 w-4" />
           </Button>
-          <span className="truncate text-sm font-semibold md:hidden">{appName || 'Fleet'}</span>
+          <span className="truncate text-sm font-semibold md:hidden">{appName || 'Shipyard'}</span>
           <select
             aria-label="Environment"
             value={environmentId}
@@ -198,7 +198,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <div className="absolute right-0 top-10 z-50 w-64 rounded-md border border-border/90 bg-popover p-2 text-popover-foreground shadow-xl shadow-black/30">
                 <div className="border-b px-2.5 py-2">
                   <div className="text-sm font-medium">Help & resources</div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">Fleet project and support</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">Shipyard project and support</div>
                 </div>
                 <div className="space-y-0.5 py-1.5">
                   <button type="button" onClick={() => openExternal('https://github.com/tobayashi-san/Shipyard')} className="flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm hover:bg-accent">

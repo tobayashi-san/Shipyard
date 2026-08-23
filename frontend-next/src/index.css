@@ -445,6 +445,14 @@
     white-space: nowrap;
   }
 
+  /* Native <th> elements are centered by default. Inventory values are
+     predominantly left-aligned, so their headings should follow the same
+     reading edge. :where() keeps specificity at zero, allowing intentional
+     text-center and text-right utility classes to override this default. */
+  :where(table thead th) {
+    text-align: left;
+  }
+
   table:not([data-density]) tbody > tr > td,
   table[data-density] tbody > tr > td {
     border-bottom: 1px solid hsl(var(--border-strong) / 0.72);
@@ -707,10 +715,9 @@
   }
   .console-metric-label {
     color: hsl(var(--muted-foreground));
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
     font-weight: 600;
-    letter-spacing: 0.035em;
-    text-transform: uppercase;
+    letter-spacing: 0.015em;
   }
   .console-metric-value {
     margin-top: 0.2rem;
@@ -760,7 +767,9 @@
     padding: 0.875rem 1rem;
   }
   .console-object-capacity {
-    background: hsl(var(--muted) / 0.16);
+    /* Capacity belongs to the same object surface. A tinted, stretched
+       column turns harmless remaining space into a large colour block. */
+    background: transparent;
   }
   .console-object-info-grid {
     display: grid;
@@ -789,11 +798,10 @@
   .console-object-info > dt,
   .console-capacity-heading {
     color: hsl(var(--muted-foreground));
-    font-size: 0.625rem;
+    font-size: 0.6875rem;
     font-weight: 600;
-    letter-spacing: 0.035em;
+    letter-spacing: 0.015em;
     line-height: 1.1;
-    text-transform: uppercase;
   }
   .console-object-info > div:last-child,
   .console-object-info > dd {
@@ -847,12 +855,13 @@
     overflow: hidden;
     margin-top: 0.4rem;
     border-radius: 999px;
-    background: hsl(var(--muted));
+    /* `--muted` is intentionally tinted in several themes. Tracks should
+       stay neutral so the semantic fill is the only colour signal. */
+    background: hsl(var(--foreground) / 0.09);
   }
   .console-capacity-track > span {
     display: block;
     height: 100%;
-    min-width: 0.25rem;
     border-radius: inherit;
     background: hsl(var(--primary));
   }
@@ -1031,7 +1040,7 @@
 
   /* Section labels — Vercel/Linear style */
   .section-label {
-    @apply text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground;
+    @apply text-[11px] font-semibold tracking-wide text-muted-foreground;
   }
 
   /* Pulsing dot for live status */

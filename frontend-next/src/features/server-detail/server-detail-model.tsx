@@ -238,7 +238,7 @@ export function RecentHostTasks({
   const recent = history.slice(0, 4);
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between gap-3 border-b bg-muted/15 px-4 py-3">
+      <CardHeader className="flex-row items-center justify-between gap-3 border-b px-4 py-3">
         <div>
           <CardTitle className="flex items-center gap-2 text-sm">
             <History className="h-4 w-4" />
@@ -351,7 +351,7 @@ export function HostStorageInventory({
   ];
   if (!rows.length)
     return (
-      <div className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">
+      <div className="px-4 py-4 text-sm text-muted-foreground">
         No additional mounts or ZFS pools reported by the host. Overall usage is
         shown in the overview.
       </div>

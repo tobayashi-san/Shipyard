@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { MoreVertical } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
 import { Button } from './button';
 
 // ─── OverflowMenu ─────────────────────────────────────────────
@@ -87,4 +88,27 @@ export function OverflowItem({
 
 export function OverflowSep() {
   return <div className="my-1 h-px bg-border" />;
+}
+
+export function OverflowLink({
+  to,
+  params,
+  icon: Icon,
+  children,
+}: {
+  to: string;
+  params?: Record<string, string>;
+  icon?: React.ComponentType<{ className?: string }>;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      to={to as never}
+      params={params as never}
+      role="menuitem"
+      className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent"
+    >
+      {Icon && <Icon className="h-3.5 w-3.5" />} {children}
+    </Link>
+  );
 }
