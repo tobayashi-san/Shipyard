@@ -195,17 +195,26 @@ test('agent feature visibility follows the setting immediately', async ({ page }
   });
   await expect(agentToggle).toHaveAttribute('data-state', 'checked');
   await page.goto(`/servers/${serverId}`);
+  await expect(page.getByRole('tab', { name: 'Details', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Files', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Operations', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: /notes/i })).toBeVisible();
+
+  await page.getByRole('tab', { name: /terminal/i }).click();
+  const terminalDialog = page.getByRole('dialog', { name: /terminal/i });
+  await expect(terminalDialog).toBeVisible();
+  await terminalDialog.getByRole('button', { name: /close/i }).click();
+  await expect(terminalDialog).toHaveCount(0);
+
   const hostTools = page.getByRole('button', { name: 'Host tools' });
   await hostTools.click();
   const hostToolsMenu = page.getByRole('menu', { name: 'Host tools' });
   await expect(hostToolsMenu.getByRole('menuitem', { name: /agent/i })).toBeVisible();
-  await expect(hostToolsMenu.getByRole('menuitem', { name: 'Details', exact: true })).toBeVisible();
-  await expect(hostToolsMenu.getByRole('menuitem', { name: /notes/i })).toBeVisible();
-  await hostToolsMenu.getByRole('menuitem', { name: 'Operations', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await page.getByRole('tab', { name: 'Operations', exact: true }).click();
   await expect(page).toHaveURL(/#tab=history$/);
-  await expect(hostTools).toContainText('Operations');
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Host tools' })).toContainText('Operations');
+  await expect(page.getByRole('tab', { name: 'Operations', exact: true })).toHaveAttribute('data-state', 'active');
   await page.goBack();
   await expect(page.getByRole('tab', { name: /overview/i })).toHaveAttribute('data-state', 'active');
 
@@ -214,8 +223,7 @@ test('agent feature visibility follows the setting immediately', async ({ page }
   await page.getByRole('switch', { name: /agent-feature aktivieren|enable agent feature/i }).click();
   await disabledSave;
   await page.goto(`/servers/${serverId}`);
-  await page.getByRole('button', { name: 'Host tools' }).click();
-  await expect(page.getByRole('menu', { name: 'Host tools' }).getByRole('menuitem', { name: /agent/i })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Host tools' })).toHaveCount(0);
   await page.goto('/settings');
   await expect(page.getByText(/agent manifest/i, { exact: true })).toHaveCount(0);
   await page.evaluate(async (id) => {
@@ -688,6 +696,9 @@ test('a discovered Proxmox VM can be adopted through the browser without changin
       dialog.getByRole('button', { name: 'Adopt as host' }).click(),
     ]);
     await expect(page.getByText('VM adopted as a host.', { exact: true })).toBeVisible();
+    const inventoryTree = page.locator('aside');
+    await expect(inventoryTree.getByText('e2e-import-vm', { exact: true })).toHaveCount(1);
+    await expect(inventoryTree.getByRole('link', { name: 'Open managed host e2e-import-vm' })).toBeVisible();
     await page.goto('/servers');
     const row = page.getByRole('row', { name: /e2e-import-vm/i });
     await expect(row).toBeVisible();
@@ -765,9 +776,11 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
     ]);
     fleetServerId = ((await createdFleetResponse.json()) as { id: string }).id;
     await expect(platformUpdatesTable.getByText('Ready through Shipyard', { exact: true })).toBeVisible();
-    const treeNode = page.locator('aside').getByRole('button', { name: /^(?:Online|Offline|Unknown) hierarchy-node$/i });
-    await expect(treeNode).toBeVisible();
-    await treeNode.click();
+    const hierarchyTree = page.locator('aside');
+    await expect(hierarchyTree.getByText('hierarchy-node', { exact: true })).toHaveCount(1);
+    const managedNodeLink = hierarchyTree.getByRole('link', { name: 'Open managed host hierarchy-node' });
+    await expect(managedNodeLink).toBeVisible();
+    await managedNodeLink.click();
     await expect(page).toHaveURL(/\/servers\//);
     await expect(page.getByRole('heading', { name: 'hierarchy-node', exact: true })).toBeVisible();
     await expect(page.getByText('Host summary', { exact: true })).toBeVisible();

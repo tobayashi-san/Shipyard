@@ -113,6 +113,7 @@ interface TreeProps {
 interface ProxmoxNode {
   name?: string;
   status?: string;
+  fleet_server_id?: string | null;
 }
 interface ProxmoxInventoryVm {
   node_name?: string;
@@ -120,6 +121,7 @@ interface ProxmoxInventoryVm {
   name?: string;
   status?: string;
   guest_type?: string;
+  fleet_server_id?: string | null;
 }
 interface ProxmoxCluster {
   id?: string;
@@ -182,15 +184,32 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
     enabled: canViewInfrastructure,
   });
 
+  const clusters = useMemo(
+    () => (Array.isArray(inventory?.clusters) ? inventory.clusters : []),
+    [inventory],
+  );
+  const platformServerIds = useMemo(
+    () =>
+      new Set(
+        clusters
+          .flatMap((cluster) => [
+            ...(cluster.nodes || []).map((node) => node.fleet_server_id),
+            ...(cluster.vms || []).map((vm) => vm.fleet_server_id),
+          ])
+          .filter((id): id is string => Boolean(id)),
+      ),
+    [clusters],
+  );
   const servers = useMemo(
     () =>
       asArray<Record<string, unknown>>(rawServers)
         .map(normalizeServer)
         .filter(
           (server) =>
-            String(server.environment_id || "default") === environmentId,
+            String(server.environment_id || "default") === environmentId &&
+            !platformServerIds.has(server.id),
         ),
-    [rawServers, environmentId],
+    [rawServers, environmentId, platformServerIds],
   );
   const groups = useMemo(
     () =>
@@ -270,10 +289,6 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
     return new Map(groups.map((group) => [group.id, count(group.id)]));
   }, [byGroup, groups]);
   const ungrouped = byGroup.__ungrouped__ || [];
-  const clusters = useMemo(
-    () => (Array.isArray(inventory?.clusters) ? inventory.clusters : []),
-    [inventory],
-  );
   const createFolder = useMutation({
     mutationFn: () =>
       api.createServerGroup(
@@ -359,8 +374,26 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
         decodePath(path) === `/servers/${server.id}`,
     );
     const platformMatch = decodePath(path).match(/^\/infrastructure\/([^/]+)/);
+    const serverMatch = decodePath(path).match(/^\/servers\/([^/]+)$/);
     setCollapsed((previous) => {
       const openIds: string[] = platformMatch ? [`platform:${platformMatch[1]}`] : [];
+      const linkedServerId = serverMatch?.[1];
+      if (linkedServerId) {
+        for (const cluster of clusters) {
+          const clusterId = String(cluster.id || cluster.endpoint || "cluster");
+          const linkedNode = (cluster.nodes || []).find(
+            (node) => node.fleet_server_id === linkedServerId,
+          );
+          const linkedVm = (cluster.vms || []).find(
+            (vm) => vm.fleet_server_id === linkedServerId,
+          );
+          if (!linkedNode && !linkedVm) continue;
+          openIds.push(`platform:${clusterId}`);
+          const nodeName = linkedNode?.name || linkedVm?.node_name;
+          if (nodeName) openIds.push(`node:${clusterId}:${nodeName}`);
+          break;
+        }
+      }
       let current = selected?.group_id
         ? groupById.get(selected.group_id)
         : undefined;
@@ -377,7 +410,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
       saveCollapsed(next);
       return next;
     });
-  }, [groupById, path, servers]);
+  }, [clusters, groupById, path, servers]);
 
   const toggle = (id: string) =>
     setCollapsed((previous) => {
@@ -652,7 +685,13 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
     const decodedPath = decodePath(path);
     const clusterPath = `/infrastructure/${clusterId}`;
     const current = decodedPath === clusterPath;
-    const active = current || decodedPath.startsWith(`${clusterPath}/`);
+    const linkedHostActive = [...nodes, ...vms].some(
+      (resource) =>
+        resource.fleet_server_id &&
+        decodedPath === `/servers/${resource.fleet_server_id}`,
+    );
+    const active =
+      current || decodedPath.startsWith(`${clusterPath}/`) || linkedHostActive;
     const open = !collapsed.has(`platform:${clusterId}`);
     return (
       <div key={clusterId}>
@@ -695,8 +734,20 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
               const nodeName = String(node.name || "");
               const nodePath = `${clusterPath}/nodes/${nodeName}`;
               const nodeCurrent = decodedPath === nodePath;
-              const nodeActive = nodeCurrent || decodedPath.startsWith(`${nodePath}/`);
               const nodeVms = vms.filter((vm) => vm.node_name === nodeName);
+              const nodeHostCurrent = Boolean(
+                node.fleet_server_id &&
+                  decodedPath === `/servers/${node.fleet_server_id}`,
+              );
+              const nodeActive =
+                nodeCurrent ||
+                decodedPath.startsWith(`${nodePath}/`) ||
+                nodeHostCurrent ||
+                nodeVms.some(
+                  (vm) =>
+                    vm.fleet_server_id &&
+                    decodedPath === `/servers/${vm.fleet_server_id}`,
+                );
               const nodeKey = `node:${clusterId}:${nodeName}`;
               const nodeOpen = !collapsed.has(nodeKey);
               return (
@@ -719,7 +770,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                       aria-current={nodeCurrent ? "page" : undefined}
                       className={cn(
                         "flex min-w-0 flex-1 items-center gap-2 rounded-sm px-1.5 py-1.5 text-xs transition-colors",
-                        nodeCurrent ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                        nodeCurrent || nodeHostCurrent ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
                       )}
                     >
                       <StatusDot status={node.status} />
@@ -727,6 +778,18 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                       <span className="min-w-0 flex-1 truncate font-mono">{nodeName}</span>
                       {!compact && <span className="text-[10px]">{nodeVms.length}</span>}
                     </Link>
+                    {node.fleet_server_id && (
+                      <Link
+                        to="/servers/$id"
+                        params={{ id: node.fleet_server_id }}
+                        onClick={onNavigate}
+                        aria-label={`Open managed host ${nodeName}`}
+                        title="Open managed host"
+                        className="mr-0.5 rounded-sm p-1 text-primary/80 hover:bg-accent hover:text-primary"
+                      >
+                        <Server className="h-3 w-3" />
+                      </Link>
+                    )}
                   </div>
                   {nodeOpen && nodeVms.length > 0 && (
                     <div className="ml-5 border-l border-border/60 pl-1">
@@ -734,23 +797,45 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                         const vmId = String(vm.vm_id || "");
                         const vmPath = `${nodePath}/vms/${vmId}`;
                         const vmCurrent = decodedPath === vmPath;
+                        const vmHostCurrent = Boolean(
+                          vm.fleet_server_id &&
+                            decodedPath === `/servers/${vm.fleet_server_id}`,
+                        );
                         return (
-                          <Link
+                          <div
                             key={`${nodeName}:${vmId}`}
-                            to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId"
-                            params={{ clusterId, nodeName, vmId }}
-                            onClick={onNavigate}
-                            aria-current={vmCurrent ? "page" : undefined}
                             className={cn(
-                              "flex min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-[11px] transition-colors",
-                              vmCurrent ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                              "flex min-w-0 items-center rounded-sm transition-colors",
+                              vmCurrent || vmHostCurrent
+                                ? "bg-primary/10 font-semibold text-primary"
+                                : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
                             )}
                           >
-                            <StatusDot status={vm.status} />
-                            <Box className="h-3 w-3 shrink-0" />
-                            <span className="min-w-0 flex-1 truncate">{vm.name || `${vm.guest_type === "lxc" ? "CT" : "VM"} ${vmId}`}</span>
-                            <span className="font-mono text-[10px]">{vmId}</span>
-                          </Link>
+                            <Link
+                              to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId"
+                              params={{ clusterId, nodeName, vmId }}
+                              onClick={onNavigate}
+                              aria-current={vmCurrent ? "page" : undefined}
+                              className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-[11px]"
+                            >
+                              <StatusDot status={vm.status} />
+                              <Box className="h-3 w-3 shrink-0" />
+                              <span className="min-w-0 flex-1 truncate">{vm.name || `${vm.guest_type === "lxc" ? "CT" : "VM"} ${vmId}`}</span>
+                              <span className="font-mono text-[10px]">{vmId}</span>
+                            </Link>
+                            {vm.fleet_server_id && (
+                              <Link
+                                to="/servers/$id"
+                                params={{ id: vm.fleet_server_id }}
+                                onClick={onNavigate}
+                                aria-label={`Open managed host ${vm.name || vmId}`}
+                                title="Open managed host"
+                                className="mr-0.5 shrink-0 rounded-sm p-1 text-primary/80 hover:bg-accent hover:text-primary"
+                              >
+                                <Server className="h-3 w-3" />
+                              </Link>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
@@ -892,7 +977,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
         {groupTree.map((group) => groupNode(group))}
         {!servers.length && (
           <p className="px-2 py-2 text-xs text-muted-foreground">
-            No hosts in this environment yet.
+            No standalone hosts in this environment.
           </p>
         )}
       </div>
@@ -1013,8 +1098,8 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                 Resources in this folder
               </div>
               <p className="text-xs text-muted-foreground">
-                Select hosts. Adopted Proxmox guests appear here as managed
-                hosts.
+                Select standalone hosts. Platform-linked nodes and guests stay
+                in their Proxmox hierarchy.
               </p>
               <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
                 {servers.length === 0 ? (

@@ -22,7 +22,6 @@ import {
   Satellite,
   Boxes,
   ExternalLink,
-  Info,
   Terminal,
   Pencil,
   ArrowUp,
@@ -31,7 +30,6 @@ import {
   Play,
   Square,
   CloudDownload,
-  FileText,
   RotateCw,
   Plus,
   Trash2,
@@ -44,7 +42,6 @@ import {
   Download,
   Shield,
   Sliders,
-  History,
   Code2,
   Bell,
   Workflow,
@@ -285,13 +282,12 @@ export function ServerDetailPage() {
   }, [agentEnabled, profile, server?.docker_enabled]);
   const serverTabs = useUrlTab("overview", availableTabs);
   const activeToolLabel = ({
-    configuration: "Details",
     docker: t("det.tabDocker"),
-    files: "Files",
-    history: "Operations",
     agent: t("det.tabAgent"),
-    notes: t("det.tabNotes"),
   } as Record<string, string>)[serverTabs.value];
+  const hasHostTools =
+    (hasCap(profile, "canViewDocker") && !!server?.docker_enabled) ||
+    (agentEnabled && profile?.role === "admin");
 
   // ── Loading / not found ─────────────────────────────────────
   if (isLoading)
@@ -574,6 +570,16 @@ export function ServerDetailPage() {
           <div className="min-w-0 overflow-x-auto">
           <TabsList aria-label="Host sections" className="console-tabs min-w-max border-b-0">
             <TabsTrigger value="overview">{t("det.tabOverview")}</TabsTrigger>
+            <TabsTrigger value="configuration">Details</TabsTrigger>
+            {hasCap(profile, "canViewFiles") && (
+              <TabsTrigger value="files">Files</TabsTrigger>
+            )}
+            {hasCap(profile, "canViewServerHistory") && (
+              <TabsTrigger value="history">Operations</TabsTrigger>
+            )}
+            {hasCap(profile, "canViewNotes") && (
+              <TabsTrigger value="notes">{t("det.tabNotes")}{server.notes?.trim() ? " •" : ""}</TabsTrigger>
+            )}
             {(hasCap(profile, "canViewUpdates") ||
               hasCap(profile, "canRunUpdates") ||
               hasCap(profile, "canRebootServers") ||
@@ -584,30 +590,20 @@ export function ServerDetailPage() {
               <TabsTrigger value="updates">System &amp; Updates</TabsTrigger>
             )}
             {hasCap(profile, "canUseTerminal") && (
-              <TabsTrigger value="terminal"><Terminal className="h-3.5 w-3.5" />{t("common.terminal")}</TabsTrigger>
+              <TabsTrigger value="terminal" data-terminal-trigger="true"><Terminal className="h-3.5 w-3.5" />{t("common.terminal")}</TabsTrigger>
             )}
           </TabsList>
           </div>
-          <div className="shrink-0 pb-1">
+          {hasHostTools && <div className="shrink-0 pb-1">
             <OverflowMenu title="Host tools" trigger={activeToolLabel ? `Tools · ${activeToolLabel}` : "Tools"}>
-              <OverflowItem icon={Info} onClick={() => serverTabs.onValueChange("configuration")}>Details</OverflowItem>
               {hasCap(profile, "canViewDocker") && !!server.docker_enabled && (
                 <OverflowItem icon={Box} onClick={() => serverTabs.onValueChange("docker")}>{t("det.tabDocker")}</OverflowItem>
-              )}
-              {hasCap(profile, "canViewFiles") && (
-                <OverflowItem icon={FileText} onClick={() => serverTabs.onValueChange("files")}>Files</OverflowItem>
-              )}
-              {hasCap(profile, "canViewServerHistory") && (
-                <OverflowItem icon={History} onClick={() => serverTabs.onValueChange("history")}>Operations</OverflowItem>
               )}
               {agentEnabled && profile?.role === "admin" && (
                 <OverflowItem icon={Bot} onClick={() => serverTabs.onValueChange("agent")}>{t("det.tabAgent")}</OverflowItem>
               )}
-              {hasCap(profile, "canViewNotes") && (
-                <OverflowItem icon={Pencil} onClick={() => serverTabs.onValueChange("notes")}>{t("det.tabNotes")}{server.notes?.trim() ? " •" : ""}</OverflowItem>
-              )}
             </OverflowMenu>
-          </div>
+          </div>}
         </div>
 
         <ServerOverviewTabs controller={controller} />

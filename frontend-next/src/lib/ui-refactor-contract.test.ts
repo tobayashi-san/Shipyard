@@ -48,17 +48,21 @@ describe("UI refactor contract", () => {
     expect(sidebar).toContain(">System</div>");
     expect(tree).toContain("const nodeOpen = !collapsed.has(nodeKey)");
     expect(tree).toContain('to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId"');
+    expect(tree).toContain("!platformServerIds.has(server.id)");
+    expect(tree).toContain('to="/servers/$id"');
   });
 
-  it("prioritizes host tabs and moves secondary modules into Tools", () => {
+  it("keeps the requested host sections visible and reserves Tools for optional modules", () => {
     const page = source("features/server-detail/ServerDetailPage.tsx");
     expect(page).toContain('<TabsTrigger value="overview">');
+    expect(page).toContain('<TabsTrigger value="configuration">Details</TabsTrigger>');
+    expect(page).toContain('<TabsTrigger value="files">Files</TabsTrigger>');
+    expect(page).toContain('<TabsTrigger value="history">Operations</TabsTrigger>');
+    expect(page).toContain('<TabsTrigger value="notes">');
     expect(page).toContain('<TabsTrigger value="updates">System &amp; Updates</TabsTrigger>');
-    expect(page).toContain('<TabsTrigger value="terminal">');
+    expect(page).toContain('<TabsTrigger value="terminal" data-terminal-trigger="true">');
     expect(page).toContain('title="Host tools"');
     expect(page).not.toContain('<TabsTrigger value="docker">');
-    expect(page).not.toContain('<TabsTrigger value="files">');
-    expect(page).not.toContain('<TabsTrigger value="notes">');
   });
 
   it("renders plugin paths as code pills instead of raw HTML copy", () => {

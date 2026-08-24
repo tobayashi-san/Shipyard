@@ -25,6 +25,16 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
   const dotRef = useRef<HTMLSpanElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const termRef = useRef<import('@xterm/xterm').Terminal | null>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  const closeTerminal = useCallback(() => {
+    wsRef.current?.close();
+    onCloseRef.current();
+  }, []);
 
   const setStatus = useCallback((state: 'connecting' | 'online' | 'offline', text: string) => {
     if (dotRef.current) {
@@ -147,22 +157,30 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
 
     // Escape key handler
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeTerminal();
+      }
     };
-    document.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
 
     return () => {
       disposed = true;
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKey, true);
       resizeObs?.disconnect();
       wsRef.current?.close();
       termRef.current?.dispose();
-      // Restore focus to whichever element opened the terminal
-      if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
-        try { previouslyFocused.focus(); } catch { /* ignore */ }
+      // A Radix tab activates when it receives focus. Returning focus to the
+      // terminal trigger would therefore reopen this dialog immediately.
+      const focusTarget = previouslyFocused?.dataset.terminalTrigger === 'true'
+        ? document.querySelector<HTMLElement>('[role="tab"][data-state="active"]')
+        : previouslyFocused;
+      if (focusTarget && typeof focusTarget.focus === 'function') {
+        try { focusTarget.focus(); } catch { /* ignore */ }
       }
     };
-  }, [environmentId, isDark]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [environmentId, isDark, closeTerminal, setStatus, server, t]);
 
   const userLabel = (server.ssh_user as string) || 'root';
   const serverName = (server.name as string) || '';
@@ -194,7 +212,7 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
   return createPortal(
     <div
       className="fixed inset-0 z-[2000] flex items-start justify-center bg-black/55 p-4 pt-16"
-      onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onPointerDown={(e) => { if (e.target === e.currentTarget) closeTerminal(); }}
     >
       <div
         role="dialog"
@@ -224,7 +242,12 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
             <span ref={statusRef} className={cn('text-xs', isDark ? 'text-[#8b949e]' : 'text-muted-foreground')}>{t('term.connecting')}</span>
             <button
               type="button"
-              onClick={onClose}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                closeTerminal();
+              }}
+              onClick={closeTerminal}
               aria-label={t('common.close')}
               className={cn('rounded p-1 focus-visible:outline-none', isDark ? 'text-[#8b949e] hover:bg-[#21262d] hover:text-[#c9d1d9]' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}
               title={`${t('common.close')} (Esc)`}
