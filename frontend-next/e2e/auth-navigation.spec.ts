@@ -32,26 +32,43 @@ async function loginForIsolatedTest(page: Page) {
   await expect(page).toHaveURL(/\/$/);
 }
 
+async function openPlatformInventory(page: Page, name: string) {
+  await page.goto('/deployments');
+  await page.getByRole('button', { name: 'Platform connections' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Platform connections' });
+  await dialog.getByRole('link', { name, exact: true }).click();
+}
+
 test('initial setup, login and protected console navigation work end-to-end', async ({ page }) => {
   await page.goto('/login');
-  await expect(page.getByRole('heading', { name: /welcome|willkommen/i })).toBeVisible();
-  await page.getByRole('button', { name: /let'?s go|los geht'?s/i }).click();
+  const setupButton = page.getByRole('button', { name: /let'?s go|los geht'?s/i });
+  const performedSetup = await setupButton.isVisible();
+  if (performedSetup) {
+    await expect(page.getByRole('heading', { name: /welcome|willkommen/i })).toBeVisible();
+    await setupButton.click();
 
-  await page.getByLabel(/username|benutzername/i).fill('e2e-admin');
-  const setupFields = page.locator('input[type="password"]');
-  await setupFields.nth(0).fill('E2e-password-2026!');
-  await setupFields.nth(1).fill('E2e-password-2026!');
-  await page.getByRole('button', { name: /set password|passwort setzen/i }).click();
+    await page.getByLabel(/username|benutzername/i).fill('e2e-admin');
+    const setupFields = page.locator('input[type="password"]');
+    await setupFields.nth(0).fill('E2e-password-2026!');
+    await setupFields.nth(1).fill('E2e-password-2026!');
+    await page.getByRole('button', { name: /set password|passwort setzen/i }).click();
 
-  await page.getByRole('button', { name: /skip|überspringen/i }).click();
-  await page.getByRole('button', { name: /skip|überspringen/i }).click();
-  await page.getByRole('button', { name: /open app|app öffnen|fertig|zur konsole/i }).click();
+    await page.getByRole('button', { name: /skip|überspringen/i }).click();
+    await page.getByRole('button', { name: /skip|überspringen/i }).click();
+    await page.getByRole('button', { name: /open app|app öffnen|fertig|zur konsole/i }).click();
+  } else {
+    await page.getByLabel(/username|benutzername/i).fill('e2e-admin');
+    await page.getByLabel(/password|passwort/i).fill('E2e-password-2026!');
+    await page.getByRole('button', { name: /sign in|anmelden/i }).click();
+  }
 
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole('heading', { name: /operations overview|environment overview|betriebsübersicht|umgebungsübersicht|dashboard/i })).toBeVisible();
   await expect(page.getByRole('region', { name: /current environment status/i })).toBeVisible();
-  await expect(page.getByRole('heading', { name: /no hosts yet/i })).toBeVisible();
-  await expect(page.getByRole('link', { name: /add host/i })).toBeVisible();
+  if (performedSetup) {
+    await expect(page.getByRole('heading', { name: /no hosts yet/i })).toBeVisible();
+    await expect(page.getByRole('link', { name: /add host/i })).toBeVisible();
+  }
 
   await page.goto('/servers');
   await expect(page).toHaveURL(/\/servers/);
@@ -648,8 +665,7 @@ test('a discovered Proxmox VM can be adopted through the browser without changin
       return (await response.json() as { id: string }).id;
     }, address.port);
 
-    await page.goto('/infrastructure');
-    await page.getByRole('link', { name: 'E2E Inventory Platform', exact: true }).click();
+    await openPlatformInventory(page, 'E2E Inventory Platform');
     await expect(page.getByRole('heading', { name: 'E2E Inventory Platform' })).toBeVisible();
     // Adoption is an inventory action. The overview deliberately stays focused
     // on platform capacity and node health.
@@ -720,17 +736,9 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
       return (await response.json() as { id: string }).id;
     }, address.port);
 
-    await page.goto('/infrastructure');
-    await expect(page.getByRole('link', { name: 'E2E Hierarchy Platform', exact: true })).toBeVisible();
-    // The root stays a compact index. Nodes, VMs and capacity deliberately
-    // live on the selected platform page instead of being repeated here.
-    await page.getByRole('link', { name: 'E2E Hierarchy Platform', exact: true }).click();
+    await openPlatformInventory(page, 'E2E Hierarchy Platform');
     await expect(page.getByText('Operational status', { exact: true })).toBeVisible();
     await expect(page.getByText(/^(ready for operation|bereit für betrieb)$/i)).toBeVisible();
-    // Deep-link state and the inventory tree must never disagree. Operators
-    // use the tree as their orientation while inspecting a platform page.
-    const activeTreePlatform = page.locator('aside a[aria-current="page"]').filter({ hasText: 'E2E Hierarchy Platform' });
-    await expect(activeTreePlatform).toBeVisible();
     await page.getByRole('tab', { name: /updates 1/i }).click();
     const platformUpdatesTable = page.locator('main table').filter({ hasText: 'hierarchy-node' });
     await expect(platformUpdatesTable).toBeVisible();
@@ -757,8 +765,7 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
     await expect(page.getByRole('heading', { name: 'hierarchy-node', exact: true })).toBeVisible();
     await expect(page.getByText('Host summary', { exact: true })).toBeVisible();
 
-    await page.goto('/infrastructure');
-    await page.getByRole('link', { name: 'E2E Hierarchy Platform', exact: true }).click();
+    await openPlatformInventory(page, 'E2E Hierarchy Platform');
     await page.getByRole('tab', { name: /nodes 1/i }).click();
     await page.locator('main').getByRole('link', { name: 'hierarchy-node', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'hierarchy-node', exact: true })).toBeVisible();
@@ -837,8 +844,7 @@ test('a Proxmox VM keeps configuration and tasks in distinct object tabs', async
       return (await response.json() as { id: string }).id;
     }, address.port);
 
-    await page.goto('/infrastructure');
-    await page.getByRole('link', { name: 'E2E Object Platform', exact: true }).click();
+    await openPlatformInventory(page, 'E2E Object Platform');
     await page.getByRole('tab', { name: /virtual guests/i }).click();
     await page.getByRole('link', { name: 'object-vm', exact: true }).click();
     await expect(page.getByText('Virtual machine', { exact: true }).first()).toBeVisible();

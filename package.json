@@ -1,6 +1,6 @@
 {
   "name": "shipyard",
-  "version": "3.0.8-rc.2",
+  "version": "3.0.8-rc.4",
   "description": "Modern Linux Server Management Dashboard",
   "license": "MIT",
   "scripts": {

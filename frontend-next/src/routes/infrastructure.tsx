@@ -429,6 +429,14 @@ export function ProxmoxConnectionsCard({
       ? "Last synchronization unknown"
       : `Last ${value.toLocaleString()}`;
   };
+  const inventoryId = (connection: ProxmoxConnection) => {
+    try {
+      const endpoint = new URL(connection.endpoint);
+      return `${endpoint.origin}${endpoint.pathname.replace(/\/+$/, "")}`;
+    } catch {
+      return connection.endpoint.replace(/\/+$/, "");
+    }
+  };
   return (
     <Card>
       <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 border-b bg-muted/15 py-3">
@@ -461,10 +469,14 @@ export function ProxmoxConnectionsCard({
                 <div key={connection.id} className="space-y-3 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2 font-medium">
+                      <Link
+                        className="flex items-center gap-2 font-medium hover:text-primary hover:underline"
+                        to="/infrastructure/$clusterId"
+                        params={{ clusterId: inventoryId(connection) }}
+                      >
                         <Database className="h-4 w-4 text-brand" />
                         {connection.name}
-                      </div>
+                      </Link>
                       <div className="mt-1 truncate font-mono text-xs text-muted-foreground">
                         {connection.endpoint}
                       </div>
@@ -554,10 +566,14 @@ export function ProxmoxConnectionsCard({
                   {connections.map((connection) => (
                     <tr key={connection.id}>
                       <td className="px-3">
-                        <div className="flex items-center gap-2 font-medium">
+                        <Link
+                          className="flex items-center gap-2 font-medium hover:text-primary hover:underline"
+                          to="/infrastructure/$clusterId"
+                          params={{ clusterId: inventoryId(connection) }}
+                        >
                           <Database className="h-4 w-4 text-brand" />
                           {connection.name}
-                        </div>
+                        </Link>
                       </td>
                       <td className="px-3 font-mono text-xs text-muted-foreground">
                         {connection.endpoint}
