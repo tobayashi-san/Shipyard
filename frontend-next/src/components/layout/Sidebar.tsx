@@ -2,7 +2,6 @@ import { useEffect, useRef } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Boxes,
-  Database,
   FileCode2,
   LayoutDashboard,
   Network,
@@ -15,7 +14,6 @@ import { useUi } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import {
   canAccessDeployments,
-  canAccessInfrastructure,
   canAccessNetworks,
   canSeePlugin,
   hasCap,
@@ -88,7 +86,6 @@ export function Sidebar({
   const canViewPlaybooks = hasCap(profile, "canViewPlaybooks");
   const canManageConsole = profile?.role === "admin";
   const canViewDeployments = canAccessDeployments(profile);
-  const canViewInfrastructure = canAccessInfrastructure(profile);
   const canViewNetworks = canAccessNetworks(profile);
   const otherPlugins = plugins.filter(
     (plugin) =>
@@ -137,19 +134,9 @@ export function Sidebar({
             onNavigate={onMobileClose}
           />
         </section>}
-        {(canViewInfrastructure || canViewServers || canViewDeployments || canViewNetworks) && <section className="shrink-0 space-y-1">
+        {(canViewServers || canViewDeployments || canViewNetworks) && <section className="shrink-0 space-y-1">
           {!collapsed && (
-            <div className="section-label px-2.5 pb-1">Infrastructure</div>
-          )}
-          {canViewInfrastructure && (
-            <NavItem
-              to="/infrastructure"
-              label="Infrastructure"
-              icon={Database}
-              active={path === "/infrastructure" || path.startsWith("/infrastructure/")}
-              collapsed={collapsed}
-              onNavigate={onMobileClose}
-            />
+            <div className="section-label px-2.5 pb-1">Resources</div>
           )}
           {canViewServers && (
             <NavItem

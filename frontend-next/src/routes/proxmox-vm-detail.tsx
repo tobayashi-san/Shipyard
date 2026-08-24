@@ -35,11 +35,6 @@ import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  OverflowItem,
-  OverflowMenu,
-  OverflowSep,
-} from "@/components/ui/overflow-menu";
 import { hasCap, useProfile } from "@/lib/queries";
 import { useUi } from "@/lib/store";
 import { showToast } from "@/lib/toast";
@@ -1054,32 +1049,15 @@ export function ProxmoxVmDetailPage() {
                 Restart
               </Button>
             )}
-            {canControl && (
-              <OverflowMenu title={`More ${kind} actions`} width="w-64">
-                <OverflowItem
-                  icon={Square}
-                  disabled={power.isPending || !isRunning}
-                  onClick={() => setPowerAction("shutdown")}
-                >
-                  Shut down
-                </OverflowItem>
-                <OverflowItem
-                  icon={RotateCw}
-                  disabled={power.isPending || !isRunning}
-                  onClick={() => setPowerAction("reboot")}
-                >
-                  Restart
-                </OverflowItem>
-                <OverflowSep />
-                <OverflowItem
-                  icon={Square}
-                  danger
-                  disabled={power.isPending || !isRunning}
-                  onClick={() => setPowerAction("stop")}
-                >
-                  Stop immediately…
-                </OverflowItem>
-              </OverflowMenu>
+            {canControl && isRunning && (
+              <Button size="sm" variant="outline" onClick={() => setPowerAction("shutdown")} disabled={power.isPending}>
+                <Square />Shut down
+              </Button>
+            )}
+            {canControl && isRunning && (
+              <Button size="sm" variant="destructive" onClick={() => setPowerAction("stop")} disabled={power.isPending}>
+                <Square />Force stop
+              </Button>
             )}
             <Button
               type="button"

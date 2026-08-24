@@ -94,7 +94,9 @@ export function canSeePlugin(profile: Profile | undefined | null, pluginId: stri
 
 /** Shared navigation rule for the built-in deployment area. */
 export function canAccessDeployments(profile: Profile | undefined | null): boolean {
-  return hasCap(profile, 'canViewDeployments') || hasCap(profile, 'canManageDeployments');
+  return hasCap(profile, 'canViewDeployments')
+    || hasCap(profile, 'canManageDeployments')
+    || hasCap(profile, 'canManageDeploymentPlatforms');
 }
 
 /** Shared navigation rule for the operational workbench and maintenance windows. */

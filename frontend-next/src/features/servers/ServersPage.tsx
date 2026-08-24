@@ -26,7 +26,6 @@ import {
   X,
   CheckCircle2,
   Filter,
-  Database,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { asArray } from "@/lib/utils";
@@ -1378,18 +1377,6 @@ export function ServersPage() {
         description={`${t("srv.resourceScope")} · ${t("srv.count", { total: servers.length, online: onlineCount, offline: offlineCount })}${activeTag ? ` · ${t("srv.filtered", { tag: activeTag })}` : ""}${search ? ` · ${t("srv.results", { count: filtered.length })}` : ""}`}
         actions={
           <>
-            <Button
-              asChild
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="hidden lg:inline-flex"
-            >
-              <Link to="/infrastructure">
-                <Database className="h-3.5 w-3.5" />
-                {t("srv.openPlatformInventory")}
-              </Link>
-            </Button>
             {servers.length > 0 && hasCap(profile, "canAddServers") && (
               <CreateServerDialog />
             )}

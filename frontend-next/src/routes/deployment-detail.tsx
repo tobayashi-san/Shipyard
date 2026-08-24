@@ -41,6 +41,8 @@ interface Vm {
   ipv4_address: string;
   platform?: { id: string; name: string; endpoint: string } | null;
   post_deploy?: { entries?: PostDeployEntry[]; counts?: Record<string, number> };
+  pre_deploy_playbooks?: string[];
+  pre_deploy_target_server_id?: string;
   [key: string]: unknown;
 }
 interface RunsResponse { items?: Run[]; pagination?: { total?: number } }
@@ -173,8 +175,11 @@ export function DeploymentDetailPage() {
       {runs.length === 0 ? <div className="p-4 text-sm text-muted-foreground">No runs yet.</div> : <div className="table-scroll"><table data-density="compact" className="w-full min-w-[700px] text-sm"><thead><tr><th className="px-3">Action</th><th className="px-3">Status</th><th className="px-3">Plan</th><th className="px-3">Safety</th><th className="px-3">Completed</th></tr></thead><tbody>{runs.map((run) => <tr key={run.id}><td className="px-3 font-medium">{run.action}</td><td className="px-3"><StatusBadge tone={statusTone(run.status)} dot>{run.status}</StatusBadge></td><td className="px-3 text-xs">{run.plan_summary ? summaryLabel(run.plan_summary) : "—"}</td><td className="px-3">{run.action === "plan" ? <StatusBadge tone={run.plan_safe === 1 ? "success" : run.plan_safe === 0 ? "danger" : "muted"}>{run.plan_safe === 1 ? "Isolated" : run.plan_safe === 0 ? "Blocked" : "Pending"}</StatusBadge> : "—"}</td><td className="px-3 text-xs text-muted-foreground">{formatDate(run.completed_at || run.started_at)}</td></tr>)}</tbody></table></div>}
     </CardContent></Card>
 
-    <Card><CardHeader><CardTitle className="text-base">Post-deployment automation</CardTitle></CardHeader><CardContent>
+    <Card><CardHeader><CardTitle className="text-base">Deployment automation</CardTitle></CardHeader><CardContent className="space-y-4">
+      <div><div className="text-sm font-medium">Before OpenTofu</div>{(vm.pre_deploy_playbooks || []).length === 0 ? <p className="mt-1 text-sm text-muted-foreground">No pre-deploy workflows configured.</p> : <div className="mt-2 space-y-2">{vm.pre_deploy_playbooks!.map((playbook, index) => <div key={playbook} className="rounded-md border p-3 text-sm"><div className="font-medium">{index + 1}. {playbook}</div><div className="mt-0.5 text-xs text-muted-foreground">Target host: {vm.pre_deploy_target_server_id}</div></div>)}</div>}</div>
+      <div className="border-t pt-4"><div className="text-sm font-medium">After deployment</div>
       {(vm.post_deploy?.entries || []).length === 0 ? <p className="text-sm text-muted-foreground">No post-deployment steps configured.</p> : <div className="space-y-2">{vm.post_deploy!.entries!.map((entry) => <div key={`${entry.position}-${entry.playbook}`} className="flex items-center justify-between rounded-md border p-3 text-sm"><div><div className="font-medium">{entry.position}. {entry.playbook}</div><div className="text-xs text-muted-foreground">{formatDate(entry.completed_at)}</div></div><StatusBadge tone={statusTone(entry.status)}>{entry.status || "pending"}</StatusBadge></div>)}</div>}
+      </div>
     </CardContent></Card>
 
     <Card className="border-destructive/30"><CardHeader><CardTitle className="text-base">Lifecycle</CardTitle></CardHeader><CardContent className="flex flex-wrap gap-2">

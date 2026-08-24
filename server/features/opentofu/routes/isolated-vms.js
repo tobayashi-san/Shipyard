@@ -93,7 +93,7 @@ function registerIsolatedVmRoutes({
     let vm;
     try {
       vm = normalizeProxmoxVm(req.body || {});
-      validatePostDeployPlaybookAccess(vm.post_deploy_playbooks, req);
+      validatePostDeployPlaybookAccess([...(vm.pre_deploy_playbooks || []), ...(vm.post_deploy_playbooks || [])], req);
     } catch (error) { return res.status(400).json({ error: error.message }); }
     const nameCollision = db.db.prepare(`
       SELECT 1 FROM tofu_proxmox_vms vm JOIN tofu_workspaces workspace ON workspace.id = vm.workspace_id
@@ -190,7 +190,7 @@ function registerIsolatedVmRoutes({
     let vm;
     try {
       vm = normalizeProxmoxVm(req.body || {});
-      validatePostDeployPlaybookAccess(vm.post_deploy_playbooks, req);
+      validatePostDeployPlaybookAccess([...(vm.pre_deploy_playbooks || []), ...(vm.post_deploy_playbooks || [])], req);
     } catch (error) { return res.status(400).json({ error: error.message }); }
     if (vm.name !== row.name && db.db.prepare("SELECT 1 FROM tofu_runs WHERE workspace_id = ? AND action = 'apply' AND status = 'success'").get(row.workspace_id)) {
       return res.status(409).json({ error: 'A deployed VM cannot be renamed because its OpenTofu resource address is already in state.' });
@@ -283,7 +283,7 @@ function registerIsolatedVmRoutes({
     const environmentId = String(req.body?.environment_id || '').trim();
     try {
       const template = normalizeProxmoxVmTemplate(req.body || {});
-      validatePostDeployPlaybookAccess(template.config.post_deploy_playbooks, req);
+      validatePostDeployPlaybookAccess([...(template.config.pre_deploy_playbooks || []), ...(template.config.post_deploy_playbooks || [])], req);
       if (db.db.prepare('SELECT 1 FROM tofu_proxmox_vm_templates WHERE environment_id = ? AND name = ? COLLATE NOCASE').get(environmentId, template.name)) {
         return res.status(409).json({ error: 'A template with this name already exists in the environment.' });
       }
@@ -299,7 +299,7 @@ function registerIsolatedVmRoutes({
     if (!existing) return res.status(404).json({ error: 'VM template not found' });
     try {
       const template = normalizeProxmoxVmTemplate(req.body || {});
-      validatePostDeployPlaybookAccess(template.config.post_deploy_playbooks, req);
+      validatePostDeployPlaybookAccess([...(template.config.pre_deploy_playbooks || []), ...(template.config.post_deploy_playbooks || [])], req);
       const environmentId = existing.environment_id || String(req.body?.environment_id || 'default');
       if (db.db.prepare('SELECT 1 FROM tofu_proxmox_vm_templates WHERE environment_id = ? AND name = ? COLLATE NOCASE AND id <> ?').get(environmentId, template.name, existing.id)) {
         return res.status(409).json({ error: 'A template with this name already exists in the environment.' });

@@ -173,6 +173,24 @@ test('VM templates preserve a validated post-deploy order', () => {
   assert.throws(() => normalizeProxmoxVmTemplate({ name: 'Bad', config: null }), /valid configuration/);
 });
 
+test('VM definitions preserve ordered pre-deploy workflows and require a target host', () => {
+  const vm = normalizeProxmoxVmTemplate({
+    name: 'Network Bootstrap',
+    config: {
+      name: 'network-app', node_name: 'pve001', disk_datastore: 'zfs-pool', bridge: 'future-vnet',
+      pre_deploy_target_server_id: 'host-pve001',
+      pre_deploy_playbooks: ['network/create-vlan.yml', 'network/create-vnet.yml'],
+    },
+  }).config;
+  assert.deepEqual(vm.pre_deploy_playbooks, ['network/create-vlan.yml', 'network/create-vnet.yml']);
+  assert.equal(vm.pre_deploy_target_server_id, 'host-pve001');
+  assert.equal(vm.bridge, 'future-vnet');
+  assert.throws(() => normalizeProxmoxVmTemplate({
+    name: 'Missing Target',
+    config: { name: 'bad-pre', node_name: 'pve001', disk_datastore: 'zfs-pool', bridge: 'vmbr0', pre_deploy_playbooks: ['network/create-vlan.yml'] },
+  }), /target host/i);
+});
+
 test('extractManagedServersFromState prefers explicit shipyard outputs', () => {
   const state = {
     values: {

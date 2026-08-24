@@ -328,7 +328,7 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
     if (!legacyWorkspaceOrError(workspace, res)) return;
     try {
       const template = normalizeProxmoxVmTemplate(req.body || {});
-      validatePostDeployPlaybookAccess(template.config.post_deploy_playbooks, req);
+      validatePostDeployPlaybookAccess([...(template.config.pre_deploy_playbooks || []), ...(template.config.post_deploy_playbooks || [])], req);
       const id = randomUUID();
       db.db.prepare('INSERT INTO tofu_proxmox_vm_templates (id, workspace_id, name, config) VALUES (?, ?, ?, ?)')
         .run(id, workspace.id, template.name, JSON.stringify(template.config));
@@ -347,7 +347,7 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
     if (!existing) return res.status(404).json({ error: 'VM template not found' });
     try {
       const template = normalizeProxmoxVmTemplate(req.body || {});
-      validatePostDeployPlaybookAccess(template.config.post_deploy_playbooks, req);
+      validatePostDeployPlaybookAccess([...(template.config.pre_deploy_playbooks || []), ...(template.config.post_deploy_playbooks || [])], req);
       db.db.prepare("UPDATE tofu_proxmox_vm_templates SET name = ?, config = ?, updated_at = datetime('now') WHERE id = ? AND workspace_id = ?")
         .run(template.name, JSON.stringify(template.config), existing.id, workspace.id);
       res.json({ template: { ...template, id: existing.id } });
@@ -374,7 +374,7 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
     if (mkdirErr) return res.status(400).json({ error: permissionError(mkdirErr, workspace.path) });
     try {
       const vm = normalizeProxmoxVm(req.body || {});
-      validatePostDeployPlaybookAccess(vm.post_deploy_playbooks, req);
+      validatePostDeployPlaybookAccess([...(vm.pre_deploy_playbooks || []), ...(vm.post_deploy_playbooks || [])], req);
       if (vm.vm_id !== null && getProxmoxVms(workspace.id).some(existing => existing.vm_id === vm.vm_id)) {
         return res.status(409).json({ error: `VM ID ${vm.vm_id} is already defined in this workspace.` });
       }
@@ -397,7 +397,7 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
     if (!existing) return res.status(404).json({ error: 'VM definition not found' });
     try {
       const vm = normalizeProxmoxVm(req.body || {});
-      validatePostDeployPlaybookAccess(vm.post_deploy_playbooks, req);
+      validatePostDeployPlaybookAccess([...(vm.pre_deploy_playbooks || []), ...(vm.post_deploy_playbooks || [])], req);
       if (vm.vm_id !== null && getProxmoxVms(workspace.id).some(item => item.id !== existing.id && item.vm_id === vm.vm_id)) {
         return res.status(409).json({ error: `VM ID ${vm.vm_id} is already defined in this workspace.` });
       }

@@ -10,7 +10,6 @@ import {
   CheckSquare,
   ChevronDown,
   ChevronRight,
-  Database,
   Folder,
   FolderInput,
   FolderTree,
@@ -22,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, apiFetch } from "@/lib/api";
+import { api } from "@/lib/api";
 import { asArray, cn } from "@/lib/utils";
 import { useUi } from "@/lib/store";
 import {
@@ -45,7 +44,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { showToast } from "@/lib/toast";
-import { canAccessInfrastructure, useProfile } from "@/lib/queries";
 
 const STORAGE_KEY = "fleet.console.infrastructure-tree.collapsed";
 const SERVER_GROUP_QUERY_KEY = "server-groups";
@@ -109,36 +107,11 @@ interface TreeProps {
   compact?: boolean;
   onNavigate?: () => void;
 }
-interface ProxmoxNode {
-  name?: string;
-  status?: string;
-}
-interface ProxmoxInventoryVm {
-  node_name?: string;
-  vm_id?: number | string;
-}
-interface ProxmoxCluster {
-  id?: string;
-  endpoint?: string;
-  status?: string;
-  connections?: Array<{ name?: string }>;
-  nodes?: ProxmoxNode[];
-  // The tree deliberately never renders individual Proxmox VMs.  Keeping the
-  // inventory count here still gives an operator the useful vCenter-like
-  // "where are my workloads" context without duplicating hosts.
-  vms?: ProxmoxInventoryVm[];
-}
-interface InfrastructureResponse {
-  clusters?: ProxmoxCluster[];
-}
-
 export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
   const navigate = useNavigate();
   const path = useRouterState({ select: (state) => state.location.pathname });
   const environmentId = useUi((state) => state.environmentId);
   const queryClient = useQueryClient();
-  const { data: profile } = useProfile();
-  const canViewInfrastructure = canAccessInfrastructure(profile);
   const [collapsed, setCollapsed] = useState<Set<string>>(initialCollapsed);
   const [folderOpen, setFolderOpen] = useState(false);
   const [folderName, setFolderName] = useState("");
@@ -170,16 +143,6 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
     queryFn: () =>
       api.getServerGroups(environmentId) as Promise<Record<string, unknown>[]>,
     staleTime: 30_000,
-  });
-  const { data: inventory } = useQuery({
-    queryKey: ["opentofu", "infrastructure", environmentId],
-    queryFn: () =>
-      apiFetch<InfrastructureResponse>(
-        `/opentofu/infrastructure?environment_id=${encodeURIComponent(environmentId)}`,
-      ),
-    staleTime: 30_000,
-    retry: false,
-    enabled: canViewInfrastructure,
   });
 
   const servers = useMemo(
@@ -270,10 +233,6 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
     return new Map(groups.map((group) => [group.id, count(group.id)]));
   }, [byGroup, groups]);
   const ungrouped = byGroup.__ungrouped__ || [];
-  const clusters = useMemo(
-    () => (Array.isArray(inventory?.clusters) ? inventory.clusters : []),
-    [inventory],
-  );
   const createFolder = useMutation({
     mutationFn: () =>
       api.createServerGroup(
@@ -358,10 +317,8 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
         path === `/servers/${server.id}` ||
         decodePath(path) === `/servers/${server.id}`,
     );
-    const platformMatch = decodePath(path).match(/^\/infrastructure\/([^/]+)/);
-    const platformKey = platformMatch ? `platform:${platformMatch[1]}` : null;
     setCollapsed((previous) => {
-      const openIds: string[] = platformKey ? [platformKey] : [];
+      const openIds: string[] = [];
       let current = selected?.group_id
         ? groupById.get(selected.group_id)
         : undefined;
@@ -642,176 +599,12 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
       </div>
     );
   };
-  const clusterNode = (cluster: ProxmoxCluster) => {
-    const clusterId = String(cluster.id || cluster.endpoint || "cluster");
-    const nodes = Array.isArray(cluster.nodes) ? cluster.nodes : [];
-    const vms = Array.isArray(cluster.vms) ? cluster.vms : [];
-    // A platform is one inventory root. Showing every connection name here
-    // creates the impression of duplicate clusters, especially when aliases
-    // point at the same endpoint. The first configured name is the operator
-    // facing name; the detail page still exposes the complete connection set.
-    const clusterName =
-      cluster.connections?.find((connection) => connection.name)?.name ||
-      cluster.endpoint ||
-      "Proxmox-Cluster";
-    const clusterPath = `/infrastructure/${clusterId}`;
-    const decodedLocation = decodePath(path);
-    const clusterCurrent =
-      path === clusterPath || decodedLocation === clusterPath;
-    const active =
-      clusterCurrent ||
-      path.startsWith(`${clusterPath}/`) ||
-      decodedLocation.startsWith(`${clusterPath}/`);
-    // A standalone Proxmox host is already represented by its platform row.
-    // Only expose a second tree level when there is an actual multi-node
-    // cluster; otherwise the platform and its sole node look like duplicates.
-    const showNodes = nodes.length > 1;
-    const open = showNodes && !collapsed.has(`platform:${clusterId}`);
-    return (
-      <div key={clusterId}>
-        <div
-          className={cn(
-            "flex min-w-0 items-center gap-1 rounded-sm pr-1",
-            active && !clusterCurrent && "bg-muted/35",
-          )}
-        >
-          {showNodes ? (
-            <button
-              type="button"
-              onClick={() => toggle(`platform:${clusterId}`)}
-              className="flex h-7 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
-              aria-label={`${open ? "Collapse" : "Expand"} ${clusterName}`}
-              aria-expanded={open}
-            >
-              {open ? (
-                <ChevronDown className="h-3.5 w-3.5" />
-              ) : (
-                <ChevronRight className="h-3.5 w-3.5" />
-              )}
-            </button>
-          ) : (
-            <span className="h-7 w-6 shrink-0" aria-hidden="true" />
-          )}
-          <Link
-            to="/infrastructure/$clusterId"
-            params={{ clusterId }}
-            activeOptions={{ exact: true }}
-            onClick={onNavigate}
-            aria-current={clusterCurrent ? "page" : undefined}
-            title={`${clusterName} · ${nodes.length} nodes · ${vms.length} inventory guests`}
-            className={cn(
-              "flex min-w-0 flex-1 items-center gap-2 rounded-sm px-1 py-1.5 pr-1 text-xs transition-colors",
-              clusterCurrent
-                ? "bg-primary/10 font-semibold text-primary shadow-[inset_2px_0_0_hsl(var(--primary))]"
-                : active
-                  ? "font-medium text-foreground"
-                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-            )}
-          >
-            <StatusDot status={cluster.status} />
-            <Database className="h-3.5 w-3.5 shrink-0 text-primary" />
-            <span className="min-w-0 flex-1 truncate">{clusterName}</span>
-            {showNodes && (
-              <span className="shrink-0 text-[10px] text-muted-foreground">
-                {nodes.length} Nodes
-              </span>
-            )}
-          </Link>
-        </div>
-        {showNodes && open && (
-          <div className="ml-6 border-l border-border/70 pl-1">
-            {nodes.map((node) => {
-              const vmCount = vms.filter(
-                (vm) => vm.node_name === node.name,
-              ).length;
-              const nodePath = `${clusterPath}/nodes/${node.name}`;
-              const nodeCurrent =
-                path === nodePath || decodedLocation === nodePath;
-              const nodeActive =
-                nodeCurrent ||
-                path.startsWith(`${nodePath}/`) ||
-                decodedLocation.startsWith(`${nodePath}/`);
-              return (
-                <Link
-                  key={node.name}
-                  to="/infrastructure/$clusterId/nodes/$nodeName"
-                  params={{ clusterId, nodeName: String(node.name || "") }}
-                  activeOptions={{ exact: true }}
-                  onClick={onNavigate}
-                  aria-current={nodeCurrent ? "page" : undefined}
-                  title={`${node.name} · ${vmCount} guests`}
-                  className={cn(
-                    "flex min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-xs transition-colors",
-                    nodeCurrent
-                      ? "bg-primary/10 font-semibold text-primary shadow-[inset_2px_0_0_hsl(var(--primary))]"
-                      : nodeActive
-                        ? "bg-accent/60 font-medium text-foreground"
-                        : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-                  )}
-                >
-                  <StatusDot status={node.status} />
-                  <Server className="h-3.5 w-3.5 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate font-mono">
-                    {node.name}
-                  </span>
-                  <span className="shrink-0 text-[10px] text-muted-foreground">
-                    {vmCount} VM
-                  </span>
-                </Link>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   return (
     <div className="space-y-1">
       <div>
-        {canViewInfrastructure && <>
-        <div className="flex items-center gap-2 px-2 py-1.5">
-          <Link
-            to="/infrastructure"
-            onClick={onNavigate}
-            className={cn(
-              "flex min-w-0 flex-1 items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors",
-              path === "/infrastructure"
-                ? "text-foreground"
-                : path.startsWith("/infrastructure/")
-                  ? "text-foreground/80"
-                  : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <Database className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">Platforms</span>
-            <span className="rounded bg-muted px-1.5 py-0.5 normal-case tracking-normal">
-              {clusters.length}
-            </span>
-          </Link>
-        </div>
-        {clusters.length === 0 ? (
-          <Link
-            to="/infrastructure"
-            onClick={onNavigate}
-            className={cn(
-              "mx-1 flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs transition-colors",
-              path === "/infrastructure"
-                ? "bg-accent font-medium text-foreground"
-                : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-            )}
-          >
-            <Database className="h-3.5 w-3.5 text-primary" />
-            <span className="truncate">Connect Proxmox</span>
-          </Link>
-        ) : (
-          clusters.map((cluster) => clusterNode(cluster))
-        )}
-        </>}
         <div
           className={cn(
             "transition-colors",
-            canViewInfrastructure && "mt-3 border-t pt-2",
             dropTargetId === "__root__" &&
               "rounded-sm bg-primary/10 ring-1 ring-inset ring-primary/50",
           )}

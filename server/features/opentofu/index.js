@@ -663,6 +663,56 @@ override.tf.json
     return result;
   }
 
+  async function runPreDeployPlaybooks({ workspace, logMeta, emitMeta }) {
+    const jobs = getProxmoxVms(workspace.id).flatMap(vm =>
+      (vm.pre_deploy_playbooks || []).map(playbook => ({
+        vm,
+        playbook,
+        serverId: String(vm.pre_deploy_target_server_id || '').trim(),
+      })),
+    );
+    if (!jobs.length) return { started: 0, succeeded: 0 };
+    await getGitSync()?.autoPull?.();
+    const available = new Set(ansibleRunner.getAvailablePlaybooks().map(playbook => playbook.filename));
+    const serverById = new Map(db.servers.getAll().map(server => [String(server.id), server]));
+    let succeeded = 0;
+    for (const job of jobs) {
+      const target = serverById.get(job.serverId);
+      if (!target || String(target.environment_id || 'default') !== String(workspace.environment_id || 'default')) {
+        throw new Error(`Pre-deploy target for ${job.vm.name} is unavailable in this environment.`);
+      }
+      if (!available.has(job.playbook)) throw new Error(`Pre-deploy playbook not found: ${job.playbook}`);
+      const historyId = db.updateHistory.create(target.id, `ansible:${job.playbook}`, logMeta.user || null);
+      const scheduleHistoryId = db.scheduleHistory.create(null, `Pre-deploy ${workspace.name}`, job.playbook, target.name, {
+        environmentId: workspace.environment_id || 'default',
+        triggeredBy: logMeta.user || null,
+      });
+      emitMeta(`[Shipyard] Running pre-deploy playbook "${job.playbook}" on ${target.name}.`);
+      try {
+        const run = await ansibleRunner.runPlaybook(job.playbook, target.name, {
+          fleet_workspace: workspace.name,
+          fleet_vm: job.vm.name,
+          shipyard_phase: 'pre_deploy',
+        }, (stream, data) => emitMeta(`[pre-deploy/${job.playbook}/${stream}] ${data}`), {
+          environmentId: workspace.environment_id || 'default',
+          runId: scheduleHistoryId,
+        });
+        const output = `${run.stdout || ''}${run.stderr || ''}`;
+        const status = run.success ? 'success' : 'failed';
+        db.updateHistory.updateStatus(historyId, status, output);
+        db.scheduleHistory.complete(scheduleHistoryId, status, output);
+        db.auditLog.write('tofu.pre_deploy_playbook', `workspace=${workspace.name} vm=${job.vm.name} playbook=${job.playbook} status=${status}`, logMeta.ip || null, run.success, logMeta.user || null);
+        if (!run.success) throw new Error(`Pre-deploy playbook "${job.playbook}" failed. OpenTofu was not started.`);
+        succeeded++;
+      } catch (error) {
+        db.updateHistory.updateStatus(historyId, 'failed', error.message || String(error));
+        db.scheduleHistory.complete(scheduleHistoryId, 'failed', error.message || String(error));
+        throw error;
+      }
+    }
+    return { started: jobs.length, succeeded };
+  }
+
   function getPostDeployOverview(workspaceId) {
     const statusByKey = new Map(db.db.prepare(`
       SELECT vm_id, playbook, status, output, completed_at, updated_at
@@ -787,10 +837,15 @@ override.tf.json
       .filter(item => item && item.storage && item.active !== 0 && item.active !== '0')
       .map(item => ({
         id: String(item.storage),
+        type: String(item.type || ''),
         content: Array.isArray(item.content) ? item.content : String(item.content || '').split(',').filter(Boolean),
       }))
       .filter(item => item.content.length === 0 || item.content.includes('images'))
-      .sort((a, b) => a.id.localeCompare(b.id, 'de'));
+      .sort((a, b) => {
+        const aZfs = /zfs/i.test(`${a.type} ${a.id}`) ? 1 : 0;
+        const bZfs = /zfs/i.test(`${b.type} ${b.id}`) ? 1 : 0;
+        return bZfs - aZfs || a.id.localeCompare(b.id, 'de');
+      });
     const networkCatalog = buildProxmoxNetworkCatalog(
       networkResponse,
       zonesResult.value,
@@ -1452,7 +1507,14 @@ override.tf.json
       const consumed = db.db.prepare("SELECT id FROM tofu_runs WHERE approved_plan_id = ? AND action = 'apply' AND status IN ('running', 'cancelling', 'success')").get(approvedPlan.id);
       if (consumed) return res.status(409).json({ error: 'This plan has already been applied. Create a new plan.' });
       try {
-        validatePostDeployPlaybookAccess(getProxmoxVms(workspace.id).flatMap(vm => vm.post_deploy_playbooks || []), req);
+        const deploymentVms = getProxmoxVms(workspace.id);
+        validatePostDeployPlaybookAccess(deploymentVms.flatMap(vm => [...(vm.pre_deploy_playbooks || []), ...(vm.post_deploy_playbooks || [])]), req);
+        const accessibleServerIds = new Set(filterServers(db.servers.getAll(), getPermissions(req.user)).map(server => String(server.id)));
+        for (const vm of deploymentVms) {
+          if ((vm.pre_deploy_playbooks || []).length && !accessibleServerIds.has(String(vm.pre_deploy_target_server_id || ''))) {
+            return res.status(403).json({ error: `The pre-deploy target for ${vm.name} is not accessible.` });
+          }
+        }
       } catch (error) {
         return res.status(403).json({ error: error.message });
       }
@@ -1590,9 +1652,6 @@ override.tf.json
         data: header });
       db.db.prepare('UPDATE tofu_runs SET output = ? WHERE id = ?').run(header, dbRunId);
 
-      const proc = spawn(binary, args, { cwd: workspace.path, env, detached: process.platform !== 'win32' });
-      _running.set(runId, { proc, dbRunId, workspaceId: workspace.id, cancelled: false });
-
       let output = header;
       const emitMeta = (message) => {
         const raw = message.endsWith('\n') ? message : `${message}\n`;
@@ -1601,6 +1660,21 @@ override.tf.json
         db.db.prepare('UPDATE tofu_runs SET output = output || ? WHERE id = ?').run(text, dbRunId);
         broadcastTofu({ type: 'tofu_output', runId, stream: 'meta', data: text });
       };
+      if (action === 'apply') {
+        try {
+          const preDeploy = await runPreDeployPlaybooks({ workspace, logMeta, emitMeta });
+          if (preDeploy.started) emitMeta(`[Shipyard] Pre-deploy complete: ${preDeploy.succeeded} succeeded.`);
+        } catch (error) {
+          const message = error.message || String(error);
+          emitMeta(`[Shipyard] ${message}`);
+          db.db.prepare("UPDATE tofu_runs SET status='failed', completed_at=datetime('now') WHERE id=?").run(dbRunId);
+          broadcastTofu({ type: 'tofu_done', runId, success: false, error: message, dbRunId });
+          return;
+        }
+      }
+
+      const proc = spawn(binary, args, { cwd: workspace.path, env, detached: process.platform !== 'win32' });
+      _running.set(runId, { proc, dbRunId, workspaceId: workspace.id, cancelled: false });
       const emitProcessOutput = (stream, s) => {
         if (!s) return;
         output += s;

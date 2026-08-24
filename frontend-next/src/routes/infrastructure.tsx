@@ -374,7 +374,7 @@ export function InfrastructurePage() {
   );
 }
 
-function ProxmoxConnectionsCard({
+export function ProxmoxConnectionsCard({
   connections,
   isAdmin,
   canSyncIpam,
@@ -640,7 +640,7 @@ function ProxmoxConnectionsCard({
   );
 }
 
-function ConfirmDeleteConnection({
+export function ConfirmDeleteConnection({
   connection,
   onOpenChange,
   onDeleted,

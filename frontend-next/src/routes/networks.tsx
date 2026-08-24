@@ -138,9 +138,6 @@ const statusVariant = (
     reserved: "warning",
     deprecated: "muted",
   })[status] || "muted") as "success" | "default" | "warning" | "muted";
-const capacityTone = (usage: number): "healthy" | "warning" | "critical" =>
-  usage > 90 ? "critical" : usage > 70 ? "warning" : "healthy";
-
 export function NetworksPage() {
   const environmentId = useUi((state) => state.environmentId);
   const { data: profile } = useProfile();
@@ -190,15 +187,6 @@ export function NetworksPage() {
   }, [rows]);
   // Only top-level prefixes belong in the environment total. Child prefixes
   // already consume capacity inside their parent and must not be counted twice.
-  const summary = query.data?.summary;
-  const totalAddresses = summary?.usable_address_count || 0;
-  const usedAddresses = summary?.used_address_count || 0;
-  const freeAddresses = summary?.free_address_count || 0;
-  const reservationCount = summary?.reservation_count || 0;
-  const rangeCount = summary?.range_count || 0;
-  const usagePercent = totalAddresses
-    ? Math.round((usedAddresses / totalAddresses) * 100)
-    : 0;
   const visibleIds = hierarchicalRows.map(({ prefix }) => prefix.id);
   const selectedCount = visibleIds.filter((id) => selectedIds.has(id)).length;
   const allSelected =
@@ -299,68 +287,6 @@ export function NetworksPage() {
         </Card>
       ) : (
         <>
-          <section className="console-object-summary overflow-hidden">
-            <div className="grid xl:grid-cols-[minmax(0,1.25fr)_minmax(20rem,.75fr)]">
-              <div className="console-object-summary-main">
-                <div className="flex items-center gap-2 border-b pb-3 text-sm font-semibold">
-                  <Network className="h-4 w-4 text-brand" />
-                  {tr("inventory")}
-                </div>
-                <div className="console-object-info-grid grid-cols-2 lg:grid-cols-4">
-                  <NetworkFact
-                    label={tr("prefixes")}
-                    value={summary?.prefix_count || 0}
-                    detail={
-                      !summary?.child_prefix_count
-                        ? tr("noChildren")
-                        : tr("childCount", { count: summary.child_prefix_count })
-                    }
-                  />
-                  <NetworkFact
-                    label={tr("usableIps")}
-                    value={totalAddresses}
-                    detail={tr("assignedCount", { count: usedAddresses })}
-                  />
-                  <NetworkFact
-                    label={tr("free")}
-                    value={freeAddresses}
-                    detail={tr("availablePercent", { count: Math.max(0, 100 - usagePercent) })}
-                    tone="success"
-                  />
-                  <NetworkFact
-                    label={tr("reservations")}
-                    value={reservationCount}
-                    detail={tr("rangeCount", { count: rangeCount })}
-                  />
-                </div>
-              </div>
-              <div className="console-object-capacity border-t xl:border-l xl:border-t-0">
-                <div className="flex items-center justify-between gap-3 border-b pb-3 text-sm font-semibold">
-                  <span>{tr("usage")}</span>
-                  <span className="font-mono text-muted-foreground">
-                    {usagePercent} %
-                  </span>
-                </div>
-                <div className="mt-3 space-y-2">
-                  <div className="flex items-center justify-between gap-3 text-xs">
-                    <span>{tr("used")}</span>
-                    <span className="font-mono text-muted-foreground">
-                      {usedAddresses} / {totalAddresses}
-                    </span>
-                  </div>
-                  <div className="console-capacity-track">
-                    <span
-                      data-capacity-tone={capacityTone(usagePercent)}
-                      style={{ width: `${usagePercent}%` }}
-                    />
-                  </div>
-                  <p className="pt-1 text-xs leading-relaxed text-muted-foreground">
-                    {tr("childNoDoubleCount")}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </section>
           <Card>
             <CardHeader className="gap-0 border-b bg-muted/15 p-0">
               <div className="console-toolbar gap-3 border-0">
@@ -523,7 +449,6 @@ export function NetworksPage() {
                           <th className="px-3">{tr("prefixNameColumn")}</th>
                           <th className="px-3">{tr("status")}</th>
                           <th className="px-3">{tr("vlanBridge")}</th>
-                          <th className="px-3">{tr("usage")}</th>
                           <th className="px-3">{tr("descriptionLabel")}</th>
                           <th className="w-10 px-3">
                             <span className="sr-only">{tr("open")}</span>
@@ -1437,7 +1362,6 @@ function PrefixMasterDetail({ rows, focused, onFocus, selectedIds, onToggle, can
       <div className="max-h-[calc(100vh-20rem)] overflow-y-auto border-r bg-muted/10 p-2" aria-label={tr("prefixList")}>
         {rows.map(({ prefix, depth }) => {
           const active = focused?.id === prefix.id;
-          const usage = prefix.usable_address_count ? Math.round((prefix.used_address_count / prefix.usable_address_count) * 100) : 0;
           return (
             <div key={prefix.id} className={`flex min-w-0 items-start rounded-sm ${active ? "bg-accent" : "hover:bg-muted/60"}`} style={{ paddingLeft: `${Math.min(depth, 5) * 14}px` }}>
               {canSelect && <input
@@ -1457,7 +1381,7 @@ function PrefixMasterDetail({ rows, focused, onFocus, selectedIds, onToggle, can
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px] font-medium text-foreground">{prefix.name || prefix.cidr}</span>
                   <span className="mt-0.5 block truncate font-mono text-xs text-muted-foreground">{prefix.cidr}</span>
-                  <span className="mt-1 block text-xs text-muted-foreground">{tr("usedPercent", { count: usage })} · {tr("freeCount", { count: prefix.free_address_count })}</span>
+                  <span className="mt-1 block truncate text-xs text-muted-foreground">{prefix.vlan_id ? `VLAN ${prefix.vlan_id}` : tr("noVlan")} · {prefix.bridge || "—"}</span>
                 </span>
               </button>
             </div>
@@ -1470,9 +1394,6 @@ function PrefixMasterDetail({ rows, focused, onFocus, selectedIds, onToggle, can
 }
 
 function PrefixPreview({ prefix }: { prefix: Prefix }) {
-  const usage = prefix.usable_address_count
-    ? Math.min(100, Math.round((prefix.used_address_count / prefix.usable_address_count) * 100))
-    : 0;
   return (
     <div className="min-w-0">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b px-5 py-4">
@@ -1485,20 +1406,11 @@ function PrefixPreview({ prefix }: { prefix: Prefix }) {
         </div>
         <Button asChild size="sm" variant="outline"><Link to="/networks/$id" params={{ id: prefix.id }}>{tr("open")}</Link></Button>
       </div>
-      <div className="grid grid-cols-2 border-b lg:grid-cols-4">
-        <PrefixPreviewFact label={tr("usableIps")} value={prefix.usable_address_count} />
-        <PrefixPreviewFact label={tr("used")} value={prefix.used_address_count} />
-        <PrefixPreviewFact label={tr("free")} value={prefix.free_address_count} />
-        <PrefixPreviewFact label={tr("reservations")} value={prefix.reservation_count} />
-      </div>
       <div className="grid gap-6 p-5 2xl:grid-cols-2">
         <div>
-          <div className="flex items-center justify-between text-[13px] font-medium"><span>{tr("usage")}</span><span className="font-mono">{usage}%</span></div>
-          <div className="console-capacity-track mt-2"><span data-capacity-tone={capacityTone(usage)} style={{ width: `${usage}%` }} /></div>
-          <dl className="mt-4 divide-y border-y text-[13px]">
+          <dl className="divide-y border-y text-[13px]">
             <PrefixPreviewRow label={tr("vlanBridge")} value={`${prefix.vlan_id ? `VLAN ${prefix.vlan_id}` : tr("noVlan")} · ${prefix.bridge || "—"}`} mono />
             <PrefixPreviewRow label={tr("gateway")} value={prefix.gateway || "—"} mono />
-            <PrefixPreviewRow label={tr("rangesCount", { count: prefix.range_count })} value={String(prefix.range_count)} />
             <PrefixPreviewRow label={tr("childCount", { count: prefix.child_prefix_count })} value={String(prefix.child_prefix_count)} />
           </dl>
         </div>
@@ -1510,10 +1422,6 @@ function PrefixPreview({ prefix }: { prefix: Prefix }) {
       </div>
     </div>
   );
-}
-
-function PrefixPreviewFact({ label, value }: { label: string; value: number }) {
-  return <div className="border-r px-4 py-3 last:border-r-0"><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1 font-mono text-lg font-semibold">{value}</div></div>;
 }
 
 function PrefixPreviewRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
@@ -1533,14 +1441,6 @@ function PrefixRow({
   onToggle: () => void;
   canSelect: boolean;
 }) {
-  const usage = prefix.usable_address_count
-    ? Math.min(
-        100,
-        Math.round(
-          (prefix.used_address_count / prefix.usable_address_count) * 100,
-        ),
-      )
-    : 0;
   return (
     <tr data-selected={checked || undefined}>
       {canSelect && <td className="px-3">
@@ -1602,26 +1502,6 @@ function PrefixRow({
           </div>
         )}
       </td>
-      <td className="px-3">
-        <div className="min-w-[160px]">
-          <div className="flex justify-between text-xs tabular-nums">
-            <span>{tr("freeCount", { count: prefix.free_address_count })}</span>
-            <span className="text-muted-foreground">{usage}%</span>
-          </div>
-          <div className="console-capacity-track mt-1">
-            <span
-              data-capacity-tone={capacityTone(usage)}
-              style={{ width: `${usage}%` }}
-            />
-          </div>
-          <div className="mt-0.5 text-[11px] text-muted-foreground">
-            {tr("ipCount", { count: prefix.reservation_count })} · {tr("rangesCount", { count: prefix.range_count })}
-            {prefix.child_prefix_address_count
-              ? ` · ${tr("inChildren", { count: prefix.child_prefix_address_count })}`
-              : ""}
-          </div>
-        </div>
-      </td>
       <td className="max-w-[250px] px-3">
         <span className="block truncate text-muted-foreground">
           {prefix.description || "—"}
@@ -1654,14 +1534,6 @@ function PrefixMobileRow({
   onToggle: () => void;
   canSelect: boolean;
 }) {
-  const usage = prefix.usable_address_count
-    ? Math.min(
-        100,
-        Math.round(
-          (prefix.used_address_count / prefix.usable_address_count) * 100,
-        ),
-      )
-    : 0;
   return (
     <div className="p-4" data-selected={checked || undefined}>
       <div
@@ -1713,24 +1585,6 @@ function PrefixMobileRow({
             <span className="font-mono">{prefix.dhcp_start} – {prefix.dhcp_end}</span>
           </span>
         )}
-      </div>
-      <div className="ml-7 mt-3">
-        <div className="flex justify-between text-xs tabular-nums">
-          <span>{tr("freeCount", { count: prefix.free_address_count })}</span>
-          <span className="text-muted-foreground">{tr("usedPercent", { count: usage })}</span>
-        </div>
-        <div className="console-capacity-track mt-1">
-          <span
-            data-capacity-tone={capacityTone(usage)}
-            style={{ width: `${usage}%` }}
-          />
-        </div>
-        <div className="mt-1 text-[11px] text-muted-foreground">
-          {tr("ipCount", { count: prefix.reservation_count })} · {tr("rangesCount", { count: prefix.range_count })}
-          {prefix.child_prefix_count
-            ? ` · ${tr("childCount", { count: prefix.child_prefix_count })}`
-            : ""}
-        </div>
       </div>
     </div>
   );

@@ -47,6 +47,8 @@ interface VmTemplate {
   name: string;
   config: Partial<Omit<VmForm, "dns_servers">> & {
     dns_servers?: string | string[];
+    pre_deploy_target_server_id?: string;
+    pre_deploy_playbooks?: string[];
     post_deploy_playbooks?: string[];
   };
 }
@@ -55,6 +57,7 @@ interface Playbook {
   name?: string;
   description?: string;
 }
+interface Host { id: string; name: string; ip_address?: string; environment_id?: string }
 
 interface VmForm {
   name: string;
@@ -180,6 +183,8 @@ export function VmFormDialog({
   const queryClient = useQueryClient();
   const [form, setForm] = useState<VmForm>(initialForm);
   const [postDeploy, setPostDeploy] = useState<string[]>([]);
+  const [preDeploy, setPreDeploy] = useState<string[]>([]);
+  const [preDeployTarget, setPreDeployTarget] = useState("");
   const [templateId, setTemplateId] = useState("");
   const [templateName, setTemplateName] = useState("");
   const [selectedZone, setSelectedZone] = useState("");
@@ -216,6 +221,12 @@ export function VmFormDialog({
     enabled: open,
     staleTime: 60_000,
   });
+  const hostsQuery = useQuery({
+    queryKey: ["servers", environmentId],
+    queryFn: () => api.getServers(environmentId) as unknown as Promise<Host[]>,
+    enabled: open && Boolean(environmentId),
+    staleTime: 30_000,
+  });
   const templates = Array.isArray(templatesQuery.data?.templates)
     ? templatesQuery.data!.templates!
     : [];
@@ -226,6 +237,7 @@ export function VmFormDialog({
         : [],
     [playbooksQuery.data],
   );
+  const hosts = useMemo(() => Array.isArray(hostsQuery.data) ? hostsQuery.data.filter(host => String(host.environment_id || "default") === environmentId) : [], [environmentId, hostsQuery.data]);
 
   useEffect(() => {
     if (!open) return;
@@ -237,6 +249,12 @@ export function VmFormDialog({
           )
         : [],
     );
+    setPreDeploy(
+      Array.isArray(initialVm?.pre_deploy_playbooks)
+        ? initialVm!.pre_deploy_playbooks.filter((item): item is string => typeof item === "string")
+        : [],
+    );
+    setPreDeployTarget(String(initialVm?.pre_deploy_target_server_id || ""));
     setTemplateId("");
     setTemplateName("");
     setSelectedZone("");
@@ -261,6 +279,7 @@ export function VmFormDialog({
       vm_id: current.vm_id || String(catalog.next_vm_id || ""),
       disk_datastore:
         current.disk_datastore ||
+        selectItems(catalog, "datastores").find((item) => /zfs/i.test(`${item.type || ""} ${item.id || ""}`))?.id ||
         selectItems(catalog, "datastores")[0]?.id ||
         "",
       bridge: nextBridge,
@@ -285,6 +304,8 @@ export function VmFormDialog({
       .map((value) => value.trim())
       .filter(Boolean),
     post_deploy_playbooks: postDeploy,
+    pre_deploy_playbooks: preDeploy,
+    pre_deploy_target_server_id: preDeployTarget,
   });
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -362,6 +383,8 @@ export function VmFormDialog({
         ? config.post_deploy_playbooks
         : [],
     );
+    setPreDeploy(Array.isArray(config.pre_deploy_playbooks) ? config.pre_deploy_playbooks : []);
+    setPreDeployTarget(String(config.pre_deploy_target_server_id || ""));
     showToast(`Template “${template.name}” applied.`, "success");
   };
   const togglePlaybook = (filename: string, checked: boolean) =>
@@ -372,6 +395,16 @@ export function VmFormDialog({
     );
   const movePlaybook = (index: number, direction: -1 | 1) =>
     setPostDeploy((current) => {
+      const next = [...current];
+      const target = index + direction;
+      if (target < 0 || target >= next.length) return current;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  const togglePreDeploy = (filename: string, checked: boolean) =>
+    setPreDeploy((current) => checked ? [...current, filename] : current.filter((item) => item !== filename));
+  const movePreDeploy = (index: number, direction: -1 | 1) =>
+    setPreDeploy((current) => {
       const next = [...current];
       const target = index + direction;
       if (target < 0 || target >= next.length) return current;
@@ -626,17 +659,20 @@ export function VmFormDialog({
                 </Field>
               )}
               <Field label="Bridge / SDN VNet">
-                <Select
+                <Input
                   value={form.bridge}
-                  onChange={selectBridge}
-                  options={visibleBridges.map((item) => ({
-                    value: item.name || "",
-                    label: item.source === "sdn"
-                      ? `${item.name || ""} — SDN ${item.zone || ""}${item.vlan_id ? ` / VLAN ${item.vlan_id}` : ""}${item.alias ? ` / ${item.alias}` : ""}${item.active === false ? " (not active)" : ""}`
-                      : `${item.name || ""} — node bridge${item.active === false ? " (inactive)" : ""}`,
-                    disabled: item.available_on_node === false,
-                  }))}
+                  onChange={(event) => selectBridge(event.target.value)}
+                  list="proxmox-network-targets"
+                  placeholder="vmbr0 or a VNet created by pre-deploy"
                 />
+                <datalist id="proxmox-network-targets">
+                  {visibleBridges.filter((item) => item.available_on_node !== false).map((item) => (
+                    <option key={`${item.source}-${item.name}`} value={item.name || ""}>
+                      {item.source === "sdn" ? `SDN ${item.zone || ""}${item.alias ? ` / ${item.alias}` : ""}` : "Node bridge"}
+                    </option>
+                  ))}
+                </datalist>
+                <p className="text-xs text-muted-foreground">You can enter a custom bridge or VNet that a pre-deploy workflow creates later.</p>
               </Field>
               <Field
                 label="Guest VLAN-ID (optional)"
@@ -753,6 +789,28 @@ export function VmFormDialog({
               </div>
             </details>
           </section>
+
+          <details className="group border-t pt-5">
+            <summary className="cursor-pointer list-none select-none">
+              <div className="flex items-center justify-between gap-3"><div><h3 className="text-sm font-semibold">Pre-deploy workflows</h3><p className="mt-0.5 text-xs text-muted-foreground">Run Ansible on an existing host before OpenTofu starts. A failed step stops the deployment.</p></div><span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{preDeploy.length} selected</span></div>
+            </summary>
+            <div className="mt-3 space-y-3">
+              <Field label="Execution host" hint="For example, select the Proxmox host where Ansible creates the VLAN, SDN VNet, or bridge.">
+                <select value={preDeployTarget} onChange={(event) => setPreDeployTarget(event.target.value)} required={preDeploy.length > 0} className="h-9 w-full rounded-md border bg-background px-3 text-sm">
+                  <option value="">Select host…</option>
+                  {hosts.map((host) => <option key={host.id} value={host.id}>{host.name}{host.ip_address ? ` · ${host.ip_address}` : ""}</option>)}
+                </select>
+              </Field>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="max-h-52 overflow-y-auto rounded-md border p-2">
+                  {playbooks.length ? playbooks.map((playbook) => <label key={playbook.filename} className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 hover:bg-accent"><input type="checkbox" className="mt-0.5" checked={preDeploy.includes(playbook.filename!)} onChange={(event) => togglePreDeploy(playbook.filename!, event.target.checked)} /><span className="min-w-0"><span className="block text-sm">{playbook.filename}</span>{playbook.description && <span className="block truncate text-xs text-muted-foreground">{playbook.description}</span>}</span></label>) : <p className="p-2 text-sm text-muted-foreground">No playbooks available.</p>}
+                </div>
+                <div className="min-h-16 space-y-1 rounded-md border p-2">
+                  {preDeploy.length ? preDeploy.map((filename, index) => <div key={filename} className="flex items-center gap-2 rounded-md bg-muted/50 px-2 py-1.5"><span className="w-5 text-center font-mono text-xs text-muted-foreground">{index + 1}</span><span className="min-w-0 flex-1 truncate text-sm">{filename}</span><Button type="button" variant="ghost" size="icon" className="h-7 w-7" disabled={index === 0} onClick={() => movePreDeploy(index, -1)} aria-label="Move up"><ArrowUp className="h-3.5 w-3.5" /></Button><Button type="button" variant="ghost" size="icon" className="h-7 w-7" disabled={index === preDeploy.length - 1} onClick={() => movePreDeploy(index, 1)} aria-label="Move down"><ArrowDown className="h-3.5 w-3.5" /></Button><Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => togglePreDeploy(filename, false)} aria-label="Remove"><X className="h-3.5 w-3.5" /></Button></div>) : <p className="p-2 text-sm text-muted-foreground">No pre-deploy workflows selected.</p>}
+                </div>
+              </div>
+            </div>
+          </details>
 
           <details className="group border-t pt-5">
             <summary className="cursor-pointer list-none select-none">

@@ -55,6 +55,11 @@ function normalizeProxmoxVm(input = {}) {
   if (sshPublicKeyVariable && !PROXMOX_TF_IDENTIFIER_RE.test(sshPublicKeyVariable)) {
     throw new Error('Invalid SSH public key variable');
   }
+  const preDeployPlaybooks = normalizePostDeployPlaybooks(input.pre_deploy_playbooks);
+  const preDeployTargetServerId = String(input.pre_deploy_target_server_id || '').trim();
+  if (preDeployPlaybooks.length && !preDeployTargetServerId) {
+    throw new Error('A target host is required for pre-deploy playbooks');
+  }
 
   return {
     name: proxmoxString(input.name, '', { field: 'VM name', pattern: PROXMOX_VM_NAME_RE, max: 63 }),
@@ -79,6 +84,8 @@ function normalizeProxmoxVm(input = {}) {
     dns_servers: dnsServers,
     username: proxmoxString(input.username, 'ubuntu', { field: 'Guest username', pattern: /^[a-z_][a-z0-9_-]{0,31}$/, max: 32 }),
     ssh_public_key_variable: sshPublicKeyVariable,
+    pre_deploy_target_server_id: preDeployTargetServerId,
+    pre_deploy_playbooks: preDeployPlaybooks,
     post_deploy_playbooks: normalizePostDeployPlaybooks(input.post_deploy_playbooks),
   };
 }

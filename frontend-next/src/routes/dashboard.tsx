@@ -5,9 +5,9 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import {
   Server, CheckCircle2, RotateCcw, RefreshCw,
   Bell, Clock, Plus, Bot, PackagePlus, Container, Cog,
-  Database, Activity,
+  Activity,
 } from 'lucide-react';
-import { api, apiFetch } from '@/lib/api';
+import { api } from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { ws } from '@/lib/ws';
 import { actionLabel, statusLabel } from '@/lib/history-labels';
@@ -18,7 +18,7 @@ import { Card } from '@/components/ui/card';
 import { PageHeader } from '@/components/ui/page-header';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
-import { canAccessInfrastructure, hasCap, useProfile } from '@/lib/queries';
+import { hasCap, useProfile } from '@/lib/queries';
 
 // ---- types ----
 
@@ -94,11 +94,6 @@ interface AlertInfo {
   acknowledged_at?: string | null;
 }
 
-interface InfrastructureNode { name: string; status: string; }
-interface InfrastructureDatastore { id: string; node_name: string; used: number; total: number; }
-interface InfrastructureCluster { id: string; status: string; nodes: InfrastructureNode[]; datastores?: InfrastructureDatastore[]; }
-interface InfrastructureResponse { clusters?: InfrastructureCluster[]; }
-
 // ---- helpers ----
 
 function needsAttention(s: ServerInfo) {
@@ -145,7 +140,6 @@ export function DashboardPage() {
   useEffect(() => { sessionStorage.setItem('shipyard.lastNonDetailRoute', '/'); }, []);
   const qc = useQueryClient();
   const { data: profile } = useProfile();
-  const canViewInfrastructure = canAccessInfrastructure(profile);
   const canViewUpdates = hasCap(profile, 'canViewUpdates');
   const canViewDocker = hasCap(profile, 'canViewDocker');
   const canViewCustomUpdates = hasCap(profile, 'canViewCustomUpdates');
@@ -153,12 +147,6 @@ export function DashboardPage() {
     queryKey: ['dashboard', environmentId],
     queryFn: () => api.getDashboard() as unknown as Promise<DashboardData>,
     refetchInterval: 30_000,
-  });
-  const infrastructureQuery = useQuery({
-    queryKey: ['opentofu', 'infrastructure', environmentId],
-    queryFn: () => apiFetch<InfrastructureResponse>(`/opentofu/infrastructure?environment_id=${encodeURIComponent(environmentId)}`),
-    staleTime: 30_000,
-    enabled: canViewInfrastructure,
   });
 
   // Backend broadcasts cache_updated whenever the updates cache changes
@@ -235,17 +223,6 @@ export function DashboardPage() {
       alert.status === 'active' && !alert.acknowledged_at && serverIds.has(String(alert.server_id))
     );
   }, [data?.alerts, servers]);
-  const clusters = useMemo(() => Array.isArray(infrastructureQuery.data?.clusters) ? infrastructureQuery.data!.clusters! : [], [infrastructureQuery.data]);
-  const infrastructureHealth = useMemo(() => {
-    const nodes = clusters.flatMap(cluster => cluster.nodes || []);
-    const stores = clusters.flatMap(cluster => cluster.datastores || []);
-    return {
-      platforms: clusters.length,
-      unavailablePlatforms: clusters.filter(cluster => cluster.status !== 'online').length,
-      unavailableNodes: nodes.filter(node => node.status !== 'online').length,
-      constrainedDatastores: stores.filter(store => store.total > 0 && (store.used / store.total) >= 0.85).length,
-    };
-  }, [clusters]);
   const actionableHistory = useMemo(() => recentHistory.filter(item => item.status === 'failed' || item.status === 'running' || item.status === 'queued'), [recentHistory]);
   const runningTaskCount = actionableHistory.filter(item => item.status === 'running' || item.status === 'queued').length;
   const criticalAlertCount = activeAlerts.filter(alert => alertTone(alert) === 'danger').length;
@@ -253,8 +230,7 @@ export function DashboardPage() {
     + (canViewUpdates ? (server.updates_count ?? 0) : 0)
     + (canViewUpdates && canViewDocker ? (server.image_updates_count ?? 0) : 0)
     + (canViewCustomUpdates ? (server.custom_updates_count ?? 0) : 0), 0);
-  const platformIssueCount = infrastructureHealth.unavailablePlatforms + infrastructureHealth.unavailableNodes + infrastructureHealth.constrainedDatastores;
-  const hasAttention = activeAlerts.length > 0 || actionableHistory.length > 0 || attentionCount > 0 || platformIssueCount > 0;
+  const hasAttention = activeAlerts.length > 0 || actionableHistory.length > 0 || attentionCount > 0;
 
   return (
     <div className="space-y-5">
@@ -270,12 +246,11 @@ export function DashboardPage() {
       />
 
       <OverviewStatusBar
-        loading={isLoading || (canViewInfrastructure && infrastructureQuery.isPending)}
+        loading={isLoading}
         criticalAlerts={criticalAlertCount}
         offlineHosts={summary.offline}
         updates={updateCount}
         runningTasks={runningTaskCount}
-        platformIssues={canViewInfrastructure ? platformIssueCount : undefined}
       />
 
       {isError && (
@@ -302,7 +277,7 @@ export function DashboardPage() {
       )}
 
       {!isError && !isLoading && servers.length > 0 && !hasAttention && (
-        <HealthySummary totalHosts={summary.total} onlineHosts={summary.online} platforms={canViewInfrastructure ? infrastructureHealth.platforms : undefined} />
+        <HealthySummary totalHosts={summary.total} onlineHosts={summary.online} />
       )}
 
       {!isError && hasAttention && (
@@ -316,7 +291,6 @@ export function DashboardPage() {
           </div>
           {activeAlerts.length > 0 && <ActiveAlertsSection alerts={activeAlerts} acknowledgingId={ackAlert.isPending ? ackAlert.variables : undefined} onAcknowledge={id => ackAlert.mutate(id)} />}
           <RecentTasksSection history={actionableHistory} />
-          {platformIssueCount > 0 && <PlatformIssuesSection count={platformIssueCount} />}
           {attentionHosts.length > 0 && (
             <AttentionHostsSection
               hosts={attentionHosts}
@@ -337,13 +311,12 @@ function alertTone(alert: AlertInfo): 'danger' | 'warning' | 'muted' {
   return alert.severity === 'critical' || alert.severity === 'error' ? 'danger' : alert.severity === 'warning' ? 'warning' : 'muted';
 }
 
-function OverviewStatusBar({ loading, criticalAlerts, offlineHosts, updates, runningTasks, platformIssues }: {
+function OverviewStatusBar({ loading, criticalAlerts, offlineHosts, updates, runningTasks }: {
   loading: boolean;
   criticalAlerts: number;
   offlineHosts: number;
   updates: number;
   runningTasks: number;
-  platformIssues?: number;
 }) {
   return (
     <section className="grid overflow-hidden rounded-[3px] border border-border-strong/80 bg-card shadow-[0_1px_2px_hsl(var(--foreground)/0.035)] sm:grid-cols-2 lg:grid-flow-col lg:auto-cols-fr" aria-label="Current environment status">
@@ -351,7 +324,6 @@ function OverviewStatusBar({ loading, criticalAlerts, offlineHosts, updates, run
       <OverviewStatusItem icon={<Server className="h-4 w-4" />} label="Offline" value={loading ? '—' : offlineHosts} to="/servers" tone={offlineHosts > 0 ? 'danger' : 'neutral'} />
       <OverviewStatusItem icon={<PackagePlus className="h-4 w-4" />} label="Updates" value={loading ? '—' : updates} to="/servers" tone={updates > 0 ? 'warning' : 'neutral'} />
       <OverviewStatusItem icon={<Clock className="h-4 w-4" />} label="Running tasks" value={loading ? '—' : runningTasks} to="/operations" tone={runningTasks > 0 ? 'info' : 'neutral'} />
-      {platformIssues !== undefined && <OverviewStatusItem icon={<Database className="h-4 w-4" />} label="Platform issues" value={loading ? '—' : platformIssues} to="/infrastructure" tone={platformIssues > 0 ? 'danger' : 'neutral'} />}
     </section>
   );
 }
@@ -360,7 +332,7 @@ function OverviewStatusItem({ icon, label, value, to, tone }: {
   icon: React.ReactNode;
   label: string;
   value: number | string;
-  to: '/operations' | '/servers' | '/infrastructure';
+  to: '/operations' | '/servers';
   tone: 'neutral' | 'danger' | 'warning' | 'info';
 }) {
   return (
@@ -379,13 +351,13 @@ function OverviewStatusItem({ icon, label, value, to, tone }: {
   );
 }
 
-function HealthySummary({ totalHosts, onlineHosts, platforms }: { totalHosts: number; onlineHosts: number; platforms?: number }) {
+function HealthySummary({ totalHosts, onlineHosts }: { totalHosts: number; onlineHosts: number }) {
   return (
     <section className="flex flex-wrap items-center gap-3 rounded-[3px] border border-border-strong/70 bg-card px-4 py-3" aria-label="Environment healthy">
       <CheckCircle2 className="h-5 w-5 text-success" />
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium">No action required</div>
-        <div className="text-[13px] text-muted-foreground">{onlineHosts} of {totalHosts} hosts reachable{platforms !== undefined ? ` · ${platforms} platform${platforms === 1 ? '' : 's'} available` : ''}</div>
+        <div className="text-[13px] text-muted-foreground">{onlineHosts} of {totalHosts} hosts reachable</div>
       </div>
       <Button asChild size="sm" variant="ghost"><Link to="/servers">Open hosts</Link></Button>
     </section>
@@ -451,19 +423,6 @@ function RecentTaskCard({ item }: { item: HistoryEntry }) {
   return <div className="flex items-center gap-3 px-4 py-3"><span className={`h-2 w-2 shrink-0 rounded-full ${item.status === 'success' ? 'bg-emerald-500' : item.status === 'failed' ? 'bg-destructive' : 'bg-muted-foreground'}`} /><div className="min-w-0 flex-1"><div className="truncate font-medium">{item.server_name || '—'}</div><div className="truncate text-xs text-muted-foreground">{actionLabel(t, item.action)} · {formatRelativeTime(item.started_at, t)}</div></div><StatusBadge tone={taskTone(item.status)}>{statusLabel(t, item.status)}</StatusBadge></div>;
 }
 
-function PlatformIssuesSection({ count }: { count: number }) {
-  return (
-    <div className="border-b">
-      <DashboardSectionHeader icon={<Database className="h-3.5 w-3.5" />} title="Platform availability" count={count} />
-      <Link to="/infrastructure" className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-muted/35">
-        <StatusBadge tone="danger" dot>{count} issue{count === 1 ? '' : 's'}</StatusBadge>
-        <span className="min-w-0 flex-1 text-muted-foreground">Review unavailable platforms, nodes, or constrained storage.</span>
-        <span className="text-xs font-medium text-primary">Review</span>
-      </Link>
-    </div>
-  );
-}
-
 function AttentionHostsSection({ hosts, total, agentEnabled, t }: { hosts: ServerInfo[]; total: number; agentEnabled: boolean; t: (key: string) => string }) {
   return (
     <div>
@@ -475,7 +434,7 @@ function AttentionHostsSection({ hosts, total, agentEnabled, t }: { hosts: Serve
       />
       <div className="table-scroll hidden md:block">
         <table className="w-full text-sm" data-density="compact">
-          <thead><tr><th>Host</th><th className="w-[120px]">Status</th>{agentEnabled && <th className="w-[150px]">Agent</th>}<th className="w-[100px]">{t('dash.colUptime')}</th></tr></thead>
+          <thead><tr><th>Host</th><th className="w-[120px]">Status</th><th>Reason</th>{agentEnabled && <th className="w-[150px]">Agent</th>}<th className="w-[100px]">{t('dash.colUptime')}</th></tr></thead>
           <tbody>{hosts.map(server => <ServerRow key={server.id} s={server} t={t} agentEnabled={agentEnabled} />)}</tbody>
         </table>
       </div>
@@ -526,6 +485,7 @@ function ServerRow({ s, t, agentEnabled }: { s: ServerInfo; t: (k: string) => st
         </div>
       </td>
       <td className="px-2 py-2.5"><StatusBadge tone={s.status === 'online' ? 'success' : s.status === 'offline' ? 'danger' : 'muted'} dot>{hostStatus}</StatusBadge></td>
+      <td className="px-2 py-2.5"><div className="flex flex-wrap gap-1"><AttentionReasonChips s={s} /></div></td>
       {agentEnabled && <td className="px-2 py-2.5"><AgentBadge s={s} /><span className="text-xs text-muted-foreground">{s.agent_mode === 'legacy' ? 'SSH' : 'Agent'}</span></td>}
       <td className="px-4 py-2.5">
         <span className={`font-mono text-xs ${!s.uptime_seconds ? 'text-muted-foreground' : ''}`}>
@@ -536,14 +496,15 @@ function ServerRow({ s, t, agentEnabled }: { s: ServerInfo; t: (k: string) => st
   );
 }
 
-function UpdatesChips({ s }: { s: ServerInfo }) {
+function AttentionReasonChips({ s }: { s: ServerInfo }) {
   const { t } = useTranslation();
   const { data: profile } = useProfile();
   const canViewUpdates = hasCap(profile, 'canViewUpdates');
   const canViewDocker = hasCap(profile, 'canViewDocker');
   const canViewCustomUpdates = hasCap(profile, 'canViewCustomUpdates');
-  if (!canViewUpdates && !canViewCustomUpdates) return null;
   const chips: React.ReactNode[] = [];
+  if (s.status === 'offline') chips.push(<StatusBadge key="offline" tone="danger">Offline</StatusBadge>);
+  if ((s.alert_count ?? 0) > 0) chips.push(<StatusBadge key="alerts" tone="danger"><Bell className="mr-1 h-3 w-3" />{s.alert_count} alert{(s.alert_count ?? 0) === 1 ? '' : 's'}</StatusBadge>);
   if (canViewUpdates && s.reboot_required) chips.push(<StatusBadge key="rb" tone="warning"><RotateCcw className="mr-1 h-3 w-3" />{t('dash.needsReboot')}</StatusBadge>);
   if (canViewUpdates && (s.updates_count ?? 0) > 0) chips.push(<StatusBadge key="u" tone="warning"><PackagePlus className="mr-1 h-3 w-3" />{s.updates_count} {t('dash.colUpdates')}</StatusBadge>);
   if (canViewUpdates && canViewDocker && (s.image_updates_count ?? 0) > 0) chips.push(<StatusBadge key="i" tone="warning"><Container className="mr-1 h-3 w-3" />{s.image_updates_count} {t('dash.colImageUpdates')}</StatusBadge>);
@@ -551,3 +512,5 @@ function UpdatesChips({ s }: { s: ServerInfo }) {
   if (chips.length === 0) return null;
   return <>{chips}</>;
 }
+
+const UpdatesChips = AttentionReasonChips;

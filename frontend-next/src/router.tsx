@@ -14,7 +14,6 @@ const SettingsPage = lazy(() => import('@/routes/settings').then(module => ({ de
 const ProfilePage = lazy(() => import('@/routes/profile').then(module => ({ default: module.ProfilePage })));
 const DeploymentsPage = lazy(() => import('@/routes/deployments').then(module => ({ default: module.DeploymentsPage })));
 const DeploymentDetailPage = lazy(() => import('@/routes/deployment-detail').then(module => ({ default: module.DeploymentDetailPage })));
-const InfrastructurePage = lazy(() => import('@/routes/infrastructure').then(module => ({ default: module.InfrastructurePage })));
 const InfrastructureDetailPage = lazy(() => import('@/routes/infrastructure-detail').then(module => ({ default: module.InfrastructureDetailPage })));
 const ProxmoxVmDetailPage = lazy(() => import('@/routes/proxmox-vm-detail').then(module => ({ default: module.ProxmoxVmDetailPage })));
 const OperationsPage = lazy(() => import('@/routes/operations').then(module => ({ default: module.OperationsPage })));
@@ -67,7 +66,7 @@ const playbooksRoute  = createRoute({ getParentRoute: () => protectedLayout, pat
 const profileRoute    = createRoute({ getParentRoute: () => protectedLayout, path: '/profile',      component: () => <LazyPage><ProfilePage /></LazyPage> });
 const deploymentsRoute= createRoute({ getParentRoute: () => protectedLayout, path: '/deployments',  component: () => <PermissionGate allow={canAccessDeployments}><LazyPage><DeploymentsPage /></LazyPage></PermissionGate> });
 const deploymentDetailRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/deployments/$id', component: () => <PermissionGate allow={canAccessDeployments}><LazyPage><DeploymentDetailPage /></LazyPage></PermissionGate> });
-const infrastructureRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/infrastructure', component: () => <PermissionGate allow={canAccessInfrastructure}><LazyPage><InfrastructurePage /></LazyPage></PermissionGate> });
+const infrastructureRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/infrastructure', component: () => <Navigate to="/deployments" replace /> });
 const infrastructureDetailRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/infrastructure/$clusterId', component: () => <PermissionGate allow={canAccessInfrastructure}><LazyPage><InfrastructureDetailPage /></LazyPage></PermissionGate> });
 const infrastructureNodeRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/infrastructure/$clusterId/nodes/$nodeName', component: () => <PermissionGate allow={canAccessInfrastructure}><LazyPage><InfrastructureDetailPage /></LazyPage></PermissionGate> });
 const infrastructureVmRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId', component: () => <PermissionGate allow={canAccessInfrastructure}><LazyPage><ProxmoxVmDetailPage /></LazyPage></PermissionGate> });

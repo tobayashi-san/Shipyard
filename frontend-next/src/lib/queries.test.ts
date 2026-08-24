@@ -9,6 +9,7 @@ describe('navigation access rules', () => {
     expect(canAccessDeployments(operator)).toBe(true);
     expect(canAccessDeployments(deploymentViewer)).toBe(true);
     expect(canAccessDeployments({ ...operator, permissions: {} })).toBe(false);
+    expect(canAccessDeployments({ role: 'user', permissions: { canManageDeploymentPlatforms: true } })).toBe(true);
   });
 
   it('keeps operations available to maintenance-only roles without exposing deployments', () => {

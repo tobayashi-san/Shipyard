@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, Server, TriangleAlert, Workflow } from "lucide-react";
+import { RefreshCw, Server, Settings2, TriangleAlert, Workflow } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +13,9 @@ import { CreateDeploymentDialog } from "@/features/deployments/CreateDeploymentD
 import { useUi } from "@/lib/store";
 import { hasCap, useProfile } from "@/lib/queries";
 import { showToast } from "@/lib/toast";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ProxmoxConnectionDialog, type ProxmoxConnection } from "@/features/infrastructure/ProxmoxConnectionDialog";
+import { ConfirmDeleteConnection, ProxmoxConnectionsCard } from "@/routes/infrastructure";
 
 interface Run {
   id: string;
@@ -58,7 +61,13 @@ export function DeploymentsPage() {
   const queryClient = useQueryClient();
   const profileQuery = useProfile();
   const canEdit = hasCap(profileQuery.data, "canEditDeployments");
+  const canManagePlatforms = hasCap(profileQuery.data, "canManageDeploymentPlatforms");
+  const canSyncIpam = hasCap(profileQuery.data, "canEditServers");
   const [createOpen, setCreateOpen] = useState(false);
+  const [connectionsOpen, setConnectionsOpen] = useState(false);
+  const [connectionEditorOpen, setConnectionEditorOpen] = useState(false);
+  const [connectionToEdit, setConnectionToEdit] = useState<ProxmoxConnection | null>(null);
+  const [connectionToDelete, setConnectionToDelete] = useState<ProxmoxConnection | null>(null);
   const [legacyToMigrate, setLegacyToMigrate] = useState<LegacyWorkspace | null>(null);
   const vmsQuery = useQuery({
     queryKey: ["opentofu", "vms", environmentId],
@@ -78,6 +87,12 @@ export function DeploymentsPage() {
     staleTime: 15_000,
   });
   const templates = Array.isArray(templatesQuery.data?.templates) ? templatesQuery.data!.templates! : [];
+  const connectionsQuery = useQuery({
+    queryKey: ["opentofu", "proxmox-connections", environmentId],
+    queryFn: () => apiFetch<ProxmoxConnection[]>(`/opentofu/proxmox-connections?environment_id=${encodeURIComponent(environmentId)}`),
+    staleTime: 15_000,
+  });
+  const connections = Array.isArray(connectionsQuery.data) ? connectionsQuery.data : [];
   const migrateMutation = useMutation({
     mutationFn: (workspace: LegacyWorkspace) => apiFetch(`/opentofu/legacy-workspaces/${encodeURIComponent(workspace.id)}/migrate-vms`, { method: "POST", body: { confirmation: `MIGRATE ${workspace.name}` } }),
     onSuccess: () => { setLegacyToMigrate(null); showToast("VM states were isolated successfully.", "success"); refresh(); },
@@ -91,6 +106,7 @@ export function DeploymentsPage() {
       description="Each VM is managed independently with its own OpenTofu state, plans, and run history."
       actions={<>
         <Button type="button" variant="outline" onClick={refresh} disabled={vmsQuery.isFetching}><RefreshCw className={vmsQuery.isFetching ? "animate-spin" : undefined} />Refresh</Button>
+        {(canManagePlatforms || connections.length > 0) && <Button type="button" variant="outline" onClick={() => setConnectionsOpen(true)}><Settings2 />Platform connections</Button>}
         <Button type="button" onClick={() => setCreateOpen(true)} disabled={!canEdit}><Server />New VM</Button>
       </>}
     />
@@ -136,6 +152,14 @@ export function DeploymentsPage() {
         : templates.length === 0 ? <p className="text-sm text-muted-foreground">No templates yet. Save the current values as a template while creating or editing a VM.</p> : <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{templates.map((template) => <div key={template.id} className="rounded-md border p-3"><div className="font-medium">{template.name}</div><div className="mt-1 text-xs text-muted-foreground">{template.config?.cpu_cores || "—"} CPU · {template.config?.memory_mb || "—"} MB · {template.config?.disk_size_gb || "—"} GB</div></div>)}</div>}</CardContent>
     </Card>
     <CreateDeploymentDialog environmentId={environmentId} open={createOpen} onOpenChange={setCreateOpen} />
+    <Dialog open={connectionsOpen} onOpenChange={setConnectionsOpen}>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-3xl overflow-y-auto p-0">
+        <DialogHeader className="border-b px-5 py-4"><DialogTitle>Platform connections</DialogTitle><DialogDescription>Manage the Proxmox connections used to create and operate virtual machines.</DialogDescription></DialogHeader>
+        <div className="p-4"><ProxmoxConnectionsCard connections={connections} isAdmin={canManagePlatforms} canSyncIpam={canSyncIpam} onAdd={() => { setConnectionToEdit(null); setConnectionEditorOpen(true); }} onEdit={(connection) => { setConnectionToEdit(connection); setConnectionEditorOpen(true); }} onDelete={setConnectionToDelete} /></div>
+      </DialogContent>
+    </Dialog>
+    <ProxmoxConnectionDialog environmentId={environmentId} connection={connectionToEdit} open={connectionEditorOpen} onOpenChange={setConnectionEditorOpen} />
+    <ConfirmDeleteConnection connection={connectionToDelete} onOpenChange={(next) => !next && setConnectionToDelete(null)} onDeleted={() => { setConnectionToDelete(null); refresh(); }} />
     <ConfirmDialog open={Boolean(legacyToMigrate)} onOpenChange={(next) => !next && setLegacyToMigrate(null)} title="Split legacy state by VM?" description="Shipyard locks the legacy deployment, backs up its local state, moves each VM resource to an independent state, and validates that no VM would be created or destroyed. Remote backends are rejected and require a backend-specific migration." confirmLabel="Migrate VM states" variant="warning" confirmTextValue={legacyToMigrate ? `MIGRATE ${legacyToMigrate.name}` : undefined} confirmInputHelp={legacyToMigrate ? <>Enter <code className="font-mono">MIGRATE {legacyToMigrate.name}</code>.</> : undefined} onConfirm={() => legacyToMigrate && migrateMutation.mutate(legacyToMigrate)} isPending={migrateMutation.isPending} />
   </div>;
 }

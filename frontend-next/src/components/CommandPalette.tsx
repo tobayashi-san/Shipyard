@@ -5,31 +5,33 @@ import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   Search, LayoutDashboard, Server, FileCode2, Settings, User,
-  HelpCircle, Sun, Moon, LogOut, Puzzle, Workflow, Database, ClipboardList,
+  HelpCircle, Sun, Moon, LogOut, Puzzle, Workflow, Network, ClipboardList,
 } from 'lucide-react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { api } from '@/lib/api';
-import { canAccessDeployments, canAccessInfrastructure, canAccessOperations, useProfile, usePlugins, hasCap, canSeePlugin } from '@/lib/queries';
+import { api, apiFetch } from '@/lib/api';
+import { canAccessDeployments, canAccessNetworks, canAccessOperations, useProfile, usePlugins, hasCap, canSeePlugin } from '@/lib/queries';
 import { useUi } from '@/lib/store';
 import { setToken } from '@/lib/auth';
 import { asArray, cn } from '@/lib/utils';
 
 interface ServerListItem { id: string; name: string; ip_address?: string; status?: string }
 interface PlaybookListItem { id: string; name?: string; filename?: string }
+interface IpamSearchResult { id: string; kind: 'prefix' | 'address' | 'range'; label: string; secondary: string; subnet_id: string; subnet_cidr: string }
+interface IpamSearchResponse { items?: IpamSearchResult[] }
 
 export function CommandPalette() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { data: profile } = useProfile();
   const { data: plugins = [] } = usePlugins();
-  const availablePlugins = asArray<typeof plugins[number]>(plugins);
   const openTofuAvailable = canAccessDeployments(profile);
-  const infrastructureAvailable = canAccessInfrastructure(profile);
+  const networksAvailable = canAccessNetworks(profile);
   const canViewOperations = canAccessOperations(profile);
   const setTheme = useUi(s => s.setTheme);
   const environmentId = useUi(s => s.environmentId);
   const [open, setOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [search, setSearch] = useState('');
 
   // Toggle on Cmd+K / Ctrl+K
   useEffect(() => {
@@ -50,7 +52,7 @@ export function CommandPalette() {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
-  // Lightweight g-prefix navigation: g s, g d, g p, g i, g e, g o
+  // Lightweight g-prefix navigation: g s, g d, g p, g n, g e, g o
   useEffect(() => {
     let prefix = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -62,7 +64,7 @@ export function CommandPalette() {
         if (e.key === 's' && hasCap(profile, 'canViewServers')) navigate({ to: '/servers' });
         else if (e.key === 'd') navigate({ to: '/' });
         else if (e.key === 'p' && hasCap(profile, 'canViewPlaybooks')) navigate({ to: '/playbooks' });
-        else if (e.key === 'i' && infrastructureAvailable) navigate({ to: '/infrastructure' });
+        else if (e.key === 'n' && networksAvailable) navigate({ to: '/networks' });
         else if (e.key === 'e' && openTofuAvailable) navigate({ to: '/deployments' });
         else if (e.key === 'o' && canViewOperations) navigate({ to: '/operations' });
         else if (e.key === ',' && profile?.role === 'admin') navigate({ to: '/settings' });
@@ -77,7 +79,7 @@ export function CommandPalette() {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [canViewOperations, infrastructureAvailable, navigate, openTofuAvailable, profile]);
+  }, [canViewOperations, navigate, networksAvailable, openTofuAvailable, profile]);
 
   // Fetch search data only when open
   const { data: servers = [] } = useQuery({
@@ -92,6 +94,12 @@ export function CommandPalette() {
     enabled: open && hasCap(profile, 'canViewPlaybooks'),
     staleTime: 30_000,
   });
+  const { data: ipamResults } = useQuery({
+    queryKey: ['ipam', 'command-search', environmentId, search.trim()],
+    queryFn: () => apiFetch<IpamSearchResponse>(`/ipam/search?environment_id=${encodeURIComponent(environmentId)}&q=${encodeURIComponent(search.trim())}&page=1&page_size=20`),
+    enabled: open && networksAvailable && search.trim().length >= 2,
+    staleTime: 15_000,
+  });
 
   const sidebarPlugins = useMemo(
     () => asArray<typeof plugins[number]>(plugins).filter(p => p.enabled && p.sidebar && canSeePlugin(profile, p.id)),
@@ -105,7 +113,7 @@ export function CommandPalette() {
 
   return (
     <>
-      <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
+      <DialogPrimitive.Root open={open} onOpenChange={(next) => { setOpen(next); if (!next) setSearch(''); }}>
         <DialogPrimitive.Portal>
           <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-[1px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
           <DialogPrimitive.Content
@@ -119,6 +127,8 @@ export function CommandPalette() {
               <div className="group flex items-center border-b px-3 transition-colors focus-within:bg-muted/30">
                 <Search className="mr-2 h-4 w-4 shrink-0 text-muted-foreground transition-colors group-focus-within:text-foreground" />
                 <Command.Input
+                  value={search}
+                  onValueChange={setSearch}
                   placeholder={t('cmd.placeholder')}
                   className="flex h-10 w-full border-0 bg-transparent py-2 text-[13px] shadow-none outline-none placeholder:text-muted-foreground focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0"
                   style={{ outline: 'none', boxShadow: 'none' }}
@@ -132,9 +142,9 @@ export function CommandPalette() {
 
                 <Command.Group heading={t('cmd.navigate')} className="text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
                   <PaletteItem icon={<LayoutDashboard className="h-4 w-4" />} label={t('nav.dashboard')} shortcut="g d" onSelect={() => go('/')} />
-                  {infrastructureAvailable && <PaletteItem icon={<Database className="h-4 w-4" />} label="Infrastructure" shortcut="g i" onSelect={() => go('/infrastructure')} />}
                   {hasCap(profile, 'canViewServers') && <PaletteItem icon={<Server className="h-4 w-4" />} label={t('nav.servers')} shortcut="g s" onSelect={() => go('/servers')} />}
                   {openTofuAvailable && <PaletteItem icon={<Workflow className="h-4 w-4" />} label={t('deploy.title')} shortcut="g e" onSelect={() => go('/deployments')} />}
+                  {networksAvailable && <PaletteItem icon={<Network className="h-4 w-4" />} label="Networks" shortcut="g n" onSelect={() => go('/networks')} />}
                   {canViewOperations && <PaletteItem icon={<ClipboardList className="h-4 w-4" />} label="Operations" shortcut="g o" onSelect={() => go('/operations')} />}
                   {hasCap(profile, 'canViewPlaybooks') && <PaletteItem icon={<FileCode2 className="h-4 w-4" />} label={t('nav.playbooks')} shortcut="g p" onSelect={() => go('/playbooks')} />}
                   <PaletteItem icon={<User className="h-4 w-4" />} label={t('profile.settings')} onSelect={() => go('/profile')} />
@@ -164,6 +174,21 @@ export function CommandPalette() {
                         icon={<FileCode2 className="h-4 w-4" />}
                         label={p.filename || p.name || p.id}
                         onSelect={() => go(`/playbooks`)}
+                      />
+                    ))}
+                  </Command.Group>
+                )}
+
+                {(ipamResults?.items || []).length > 0 && (
+                  <Command.Group heading="Network search" className="mt-2 text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
+                    {(ipamResults?.items || []).map(item => (
+                      <PaletteItem
+                        key={`${item.kind}:${item.id}`}
+                        icon={<Network className="h-4 w-4" />}
+                        label={item.label}
+                        sublabel={`${item.secondary || item.kind} · ${item.subnet_cidr}`}
+                        keywords={[item.label, item.secondary, item.subnet_cidr, item.kind]}
+                        onSelect={() => go(`/networks/${item.subnet_id}`)}
                       />
                     ))}
                   </Command.Group>
