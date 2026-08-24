@@ -195,14 +195,17 @@ test('agent feature visibility follows the setting immediately', async ({ page }
   });
   await expect(agentToggle).toHaveAttribute('data-state', 'checked');
   await page.goto(`/servers/${serverId}`);
-  await expect(page.getByRole('tab', { name: /agent/i })).toBeVisible();
-  await expect(page.getByRole('tab', { name: 'Details', exact: true })).toBeVisible();
-  await expect(page.getByRole('tab', { name: /notes/i })).toBeVisible();
-  await expect(page.getByText('More', { exact: true })).toHaveCount(0);
-  await page.getByRole('tab', { name: 'Operations', exact: true }).click();
+  const hostTools = page.getByRole('button', { name: 'Host tools' });
+  await hostTools.click();
+  const hostToolsMenu = page.getByRole('menu', { name: 'Host tools' });
+  await expect(hostToolsMenu.getByRole('menuitem', { name: /agent/i })).toBeVisible();
+  await expect(hostToolsMenu.getByRole('menuitem', { name: 'Details', exact: true })).toBeVisible();
+  await expect(hostToolsMenu.getByRole('menuitem', { name: /notes/i })).toBeVisible();
+  await hostToolsMenu.getByRole('menuitem', { name: 'Operations', exact: true }).click();
   await expect(page).toHaveURL(/#tab=history$/);
+  await expect(hostTools).toContainText('Operations');
   await page.reload();
-  await expect(page.getByRole('tab', { name: 'Operations', exact: true })).toHaveAttribute('data-state', 'active');
+  await expect(page.getByRole('button', { name: 'Host tools' })).toContainText('Operations');
   await page.goBack();
   await expect(page.getByRole('tab', { name: /overview/i })).toHaveAttribute('data-state', 'active');
 
@@ -211,7 +214,8 @@ test('agent feature visibility follows the setting immediately', async ({ page }
   await page.getByRole('switch', { name: /agent-feature aktivieren|enable agent feature/i }).click();
   await disabledSave;
   await page.goto(`/servers/${serverId}`);
-  await expect(page.getByRole('tab', { name: /agent/i })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Host tools' }).click();
+  await expect(page.getByRole('menu', { name: 'Host tools' }).getByRole('menuitem', { name: /agent/i })).toHaveCount(0);
   await page.goto('/settings');
   await expect(page.getByText(/agent manifest/i, { exact: true })).toHaveCount(0);
   await page.evaluate(async (id) => {

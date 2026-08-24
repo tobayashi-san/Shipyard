@@ -37,7 +37,8 @@ test('IPAM workflows remain usable across desktop and mobile layouts', async ({ 
   await prefixDialog.getByLabel('IPv4 prefix').fill('10.20.2.0/24');
   await prefixDialog.getByRole('button', { name: 'Add prefix', exact: true }).click();
   await page.getByRole('checkbox', { name: 'Select prefix 10.20.2.0/24' }).check();
-  await page.getByRole('button', { name: 'Deprecated', exact: true }).click();
+  await page.getByRole('button', { name: 'Bulk actions', exact: true }).click();
+  await page.getByRole('menu', { name: 'Bulk actions' }).getByRole('menuitem', { name: 'Deprecated', exact: true }).click();
 
   await page.getByRole('link', { name: 'Sources' }).click();
   const sources = page.locator('[data-ipam-sources]');
