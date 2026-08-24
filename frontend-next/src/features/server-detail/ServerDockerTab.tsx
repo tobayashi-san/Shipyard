@@ -281,6 +281,13 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
               {c.status || c.state}
             </span>
           </td>
+          <td className="px-3 py-2 font-mono text-xs tabular-nums">
+            {c.cpu_percent == null ? "—" : `${c.cpu_percent.toFixed(2)} %`}
+          </td>
+          <td className="px-3 py-2 text-xs">
+            <span className="font-mono">{c.memory_usage || "—"}</span>
+            {c.memory_percent != null && <span className="ml-1 text-muted-foreground">({c.memory_percent.toFixed(1)} %)</span>}
+          </td>
           <td className="px-3 py-2">
             {upd === "update_available" ? (
               <StatusBadge tone="warning">
@@ -428,7 +435,7 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
                 ) : (
                   <div className="table-scroll">
                     <table
-                      className="w-full min-w-[720px] text-sm"
+                      className="w-full min-w-[900px] text-sm"
                       data-density="compact"
                     >
                       <thead className="border-b bg-muted/30 text-left text-xs uppercase tracking-wider text-muted-foreground">
@@ -437,6 +444,8 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
                           <th className="px-3 py-2">{t("common.name")}</th>
                           <th className="px-3 py-2">{t("common.image")}</th>
                           <th className="px-3 py-2">{t("common.status")}</th>
+                          <th className="px-3 py-2">CPU</th>
+                          <th className="px-3 py-2">Memory</th>
                           <th className="px-3 py-2">{t("det.checkUpdates")}</th>
                           <th className="px-3 py-2">{t("common.actions")}</th>
                         </tr>
@@ -449,7 +458,7 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
                           );
                           return [
                             <tr key={`stack-${proj}`} className="bg-muted/20">
-                              <td colSpan={5} className="px-3 py-2">
+                              <td colSpan={7} className="px-3 py-2">
                                 <span className="inline-flex items-center gap-2">
                                   <Layers className="h-3.5 w-3.5 text-primary" />
                                   <strong className="text-sm">{proj}</strong>
@@ -569,7 +578,7 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
                         {/* Standalone */}
                         {stacks.standalone.length > 0 && (
                           <tr className="bg-muted/20">
-                            <td colSpan={6} className="px-3 py-2">
+                            <td colSpan={8} className="px-3 py-2">
                               <span className="inline-flex items-center gap-2">
                                 <Box className="h-3.5 w-3.5 text-muted-foreground" />
                                 <strong className="text-sm">

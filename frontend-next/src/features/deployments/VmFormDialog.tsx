@@ -417,6 +417,35 @@ export function VmFormDialog({
     (item) => item.source !== "sdn" || !selectedZone || item.zone === selectedZone,
   );
   const selectedBridge = bridgeItems.find((item) => item.name === form.bridge);
+  const nodeNames = selectItems(catalog, "nodes")
+    .map((item) => String(item.name || ""))
+    .filter(Boolean);
+  const validNode = Boolean(form.node_name) && (
+    nodeNames.includes(form.node_name) || catalog?.node === form.node_name
+  );
+  const validVmId = Number.isInteger(Number(form.vm_id)) && Number(form.vm_id) >= 100;
+  const requiredValuesValid = Boolean(
+    form.name.trim() && form.clone_vm_id.trim() && form.disk_datastore.trim() &&
+    form.bridge.trim() && Number(form.disk_size_gb) > 0 &&
+    Number(form.cpu_cores) > 0 && Number(form.memory_mb) > 0 &&
+    (form.ipv4_mode === "dhcp" || (
+      form.ipv4_address.trim() && form.ipv4_prefix.trim() && form.ipv4_gateway.trim()
+    )) &&
+    (preDeploy.length === 0 || preDeployTarget)
+  );
+  const formValid = catalogQuery.isSuccess && !catalogQuery.isFetching &&
+    validNode && validVmId && requiredValuesValid;
+  const validationMessage = catalogQuery.isPending || catalogQuery.isFetching
+    ? "Loading and validating Proxmox node and VM ID …"
+    : catalogQuery.isError
+      ? "Proxmox inventory must be available before this VM definition can be saved."
+      : !validNode
+        ? "Select a valid Proxmox node."
+        : !validVmId
+          ? "VM ID must be an integer of 100 or greater."
+          : !requiredValuesValid
+            ? "Complete all required compute, storage, network and workflow target fields."
+            : "";
   const selectBridge = (value: string) => {
     const item = bridgeItems.find((bridge) => bridge.name === value);
     setForm((current) => ({
@@ -429,7 +458,7 @@ export function VmFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-4xl overflow-y-auto">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-6xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Server className="h-5 w-5" />
@@ -441,12 +470,13 @@ export function VmFormDialog({
           </DialogDescription>
         </DialogHeader>
         <form
-          className="space-y-6"
+          className="grid gap-5 lg:grid-cols-2 lg:items-start"
           onSubmit={(event) => {
             event.preventDefault();
-            saveMutation.mutate();
+            if (formValid) saveMutation.mutate();
           }}
         >
+          <div className="min-w-0 space-y-5">
           <section className="rounded-lg border bg-muted/20 p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
@@ -502,7 +532,7 @@ export function VmFormDialog({
 
           <section className="space-y-3">
             <h3 className="text-sm font-semibold">Identity & template</h3>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               <Field label="VM name">
                 <Input
                   required
@@ -560,7 +590,7 @@ export function VmFormDialog({
 
           <section className="space-y-3 border-t pt-5">
             <h3 className="text-sm font-semibold">Compute & Storage</h3>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Datastore">
                 <Select
                   value={form.disk_datastore}
@@ -626,6 +656,9 @@ export function VmFormDialog({
             </details>
           </section>
 
+          </div>
+          <div className="min-w-0 space-y-5">
+
           <section className="space-y-3 border-t pt-5">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-semibold">Network & guest access</h3>
@@ -640,7 +673,7 @@ export function VmFormDialog({
                 Refresh Proxmox networks
               </Button>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               {Array.isArray(catalog?.sdn_zones) && catalog.sdn_zones.length > 0 && (
                 <Field label="SDN zone" hint="Filters SDN VNets; node bridges remain visible.">
                   <select
@@ -956,13 +989,17 @@ export function VmFormDialog({
               </label>
             </div>
           </details>
+          </div>
           {catalogQuery.isError && (
-            <p className="text-sm text-destructive">
-              Proxmox inventory could not be loaded. Existing form values can
-              still be used.
+            <p className="text-sm text-destructive lg:col-span-2">
+              Proxmox inventory could not be loaded. Retry the inventory load
+              before saving this definition.
             </p>
           )}
-          <DialogFooter>
+          {!formValid && !catalogQuery.isError && (
+            <p className="text-sm text-amber-700 dark:text-amber-300 lg:col-span-2">{validationMessage}</p>
+          )}
+          <DialogFooter className="lg:col-span-2">
             <Button
               type="button"
               variant="outline"
@@ -970,7 +1007,7 @@ export function VmFormDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={saveMutation.isPending}>
+            <Button type="submit" disabled={saveMutation.isPending || !formValid}>
               {saveMutation.isPending ? (
                 <RefreshCw className="animate-spin" />
               ) : (

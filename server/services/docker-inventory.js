@@ -3,6 +3,7 @@ const ansibleRunner = require('./ansible-runner');
 const log = require('../utils/logger').child('services:docker-inventory');
 
 const CONTAINER_LINE_PREFIX = '__SHIPYARD_CONTAINER__';
+const STATS_LINE_PREFIX = '__SHIPYARD_STATS__';
 // This deliberately uses Docker's own formatted image field instead of an
 // inspect call per container. Besides being much faster, it also works for
 // regular Docker installations where a restrictive sudo policy allowed
@@ -13,12 +14,16 @@ runtime="$(command -v docker 2>/dev/null || command -v podman 2>/dev/null || tru
 format='{{.Names}}|{{.Image}}|{{.State}}|{{.Status}}|{{.CreatedAt}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.project.working_dir"}}'
 if output="$("$runtime" ps -a --format "$format" 2>/dev/null)"; then
   [ -z "$output" ] || printf '%s\n' "$output" | sed 's/^/__SHIPYARD_CONTAINER__/'
+  stats="$("$runtime" stats --no-stream --format '{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}' 2>/dev/null || true)"
+  [ -z "$stats" ] || printf '%s\n' "$stats" | sed 's/^/__SHIPYARD_STATS__/'
   exit 0
 fi
 # A non-root Shipyard account may not be in the docker group. Use only non-
 # interactive sudo as a controlled fallback; never prompt or hang an API call.
 output="$(sudo -n "$runtime" ps -a --format "$format" 2>/dev/null)" || exit $?
 [ -z "$output" ] || printf '%s\n' "$output" | sed 's/^/__SHIPYARD_CONTAINER__/'
+stats="$(sudo -n "$runtime" stats --no-stream --format '{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}' 2>/dev/null || true)"
+[ -z "$stats" ] || printf '%s\n' "$stats" | sed 's/^/__SHIPYARD_STATS__/'
 `;
 
 /**
@@ -88,6 +93,25 @@ function extractMarkedContainerLines(output) {
     .map(line => line.slice(CONTAINER_LINE_PREFIX.length));
 }
 
+function percentage(value) {
+  const parsed = Number.parseFloat(String(value || '').replace('%', '').trim());
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function extractMarkedStats(output) {
+  const result = new Map();
+  String(output || '').split(/\r?\n/)
+    .map(line => line.trimStart())
+    .filter(line => line.startsWith(STATS_LINE_PREFIX))
+    .map(line => line.slice(STATS_LINE_PREFIX.length).split('|'))
+    .forEach(parts => result.set(parts[0], {
+      cpuPercent: percentage(parts[1]),
+      memoryUsage: parts[2] || null,
+      memoryPercent: percentage(parts[3]),
+    }));
+  return result;
+}
+
 async function refreshDockerCache(server) {
   try {
     const environmentId = String(server.environment_id || 'default');
@@ -103,7 +127,11 @@ async function refreshDockerCache(server) {
       lines = extractContainerLines(result.stdout);
       if (!lines) return false;
     }
-    const containers = parseContainerLines(lines);
+    const stats = direct.success ? extractMarkedStats(direct.stdout) : new Map();
+    const containers = parseContainerLines(lines).map(container => ({
+      ...container,
+      ...(stats.get(container.name) || { cpuPercent: null, memoryUsage: null, memoryPercent: null }),
+    }));
     db.dockerContainers.syncForServer(server.id, containers);
     return true;
   } catch (err) {
@@ -112,4 +140,4 @@ async function refreshDockerCache(server) {
   }
 }
 
-module.exports = { refreshDockerCache, extractContainerLines, extractMarkedContainerLines, parseContainerLines, DOCKER_INVENTORY_COMMAND };
+module.exports = { refreshDockerCache, extractContainerLines, extractMarkedContainerLines, extractMarkedStats, parseContainerLines, DOCKER_INVENTORY_COMMAND };

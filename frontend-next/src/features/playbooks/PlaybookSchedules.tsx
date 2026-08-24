@@ -24,6 +24,7 @@ import {
   cronToSelectors,
   formatDate as fmtDate,
   INTERVALS,
+  isPresetCron,
   parsePlaybookTargets,
   selectorsToCron,
   WEEKDAYS,
@@ -34,6 +35,7 @@ export function useCronLabel() {
   const { t } = useTranslation();
   return useCallback(
     (cron: string) => {
+      if (!isPresetCron(cron)) return cron;
       const { interval, hour, minute, weekday, monthday } =
         cronToSelectors(cron);
       const iv = INTERVALS.find((i) => i.value === interval);
@@ -439,6 +441,8 @@ export function ScheduleDialog({
   const [checkMode, setCheckMode] = useState(Boolean(existing?.check_mode));
   const [forks, setForks] = useState(existing?.forks || 5);
   const [allConfirmed, setAllConfirmed] = useState(false);
+  const [customCronMode, setCustomCronMode] = useState(Boolean(existing && !isPresetCron(existing.cron_expression)));
+  const [customCron, setCustomCron] = useState(existing?.cron_expression || "0 3 * * *");
 
   // Re-initialize form state whenever the schedule being edited changes
   useEffect(() => {
@@ -461,6 +465,8 @@ export function ScheduleDialog({
     setCheckMode(Boolean(existing?.check_mode));
     setForks(existing?.forks || 5);
     setAllConfirmed(false);
+    setCustomCronMode(Boolean(existing && !isPresetCron(existing.cron_expression)));
+    setCustomCron(existing?.cron_expression || "0 3 * * *");
   }, [editId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const iv = INTERVALS.find((i) => i.value === interval);
@@ -504,7 +510,13 @@ export function ScheduleDialog({
       }
     }
     const md = Math.min(28, Math.max(1, monthday));
-    const cronExpression = selectorsToCron(interval, hour, minute, weekday, md);
+    const cronExpression = customCronMode
+      ? customCron.trim()
+      : selectorsToCron(interval, hour, minute, weekday, md);
+    if (!/^(\S+\s+){4}\S+$/.test(cronExpression)) {
+      showToast("Cron expression must contain exactly five fields.", "error");
+      return;
+    }
     setBusy(true);
     try {
       if (existing) {
@@ -655,6 +667,20 @@ export function ScheduleDialog({
           </div>
 
           {/* Interval + time */}
+          <label className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm">
+            <span><span className="block font-medium">Custom cron expression</span><span className="text-xs text-muted-foreground">Use ranges, lists and steps for schedules not covered by presets.</span></span>
+            <Switch aria-label="Custom cron expression" checked={customCronMode} onCheckedChange={(checked) => {
+              setCustomCronMode(checked);
+              if (checked && !customCron.trim()) setCustomCron(selectorsToCron(interval, hour, minute, weekday, monthday));
+            }} />
+          </label>
+          {customCronMode && (
+            <div className="space-y-1">
+              <Label htmlFor="schedule-custom-cron">Cron expression</Label>
+              <Input id="schedule-custom-cron" className="font-mono" value={customCron} onChange={(event) => setCustomCron(event.target.value)} placeholder="0 2 * * 1-5" />
+              <p className="text-xs text-muted-foreground">Five fields: minute, hour, day of month, month, weekday. Example: 0 2 * * 1-5.</p>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>{t("sc.interval")}</Label>

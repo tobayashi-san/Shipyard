@@ -34,7 +34,7 @@ export function PluginsTab() {
       <SettingsSection
         icon={<Puzzle className="h-4 w-4" />}
         title={t('set.plugins')}
-        description={t('set.pluginsHint')}
+        description={<>{t('set.pluginsHint')} <code>{t('set.pluginsPath')}</code></>}
       >
         <div className="flex justify-end pt-3">
           <Button variant="secondary" size="sm" onClick={() => reload.mutate()} disabled={reload.isPending}>
@@ -59,6 +59,7 @@ export function PluginsTab() {
             compact
             icon={<Puzzle className="h-5 w-5" />}
             title={t('set.pluginsEmpty')}
+            description={<code>{t('set.pluginsPath')}</code>}
           />
         )}
         {!isLoading && plugins && plugins.length > 0 && (

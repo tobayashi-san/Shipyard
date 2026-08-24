@@ -75,6 +75,9 @@ export interface ContainerRow {
   state?: string;
   compose_project?: string;
   compose_working_dir?: string;
+  cpu_percent?: number | null;
+  memory_usage?: string | null;
+  memory_percent?: number | null;
 }
 
 export interface CustomTask {

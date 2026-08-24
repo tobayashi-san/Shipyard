@@ -8,6 +8,7 @@ import {
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   CheckSquare,
+  Box,
   ChevronDown,
   ChevronRight,
   Database,
@@ -115,6 +116,10 @@ interface ProxmoxNode {
 }
 interface ProxmoxInventoryVm {
   node_name?: string;
+  vm_id?: string | number;
+  name?: string;
+  status?: string;
+  guest_type?: string;
 }
 interface ProxmoxCluster {
   id?: string;
@@ -690,23 +695,67 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
               const nodeName = String(node.name || "");
               const nodePath = `${clusterPath}/nodes/${nodeName}`;
               const nodeCurrent = decodedPath === nodePath;
+              const nodeActive = nodeCurrent || decodedPath.startsWith(`${nodePath}/`);
+              const nodeVms = vms.filter((vm) => vm.node_name === nodeName);
+              const nodeKey = `node:${clusterId}:${nodeName}`;
+              const nodeOpen = !collapsed.has(nodeKey);
               return (
-                <Link
-                  key={nodeName}
-                  to="/infrastructure/$clusterId/nodes/$nodeName"
-                  params={{ clusterId, nodeName }}
-                  onClick={onNavigate}
-                  aria-current={nodeCurrent ? "page" : undefined}
-                  className={cn(
-                    "flex min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-xs transition-colors",
-                    nodeCurrent ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                <div key={nodeName}>
+                  <div className={cn("flex min-w-0 items-center gap-0.5 rounded-sm", nodeActive && !nodeCurrent && "bg-muted/30")}>
+                    <button
+                      type="button"
+                      onClick={() => nodeVms.length && toggle(nodeKey)}
+                      className="flex h-7 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent"
+                      aria-label={`${nodeOpen ? "Collapse" : "Expand"} ${nodeName}`}
+                      aria-expanded={nodeOpen}
+                      disabled={nodeVms.length === 0}
+                    >
+                      {nodeVms.length > 0 ? (nodeOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />) : null}
+                    </button>
+                    <Link
+                      to="/infrastructure/$clusterId/nodes/$nodeName"
+                      params={{ clusterId, nodeName }}
+                      onClick={onNavigate}
+                      aria-current={nodeCurrent ? "page" : undefined}
+                      className={cn(
+                        "flex min-w-0 flex-1 items-center gap-2 rounded-sm px-1.5 py-1.5 text-xs transition-colors",
+                        nodeCurrent ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                      )}
+                    >
+                      <StatusDot status={node.status} />
+                      <Server className="h-3.5 w-3.5 shrink-0" />
+                      <span className="min-w-0 flex-1 truncate font-mono">{nodeName}</span>
+                      {!compact && <span className="text-[10px]">{nodeVms.length}</span>}
+                    </Link>
+                  </div>
+                  {nodeOpen && nodeVms.length > 0 && (
+                    <div className="ml-5 border-l border-border/60 pl-1">
+                      {nodeVms.map((vm) => {
+                        const vmId = String(vm.vm_id || "");
+                        const vmPath = `${nodePath}/vms/${vmId}`;
+                        const vmCurrent = decodedPath === vmPath;
+                        return (
+                          <Link
+                            key={`${nodeName}:${vmId}`}
+                            to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId"
+                            params={{ clusterId, nodeName, vmId }}
+                            onClick={onNavigate}
+                            aria-current={vmCurrent ? "page" : undefined}
+                            className={cn(
+                              "flex min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-[11px] transition-colors",
+                              vmCurrent ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                            )}
+                          >
+                            <StatusDot status={vm.status} />
+                            <Box className="h-3 w-3 shrink-0" />
+                            <span className="min-w-0 flex-1 truncate">{vm.name || `${vm.guest_type === "lxc" ? "CT" : "VM"} ${vmId}`}</span>
+                            <span className="font-mono text-[10px]">{vmId}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
                   )}
-                >
-                  <StatusDot status={node.status} />
-                  <Server className="h-3.5 w-3.5 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate font-mono">{nodeName}</span>
-                  {!compact && <span className="text-[10px]">{vms.filter((vm) => vm.node_name === nodeName).length} VM</span>}
-                </Link>
+                </div>
               );
             })}
           </div>

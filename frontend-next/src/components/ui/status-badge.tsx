@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 export type StatusTone = 'success' | 'warning' | 'danger' | 'info' | 'muted' | 'neutral';
 
 const toneStyles: Record<StatusTone, string> = {
-  success: '[background:hsl(var(--success)/0.12)] [border-color:hsl(var(--success)/0.26)] [color:hsl(var(--success))]',
+  success: 'bg-transparent [border-color:hsl(var(--success)/0.22)] [color:hsl(var(--success))]',
   warning: '[background:hsl(var(--warning)/0.13)] [border-color:hsl(var(--warning)/0.28)] [color:hsl(var(--warning))]',
   danger:  '[background:hsl(var(--destructive)/0.12)] [border-color:hsl(var(--destructive)/0.28)] [color:hsl(var(--destructive))]',
   info:    '[background:hsl(var(--info)/0.12)] [border-color:hsl(var(--info)/0.28)] [color:hsl(var(--info))]',

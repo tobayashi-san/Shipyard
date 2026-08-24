@@ -2,6 +2,7 @@ import {
   cloneElement,
   Fragment,
   isValidElement,
+  useDeferredValue,
   useEffect,
   useId,
   useState,
@@ -47,6 +48,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { useUrlTab } from "@/lib/use-url-tab";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { ActiveFilterChips } from "@/components/ui/filter-chips";
+import { OverflowItem, OverflowMenu, OverflowSep } from "@/components/ui/overflow-menu";
 import i18n from "@/lib/i18n";
 import { hasCap, useProfile } from "@/lib/queries";
 
@@ -165,7 +167,7 @@ const statusLabel: Record<string, string> = {
   container: tr("container"),
 };
 const capacityTone = (usage: number): "healthy" | "warning" | "critical" =>
-  usage > 90 ? "critical" : usage > 70 ? "warning" : "healthy";
+  usage > 95 ? "critical" : usage >= 80 ? "warning" : "healthy";
 const statusTone = (status?: string): StatusTone =>
   status === "active"
     ? "success"
@@ -218,6 +220,9 @@ export function NetworkDetailPage() {
   const [allocationSearch, setAllocationSearch] = useState("");
   const [allocationStatus, setAllocationStatus] = useState("all");
   const allocationPageSize = 50;
+  const deferredAddress = useDeferredValue(address.trim());
+  const deferredRangeStart = useDeferredValue(rangeStart.trim());
+  const deferredRangeEnd = useDeferredValue(rangeEnd.trim());
 
   const detail = useQuery({
     queryKey: ["ipam", "network", id],
@@ -227,8 +232,24 @@ export function NetworkDetailPage() {
     queryKey: ["ipam", "allocations", id, allocationPage, allocationSearch, allocationStatus],
     queryFn: () =>
       apiFetch<Paginated<Allocation>>(
-        `/ipam/subnets/${encodeURIComponent(id)}/allocations?paginated=1&page=${allocationPage}&page_size=${allocationPageSize}&q=${encodeURIComponent(allocationSearch)}&status=${encodeURIComponent(allocationStatus)}`,
+        `/ipam/subnets/${encodeURIComponent(id)}/allocations?paginated=1&page=${allocationPage}&page_size=${allocationPageSize}&q=${encodeURIComponent(allocationSearch)}&status=${encodeURIComponent(allocationStatus === "unassigned" ? "all" : allocationStatus)}`,
       ),
+  });
+  const reservationValidation = useQuery({
+    queryKey: ["ipam", "reservation-validation", id, addKind, deferredAddress, deferredRangeStart, deferredRangeEnd],
+    queryFn: () => apiFetch<{ valid: boolean; message: string }>(
+      `/ipam/subnets/${encodeURIComponent(id)}/reservations/validate`,
+      {
+        method: "POST",
+        body: addKind === "address"
+          ? { kind: "address", address: deferredAddress }
+          : { kind: "range", start_address: deferredRangeStart, end_address: deferredRangeEnd },
+      },
+    ),
+    enabled: addOpen && (addKind === "address"
+      ? Boolean(deferredAddress)
+      : Boolean(deferredRangeStart && deferredRangeEnd)),
+    retry: false,
   });
   const syncConflicts = useQuery({
     queryKey: ["ipam", "conflicts", id],
@@ -558,14 +579,11 @@ export function NetworkDetailPage() {
               <ServerCog />
               {tr("syncProxmox")}
             </Button>}
-            {canEdit && <Button variant="outline" size="sm" onClick={() => setEditPrefixOpen(true)}>
-              <Pencil />
-              {tr("editPrefix")}
-            </Button>}
-            {canEdit && <Button variant="outline" size="sm" onClick={() => setDeletePrefixOpen(true)}>
-              <Trash2 className="text-destructive" />
-              {tr("delete")}
-            </Button>}
+            {canEdit && <OverflowMenu title={tr("moreActions")}>
+              <OverflowItem icon={Pencil} onClick={() => setEditPrefixOpen(true)}>{tr("editPrefix")}</OverflowItem>
+              <OverflowSep />
+              <OverflowItem icon={Trash2} danger onClick={() => setDeletePrefixOpen(true)}>{tr("delete")}</OverflowItem>
+            </OverflowMenu>}
           </div>
         }
       />
@@ -884,6 +902,8 @@ export function NetworkDetailPage() {
               role={addressRole}
               servers={serverRows}
               submitting={reserve.isPending}
+              validation={reservationValidation.data}
+              validating={reservationValidation.isFetching || address.trim() !== deferredAddress}
               onAddress={setAddress}
               onHostname={setHostname}
               onMacAddress={setMacAddress}
@@ -899,6 +919,8 @@ export function NetworkDetailPage() {
               end={rangeEnd}
               description={rangeDescription}
               submitting={reserveRange.isPending}
+              validation={reservationValidation.data}
+              validating={reservationValidation.isFetching || rangeStart.trim() !== deferredRangeStart || rangeEnd.trim() !== deferredRangeEnd}
               onStart={setRangeStart}
               onEnd={setRangeEnd}
               onDescription={setRangeDescription}
@@ -1266,12 +1288,14 @@ function AllocationTable({
   const [releasing, setReleasing] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const keyFor = (row: Allocation) => `${row.kind}:${row.id}`;
-  const visibleRows = rows;
+  const visibleRows = statusFilter === "unassigned" ? [] : rows;
+  const visibleFreeSegments =
+    statusFilter === "all" || statusFilter === "unassigned" ? freeSegments : [];
   const freeBefore = (row: Allocation) =>
-    freeSegments.filter((segment) => segment.before_allocation_key === keyFor(row));
-  const trailingFree = freeSegments.filter(
-    (segment) => segment.before_allocation_key === null,
-  );
+    visibleFreeSegments.filter((segment) => segment.before_allocation_key === keyFor(row));
+  const trailingFree = statusFilter === "unassigned"
+    ? visibleFreeSegments
+    : visibleFreeSegments.filter((segment) => segment.before_allocation_key === null);
   const isProtected = (row: Allocation) =>
     row.kind === "address" &&
     (row.system_managed || Boolean(row.source_type && row.source_type !== "manual"));
@@ -1319,6 +1343,24 @@ function AllocationTable({
             </p>
           </div>
           <div className="flex w-full min-w-0 flex-1 flex-wrap items-center gap-2 lg:max-w-3xl lg:justify-end">
+            <div className="flex flex-wrap gap-1" aria-label={tr("quickFilters")}>
+              {[
+                ["active", tr("active")],
+                ["reserved", tr("reserved")],
+                ["dhcp", tr("dhcp")],
+                ["unassigned", tr("unassigned")],
+              ].map(([value, label]) => (
+                <Button
+                  key={value}
+                  type="button"
+                  size="sm"
+                  variant={statusFilter === value ? "secondary" : "outline"}
+                  onClick={() => onStatusFilter(statusFilter === value ? "all" : value)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
             <Input
               value={search}
               onChange={(event) => onSearch(event.target.value)}
@@ -1336,15 +1378,11 @@ function AllocationTable({
               {statusFilter !== "all" ? tr("filterCount", { count: 1 }) : tr("filter")}
             </Button>
             {canEdit && selectedRows.length > 0 && (
-              <Button
-                type="button"
-                size="sm"
-                variant="destructive"
-                onClick={() => setConfirmRelease(true)}
-              >
-                <Trash2 />
-                {tr("release")} {selectedRows.length}
-              </Button>
+              <OverflowMenu title={tr("bulkActions")} trigger={`${tr("bulkActions")} · ${selectedRows.length}`}>
+                <OverflowItem icon={Trash2} danger onClick={() => setConfirmRelease(true)}>
+                  {tr("release")} {selectedRows.length}
+                </OverflowItem>
+              </OverflowMenu>
             )}
           </div>
         </div>
@@ -1364,6 +1402,7 @@ function AllocationTable({
               aria-label={tr("addressStatusFilterLabel")}
             >
               <option value="all">{tr("allStatuses")}</option>
+              <option value="unassigned">{tr("unassigned")}</option>
               {Object.entries(statusLabel).map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
@@ -1396,7 +1435,7 @@ function AllocationTable({
       <CardContent className="p-0">
         {loading ? (
           <EmptyState compact title={tr("loadingInventory")} />
-        ) : rows.length === 0 && freeSegments.length === 0 ? (
+        ) : visibleRows.length === 0 && visibleFreeSegments.length === 0 ? (
           <p className="p-8 text-sm text-muted-foreground">
             {search || statusFilter !== "all"
               ? tr("emptyFilter")
@@ -2082,6 +2121,8 @@ function AddressForm({
   role,
   servers,
   submitting,
+  validation,
+  validating,
   onAddress,
   onHostname,
   onMacAddress,
@@ -2100,6 +2141,8 @@ function AddressForm({
   role: string;
   servers: Server[];
   submitting: boolean;
+  validation?: { valid: boolean; message: string };
+  validating: boolean;
   onAddress: (value: string) => void;
   onHostname: (value: string) => void;
   onMacAddress: (value: string) => void;
@@ -2197,8 +2240,17 @@ function AddressForm({
           </Field>
         </div>
       </div>
+      {address && (
+        <p className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs ${
+          validation?.valid
+            ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300"
+            : "border-destructive/40 bg-destructive/5 text-destructive"
+        }`}>
+          {validating ? tr("checkingAddress") : validation?.message || tr("checkingAddress")}
+        </p>
+      )}
       <DialogFooter>
-        <Button type="submit" disabled={submitting}>
+        <Button type="submit" disabled={submitting || validating || !validation?.valid}>
           <Plus />
           {tr("addIp")}
         </Button>
@@ -2212,6 +2264,8 @@ function RangeForm({
   end,
   description,
   submitting,
+  validation,
+  validating,
   onStart,
   onEnd,
   onDescription,
@@ -2221,6 +2275,8 @@ function RangeForm({
   end: string;
   description: string;
   submitting: boolean;
+  validation?: { valid: boolean; message: string };
+  validating: boolean;
   onStart: (value: string) => void;
   onEnd: (value: string) => void;
   onDescription: (value: string) => void;
@@ -2267,8 +2323,17 @@ function RangeForm({
       <p className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
         {tr("rangeObjectHint")}
       </p>
+      {start && end && (
+        <p className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs ${
+          validation?.valid
+            ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300"
+            : "border-destructive/40 bg-destructive/5 text-destructive"
+        }`}>
+          {validating ? tr("checkingRange") : validation?.message || tr("checkingRange")}
+        </p>
+      )}
       <DialogFooter>
-        <Button type="submit" variant="secondary" disabled={submitting}>
+        <Button type="submit" variant="secondary" disabled={submitting || validating || !validation?.valid}>
           <Plus />
           {tr("reserveRange")}
         </Button>

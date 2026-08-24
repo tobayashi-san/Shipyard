@@ -1,4 +1,4 @@
-const CURRENT_SCHEMA_VERSION = 6;
+const CURRENT_SCHEMA_VERSION = 7;
 
 const REQUIRED_COLUMNS = {
   servers: ['id', 'name', 'hostname', 'ip_address', 'environment_id', 'host_fingerprint', 'docker_enabled'],
@@ -22,6 +22,7 @@ const REQUIRED_COLUMNS = {
   schedule_history: ['id', 'environment_id', 'triggered_by', 'check_mode'],
   ansible_vars: ['id', 'environment_id', 'key', 'value', 'is_secret'],
   users: ['id', 'username', 'role', 'disabled', 'last_login_at', 'token_version'],
+  docker_containers: ['id', 'server_id', 'container_name', 'cpu_percent', 'memory_usage', 'memory_percent'],
 };
 
 function validateMigratedSchema(db) {
@@ -423,6 +424,13 @@ function applyMigrations(db) {
     "ALTER TABLE schedule_history ADD COLUMN environment_id TEXT NOT NULL DEFAULT 'default'",
     "ALTER TABLE schedule_history ADD COLUMN triggered_by TEXT",
     "ALTER TABLE schedule_history ADD COLUMN check_mode INTEGER NOT NULL DEFAULT 0",
+  ]) {
+    try { db.exec(statement); } catch {}
+  }
+  for (const statement of [
+    "ALTER TABLE docker_containers ADD COLUMN cpu_percent REAL",
+    "ALTER TABLE docker_containers ADD COLUMN memory_usage TEXT",
+    "ALTER TABLE docker_containers ADD COLUMN memory_percent REAL",
   ]) {
     try { db.exec(statement); } catch {}
   }

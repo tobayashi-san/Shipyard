@@ -749,6 +749,43 @@ function overlapsEnvironmentAllocation(environmentId, subnetId, start, end = sta
     );
   });
 }
+
+function reservationSpaceError(subnet, start, end = start) {
+  const parsed = subnet && parseCidr(subnet.cidr);
+  if (!subnet || !parsed) return "Netzwerk wurde nicht gefunden.";
+  if (
+    start === null || end === null || start > end ||
+    !isUsableAddress(start, parsed) || !isUsableAddress(end, parsed)
+  )
+    return start === end
+      ? "Adresse liegt ausserhalb des nutzbaren Bereichs dieses Prefixes."
+      : "Der Bereich muss vollständig innerhalb der nutzbaren Adressen dieses Prefixes liegen.";
+  const gateway = gatewayNumber(subnet);
+  if (gateway !== null && gateway >= start && gateway <= end)
+    return "Die Auswahl enthält das konfigurierte Gateway.";
+  if (overlapsDelegatedPrefix(subnet, start, end))
+    return "Die Auswahl überschneidet sich mit einem delegierten Child-Prefix.";
+  if (overlapsEnvironmentAllocation(subnet.environment_id, subnet.id, start, end))
+    return "Die Auswahl überschneidet sich mit einer Belegung in einem anderen Prefix.";
+  const addressOverlap = db.db
+    .prepare("SELECT address FROM ipam_reservations WHERE subnet_id = ?")
+    .all(subnet.id)
+    .some((row) => {
+      const value = ipv4(row.address);
+      return value !== null && value >= start && value <= end;
+    });
+  const rangeOverlap = getRanges(subnet.id).some((row) => {
+    const otherStart = ipv4(row.start_address);
+    const otherEnd = ipv4(row.end_address);
+    return otherStart !== null && otherEnd !== null && rangesOverlap(
+      { first: start, last: end },
+      { first: otherStart, last: otherEnd },
+    );
+  });
+  if (addressOverlap || rangeOverlap)
+    return "Die Auswahl überschneidet sich mit einer bestehenden Reservierung.";
+  return null;
+}
 function parseDns(value) {
   if (!Array.isArray(value)) return [];
   const servers = value
@@ -1509,6 +1546,21 @@ router.get("/subnets/:id/ranges", guard("canViewNetworks"), (req, res) => {
       (ipv4(left.start_address) ?? 0) - (ipv4(right.start_address) ?? 0),
   );
   res.json(rows);
+});
+
+// Non-destructive validation for immediate feedback in the reservation dialog.
+router.post("/subnets/:id/reservations/validate", guard("canViewNetworks"), (req, res) => {
+  const subnet = db.db
+    .prepare("SELECT * FROM ipam_subnets WHERE id = ?")
+    .get(req.params.id);
+  if (!subnet)
+    return res.status(404).json({ error: "Netzwerk nicht gefunden." });
+  if (!guardEnvironment(req, res, subnet.environment_id)) return;
+  const kind = String(req.body?.kind || "address");
+  const start = ipv4(kind === "range" ? req.body?.start_address : req.body?.address);
+  const end = ipv4(kind === "range" ? req.body?.end_address : req.body?.address);
+  const error = reservationSpaceError(subnet, start, end);
+  res.json({ valid: !error, message: error || "Adresse ist verfügbar." });
 });
 
 router.post(

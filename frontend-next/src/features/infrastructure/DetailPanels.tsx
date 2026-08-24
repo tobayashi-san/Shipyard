@@ -920,12 +920,17 @@ export function VmTable({
             access details.
           </p>
         </div>
-        {canImportVm && selectedVms.length > 0 && (
-          <div className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5">
+        {canImportVm && selectable.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-md border bg-background px-2 py-1.5">
+            <Button size="sm" onClick={() => onImportVms(selectable)}>
+              <ServerCog />
+              Import all orphaned guests
+            </Button>
+            {selectedVms.length > 0 && <>
             <span className="text-xs text-muted-foreground">
               {selectedVms.length} selected
             </span>
-            <Button size="sm" onClick={() => onImportVms(selectedVms)}>
+            <Button size="sm" variant="outline" onClick={() => onImportVms(selectedVms)}>
               <CheckSquare2 />
               Adopt into Shipyard
             </Button>
@@ -937,6 +942,7 @@ export function VmTable({
             >
               <X className="h-4 w-4" />
             </Button>
+            </>}
           </div>
         )}
       </CardHeader>

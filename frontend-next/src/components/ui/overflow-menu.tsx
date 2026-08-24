@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { MoreVertical } from 'lucide-react';
+import { ChevronDown, MoreVertical } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { Button } from './button';
 
@@ -10,10 +10,12 @@ export function OverflowMenu({
   children,
   width = 'w-56',
   title = 'Actions',
+  trigger,
 }: {
   children: React.ReactNode;
   width?: string;
   title?: string;
+  trigger?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -36,8 +38,9 @@ export function OverflowMenu({
 
   return (
     <div className="relative" ref={ref}>
-      <Button variant="ghost" size="icon" onClick={() => setOpen(!open)} title={title} aria-label={title} aria-haspopup="menu" aria-expanded={open}>
-        <MoreVertical className="h-4 w-4" />
+      <Button variant={trigger ? "outline" : "ghost"} size={trigger ? "sm" : "icon"} onClick={() => setOpen(!open)} title={title} aria-label={title} aria-haspopup="menu" aria-expanded={open}>
+        {trigger || <MoreVertical className="h-4 w-4" />}
+        {trigger && <ChevronDown className="h-3.5 w-3.5" />}
       </Button>
       {open && (
         <div

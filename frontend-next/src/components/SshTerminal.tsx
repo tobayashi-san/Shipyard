@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { X } from 'lucide-react';
+import { Copy, Keyboard, Trash2, X } from 'lucide-react';
 import { getToken } from '@/lib/auth';
 import { useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
@@ -120,7 +120,7 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
         };
 
         ws.onclose = () => {
-          if (!ready) setStatus('offline', t('term.connFailed'));
+          setStatus('offline', ready ? t('term.disconnected') : t('term.connFailed'));
         };
 
         ws.onerror = () => {
@@ -168,6 +168,28 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
   const serverName = (server.name as string) || '';
   const hostname = (server.hostname as string) || serverName;
   const ip = (server.ip_address as string) || '';
+  const sendControlC = () => {
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN)
+      ws.send(JSON.stringify({ type: 'input', data: '\x03' }));
+    termRef.current?.focus();
+  };
+  const clearTerminal = () => {
+    termRef.current?.clear();
+    termRef.current?.write('\x1b[2J\x1b[H');
+    termRef.current?.focus();
+  };
+  const copyLog = async () => {
+    const term = termRef.current;
+    if (!term) return;
+    const selected = term.getSelection();
+    const buffer = term.buffer.active;
+    const output = selected || Array.from({ length: buffer.length }, (_, index) =>
+      buffer.getLine(index)?.translateToString(true) || '',
+    ).join('\n').replace(/\s+$/, '');
+    await navigator.clipboard.writeText(output);
+    term.focus();
+  };
 
   return createPortal(
     <div
@@ -188,6 +210,7 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
         <div className={cn('flex items-center justify-between border-b px-4 py-2.5', isDark ? 'border-[#30363d]' : 'border-border bg-secondary/45')}>
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-2 text-sm">
+              <span ref={dotRef} aria-hidden="true" className="inline-block h-2 w-2 animate-pulse rounded-full bg-yellow-500" />
               <span className={cn('text-xs font-medium uppercase tracking-wider', isDark ? 'text-[#8b949e]' : 'text-muted-foreground')}>
                 {t('common.terminal')}
               </span>
@@ -198,7 +221,6 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
             </div>
           </div>
           <div className="flex items-center gap-3" aria-live="polite">
-            <span ref={dotRef} aria-hidden="true" className="inline-block h-2 w-2 animate-pulse rounded-full bg-yellow-500" />
             <span ref={statusRef} className={cn('text-xs', isDark ? 'text-[#8b949e]' : 'text-muted-foreground')}>{t('term.connecting')}</span>
             <button
               type="button"
@@ -210,6 +232,18 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
               <X className="h-4 w-4" />
             </button>
           </div>
+        </div>
+
+        <div className={cn('flex items-center gap-1 border-b px-3 py-1.5', isDark ? 'border-[#30363d] bg-[#161b22]' : 'border-border bg-muted/20')}>
+          <button type="button" onClick={sendControlC} className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground" title="Send Ctrl+C">
+            <Keyboard className="h-3.5 w-3.5" /> Ctrl+C
+          </button>
+          <button type="button" onClick={clearTerminal} className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground" title="Clear terminal">
+            <Trash2 className="h-3.5 w-3.5" /> Clear
+          </button>
+          <button type="button" onClick={() => void copyLog()} className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground" title="Copy selected text or full terminal log">
+            <Copy className="h-3.5 w-3.5" /> Copy log
+          </button>
         </div>
 
         {/* Terminal container */}

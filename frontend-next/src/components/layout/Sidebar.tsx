@@ -136,7 +136,7 @@ export function Sidebar({
         </section>}
         {(canViewServers || canViewDeployments || canViewNetworks) && <section className="shrink-0 space-y-1">
           {!collapsed && (
-            <div className="section-label px-2.5 pb-1">Resources</div>
+            <div className="section-label px-2.5 pb-1 uppercase tracking-[0.12em]">Infrastructure</div>
           )}
           {canViewServers && (
             <NavItem
@@ -177,7 +177,7 @@ export function Sidebar({
           )}
         >
           {!collapsed && (
-            <div className="section-label px-1 pb-1">Inventory</div>
+            <div className="section-label px-1 pb-1 uppercase tracking-[0.12em]">Infrastructure tree</div>
           )}
           {canViewServers && (
             <div
@@ -201,7 +201,7 @@ export function Sidebar({
         </section>}
         {canViewPlaybooks && <section className="shrink-0 space-y-1">
           {!collapsed && (
-            <div className="section-label px-2.5 pb-1">Automation</div>
+            <div className="section-label px-2.5 pb-1 uppercase tracking-[0.12em]">Automation</div>
           )}
           {canViewPlaybooks && (
             <NavItem
@@ -238,7 +238,7 @@ export function Sidebar({
         {canManageConsole && (
           <section className="shrink-0 space-y-1">
             {!collapsed && (
-              <div className="section-label px-2.5 pb-1">Administration</div>
+              <div className="section-label px-2.5 pb-1 uppercase tracking-[0.12em]">System</div>
             )}
           {canManageConsole && (
             <NavItem

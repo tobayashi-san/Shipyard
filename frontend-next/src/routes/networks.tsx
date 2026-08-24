@@ -10,6 +10,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  ServerCog,
   Settings2,
   Trash2,
 } from "lucide-react";
@@ -34,6 +35,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ActiveFilterChips } from "@/components/ui/filter-chips";
 import { TablePagination } from "@/components/ui/table-pagination";
+import { OverflowItem, OverflowMenu, OverflowSep } from "@/components/ui/overflow-menu";
 import i18n from "@/lib/i18n";
 import { hasCap, useProfile } from "@/lib/queries";
 
@@ -121,6 +123,7 @@ interface SearchResult {
   description?: string;
   server_id?: string | null;
 }
+interface ProxmoxConnection { id: string; name: string }
 const tr = (key: string, options?: Record<string, unknown>) =>
   String(i18n.t(`ipam.${key}`, options));
 const statusLabel: Record<string, string> = {
@@ -151,6 +154,11 @@ export function NetworksPage() {
   const pageSize = 50;
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkVlanOpen, setBulkVlanOpen] = useState(false);
+  const [bulkVlan, setBulkVlan] = useState("");
+  const [bulkScanOpen, setBulkScanOpen] = useState(false);
+  const [bulkConnectionId, setBulkConnectionId] = useState("");
   const query = useQuery({
     queryKey: ["ipam", "subnets", environmentId, page, deferredSearch, status],
     queryFn: () =>
@@ -159,6 +167,13 @@ export function NetworksPage() {
       ),
   });
   const rows = Array.isArray(query.data?.items) ? query.data.items : [];
+  const connections = useQuery({
+    queryKey: ["opentofu", "proxmox-connections", environmentId],
+    queryFn: () => apiFetch<ProxmoxConnection[]>(
+      `/opentofu/proxmox-connections?environment_id=${encodeURIComponent(environmentId)}`,
+    ),
+    retry: false,
+  });
   const hierarchicalRows = useMemo(() => {
     const byParent = new Map<string | null, Prefix[]>();
     rows.forEach((prefix) => {
@@ -187,6 +202,7 @@ export function NetworksPage() {
   // already consume capacity inside their parent and must not be counted twice.
   const visibleIds = hierarchicalRows.map(({ prefix }) => prefix.id);
   const selectedCount = visibleIds.filter((id) => selectedIds.has(id)).length;
+  const selectedPrefixIds = visibleIds.filter((id) => selectedIds.has(id));
   const allSelected =
     visibleIds.length > 0 && selectedCount === visibleIds.length;
   const someSelected = selectedCount > 0 && !allSelected;
@@ -225,6 +241,48 @@ export function NetworksPage() {
         error.message || tr("prefixStatusFailed"),
         "error",
       ),
+  });
+  const bulkVlanMutation = useMutation({
+    mutationFn: () => Promise.all(selectedPrefixIds.map((id) =>
+      apiFetch(`/ipam/subnets/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        body: { vlan_id: bulkVlan.trim() ? Number(bulkVlan) : null },
+      }),
+    )),
+    onSuccess: () => {
+      showToast(tr("bulkVlanUpdated", { count: selectedPrefixIds.length }), "success");
+      setBulkVlanOpen(false);
+      setSelectedIds(new Set());
+      void queryClient.invalidateQueries({ queryKey: ["ipam"] });
+    },
+    onError: (error: Error) => showToast(error.message, "error"),
+  });
+  const bulkDeleteMutation = useMutation({
+    mutationFn: () => Promise.all(selectedPrefixIds.map((id) =>
+      apiFetch(`/ipam/subnets/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    )),
+    onSuccess: () => {
+      showToast(tr("bulkPrefixesDeleted", { count: selectedPrefixIds.length }), "success");
+      setBulkDeleteOpen(false);
+      setSelectedIds(new Set());
+      void queryClient.invalidateQueries({ queryKey: ["ipam"] });
+    },
+    onError: (error: Error) => showToast(error.message, "error"),
+  });
+  const bulkScanMutation = useMutation({
+    mutationFn: () => Promise.all(selectedPrefixIds.map((subnetId) =>
+      apiFetch(`/opentofu/proxmox-connections/${encodeURIComponent(bulkConnectionId)}/sync-ipam`, {
+        method: "POST",
+        body: { subnet_id: subnetId },
+      }),
+    )),
+    onSuccess: () => {
+      showToast(tr("bulkPrefixesScanned", { count: selectedPrefixIds.length }), "success");
+      setBulkScanOpen(false);
+      setSelectedIds(new Set());
+      void queryClient.invalidateQueries({ queryKey: ["ipam"] });
+    },
+    onError: (error: Error) => showToast(error.message, "error"),
   });
   const toggle = (id: string) =>
     setSelectedIds((current) => {
@@ -301,32 +359,15 @@ export function NetworksPage() {
                       <span className="whitespace-nowrap text-xs font-medium tabular-nums">
                         {tr("selected", { count: selectedCount })}
                       </span>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={updateStatus.isPending}
-                        onClick={() =>
-                          updateStatus.mutate({
-                            ids: visibleIds.filter((id) => selectedIds.has(id)),
-                            value: "active",
-                          })
-                        }
-                      >
-                        {tr("active")}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={updateStatus.isPending}
-                        onClick={() =>
-                          updateStatus.mutate({
-                            ids: visibleIds.filter((id) => selectedIds.has(id)),
-                            value: "deprecated",
-                          })
-                        }
-                      >
-                        {tr("deprecated")}
-                      </Button>
+                      <OverflowMenu title={tr("bulkActions")} trigger={tr("bulkActions")}>
+                        <OverflowItem disabled={updateStatus.isPending} onClick={() => updateStatus.mutate({ ids: selectedPrefixIds, value: "active" })}>{tr("active")}</OverflowItem>
+                        <OverflowItem disabled={updateStatus.isPending} onClick={() => updateStatus.mutate({ ids: selectedPrefixIds, value: "deprecated" })}>{tr("deprecated")}</OverflowItem>
+                        <OverflowSep />
+                        <OverflowItem icon={ServerCog} onClick={() => setBulkScanOpen(true)}>{tr("scan")}</OverflowItem>
+                        <OverflowItem icon={Pencil} onClick={() => setBulkVlanOpen(true)}>{tr("assignVlan")}</OverflowItem>
+                        <OverflowSep />
+                        <OverflowItem icon={Trash2} danger onClick={() => setBulkDeleteOpen(true)}>{tr("delete")}</OverflowItem>
+                      </OverflowMenu>
                     </>
                   )}
                   <label className="relative min-w-0 flex-1 sm:w-64">
@@ -469,6 +510,52 @@ export function NetworksPage() {
         onOpenChange={setCreateOpen}
         environmentId={environmentId}
       />}
+      <Dialog open={bulkVlanOpen} onOpenChange={setBulkVlanOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{tr("assignVlan")}</DialogTitle>
+            <DialogDescription>{tr("assignVlanDescription", { count: selectedCount })}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="bulk-vlan">{tr("vlanId")}</Label>
+            <Input id="bulk-vlan" type="number" min={1} max={4094} value={bulkVlan} onChange={(event) => setBulkVlan(event.target.value)} placeholder={tr("vlanExample")} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkVlanOpen(false)}>{tr("cancel")}</Button>
+            <Button disabled={bulkVlanMutation.isPending} onClick={() => bulkVlanMutation.mutate()}>{tr("apply")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={bulkScanOpen} onOpenChange={setBulkScanOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{tr("scanPrefixes")}</DialogTitle>
+            <DialogDescription>{tr("scanPrefixesDescription", { count: selectedCount })}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="bulk-scan-connection">{tr("proxmoxConnection")}</Label>
+            <select id="bulk-scan-connection" className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={bulkConnectionId} onChange={(event) => setBulkConnectionId(event.target.value)}>
+              <option value="">{tr("selectConnection")}</option>
+              {(connections.data || []).map((connection) => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
+            </select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkScanOpen(false)}>{tr("cancel")}</Button>
+            <Button disabled={!bulkConnectionId || bulkScanMutation.isPending} onClick={() => bulkScanMutation.mutate()}><ServerCog /> {tr("scan")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        title={tr("deletePrefixesTitle", { count: selectedCount })}
+        description={tr("deletePrefixesDescription")}
+        confirmLabel={tr("delete")}
+        cancelLabel={tr("cancel")}
+        variant="destructive"
+        onConfirm={() => bulkDeleteMutation.mutate()}
+        isPending={bulkDeleteMutation.isPending}
+      />
     </div>
   );
 }

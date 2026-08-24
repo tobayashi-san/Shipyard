@@ -13,12 +13,13 @@ import { Separator } from "@/components/ui/separator";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useUi } from "@/lib/store";
 import { hasCap, useProfile } from "@/lib/queries";
 import { showToast } from "@/lib/toast";
 import { ws } from "@/lib/ws";
 import { buildAllExceptTargets } from "./playbook-utils";
-import type { HistoryEntry, Playbook } from "./playbook-types";
+import type { AnsibleVar, HistoryEntry, Playbook } from "./playbook-types";
 import { HistoryTab } from "./PlaybookHistory";
 
 export function RunsTab({ initialPlaybook }: { initialPlaybook?: string }) {
@@ -48,6 +49,10 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
     queryFn: () =>
       api.getServers(environmentId) as unknown as Promise<Record<string, unknown>[]>,
   });
+  const environmentVars = useQuery<AnsibleVar[]>({
+    queryKey: ["ansibleVars", environmentId],
+    queryFn: () => api.getAnsibleVars(environmentId) as unknown as Promise<AnsibleVar[]>,
+  });
   const srvList = asArray<Record<string, unknown>>(servers.data);
   const userPbs = asArray<Playbook>(playbooks).filter((p) => !p.isInternal);
 
@@ -59,6 +64,9 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
   const [lines, setLines] = useState<{ text: string; cls: string }[]>([]);
   const [started, setStarted] = useState(false);
   const [confirmAllOpen, setConfirmAllOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewAllMode, setReviewAllMode] = useState(false);
+  const [reviewVars, setReviewVars] = useState<Record<string, unknown>>({});
   const [checkMode, setCheckMode] = useState(false);
   const [forks, setForks] = useState(5);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
@@ -126,7 +134,32 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
       setConfirmAllOpen(true);
       return;
     }
-    await startRun(false);
+    prepareReview(false);
+  };
+
+  const prepareReview = (allMode: boolean) => {
+    const targets = allMode ? previewTargets : [...checked];
+    if (targets.length === 0) {
+      showToast(t("run.needTarget"), "warning");
+      return;
+    }
+    let overrides: Record<string, unknown> = {};
+    if (extraVars.trim()) {
+      try {
+        overrides = JSON.parse(extraVars);
+        if (!overrides || Array.isArray(overrides) || typeof overrides !== "object") throw new Error();
+      } catch {
+        showToast(t("run.invalidJson"), "error");
+        return;
+      }
+    }
+    const inherited = Object.fromEntries(asArray<AnsibleVar>(environmentVars.data).map((variable) => [
+      variable.key,
+      variable.is_secret ? "••••••••" : variable.value,
+    ]));
+    setReviewVars({ ...inherited, ...overrides });
+    setReviewAllMode(allMode);
+    setReviewOpen(true);
   };
 
   const startRun = async (allMode: boolean) => {
@@ -349,10 +382,45 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
             confirmTextValue="all"
             confirmInputLabel="Confirm target"
             onConfirm={() => {
-              void startRun(true);
+              setConfirmAllOpen(false);
+              prepareReview(true);
             }}
             isPending={busy}
           />
+          <Dialog open={reviewOpen} onOpenChange={setReviewOpen}>
+            <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-2xl overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Review playbook run</DialogTitle>
+                <DialogDescription>Verify the exact hosts and merged variables before starting Ansible.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 text-sm">
+                <div className="rounded-md border p-3">
+                  <div className="font-medium">{selPb}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">{checkMode ? "Dry run" : "Live run"} · {forks} parallel hosts</div>
+                </div>
+                <div>
+                  <div className="mb-2 font-medium">Hosts ({(reviewAllMode ? previewTargets : [...checked]).length})</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(reviewAllMode ? previewTargets : [...checked]).map((host) => <StatusBadge key={host} tone="neutral">{host}</StatusBadge>)}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-2 font-medium">Variables passed to every selected host</div>
+                  {Object.keys(reviewVars).length ? (
+                    <div className="overflow-hidden rounded-md border">
+                      <table className="w-full text-xs"><tbody className="divide-y">
+                        {Object.entries(reviewVars).map(([key, value]) => <tr key={key}><td className="px-3 py-2 font-mono font-medium">{key}</td><td className="px-3 py-2 font-mono text-muted-foreground">{String(value)}</td></tr>)}
+                      </tbody></table>
+                    </div>
+                  ) : <p className="text-xs text-muted-foreground">No environment or run variables.</p>}
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setReviewOpen(false)}>Back</Button>
+                <Button onClick={() => { setReviewOpen(false); void startRun(reviewAllMode); }} disabled={busy}><Play className="h-4 w-4" /> Start run</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </CardContent>
       </Card>
 
@@ -391,4 +459,3 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
 // ═════════════════════════════════════════════════════════════════════════════
 // Tab: Variables
 // ═════════════════════════════════════════════════════════════════════════════
-

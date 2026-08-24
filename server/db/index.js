@@ -159,8 +159,8 @@ const dockerContainerQueries = {
   clearForServer: db.prepare('DELETE FROM docker_containers WHERE server_id = ?'),
   deleteForComposePath: db.prepare('DELETE FROM docker_containers WHERE server_id = ? AND compose_working_dir = ?'),
   insert: db.prepare(`
-    INSERT INTO docker_containers (id, server_id, container_name, image, state, status, created_at_container, compose_project, compose_working_dir)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO docker_containers (id, server_id, container_name, image, state, status, created_at_container, compose_project, compose_working_dir, cpu_percent, memory_usage, memory_percent)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
 };
 
@@ -359,7 +359,7 @@ module.exports = {
           if (c.composeProject && c.composeWorkingDir) {
             composeProjectQueries.upsert.run(uuidv4(), serverId, c.composeProject, c.composeWorkingDir);
           }
-          dockerContainerQueries.insert.run(uuidv4(), serverId, c.name, c.image, c.state, c.status, c.createdAt, c.composeProject || null, c.composeWorkingDir || null);
+          dockerContainerQueries.insert.run(uuidv4(), serverId, c.name, c.image, c.state, c.status, c.createdAt, c.composeProject || null, c.composeWorkingDir || null, c.cpuPercent ?? null, c.memoryUsage || null, c.memoryPercent ?? null);
         }
       });
       transaction();

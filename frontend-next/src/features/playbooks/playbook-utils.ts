@@ -63,6 +63,11 @@ export function selectorsToCron(interval: string, hour: number, minute: number, 
   }
 }
 
+export function isPresetCron(cron: string) {
+  const parsed = cronToSelectors(cron);
+  return selectorsToCron(parsed.interval, parsed.hour, parsed.minute, parsed.weekday, parsed.monthday) === cron.trim();
+}
+
 export function formatDate(date?: string) {
   if (!date) return '';
   try { return new Date(date).toLocaleString(); } catch { return date; }

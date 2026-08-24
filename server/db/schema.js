@@ -89,6 +89,9 @@ function applySchema(db) {
       created_at_container TEXT,
       compose_project TEXT,
       compose_working_dir TEXT,
+      cpu_percent REAL,
+      memory_usage TEXT,
+      memory_percent REAL,
       updated_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
     );

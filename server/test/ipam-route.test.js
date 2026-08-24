@@ -107,6 +107,24 @@ test('IPAM combines individual addresses and ranges and exposes address conflict
   assert.equal(range.status, 201);
   assert.equal(range.body.count, 10);
 
+  const freePreview = await auth(request(app).post(`/api/ipam/subnets/${parentSubnetId}/reservations/validate`)).send({
+    kind: 'address', address: '10.44.0.30',
+  });
+  assert.equal(freePreview.status, 200);
+  assert.equal(freePreview.body.valid, true);
+
+  const overlapPreview = await auth(request(app).post(`/api/ipam/subnets/${parentSubnetId}/reservations/validate`)).send({
+    kind: 'range', start_address: '10.44.0.42', end_address: '10.44.0.52',
+  });
+  assert.equal(overlapPreview.status, 200);
+  assert.equal(overlapPreview.body.valid, false);
+
+  const outsidePreview = await auth(request(app).post(`/api/ipam/subnets/${parentSubnetId}/reservations/validate`)).send({
+    kind: 'address', address: '10.99.0.1',
+  });
+  assert.equal(outsidePreview.status, 200);
+  assert.equal(outsidePreview.body.valid, false);
+
   const insideRange = await auth(request(app).post(`/api/ipam/subnets/${parentSubnetId}/reservations`)).send({
     address: '10.44.0.42', hostname: 'must-fail',
   });
