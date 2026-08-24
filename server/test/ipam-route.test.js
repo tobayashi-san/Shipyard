@@ -242,7 +242,7 @@ test('IPAM validates one DHCP pool per prefix and derives address status only fr
   assert.equal(manualDhcpClaim.status, 400, JSON.stringify(manualDhcpClaim.body));
 });
 
-test('IPAM uses MAC identity to distinguish the same machine from real hostname conflicts', async () => {
+test('IPAM allows one hostname on multiple adapter addresses', async () => {
   const first = await auth(request(app).post(`/api/ipam/subnets/${parentSubnetId}/reservations`)).send({
     address: '10.44.0.80', hostname: 'same-machine', mac_address: '02:00:00:00:00:80', description: 'Erste Zuordnung',
   });
@@ -265,10 +265,11 @@ test('IPAM uses MAC identity to distinguish the same machine from real hostname 
   const firstRow = allocations.body.find(row => row.address === '10.44.0.80');
   const secondRow = allocations.body.find(row => row.address === '10.44.0.81');
   const thirdRow = allocations.body.find(row => row.address === '10.44.0.82');
+  const fourthRow = allocations.body.find(row => row.address === '10.44.0.83');
   assert.equal(firstRow.conflict, false);
   assert.equal(secondRow.conflict, false);
-  assert.equal(thirdRow.conflict, true);
-  assert.match(thirdRow.conflicts.join(' '), /Hostname mehrfach vergeben/);
+  assert.equal(thirdRow.conflict, false);
+  assert.equal(fourthRow.conflict, false);
 });
 
 test('IPAM returns free address sections before, between, and after allocations', async () => {

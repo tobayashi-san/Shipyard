@@ -195,8 +195,10 @@ test('agent feature visibility follows the setting immediately', async ({ page }
   });
   await expect(agentToggle).toHaveAttribute('data-state', 'checked');
   await page.goto(`/servers/${serverId}`);
-  const additionalSections = page.getByLabel('Additional host sections');
-  await expect(additionalSections.locator('option[value="agent"]')).toHaveCount(1);
+  await expect(page.getByRole('tab', { name: /agent/i })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Details', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: /notes/i })).toBeVisible();
+  await expect(page.getByText('More', { exact: true })).toHaveCount(0);
   await page.getByRole('tab', { name: 'Operations', exact: true }).click();
   await expect(page).toHaveURL(/#tab=history$/);
   await page.reload();
@@ -209,7 +211,7 @@ test('agent feature visibility follows the setting immediately', async ({ page }
   await page.getByRole('switch', { name: /agent-feature aktivieren|enable agent feature/i }).click();
   await disabledSave;
   await page.goto(`/servers/${serverId}`);
-  await expect(page.getByLabel('Additional host sections').locator('option[value="agent"]')).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: /agent/i })).toHaveCount(0);
   await page.goto('/settings');
   await expect(page.getByText(/agent manifest/i, { exact: true })).toHaveCount(0);
   await page.evaluate(async (id) => {
@@ -370,7 +372,7 @@ test('IPAM dialogs remain usable inside a mobile viewport', async ({ page }) => 
   await prefixDialog.getByLabel('Name').fill('E2E Mobile Prefix');
   await prefixDialog.getByLabel('IPv4 prefix').fill('10.198.0.0/24');
   await prefixDialog.getByRole('button', { name: 'Add prefix', exact: true }).click();
-  await page.getByRole('link', { name: /10\.198\.0\.0\/24/i }).click();
+  await page.getByRole('row').filter({ hasText: '10.198.0.0/24' }).getByRole('link').first().click();
   await page.getByRole('button', { name: 'Reserve address' }).click();
   const reservationDialog = page.getByRole('dialog', { name: 'Reserve address space' });
   await expect(reservationDialog).toBeVisible();
@@ -561,16 +563,15 @@ test('IPAM sources can be configured and synced through the browser', async ({ p
     await page.getByRole('link', { name: 'Back to IPAM' }).click();
     await expect(page).toHaveURL(/\/networks$/);
 
-    const prefixEntry = page.getByRole('button', { name: /E2E DHCP 10\.199\.0\.0\/24/i });
-    await prefixEntry.click();
+    const prefixEntry = page.getByRole('row').filter({ hasText: '10.199.0.0/24' });
     const prefixPositionBefore = await prefixEntry.boundingBox();
-    const prefixCheckbox = page.getByRole('checkbox', { name: 'Select prefix 10.199.0.0/24' });
+    const prefixCheckbox = prefixEntry.getByRole('checkbox', { name: 'Select prefix 10.199.0.0/24' });
     await prefixCheckbox.check();
     await expect(page.getByText('1 selected', { exact: true })).toBeVisible();
     const prefixPositionAfter = await prefixEntry.boundingBox();
     expect(prefixPositionAfter?.y).toBe(prefixPositionBefore?.y);
     await prefixCheckbox.uncheck();
-    await page.getByRole('link', { name: 'Open', exact: true }).click();
+    await prefixEntry.getByRole('link').first().click();
     await expect(page.getByRole('table').getByText('10.199.0.20', { exact: true })).toBeVisible();
     await expect(page.getByRole('table').getByText('e2e-dhcp', { exact: true })).toBeVisible();
     await expect(page.getByRole('table').getByText('02:00:00:00:00:20', { exact: true })).toBeVisible();
@@ -739,6 +740,8 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
     await openPlatformInventory(page, 'E2E Hierarchy Platform');
     await expect(page.getByText('Operational status', { exact: true })).toBeVisible();
     await expect(page.getByText(/^(ready for operation|bereit für betrieb)$/i)).toBeVisible();
+    await expect(page.locator('aside').getByRole('link', { name: /E2E Hierarchy Platform/i })).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('aside').getByRole('link', { name: /hierarchy-node/i })).toBeVisible();
     await page.getByRole('tab', { name: /updates 1/i }).click();
     const platformUpdatesTable = page.locator('main table').filter({ hasText: 'hierarchy-node' });
     await expect(platformUpdatesTable).toBeVisible();

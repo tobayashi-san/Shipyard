@@ -810,7 +810,6 @@ function withReservationConflicts(rows, environmentId) {
     )
     .all(environmentId);
   const byAddress = new Map();
-  const byHostname = new Map();
   const observations = db.db
     .prepare(
       `SELECT observation.reservation_id, source.name, source.type,
@@ -861,7 +860,6 @@ function withReservationConflicts(rows, environmentId) {
       map.set(key, bucket);
     };
     add(byAddress, String(row.address || "").trim());
-    add(byHostname, normalizedHostname(row.hostname));
   }
   return rows.map((row) => {
     const conflicts = [];
@@ -871,14 +869,6 @@ function withReservationConflicts(rows, environmentId) {
       )
     )
       conflicts.push("IP-Adresse mehrfach in der Umgebung erfasst");
-    const hostname = normalizedHostname(row.hostname);
-    if (
-      hostname &&
-      (byHostname.get(hostname) || []).some(
-        (other) => other.id !== row.id && !sameMachine(row, other),
-      )
-    )
-      conflicts.push("Hostname mehrfach vergeben");
     for (const external of externalByAddress.get(
       String(row.address || "").trim(),
     ) || []) {

@@ -49,8 +49,7 @@ test('IPAM workflows remain usable across desktop and mobile layouts', async ({ 
   await expect(sources.getByText('UniFi Produktion', { exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Back to IPAM' }).click();
 
-  await page.getByRole('button', { name: /Produktionsnetz 10\.20\.1\.0\/24/i }).click();
-  await page.getByRole('link', { name: 'Open', exact: true }).click();
+  await page.getByRole('row').filter({ hasText: '10.20.1.0/24' }).getByRole('link').first().click();
   await expect(page.locator('table').getByText('254 free IPs', { exact: true })).toBeVisible();
   await page.getByRole('tab', { name: /child prefixes/i }).click();
   await expect(page).toHaveURL(/#tab=children$/);

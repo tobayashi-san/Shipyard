@@ -566,9 +566,10 @@ export function ServerDetailPage() {
         onValueChange={serverTabs.onValueChange}
         className="space-y-4"
       >
-        <div className="flex min-w-0 items-center border-b">
-          <TabsList aria-label="Host sections" className="console-tabs min-w-0 flex-1 border-b-0">
+        <div className="overflow-x-auto border-b">
+          <TabsList aria-label="Host sections" className="console-tabs min-w-max border-b-0">
             <TabsTrigger value="overview">{t("det.tabOverview")}</TabsTrigger>
+            <TabsTrigger value="configuration">Details</TabsTrigger>
             {(hasCap(profile, "canViewUpdates") ||
               hasCap(profile, "canRunUpdates") ||
               hasCap(profile, "canRebootServers") ||
@@ -587,18 +588,15 @@ export function ServerDetailPage() {
             {hasCap(profile, "canViewServerHistory") && (
               <TabsTrigger value="history">Operations</TabsTrigger>
             )}
+            {agentEnabled && profile?.role === "admin" && (
+              <TabsTrigger value="agent">{t("det.tabAgent")}</TabsTrigger>
+            )}
+            {hasCap(profile, "canViewNotes") && (
+              <TabsTrigger value="notes">
+                {t("det.tabNotes")}{server.notes?.trim() ? " •" : ""}
+              </TabsTrigger>
+            )}
           </TabsList>
-          <select
-            aria-label="Additional host sections"
-            value={["configuration", "agent", "notes"].includes(serverTabs.value) ? serverTabs.value : ""}
-            onChange={(event) => { if (event.target.value) serverTabs.onValueChange(event.target.value); }}
-            className="mr-1 h-8 max-w-36 shrink-0 border-0 bg-transparent px-2 text-[13px] text-muted-foreground shadow-none"
-          >
-            <option value="">More</option>
-            <option value="configuration">Details</option>
-            {agentEnabled && profile?.role === "admin" && <option value="agent">{t("det.tabAgent")}</option>}
-            {hasCap(profile, "canViewNotes") && <option value="notes">{t("det.tabNotes")}{server.notes?.trim() ? " •" : ""}</option>}
-          </select>
         </div>
 
         <ServerOverviewTabs controller={controller} />

@@ -151,7 +151,6 @@ export function NetworksPage() {
   const pageSize = 50;
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [focusedPrefixId, setFocusedPrefixId] = useState("");
   const query = useQuery({
     queryKey: ["ipam", "subnets", environmentId, page, deferredSearch, status],
     queryFn: () =>
@@ -160,7 +159,6 @@ export function NetworksPage() {
       ),
   });
   const rows = Array.isArray(query.data?.items) ? query.data.items : [];
-  const focusedPrefix = rows.find((prefix) => prefix.id === focusedPrefixId) || rows[0];
   const hierarchicalRows = useMemo(() => {
     const byParent = new Map<string | null, Prefix[]>();
     rows.forEach((prefix) => {
@@ -199,11 +197,6 @@ export function NetworksPage() {
   useEffect(() => {
     if (query.data && page > query.data.total_pages) setPage(query.data.total_pages);
   }, [page, query.data]);
-  useEffect(() => {
-    if (!rows.some((prefix) => prefix.id === focusedPrefixId)) {
-      setFocusedPrefixId(rows[0]?.id || "");
-    }
-  }, [focusedPrefixId, rows]);
   const updateStatus = useMutation({
     mutationFn: ({ ids, value }: { ids: string[]; value: string }) =>
       Promise.all(
@@ -412,19 +405,7 @@ export function NetworksPage() {
                 </p>
               ) : (
                 <>
-                  <div className="divide-y md:hidden">
-                    {hierarchicalRows.map(({ prefix, depth }) => (
-                      <PrefixMobileRow
-                        key={prefix.id}
-                        prefix={prefix}
-                        depth={depth}
-                        checked={selectedIds.has(prefix.id)}
-                        onToggle={() => toggle(prefix.id)}
-                        canSelect={canEdit}
-                      />
-                    ))}
-                  </div>
-                  <div className="table-scroll hidden md:block xl:hidden">
+                  <div className="table-scroll">
                     <table
                       className="w-full min-w-[940px] text-sm"
                       data-density="compact"
@@ -469,14 +450,6 @@ export function NetworksPage() {
                       </tbody>
                     </table>
                   </div>
-                  <PrefixMasterDetail
-                    rows={hierarchicalRows}
-                    focused={focusedPrefix}
-                    onFocus={setFocusedPrefixId}
-                    selectedIds={selectedIds}
-                    onToggle={toggle}
-                    canSelect={canEdit}
-                  />
                 </>
               )}
             </CardContent>
@@ -1349,85 +1322,6 @@ function SourceTestFact({ label, value }: { label: string; value: number }) {
   );
 }
 
-function PrefixMasterDetail({ rows, focused, onFocus, selectedIds, onToggle, canSelect }: {
-  rows: Array<{ prefix: Prefix; depth: number }>;
-  focused?: Prefix;
-  onFocus: (id: string) => void;
-  selectedIds: Set<string>;
-  onToggle: (id: string) => void;
-  canSelect: boolean;
-}) {
-  return (
-    <div className="hidden min-h-[30rem] xl:grid xl:grid-cols-[minmax(18rem,.72fr)_minmax(0,1.28fr)]">
-      <div className="max-h-[calc(100vh-20rem)] overflow-y-auto border-r bg-muted/10 p-2" aria-label={tr("prefixList")}>
-        {rows.map(({ prefix, depth }) => {
-          const active = focused?.id === prefix.id;
-          return (
-            <div key={prefix.id} className={`flex min-w-0 items-start rounded-sm ${active ? "bg-accent" : "hover:bg-muted/60"}`} style={{ paddingLeft: `${Math.min(depth, 5) * 14}px` }}>
-              {canSelect && <input
-                type="checkbox"
-                className="ml-2 mt-3 shrink-0"
-                aria-label={tr("selectPrefix", { cidr: prefix.cidr })}
-                checked={selectedIds.has(prefix.id)}
-                onChange={() => onToggle(prefix.id)}
-              />}
-              <button
-                type="button"
-                onClick={() => onFocus(prefix.id)}
-                className="flex min-w-0 flex-1 items-start gap-2 px-3 py-2.5 text-left"
-                aria-pressed={active}
-              >
-                <Network className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-medium text-foreground">{prefix.name || prefix.cidr}</span>
-                  <span className="mt-0.5 block truncate font-mono text-xs text-muted-foreground">{prefix.cidr}</span>
-                  <span className="mt-1 block truncate text-xs text-muted-foreground">{prefix.vlan_id ? `VLAN ${prefix.vlan_id}` : tr("noVlan")} · {prefix.bridge || "—"}</span>
-                </span>
-              </button>
-            </div>
-          );
-        })}
-      </div>
-      {focused ? <PrefixPreview prefix={focused} /> : <div className="grid place-items-center text-sm text-muted-foreground">{tr("selectPrefixPrompt")}</div>}
-    </div>
-  );
-}
-
-function PrefixPreview({ prefix }: { prefix: Prefix }) {
-  return (
-    <div className="min-w-0">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b px-5 py-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-base font-semibold">{prefix.name || prefix.cidr}</h3>
-            <Badge variant={statusVariant(prefix.status)}>{statusLabel[prefix.status] || prefix.status}</Badge>
-          </div>
-          <p className="mt-1 font-mono text-[13px] text-muted-foreground">{prefix.cidr}</p>
-        </div>
-        <Button asChild size="sm" variant="outline"><Link to="/networks/$id" params={{ id: prefix.id }}>{tr("open")}</Link></Button>
-      </div>
-      <div className="grid gap-6 p-5 2xl:grid-cols-2">
-        <div>
-          <dl className="divide-y border-y text-[13px]">
-            <PrefixPreviewRow label={tr("vlanBridge")} value={`${prefix.vlan_id ? `VLAN ${prefix.vlan_id}` : tr("noVlan")} · ${prefix.bridge || "—"}`} mono />
-            <PrefixPreviewRow label={tr("gateway")} value={prefix.gateway || "—"} mono />
-            <PrefixPreviewRow label={tr("childCount", { count: prefix.child_prefix_count })} value={String(prefix.child_prefix_count)} />
-          </dl>
-        </div>
-        <div>
-          <h4 className="text-[13px] font-semibold">{tr("descriptionLabel")}</h4>
-          <p className="mt-2 text-[13px] leading-5 text-muted-foreground">{prefix.description || tr("noDescription")}</p>
-          {prefix.dhcp_start && prefix.dhcp_end && <div className="mt-4 rounded-sm bg-muted/35 px-3 py-2 text-[13px]"><span className="font-medium">{tr("dhcp")}</span><div className="mt-1 font-mono text-xs text-muted-foreground">{prefix.dhcp_start} – {prefix.dhcp_end}</div></div>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PrefixPreviewRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return <div className="flex items-center justify-between gap-4 py-2"><dt className="text-muted-foreground">{label}</dt><dd className={mono ? "font-mono text-xs" : "font-medium"}>{value}</dd></div>;
-}
-
 function PrefixRow({
   prefix,
   depth,
@@ -1518,75 +1412,6 @@ function PrefixRow({
         </Link>
       </td>
     </tr>
-  );
-}
-
-function PrefixMobileRow({
-  prefix,
-  depth,
-  checked,
-  onToggle,
-  canSelect,
-}: {
-  prefix: Prefix;
-  depth: number;
-  checked: boolean;
-  onToggle: () => void;
-  canSelect: boolean;
-}) {
-  return (
-    <div className="p-4" data-selected={checked || undefined}>
-      <div
-        className="flex items-start gap-3"
-        style={{ paddingLeft: `${Math.min(depth, 4) * 12}px` }}
-      >
-        {canSelect && <input
-          className="mt-1"
-          type="checkbox"
-          aria-label={tr("selectPrefix", { cidr: prefix.cidr })}
-          checked={checked}
-          onChange={onToggle}
-        />}
-        <Link
-          to="/networks/$id"
-          params={{ id: prefix.id }}
-          className="min-w-0 flex-1"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <Network className="h-4 w-4 shrink-0 text-brand" />
-              <span className="truncate text-base font-semibold text-foreground">
-                {prefix.name || prefix.cidr}
-              </span>
-            </div>
-            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span className="font-mono">{prefix.cidr}</span>
-            {prefix.child_prefix_count > 0 && (
-              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">
-                {tr("childCount", { count: prefix.child_prefix_count })}
-              </span>
-            )}
-          </div>
-        </Link>
-      </div>
-      <div className="ml-7 mt-3 flex flex-wrap items-center gap-2">
-        <Badge variant={statusVariant(prefix.status)}>
-          {statusLabel[prefix.status] || prefix.status}
-        </Badge>
-        <span className="text-xs text-muted-foreground">
-          {prefix.vlan_id ? `VLAN ${prefix.vlan_id}` : tr("noVlan")} ·{" "}
-          <span className="font-mono">{prefix.bridge || "—"}</span>
-        </span>
-        {prefix.dhcp_start && prefix.dhcp_end && (
-          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Badge variant="outline">{tr("dhcp")}</Badge>
-            <span className="font-mono">{prefix.dhcp_start} – {prefix.dhcp_end}</span>
-          </span>
-        )}
-      </div>
-    </div>
   );
 }
 
