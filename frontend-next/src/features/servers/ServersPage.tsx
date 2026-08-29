@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   Search,
   Server as ServerIcon,
@@ -392,17 +392,21 @@ export function ServersPage() {
   const groups = useMemo(() => asArray<ServerGroup>(rawGroups), [rawGroups]);
 
   // ── Local UI state ──────────────────────────────────────────
+  const routeSearch = useSearch({ from: "/_protected/servers" });
   const [activeTag, setActiveTag] = useState<string | null>(
     () => localStorage.getItem("shipyard-next.server-tag") || null,
   );
   const [activeStatus, setActiveStatus] = useState<
     "all" | "online" | "offline" | "unknown"
   >(() => {
+    if (routeSearch.status) return routeSearch.status;
     const saved = localStorage.getItem("shipyard-next.server-status");
     return saved === "online" || saved === "offline" || saved === "unknown"
       ? saved
       : "all";
   });
+  const [needsUpdates, setNeedsUpdates] = useState(() => routeSearch.updates === true);
+  const [needsAttention, setNeedsAttention] = useState(() => routeSearch.attention === true);
   const [activeGroup, setActiveGroup] = useState<string>(
     () => localStorage.getItem("shipyard-next.server-group") || "all",
   );
@@ -486,6 +490,8 @@ export function ServersPage() {
       const matchesTag = !activeTag || (server.tags || []).includes(activeTag);
       const matchesStatus =
         activeStatus === "all" || server.status === activeStatus;
+      const matchesUpdates = !needsUpdates || Number(server.updates_count ?? 0) > 0 || Number(server.image_updates_count ?? 0) > 0 || Number(server.custom_updates_count ?? 0) > 0;
+      const matchesAttention = !needsAttention || server.status === "offline" || Boolean(server.reboot_required) || Number(server.alert_count ?? 0) > 0 || Number(server.updates_count ?? 0) > 0 || Number(server.image_updates_count ?? 0) > 0 || Number(server.custom_updates_count ?? 0) > 0;
       const scopedGroups =
         activeGroup === "all" || activeGroup === "__ungrouped__"
           ? undefined
@@ -501,11 +507,13 @@ export function ServersPage() {
       return (
         matchesTag &&
         matchesStatus &&
+        matchesUpdates &&
+        matchesAttention &&
         matchesGroup &&
         (!query || haystack.includes(query))
       );
     });
-  }, [servers, groups, activeTag, activeStatus, activeGroup, search]);
+  }, [servers, groups, activeTag, activeStatus, activeGroup, search, needsUpdates, needsAttention]);
   const sortedServers = useMemo(
     () =>
       [...filtered].sort((a, b) => {
@@ -1364,7 +1372,9 @@ export function ServersPage() {
   const activeFilterCount =
     Number(activeStatus !== "all") +
     Number(activeGroup !== "all") +
-    Number(Boolean(activeTag));
+    Number(Boolean(activeTag)) +
+    Number(needsUpdates) +
+    Number(needsAttention);
 
   // ═══════════════════════════════════════════════════════════
   // ─── JSX ──────────────────────────────────────────────────
@@ -1408,30 +1418,23 @@ export function ServersPage() {
               aria-expanded={filtersOpen}
             >
               <Filter className="h-3.5 w-3.5" />
-              Filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
+              {t("srv.filters")}{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleRefresh}
-              disabled={refreshing}
-              title={t("common.refresh")}
-            >
-              <RefreshCw
-                className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
-              />
-            </Button>
-            <OverflowMenu title="Resource options">
+            <OverflowMenu title={t("srv.resourceOptions")}>
+              <OverflowItem icon={RefreshCw} onClick={handleRefresh} disabled={refreshing}>
+                {t("common.refresh")}
+              </OverflowItem>
+              <OverflowSep />
               <OverflowItem
                 icon={FolderTree}
                 onClick={() => setGroupedView((view) => !view)}
                 disabled={groups.length === 0}
               >
-                {groupedView ? "Flat list" : "Folder view"}
+                {t(groupedView ? "srv.flatList" : "srv.folderView")}
               </OverflowItem>
               <OverflowSep />
               <div className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Sort
+                {t("srv.sort")}
               </div>
               <div className="grid grid-cols-3 gap-1 px-1 pb-1">
                 {(
@@ -1551,7 +1554,7 @@ export function ServersPage() {
           variant={activeFilterCount > 0 ? "secondary" : "outline"}
           size="icon"
           onClick={() => setFiltersOpen((open) => !open)}
-          aria-label="Open filters"
+          aria-label={t("srv.openFilters")}
           aria-expanded={filtersOpen}
         >
           <Filter className="h-4 w-4" />
@@ -1657,6 +1660,12 @@ export function ServersPage() {
             <option value="offline">{t("common.offline")}</option>
             <option value="unknown">{t("common.unknown")}</option>
           </select>
+          <button type="button" aria-pressed={needsAttention} onClick={() => { setNeedsAttention(value => !value); setPage(1); }} className={`h-8 rounded-md border px-2 text-xs ${needsAttention ? "border-primary/35 bg-primary/10 text-foreground" : "bg-background text-muted-foreground"}`}>
+            {t("srv.attentionOnly")}
+          </button>
+          <button type="button" aria-pressed={needsUpdates} onClick={() => { setNeedsUpdates(value => !value); setPage(1); }} className={`h-8 rounded-md border px-2 text-xs ${needsUpdates ? "border-primary/35 bg-primary/10 text-foreground" : "bg-background text-muted-foreground"}`}>
+            {t("srv.updatesOnly")}
+          </button>
           {groups.length > 0 && (
             <select
               value={activeGroup}
@@ -1686,7 +1695,7 @@ export function ServersPage() {
               aria-label={t("srv.filterTags")}
               className="h-8 max-w-52 rounded-md border bg-background px-2 text-xs text-muted-foreground"
             >
-              <option value="">All tags</option>
+              <option value="">{t("srv.allTags")}</option>
               {allTags.map((tag) => (
                 <option key={tag} value={tag}>
                   {tag}
@@ -1701,27 +1710,39 @@ export function ServersPage() {
         filters={[
           ...(activeStatus !== "all" ? [{
             id: "status",
-            label: `Status: ${activeStatus === "online" ? t("common.online") : activeStatus === "offline" ? t("common.offline") : t("common.unknown")}`,
+            label: t("srv.statusFilter", { value: activeStatus === "online" ? t("common.online") : activeStatus === "offline" ? t("common.offline") : t("common.unknown") }),
             onRemove: () => { setActiveStatus("all"); setPage(1); },
           }] : []),
           ...(activeGroup !== "all" ? [{
             id: "group",
-            label: `Folder: ${activeGroup === "__ungrouped__" ? t("srv.moveToRoot") : groups.find((group) => group.id === activeGroup)?.name || activeGroup}`,
+            label: t("srv.folderFilter", { value: activeGroup === "__ungrouped__" ? t("srv.moveToRoot") : groups.find((group) => group.id === activeGroup)?.name || activeGroup }),
             onRemove: () => { setActiveGroup("all"); setPage(1); },
           }] : []),
           ...(activeTag ? [{
             id: "tag",
-            label: `Tag: ${activeTag}`,
+            label: t("srv.tagFilter", { value: activeTag }),
             onRemove: () => { setActiveTag(null); setPage(1); },
+          }] : []),
+          ...(needsAttention ? [{
+            id: "attention",
+            label: t("srv.attentionOnly"),
+            onRemove: () => { setNeedsAttention(false); setPage(1); },
+          }] : []),
+          ...(needsUpdates ? [{
+            id: "updates",
+            label: t("srv.updatesOnly"),
+            onRemove: () => { setNeedsUpdates(false); setPage(1); },
           }] : []),
         ]}
         onClear={() => {
           setActiveTag(null);
           setActiveStatus("all");
           setActiveGroup("all");
+          setNeedsAttention(false);
+          setNeedsUpdates(false);
           setPage(1);
         }}
-        clearLabel="Reset filters"
+        clearLabel={t("srv.resetFilters")}
       />
 
       {/* Main table card */}
@@ -1740,7 +1761,7 @@ export function ServersPage() {
               onRetry={() => {
                 void refetchServers();
               }}
-              title="Hosts could not be loaded"
+              title={t("srv.hostsLoadFailed")}
             />
           ) : servers.length === 0 ? (
             <EmptyState
@@ -1765,6 +1786,10 @@ export function ServersPage() {
                   size="sm"
                   onClick={() => {
                     setActiveTag(null);
+                    setActiveStatus("all");
+                    setActiveGroup("all");
+                    setNeedsAttention(false);
+                    setNeedsUpdates(false);
                     setSearch("");
                     setPage(1);
                   }}

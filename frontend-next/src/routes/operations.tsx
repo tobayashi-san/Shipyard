@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useSearch } from "@tanstack/react-router";
 import {
   useMutation,
   useQuery,
@@ -142,6 +142,7 @@ function operationStatusLabel(status: string) {
 }
 
 export function OperationsPage() {
+  const routeSearch = useSearch({ from: "/_protected/operations" });
   const queryClient = useQueryClient();
   const environmentId = useUi((state) => state.environmentId);
   const { data: profile } = useProfile();
@@ -152,7 +153,7 @@ export function OperationsPage() {
   const canViewMaintenance = hasCap(profile, "canViewMaintenance");
   const canManageMaintenance = hasCap(profile, "canEditMaintenance");
   const [taskScope, setTaskScope] = useState<"all" | "active" | "failed">(
-    "all",
+    routeSearch.scope || "all",
   );
   const [sourceFilter, setSourceFilter] = useState<"all" | "Deployment" | "Workflow" | "Audit">("all");
   const [targetFilter, setTargetFilter] = useState("");

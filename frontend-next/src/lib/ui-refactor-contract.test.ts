@@ -44,25 +44,26 @@ describe("UI refactor contract", () => {
   it("renders the infrastructure navigation as node and guest accordions", () => {
     const sidebar = source("components/layout/Sidebar.tsx");
     const tree = source("components/layout/InfrastructureTree.tsx");
-    expect(sidebar).toContain(">Infrastructure</div>");
-    expect(sidebar).toContain(">System</div>");
+    expect(sidebar).toContain('t("nav.infrastructure")');
+    expect(sidebar).toContain('t("nav.system")');
     expect(tree).toContain("const nodeOpen = !collapsed.has(nodeKey)");
     expect(tree).toContain('to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId"');
     expect(tree).toContain("!platformServerIds.has(server.id)");
     expect(tree).toContain('to="/servers/$id"');
   });
 
-  it("keeps the requested host sections visible and reserves Tools for optional modules", () => {
+  it("keeps the requested host sections visible and places Docker in the primary tab rail", () => {
     const page = source("features/server-detail/ServerDetailPage.tsx");
     expect(page).toContain('<TabsTrigger value="overview">');
-    expect(page).toContain('<TabsTrigger value="configuration">Details</TabsTrigger>');
-    expect(page).toContain('<TabsTrigger value="files">Files</TabsTrigger>');
-    expect(page).toContain('<TabsTrigger value="history">Operations</TabsTrigger>');
+    expect(page).toContain('<TabsTrigger value="configuration">{t("common.details")}</TabsTrigger>');
+    expect(page).toContain('<TabsTrigger value="files">{t("det.tabFiles")}</TabsTrigger>');
+    expect(page).toContain('<TabsTrigger value="history">{t("det.tabOperations")}</TabsTrigger>');
     expect(page).toContain('<TabsTrigger value="notes">');
-    expect(page).toContain('<TabsTrigger value="updates">System &amp; Updates</TabsTrigger>');
+    expect(page).toContain('<TabsTrigger value="updates">{t("det.tabSystemUpdates")}</TabsTrigger>');
     expect(page).toContain('<TabsTrigger value="terminal" data-terminal-trigger="true">');
-    expect(page).toContain('title="Host tools"');
-    expect(page).not.toContain('<TabsTrigger value="docker">');
+    expect(page).toContain('title={t("det.hostTools")}');
+    expect(page).toContain('<TabsTrigger value="docker">');
+    expect(page).not.toContain('OverflowItem icon={Box}');
   });
 
   it("renders plugin paths as code pills instead of raw HTML copy", () => {
@@ -70,5 +71,39 @@ describe("UI refactor contract", () => {
     const plugins = source("routes/settings/tabs/plugins.tsx");
     expect(locale).not.toContain("<code style=");
     expect(plugins).toContain("<code>{t('set.pluginsPath')}</code>");
+  });
+
+  it("keeps comfortable density and flexible navigation user-configurable", () => {
+    const store = source("lib/store.ts");
+    const sidebar = source("components/layout/Sidebar.tsx");
+    const shell = source("components/layout/AppShell.tsx");
+    expect(store).toContain("return 'comfortable'");
+    expect(store).toContain("sidebarWidth: readSidebarWidth()");
+    expect(store).toContain("infrastructureTreeCollapsed");
+    expect(sidebar).toContain("onPointerDown={startResize}");
+    expect(sidebar).toContain("toggleInfrastructureTree");
+    expect(sidebar).toContain("shipyard_recent_nav");
+    expect(shell).toContain("setDensity(value)");
+    expect(shell).toContain("md:hidden\" onClick={openCommandPalette}");
+  });
+
+  it("opens operational dashboard metrics as filtered work queues", () => {
+    const dashboard = source("routes/dashboard.tsx");
+    const servers = source("features/servers/ServersPage.tsx");
+    const router = source("router.tsx");
+    expect(dashboard).toContain("dataUpdatedAt");
+    expect(dashboard).toContain("search={{ status: 'offline' }}");
+    expect(dashboard).toContain("search={{ updates: true }}");
+    expect(dashboard).toContain("search={{ scope: 'active' }}");
+    expect(servers).toContain("routeSearch.updates === true");
+    expect(servers).toContain("routeSearch.attention === true");
+    expect(router).toContain("interface ServersSearch");
+    expect(router).toContain("interface OperationsSearch");
+  });
+
+  it("keeps the primary host action clear and secondary actions in overflow", () => {
+    const servers = source("features/servers/ServersPage.tsx");
+    expect(servers.indexOf("<CreateServerDialog />")).toBeLessThan(servers.indexOf('<OverflowMenu title={t("srv.resourceOptions")}>'));
+    expect(servers).toContain("<OverflowItem icon={RefreshCw} onClick={handleRefresh}");
   });
 });

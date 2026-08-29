@@ -1084,6 +1084,30 @@
     @apply py-3;
   }
 
+  /* Comfortable is the default working density. Explicit compact tables still
+     keep their information structure, but receive enough height for prolonged
+     use and touch input. Users can restore the former density in the profile
+     menu without changing individual screens. */
+  :root[data-ui-density="comfortable"] table[data-density="compact"] > thead > tr > th {
+    height: 2.75rem;
+    padding-top: 0.625rem !important;
+    padding-bottom: 0.625rem !important;
+  }
+  :root[data-ui-density="comfortable"] table[data-density="compact"] > tbody > tr > td:not([colspan]) {
+    height: 3rem;
+    padding-top: 0.7rem !important;
+    padding-bottom: 0.7rem !important;
+  }
+  :root[data-ui-density="comfortable"] .section-label { font-size: 0.75rem; }
+  :root[data-ui-density="comfortable"] main button { min-height: 2.25rem; }
+
+  @media (max-width: 767px) {
+    :root[data-ui-density="comfortable"] header button,
+    :root[data-ui-density="comfortable"] main button,
+    :root[data-ui-density="comfortable"] aside a,
+    :root[data-ui-density="comfortable"] aside button { min-height: 2.5rem; }
+  }
+
   @media (max-width: 640px) {
     .console-action-strip { gap: 0.5rem; }
     .console-action-strip > span:not(.section-label) + span:not(.section-label) {

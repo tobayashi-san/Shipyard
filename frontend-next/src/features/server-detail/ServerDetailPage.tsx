@@ -18,7 +18,6 @@ import {
   HardDrive,
   Clock,
   HeartPulse,
-  Box,
   Satellite,
   Boxes,
   ExternalLink,
@@ -281,13 +280,8 @@ export function ServerDetailPage() {
     return values;
   }, [agentEnabled, profile, server?.docker_enabled]);
   const serverTabs = useUrlTab("overview", availableTabs);
-  const activeToolLabel = ({
-    docker: t("det.tabDocker"),
-    agent: t("det.tabAgent"),
-  } as Record<string, string>)[serverTabs.value];
-  const hasHostTools =
-    (hasCap(profile, "canViewDocker") && !!server?.docker_enabled) ||
-    (agentEnabled && profile?.role === "admin");
+  const activeToolLabel = serverTabs.value === "agent" ? t("det.tabAgent") : undefined;
+  const hasHostTools = agentEnabled && profile?.role === "admin";
 
   // ── Loading / not found ─────────────────────────────────────
   if (isLoading)
@@ -394,7 +388,7 @@ export function ServerDetailPage() {
                   <Satellite
                     className={`h-3.5 w-3.5 ${testConnMut.isPending ? "animate-pulse" : ""}`}
                   />
-                  Test connection
+                  {t("det.testConn")}
                 </Button>
               )}
             <OverflowMenu width="w-52">
@@ -506,7 +500,7 @@ export function ServerDetailPage() {
               confirmLabel={t("common.delete")}
               variant="destructive"
               confirmTextValue={server.name}
-              confirmInputLabel="Confirm host name"
+              confirmInputLabel={t("det.confirmHostName")}
               onConfirm={() => deleteServerMut.mutate()}
               isPending={deleteServerMut.isPending}
             />
@@ -527,7 +521,7 @@ export function ServerDetailPage() {
               confirmLabel={t("det.agentRemove")}
               variant="destructive"
               confirmTextValue={server.name}
-              confirmInputLabel="Confirm host name"
+              confirmInputLabel={t("det.confirmHostName")}
               onConfirm={() => agentRemoveMut.mutate()}
               isPending={agentRemoveMut.isPending}
             />
@@ -570,12 +564,15 @@ export function ServerDetailPage() {
           <div className="min-w-0 overflow-x-auto">
           <TabsList aria-label="Host sections" className="console-tabs min-w-max border-b-0">
             <TabsTrigger value="overview">{t("det.tabOverview")}</TabsTrigger>
-            <TabsTrigger value="configuration">Details</TabsTrigger>
+            <TabsTrigger value="configuration">{t("common.details")}</TabsTrigger>
+            {hasCap(profile, "canViewDocker") && !!server.docker_enabled && (
+              <TabsTrigger value="docker">{t("det.tabDocker")}</TabsTrigger>
+            )}
             {hasCap(profile, "canViewFiles") && (
-              <TabsTrigger value="files">Files</TabsTrigger>
+              <TabsTrigger value="files">{t("det.tabFiles")}</TabsTrigger>
             )}
             {hasCap(profile, "canViewServerHistory") && (
-              <TabsTrigger value="history">Operations</TabsTrigger>
+              <TabsTrigger value="history">{t("det.tabOperations")}</TabsTrigger>
             )}
             {hasCap(profile, "canViewNotes") && (
               <TabsTrigger value="notes">{t("det.tabNotes")}{server.notes?.trim() ? " •" : ""}</TabsTrigger>
@@ -587,7 +584,7 @@ export function ServerDetailPage() {
               hasCap(profile, "canRunCustomUpdates") ||
               hasCap(profile, "canEditCustomUpdates") ||
               hasCap(profile, "canDeleteCustomUpdates")) && (
-              <TabsTrigger value="updates">System &amp; Updates</TabsTrigger>
+              <TabsTrigger value="updates">{t("det.tabSystemUpdates")}</TabsTrigger>
             )}
             {hasCap(profile, "canUseTerminal") && (
               <TabsTrigger value="terminal" data-terminal-trigger="true"><Terminal className="h-3.5 w-3.5" />{t("common.terminal")}</TabsTrigger>
@@ -595,10 +592,7 @@ export function ServerDetailPage() {
           </TabsList>
           </div>
           {hasHostTools && <div className="shrink-0 pb-1">
-            <OverflowMenu title="Host tools" trigger={activeToolLabel ? `Tools · ${activeToolLabel}` : "Tools"}>
-              {hasCap(profile, "canViewDocker") && !!server.docker_enabled && (
-                <OverflowItem icon={Box} onClick={() => serverTabs.onValueChange("docker")}>{t("det.tabDocker")}</OverflowItem>
-              )}
+            <OverflowMenu title={t("det.hostTools")} trigger={activeToolLabel ? t("det.toolsActive", { tool: activeToolLabel }) : t("det.tools")}>
               {agentEnabled && profile?.role === "admin" && (
                 <OverflowItem icon={Bot} onClick={() => serverTabs.onValueChange("agent")}>{t("det.tabAgent")}</OverflowItem>
               )}

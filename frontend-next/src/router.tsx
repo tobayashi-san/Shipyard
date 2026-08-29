@@ -29,6 +29,16 @@ const PermissionGate = ({ allow, children }: { allow: (profile: Profile) => bool
   return children;
 };
 
+interface ServersSearch {
+  status?: 'online' | 'offline' | 'unknown';
+  attention?: boolean;
+  updates?: boolean;
+}
+
+interface OperationsSearch {
+  scope?: 'active' | 'failed';
+}
+
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
 
 const loginRoute = createRoute({
@@ -60,7 +70,18 @@ const protectedLayout = createRoute({
 });
 
 const dashboardRoute  = createRoute({ getParentRoute: () => protectedLayout, path: '/',             component: DashboardPage });
-const serversRoute    = createRoute({ getParentRoute: () => protectedLayout, path: '/servers',      component: () => <PermissionGate allow={profile => hasCap(profile, 'canViewServers')}><LazyPage><ServersPage /></LazyPage></PermissionGate> });
+const serversRoute    = createRoute({
+  getParentRoute: () => protectedLayout,
+  path: '/servers',
+  validateSearch: (search: Record<string, unknown>): ServersSearch => {
+    const result: ServersSearch = {};
+    if (search.status === 'online' || search.status === 'offline' || search.status === 'unknown') result.status = search.status;
+    if (search.attention === true || search.attention === 'true') result.attention = true;
+    if (search.updates === true || search.updates === 'true') result.updates = true;
+    return result;
+  },
+  component: () => <PermissionGate allow={profile => hasCap(profile, 'canViewServers')}><LazyPage><ServersPage /></LazyPage></PermissionGate>,
+});
 const serverDetail    = createRoute({ getParentRoute: () => protectedLayout, path: '/servers/$id',  component: () => <PermissionGate allow={profile => hasCap(profile, 'canViewServers')}><LazyPage><ServerDetailPage /></LazyPage></PermissionGate> });
 const playbooksRoute  = createRoute({ getParentRoute: () => protectedLayout, path: '/playbooks',    component: () => <PermissionGate allow={profile => hasCap(profile, 'canViewPlaybooks')}><LazyPage><PlaybooksPage /></LazyPage></PermissionGate> });
 const profileRoute    = createRoute({ getParentRoute: () => protectedLayout, path: '/profile',      component: () => <LazyPage><ProfilePage /></LazyPage> });
@@ -70,7 +91,12 @@ const infrastructureRoute = createRoute({ getParentRoute: () => protectedLayout,
 const infrastructureDetailRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/infrastructure/$clusterId', component: () => <PermissionGate allow={canAccessInfrastructure}><LazyPage><InfrastructureDetailPage /></LazyPage></PermissionGate> });
 const infrastructureNodeRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/infrastructure/$clusterId/nodes/$nodeName', component: () => <PermissionGate allow={canAccessInfrastructure}><LazyPage><InfrastructureDetailPage /></LazyPage></PermissionGate> });
 const infrastructureVmRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId', component: () => <PermissionGate allow={canAccessInfrastructure}><LazyPage><ProxmoxVmDetailPage /></LazyPage></PermissionGate> });
-const operationsRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/operations', component: () => <PermissionGate allow={canAccessOperations}><LazyPage><OperationsPage /></LazyPage></PermissionGate> });
+const operationsRoute = createRoute({
+  getParentRoute: () => protectedLayout,
+  path: '/operations',
+  validateSearch: (search: Record<string, unknown>): OperationsSearch => search.scope === 'active' || search.scope === 'failed' ? { scope: search.scope } : {},
+  component: () => <PermissionGate allow={canAccessOperations}><LazyPage><OperationsPage /></LazyPage></PermissionGate>,
+});
 const networksRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/networks', component: () => <PermissionGate allow={canAccessNetworks}><LazyPage><NetworksPage /></LazyPage></PermissionGate> });
 const ipamSourcesRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/networks/sources', component: () => <PermissionGate allow={canAccessNetworks}><LazyPage><IpamSourcesPage /></LazyPage></PermissionGate> });
 const networkDetailRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/networks/$id', component: () => <PermissionGate allow={canAccessNetworks}><LazyPage><NetworkDetailPage /></LazyPage></PermissionGate> });

@@ -8,6 +8,7 @@ export type ThemePreset =
   | 'midnight-dark' | 'graphite-dark' | 'navy-dark'
   | 'forest-dark' | 'plum-dark' | 'copper-dark' | 'obsidian-dark' | 'cobalt-dark';
 type TimeFormat = '24h' | '12h';
+export type UiDensity = 'comfortable' | 'compact';
 
 export const THEME_PRESETS: Array<{ id: ThemePreset; name: string; description: string; mode: Exclude<Theme, 'system'>; preview: { canvas: string; surface: string; card: string; accent: string } }> = [
   { id: 'cloud-light', name: 'Cloud', description: 'Light, cool console design', mode: 'light', preview: { canvas: '#f7faff', surface: '#ffffff', card: '#ffffff', accent: '#0f6cbd' } },
@@ -32,6 +33,12 @@ interface UiState {
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
   setSidebar: (collapsed: boolean) => void;
+  sidebarWidth: number;
+  setSidebarWidth: (width: number) => void;
+  infrastructureTreeCollapsed: boolean;
+  toggleInfrastructureTree: () => void;
+  density: UiDensity;
+  setDensity: (density: UiDensity) => void;
   theme: Theme;
   setTheme: (t: Theme) => void;
   themePreset: ThemePreset;
@@ -47,6 +54,9 @@ interface UiState {
 const THEME_KEY = 'shipyard_theme_next';
 const THEME_PRESET_KEY = 'shipyard_theme_preset_next';
 const SIDEBAR_KEY = 'shipyard_sidebar_collapsed_next';
+const SIDEBAR_WIDTH_KEY = 'shipyard_sidebar_width_next';
+const TREE_COLLAPSED_KEY = 'shipyard_tree_collapsed_next';
+const DENSITY_KEY = 'shipyard_ui_density_next';
 const TIME_FORMAT_KEY = 'timeFormat';
 const DASH_ATTENTION_KEY = 'shipyard_dash_attention';
 const ENVIRONMENT_KEY = 'shipyard_environment';
@@ -75,6 +85,23 @@ function matchingPreset(theme: Theme, current: ThemePreset): ThemePreset {
 
 function readSidebar(): boolean {
   try { return localStorage.getItem(SIDEBAR_KEY) === '1'; } catch { return false; }
+}
+
+function readSidebarWidth(): number {
+  try {
+    const value = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    if (Number.isFinite(value)) return Math.min(384, Math.max(224, value));
+  } catch { /* ignore */ }
+  return 272;
+}
+
+function readDensity(): UiDensity {
+  try { if (localStorage.getItem(DENSITY_KEY) === 'compact') return 'compact'; } catch { /* ignore */ }
+  return 'comfortable';
+}
+
+function applyDensity(density: UiDensity): void {
+  if (typeof document !== 'undefined') document.documentElement.dataset.uiDensity = density;
 }
 
 function readTimeFormat(): TimeFormat {
@@ -112,6 +139,24 @@ export const useUi = create<UiState>((set) => ({
       try { localStorage.setItem(SIDEBAR_KEY, collapsed ? '1' : '0'); } catch { /* ignore */ }
       return { sidebarCollapsed: collapsed };
     }),
+  sidebarWidth: readSidebarWidth(),
+  setSidebarWidth: (width) => set(() => {
+    const next = Math.min(384, Math.max(224, Math.round(width)));
+    try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next)); } catch { /* ignore */ }
+    return { sidebarWidth: next };
+  }),
+  infrastructureTreeCollapsed: (() => { try { return localStorage.getItem(TREE_COLLAPSED_KEY) === '1'; } catch { return false; } })(),
+  toggleInfrastructureTree: () => set((state) => {
+    const next = !state.infrastructureTreeCollapsed;
+    try { localStorage.setItem(TREE_COLLAPSED_KEY, next ? '1' : '0'); } catch { /* ignore */ }
+    return { infrastructureTreeCollapsed: next };
+  }),
+  density: readDensity(),
+  setDensity: (density) => set(() => {
+    try { localStorage.setItem(DENSITY_KEY, density); } catch { /* ignore */ }
+    applyDensity(density);
+    return { density };
+  }),
   theme: readTheme(),
   setTheme: (t) =>
     set((state) => {
@@ -164,4 +209,7 @@ export function applyTheme(theme: Theme, preset = readThemePreset()): void {
 }
 
 // Apply current theme on import so first paint matches.
-if (typeof window !== 'undefined') applyTheme(readTheme(), readThemePreset());
+if (typeof window !== 'undefined') {
+  applyTheme(readTheme(), readThemePreset());
+  applyDensity(readDensity());
+}

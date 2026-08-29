@@ -1,11 +1,12 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import {
   Server, CheckCircle2, RotateCcw, RefreshCw,
   Bell, Clock, Plus, Bot, PackagePlus, Container, Cog,
-  Activity,
+  Activity, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { showToast } from '@/lib/toast';
@@ -126,24 +127,26 @@ function formatRelativeTime(dateStr: string | undefined, t: (k: string, o?: Reco
   } catch { return '—'; }
 }
 
-function formatCurrentTime(hour12: boolean) {
-  return new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12 });
+function formatDashboardFreshness(timestamp: number, now: number, t: TFunction) {
+  const minutes = Math.floor(Math.max(0, now - timestamp) / 60_000);
+  if (minutes < 1) return t('dash.freshJustNow');
+  if (minutes < 60) return t('dash.freshMinutes', { count: minutes });
+  const hours = Math.floor(minutes / 60);
+  return t('dash.freshHours', { count: hours });
 }
 
 // ---- component ----
 
 export function DashboardPage() {
   const { t } = useTranslation();
-  const timeFormat = useUi((s) => s.timeFormat);
   const environmentId = useUi((s) => s.environmentId);
-  const hour12 = timeFormat === '12h';
   useEffect(() => { sessionStorage.setItem('shipyard.lastNonDetailRoute', '/'); }, []);
   const qc = useQueryClient();
   const { data: profile } = useProfile();
   const canViewUpdates = hasCap(profile, 'canViewUpdates');
   const canViewDocker = hasCap(profile, 'canViewDocker');
   const canViewCustomUpdates = hasCap(profile, 'canViewCustomUpdates');
-  const { data, isLoading, isFetching, isError, error, refetch } = useQuery<DashboardData>({
+  const { data, dataUpdatedAt, isLoading, isFetching, isError, error, refetch } = useQuery<DashboardData>({
     queryKey: ['dashboard', environmentId],
     queryFn: () => api.getDashboard() as unknown as Promise<DashboardData>,
     refetchInterval: 30_000,
@@ -165,6 +168,11 @@ export function DashboardPage() {
   }, [qc, t]);
 
   const [refreshing, setRefreshing] = useState(false);
+  const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setFreshnessNow(Date.now()), 10_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -206,7 +214,7 @@ export function DashboardPage() {
   const attentionCount = useMemo(() => servers.filter(needsAttention).length, [servers]);
 
   const orderedHosts = useMemo(() => [...servers].sort((a, b) => Number(needsAttention(b)) - Number(needsAttention(a)) || a.name.localeCompare(b.name, 'en')), [servers]);
-  const attentionHosts = useMemo(() => orderedHosts.filter(needsAttention).slice(0, 6), [orderedHosts]);
+  const attentionHosts = useMemo(() => orderedHosts.filter(needsAttention), [orderedHosts]);
   const ackAlert = useMutation({
     mutationFn: (id: string) => api.acknowledgeAlert(id),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['dashboard'] }),
@@ -231,13 +239,15 @@ export function DashboardPage() {
     + (canViewUpdates && canViewDocker ? (server.image_updates_count ?? 0) : 0)
     + (canViewCustomUpdates ? (server.custom_updates_count ?? 0) : 0), 0);
   const hasAttention = activeAlerts.length > 0 || actionableHistory.length > 0 || attentionCount > 0;
+  const dataAge = dataUpdatedAt ? Math.max(0, freshnessNow - dataUpdatedAt) : 0;
+  const freshness = dataUpdatedAt ? formatDashboardFreshness(dataUpdatedAt, freshnessNow, t) : t('dash.notUpdatedYet');
 
   return (
     <div className="space-y-5">
       {/* Header */}
       <PageHeader
-        title="Operations overview"
-        description={isLoading ? t('dash.loading') : t('dash.updatedAt', { time: formatCurrentTime(hour12) })}
+        title={t('dash.operationsOverview')}
+        description={isLoading ? t('dash.loading') : <span className={dataAge > 75_000 ? 'text-warning' : undefined}>{t(dataAge > 75_000 ? 'dash.updatedStale' : 'dash.updatedRelative', { time: freshness })} · {t('dash.autoRefresh')}</span>}
         actions={
           <Button variant="secondary" size="sm" onClick={handleRefresh} disabled={isBusy}>
             <RefreshCw className={`h-4 w-4 ${isBusy ? 'animate-spin' : ''}`} /> {t('common.refresh')}
@@ -258,9 +268,9 @@ export function DashboardPage() {
           <EmptyState
             compact
             icon={<Bell className="h-5 w-5" />}
-            title="Dashboard data could not be loaded"
-            description={(error as Error)?.message || "Host status is currently unavailable. No data has been changed."}
-            action={<Button variant="outline" size="sm" onClick={() => void refetch()}><RefreshCw />Try again</Button>}
+            title={t('dash.loadError')}
+            description={(error as Error)?.message || t('dash.loadErrorHint')}
+            action={<Button variant="outline" size="sm" onClick={() => void refetch()}><RefreshCw />{t('common.retry')}</Button>}
           />
         </Card>
       )}
@@ -285,9 +295,9 @@ export function DashboardPage() {
           <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
             <div className="flex items-center gap-2">
               <Activity className="h-4 w-4 text-warning" />
-              <h2 id="attention-heading" className="text-sm font-semibold">Needs attention</h2>
+              <h2 id="attention-heading" className="text-sm font-semibold">{t('dash.needsAttention')}</h2>
             </div>
-            <Button asChild size="sm" variant="ghost"><Link to="/operations">Open operations</Link></Button>
+            <Button asChild size="sm" variant="ghost"><Link to="/operations">{t('dash.openOperations')}</Link></Button>
           </div>
           {activeAlerts.length > 0 && <ActiveAlertsSection alerts={activeAlerts} acknowledgingId={ackAlert.isPending ? ackAlert.variables : undefined} onAcknowledge={id => ackAlert.mutate(id)} />}
           <RecentTasksSection history={actionableHistory} />
@@ -318,25 +328,27 @@ function OverviewStatusBar({ loading, criticalAlerts, offlineHosts, updates, run
   updates: number;
   runningTasks: number;
 }) {
+  const { t } = useTranslation();
   return (
-    <section className="grid overflow-hidden rounded-[3px] border border-border-strong/80 bg-card shadow-[0_1px_2px_hsl(var(--foreground)/0.035)] sm:grid-cols-2 lg:grid-flow-col lg:auto-cols-fr" aria-label="Current environment status">
-      <OverviewStatusItem icon={<Bell className="h-4 w-4" />} label="Critical" value={loading ? '—' : criticalAlerts} to="/operations" tone={criticalAlerts > 0 ? 'danger' : 'neutral'} />
-      <OverviewStatusItem icon={<Server className="h-4 w-4" />} label="Offline" value={loading ? '—' : offlineHosts} to="/servers" tone={offlineHosts > 0 ? 'danger' : 'neutral'} />
-      <OverviewStatusItem icon={<PackagePlus className="h-4 w-4" />} label="Updates" value={loading ? '—' : updates} to="/servers" tone={updates > 0 ? 'warning' : 'neutral'} />
-      <OverviewStatusItem icon={<Clock className="h-4 w-4" />} label="Running tasks" value={loading ? '—' : runningTasks} to="/operations" tone={runningTasks > 0 ? 'info' : 'neutral'} />
+    <section className="grid overflow-hidden rounded-[3px] border border-border-strong/80 bg-card shadow-[0_1px_2px_hsl(var(--foreground)/0.035)] sm:grid-cols-2 lg:grid-flow-col lg:auto-cols-fr" aria-label={t('dash.currentEnvironmentStatus')}>
+      <OverviewStatusItem icon={<Bell className="h-4 w-4" />} label={t('dash.critical')} value={loading ? '—' : criticalAlerts} to="/servers" search={{ attention: true }} tone={criticalAlerts > 0 ? 'danger' : 'neutral'} />
+      <OverviewStatusItem icon={<Server className="h-4 w-4" />} label={t('common.offline')} value={loading ? '—' : offlineHosts} to="/servers" search={{ status: 'offline' }} tone={offlineHosts > 0 ? 'danger' : 'neutral'} />
+      <OverviewStatusItem icon={<PackagePlus className="h-4 w-4" />} label={t('dash.updates')} value={loading ? '—' : updates} to="/servers" search={{ updates: true }} tone={updates > 0 ? 'warning' : 'neutral'} />
+      <OverviewStatusItem icon={<Clock className="h-4 w-4" />} label={t('dash.runningTasks')} value={loading ? '—' : runningTasks} to="/operations" search={{ scope: 'active' }} tone={runningTasks > 0 ? 'info' : 'neutral'} />
     </section>
   );
 }
 
-function OverviewStatusItem({ icon, label, value, to, tone }: {
+function OverviewStatusItem({ icon, label, value, to, search, tone }: {
   icon: React.ReactNode;
   label: string;
   value: number | string;
   to: '/operations' | '/servers';
+  search?: Record<string, string | boolean>;
   tone: 'neutral' | 'danger' | 'warning' | 'info';
 }) {
   return (
-    <Link to={to} className="group flex min-w-0 items-center gap-3 border-b px-4 py-3 transition-colors hover:bg-muted/35 sm:odd:border-r lg:border-b-0 lg:border-r lg:last:border-r-0">
+    <Link to={to} search={search as never} className="group flex min-w-0 items-center gap-3 border-b px-4 py-3 transition-colors hover:bg-muted/35 sm:odd:border-r lg:border-b-0 lg:border-r lg:last:border-r-0">
       <span className={cn(
         'flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-muted text-muted-foreground',
         tone === 'danger' && 'bg-destructive/10 text-destructive',
@@ -352,14 +364,15 @@ function OverviewStatusItem({ icon, label, value, to, tone }: {
 }
 
 function HealthySummary({ totalHosts, onlineHosts }: { totalHosts: number; onlineHosts: number }) {
+  const { t } = useTranslation();
   return (
-    <section className="flex flex-wrap items-center gap-3 rounded-[3px] border border-border-strong/70 bg-card px-4 py-3" aria-label="Environment healthy">
+    <section className="flex flex-wrap items-center gap-3 rounded-[3px] border border-border-strong/70 bg-card px-4 py-3" aria-label={t('dash.environmentHealthy')}>
       <CheckCircle2 className="h-5 w-5 text-success" />
       <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium">No action required</div>
-        <div className="text-[13px] text-muted-foreground">{onlineHosts} of {totalHosts} hosts reachable</div>
+        <div className="text-sm font-medium">{t('dash.noActionRequired')}</div>
+        <div className="text-[13px] text-muted-foreground">{t('dash.hostsReachable', { online: onlineHosts, total: totalHosts })}</div>
       </div>
-      <Button asChild size="sm" variant="ghost"><Link to="/servers">Open hosts</Link></Button>
+      <Button asChild size="sm" variant="ghost"><Link to="/servers">{t('dash.openHosts')}</Link></Button>
     </section>
   );
 }
@@ -376,31 +389,33 @@ function DashboardSectionHeader({ icon, title, count, action }: { icon: React.Re
 }
 
 function ActiveAlertsSection({ alerts, acknowledgingId, onAcknowledge }: { alerts: AlertInfo[]; acknowledgingId?: string; onAcknowledge: (id: string) => void }) {
+  const { t } = useTranslation();
   const displayed = alerts.slice(0, 4);
   return <div className="border-b">
-    <DashboardSectionHeader icon={<Bell className="h-3.5 w-3.5" />} title="Open alerts" count={alerts.length} />
+    <DashboardSectionHeader icon={<Bell className="h-3.5 w-3.5" />} title={t('dash.openAlerts')} count={alerts.length} />
     <div className="divide-y">
       {displayed.map(alert => <div key={alert.id} className="flex items-start gap-3 px-4 py-3">
-        <StatusBadge tone={alertTone(alert)} dot className="mt-0.5 shrink-0">{alert.severity === 'critical' ? 'Critical' : alert.severity === 'warning' ? 'Warning' : 'Info'}</StatusBadge>
+        <StatusBadge tone={alertTone(alert)} dot className="mt-0.5 shrink-0">{t(alert.severity === 'critical' ? 'dash.critical' : alert.severity === 'warning' ? 'dash.warning' : 'dash.info')}</StatusBadge>
         <div className="min-w-0 flex-1">
-          <Link to="/servers/$id" params={{ id: alert.server_id }} className="block truncate text-sm font-medium hover:text-primary hover:underline">{alert.server_name || 'Open host'}</Link>
+          <Link to="/servers/$id" params={{ id: alert.server_id }} className="block truncate text-sm font-medium hover:text-primary hover:underline">{alert.server_name || t('dash.openHost')}</Link>
           <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground" title={alert.message}>{alert.message}</p>
         </div>
-        <Button type="button" size="sm" variant="ghost" className="h-7 shrink-0 px-2 text-xs" disabled={acknowledgingId === alert.id} onClick={() => onAcknowledge(alert.id)}>Acknowledge</Button>
+        <Button type="button" size="sm" variant="ghost" className="h-7 shrink-0 px-2 text-xs" disabled={acknowledgingId === alert.id} onClick={() => onAcknowledge(alert.id)}>{t('det.acknowledge')}</Button>
       </div>)}
-      {alerts.length > displayed.length && <div className="px-4 py-2.5 text-xs text-muted-foreground">{alerts.length - displayed.length} more alerts in operations.</div>}
+      {alerts.length > displayed.length && <div className="px-4 py-2.5 text-xs text-muted-foreground">{t('dash.moreAlerts', { count: alerts.length - displayed.length })}</div>}
     </div>
   </div>;
 }
 
 function RecentTasksSection({ history }: { history: HistoryEntry[] }) {
+  const { t } = useTranslation();
   if (history.length === 0) return null;
   return (
     <div className="border-b">
-      <DashboardSectionHeader icon={<Clock className="h-3.5 w-3.5" />} title="Running & failed tasks" count={history.length} />
+      <DashboardSectionHeader icon={<Clock className="h-3.5 w-3.5" />} title={t('dash.runningFailedTasks')} count={history.length} />
         <div className="table-scroll hidden md:block">
           <table className="w-full text-sm" data-density="compact">
-            <thead><tr className="border-b text-left text-xs text-muted-foreground"><th className="w-8 px-4 py-2" /><th className="px-2 py-2">Target</th><th className="px-2 py-2">Task</th><th className="w-36 px-2 py-2">Started</th><th className="w-32 px-4 py-2">Result</th></tr></thead>
+            <thead><tr className="border-b text-left text-xs text-muted-foreground"><th className="w-8 px-4 py-2" /><th className="px-2 py-2">{t('dash.target')}</th><th className="px-2 py-2">{t('dash.task')}</th><th className="w-36 px-2 py-2">{t('dash.started')}</th><th className="w-32 px-4 py-2">{t('dash.result')}</th></tr></thead>
             <tbody>{history.slice(0, 6).map((item, index) => <RecentTaskRow key={item.id ?? index} item={item} />)}</tbody>
           </table>
         </div>
@@ -423,23 +438,33 @@ function RecentTaskCard({ item }: { item: HistoryEntry }) {
   return <div className="flex items-center gap-3 px-4 py-3"><span className={`h-2 w-2 shrink-0 rounded-full ${item.status === 'success' ? 'bg-emerald-500' : item.status === 'failed' ? 'bg-destructive' : 'bg-muted-foreground'}`} /><div className="min-w-0 flex-1"><div className="truncate font-medium">{item.server_name || '—'}</div><div className="truncate text-xs text-muted-foreground">{actionLabel(t, item.action)} · {formatRelativeTime(item.started_at, t)}</div></div><StatusBadge tone={taskTone(item.status)}>{statusLabel(t, item.status)}</StatusBadge></div>;
 }
 
-function AttentionHostsSection({ hosts, total, agentEnabled, t }: { hosts: ServerInfo[]; total: number; agentEnabled: boolean; t: (key: string) => string }) {
+function AttentionHostsSection({ hosts, total, agentEnabled, t }: { hosts: ServerInfo[]; total: number; agentEnabled: boolean; t: TFunction }) {
+  const [expanded, setExpanded] = useState(false);
+  const visibleHosts = expanded ? hosts : hosts.slice(0, 6);
+
   return (
     <div>
       <DashboardSectionHeader
         icon={<Server className="h-3.5 w-3.5" />}
-        title="Hosts requiring attention"
+        title={t('dash.hostsRequiringAttention')}
         count={total}
-        action={<Link to="/servers" className="text-xs font-medium text-primary hover:underline">All hosts</Link>}
+        action={<Link to="/servers" search={{ attention: true }} className="text-xs font-medium text-primary hover:underline">{t('dash.allHosts')}</Link>}
       />
       <div className="table-scroll hidden md:block">
         <table className="w-full text-sm" data-density="compact">
-          <thead><tr><th>Host</th><th className="w-[120px]">Status</th><th>Reason</th>{agentEnabled && <th className="w-[150px]">Agent</th>}<th className="w-[100px]">{t('dash.colUptime')}</th></tr></thead>
-          <tbody>{hosts.map(server => <ServerRow key={server.id} s={server} t={t} agentEnabled={agentEnabled} />)}</tbody>
+          <thead><tr><th>{t('servers.host')}</th><th className="w-[120px]">{t('common.status')}</th><th>{t('dash.reason')}</th>{agentEnabled && <th className="w-[150px]">{t('dash.agentMode')}</th>}<th className="w-[100px]">{t('dash.colUptime')}</th></tr></thead>
+          <tbody>{visibleHosts.map(server => <ServerRow key={server.id} s={server} t={t} agentEnabled={agentEnabled} />)}</tbody>
         </table>
       </div>
-      <div className="divide-y md:hidden">{hosts.map(server => <AttentionHostMobileRow key={server.id} server={server} />)}</div>
-      {total > hosts.length && <div className="border-t px-4 py-2 text-xs text-muted-foreground">Showing the {hosts.length} highest-priority hosts. <Link to="/servers" className="font-medium text-primary hover:underline">Review all {total}</Link></div>}
+      <div className="divide-y md:hidden">{visibleHosts.map(server => <AttentionHostMobileRow key={server.id} server={server} />)}</div>
+      {hosts.length > 6 && (
+        <div className="flex items-center justify-between gap-3 border-t px-4 py-2 text-xs text-muted-foreground">
+          <span>{t(expanded ? 'dash.showingAllHosts' : 'dash.showingPriorityHosts', { count: total })}</span>
+          <Button variant="ghost" size="sm" className="h-7" onClick={() => setExpanded(value => !value)} aria-expanded={expanded}>
+            {expanded ? <><ChevronUp className="h-3.5 w-3.5" />{t('dash.showFewer')}</> : <><ChevronDown className="h-3.5 w-3.5" />{t('dash.showAll', { count: total })}</>}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -486,7 +511,7 @@ function ServerRow({ s, t, agentEnabled }: { s: ServerInfo; t: (k: string) => st
       </td>
       <td className="px-2 py-2.5"><StatusBadge tone={s.status === 'online' ? 'success' : s.status === 'offline' ? 'danger' : 'muted'} dot>{hostStatus}</StatusBadge></td>
       <td className="px-2 py-2.5"><div className="flex flex-wrap gap-1"><AttentionReasonChips s={s} /></div></td>
-      {agentEnabled && <td className="px-2 py-2.5"><AgentBadge s={s} /><span className="text-xs text-muted-foreground">{s.agent_mode === 'legacy' ? 'SSH' : 'Agent'}</span></td>}
+      {agentEnabled && <td className="px-2 py-2.5"><AgentBadge s={s} /><span className="text-xs text-muted-foreground">{s.agent_mode === 'legacy' ? 'SSH' : t('dash.agentMode')}</span></td>}
       <td className="px-4 py-2.5">
         <span className={`font-mono text-xs ${!s.uptime_seconds ? 'text-muted-foreground' : ''}`}>
           {formatUptime(s.uptime_seconds)}
@@ -503,8 +528,8 @@ function AttentionReasonChips({ s }: { s: ServerInfo }) {
   const canViewDocker = hasCap(profile, 'canViewDocker');
   const canViewCustomUpdates = hasCap(profile, 'canViewCustomUpdates');
   const chips: React.ReactNode[] = [];
-  if (s.status === 'offline') chips.push(<StatusBadge key="offline" tone="danger">Offline</StatusBadge>);
-  if ((s.alert_count ?? 0) > 0) chips.push(<StatusBadge key="alerts" tone="danger"><Bell className="mr-1 h-3 w-3" />{s.alert_count} alert{(s.alert_count ?? 0) === 1 ? '' : 's'}</StatusBadge>);
+  if (s.status === 'offline') chips.push(<StatusBadge key="offline" tone="danger">{t('common.offline')}</StatusBadge>);
+  if ((s.alert_count ?? 0) > 0) chips.push(<StatusBadge key="alerts" tone="danger"><Bell className="mr-1 h-3 w-3" />{t('dash.alertCount', { count: s.alert_count })}</StatusBadge>);
   if (canViewUpdates && s.reboot_required) chips.push(<StatusBadge key="rb" tone="warning"><RotateCcw className="mr-1 h-3 w-3" />{t('dash.needsReboot')}</StatusBadge>);
   if (canViewUpdates && (s.updates_count ?? 0) > 0) chips.push(<StatusBadge key="u" tone="warning"><PackagePlus className="mr-1 h-3 w-3" />{s.updates_count} {t('dash.colUpdates')}</StatusBadge>);
   if (canViewUpdates && canViewDocker && (s.image_updates_count ?? 0) > 0) chips.push(<StatusBadge key="i" tone="warning"><Container className="mr-1 h-3 w-3" />{s.image_updates_count} {t('dash.colImageUpdates')}</StatusBadge>);
