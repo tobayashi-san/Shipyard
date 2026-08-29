@@ -50,6 +50,9 @@ describe("UI refactor contract", () => {
     expect(tree).toContain('to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId"');
     expect(tree).toContain("!platformServerIds.has(server.id)");
     expect(tree).toContain('to="/servers/$id"');
+    expect(tree).toContain("{vm.fleet_server_id ? (");
+    expect(tree).toContain('title={`Open managed host ${vm.name || vmId}`}');
+    expect(tree).toContain('title="Open Proxmox guest details"');
   });
 
   it("keeps the requested host sections visible and places Docker in the primary tab rail", () => {
@@ -82,7 +85,7 @@ describe("UI refactor contract", () => {
     expect(store).toContain("infrastructureTreeCollapsed");
     expect(sidebar).toContain("onPointerDown={startResize}");
     expect(sidebar).toContain("toggleInfrastructureTree");
-    expect(sidebar).toContain("shipyard_recent_nav");
+    expect(sidebar).not.toContain("shipyard_recent_nav");
     expect(shell).toContain("setDensity(value)");
     expect(shell).toContain("md:hidden\" onClick={openCommandPalette}");
   });

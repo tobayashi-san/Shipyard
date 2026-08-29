@@ -811,28 +811,45 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                                 : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
                             )}
                           >
-                            <Link
-                              to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId"
-                              params={{ clusterId, nodeName, vmId }}
-                              onClick={onNavigate}
-                              aria-current={vmCurrent ? "page" : undefined}
-                              className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-[11px]"
-                            >
-                              <StatusDot status={vm.status} />
-                              <Box className="h-3 w-3 shrink-0" />
-                              <span className="min-w-0 flex-1 truncate">{vm.name || `${vm.guest_type === "lxc" ? "CT" : "VM"} ${vmId}`}</span>
-                              <span className="font-mono text-[10px]">{vmId}</span>
-                            </Link>
-                            {vm.fleet_server_id && (
+                            {vm.fleet_server_id ? (
                               <Link
                                 to="/servers/$id"
                                 params={{ id: vm.fleet_server_id }}
                                 onClick={onNavigate}
-                                aria-label={`Open managed host ${vm.name || vmId}`}
-                                title="Open managed host"
-                                className="mr-0.5 shrink-0 rounded-sm p-1 text-primary/80 hover:bg-accent hover:text-primary"
+                                aria-current={vmHostCurrent ? "page" : undefined}
+                                title={`Open managed host ${vm.name || vmId}`}
+                                className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-[11px]"
                               >
-                                <Server className="h-3 w-3" />
+                                <StatusDot status={vm.status} />
+                                <Server className="h-3 w-3 shrink-0" />
+                                <span className="min-w-0 flex-1 truncate">{vm.name || `${vm.guest_type === "lxc" ? "CT" : "VM"} ${vmId}`}</span>
+                                <span className="font-mono text-[10px]">{vmId}</span>
+                              </Link>
+                            ) : (
+                              <Link
+                                to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId"
+                                params={{ clusterId, nodeName, vmId }}
+                                onClick={onNavigate}
+                                aria-current={vmCurrent ? "page" : undefined}
+                                className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-[11px]"
+                              >
+                                <StatusDot status={vm.status} />
+                                <Box className="h-3 w-3 shrink-0" />
+                                <span className="min-w-0 flex-1 truncate">{vm.name || `${vm.guest_type === "lxc" ? "CT" : "VM"} ${vmId}`}</span>
+                                <span className="font-mono text-[10px]">{vmId}</span>
+                              </Link>
+                            )}
+                            {vm.fleet_server_id && (
+                              <Link
+                                to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId"
+                                params={{ clusterId, nodeName, vmId }}
+                                onClick={onNavigate}
+                                aria-current={vmCurrent ? "page" : undefined}
+                                aria-label={`Open Proxmox guest ${vm.name || vmId}`}
+                                title="Open Proxmox guest details"
+                                className="mr-0.5 shrink-0 rounded-sm border border-transparent p-1 text-muted-foreground hover:border-border hover:bg-background hover:text-foreground"
+                              >
+                                <Box className="h-3 w-3" />
                               </Link>
                             )}
                           </div>

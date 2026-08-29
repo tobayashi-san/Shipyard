@@ -698,7 +698,9 @@ test('a discovered Proxmox VM can be adopted through the browser without changin
     await expect(page.getByText('VM adopted as a host.', { exact: true })).toBeVisible();
     const inventoryTree = page.locator('aside');
     await expect(inventoryTree.getByText('e2e-import-vm', { exact: true })).toHaveCount(1);
-    await expect(inventoryTree.getByRole('link', { name: 'Open managed host e2e-import-vm' })).toBeVisible();
+    const managedVmLink = inventoryTree.getByRole('link').filter({ hasText: 'e2e-import-vm' });
+    await expect(managedVmLink).toHaveAttribute('href', /\/servers\//);
+    await expect(inventoryTree.getByRole('link', { name: 'Open Proxmox guest e2e-import-vm' })).toHaveAttribute('href', /\/infrastructure\/.*\/vms\/207/);
     await page.goto('/servers');
     const row = page.getByRole('row', { name: /e2e-import-vm/i });
     await expect(row).toBeVisible();

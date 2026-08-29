@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
@@ -13,7 +13,6 @@ import {
   ChevronDown,
   ChevronRight,
   GripVertical,
-  History,
 } from "lucide-react";
 import { useUi } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -102,36 +101,12 @@ export function Sidebar({
       plugin.enabled &&
       canSeePlugin(profile, plugin.id),
   );
-  const [recentPaths, setRecentPaths] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem("shipyard_recent_nav") || "[]"); } catch { return []; }
-  });
-  const recentItems = useMemo(() => {
-    const items = [
-      { to: "/", label: t("nav.dashboard"), icon: LayoutDashboard },
-      { to: "/servers", label: t("nav.servers"), icon: Boxes },
-      { to: "/deployments", label: t("nav.virtualMachines"), icon: Workflow },
-      { to: "/networks", label: t("nav.networks"), icon: Network },
-      { to: "/playbooks", label: t("nav.playbooks"), icon: FileCode2 },
-      { to: "/settings", label: t("nav.settings"), icon: Settings2 },
-    ];
-    return recentPaths.map(recent => items.find(item => item.to === recent)).filter(Boolean).slice(0, 3) as typeof items;
-  }, [recentPaths, t]);
 
   useEffect(() => {
     if (path === previousPath.current) return;
     previousPath.current = path;
     onMobileClose?.();
   }, [path, onMobileClose]);
-
-  useEffect(() => {
-    const basePath = path === "/" ? "/" : `/${path.split("/").filter(Boolean)[0] || ""}`;
-    if (!["/", "/servers", "/deployments", "/networks", "/playbooks", "/settings"].includes(basePath)) return;
-    setRecentPaths(previous => {
-      const next = [basePath, ...previous.filter(item => item !== basePath)].slice(0, 3);
-      try { localStorage.setItem("shipyard_recent_nav", JSON.stringify(next)); } catch { /* ignore */ }
-      return next;
-    });
-  }, [path]);
 
   const startResize = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (collapsed || window.matchMedia("(max-width: 767px)").matches) return;
@@ -283,11 +258,6 @@ export function Sidebar({
             ))}
           </section>
         )}
-
-        {!collapsed && recentItems.length > 1 && <section className="shrink-0 space-y-1">
-          <div className="section-label flex items-center gap-1.5 px-2.5 pb-1 uppercase tracking-[0.12em]"><History className="h-3 w-3" />{t("nav.recent")}</div>
-          {recentItems.map(item => <NavItem key={item.to} to={item.to} label={item.label} icon={item.icon} active={false} collapsed={false} onNavigate={onMobileClose} />)}
-        </section>}
 
         {canManageConsole && (
           <section className="shrink-0 space-y-1">
