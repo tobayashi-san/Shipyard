@@ -55,7 +55,8 @@ function createInfrastructureSummary({
   async function load(environmentId) {
     removeOrphanedServerMappings(db);
     const { grouped, warnings } = collectProxmoxInfrastructureGroups(environmentId);
-    const settled = await Promise.allSettled([...grouped.values()].map(async group => {
+    const groups = [...grouped.values()];
+    const settled = await Promise.allSettled(groups.map(async group => {
       const [nodesResponse, resourcesResponse] = await Promise.all([
         requestProxmoxApi(group.connection, '/nodes'),
         requestProxmoxApi(group.connection, '/cluster/resources?type=vm'),
@@ -121,11 +122,15 @@ function createInfrastructureSummary({
       };
     }));
     const clusters = [];
-    for (const result of settled) {
+    const failedClusterIds = [];
+    for (const [index, result] of settled.entries()) {
       if (result.status === 'fulfilled') clusters.push(result.value);
-      else warnings.push(result.reason?.message || 'A Proxmox connection could not be queried.');
+      else {
+        failedClusterIds.push(groups[index].key);
+        warnings.push(result.reason?.message || 'A Proxmox connection could not be queried.');
+      }
     }
-    return { clusters, warnings };
+    return { clusters, warnings, failedClusterIds };
   }
 
   function summarize(infrastructure, environmentId) {
@@ -173,12 +178,19 @@ function createInfrastructureSummary({
     refreshAttempts.set(environmentId, Date.now());
     const pending = load(environmentId)
       .then(infrastructure => {
-        // Keep the last fully successful snapshot when a source is temporarily
-        // unavailable. Partial live data must never replace a known-good tree.
+        // Keep each source's last successful snapshot when it is temporarily
+        // unavailable, but do not let one failed platform hide fresh results
+        // from other platforms in the same environment.
         if ((infrastructure.warnings || []).length > 0) {
           const cached = read(environmentId);
           if (!cached) throw new Error(infrastructure.warnings[0] || 'Proxmox inventory could not be loaded.');
-          return cached;
+          const liveIds = new Set(infrastructure.clusters.map(cluster => cluster.id));
+          const failedIds = new Set(infrastructure.failedClusterIds || []);
+          const retained = cached.clusters.filter(cluster =>
+            failedIds.has(cluster.id) && !liveIds.has(cluster.id));
+          const summary = summarize({ clusters: [...infrastructure.clusters, ...retained] }, environmentId);
+          db.settings.set(cacheKey(environmentId), JSON.stringify(summary));
+          return summary;
         }
         const summary = summarize(infrastructure, environmentId);
         db.settings.set(cacheKey(environmentId), JSON.stringify(summary));
@@ -197,9 +209,16 @@ function createInfrastructureSummary({
     }
     const age = Date.now() - Date.parse(cached.updated_at);
     const sourceChanged = cached.source_version !== sourceVersion(environmentId);
-    const stale = sourceChanged || !Number.isFinite(age) || age >= maxAgeMs;
+    // Configuration and host-mapping changes must be visible on the response
+    // that discovers them. Returning the old tree here leaves clients with no
+    // reliable signal that they need to poll again.
+    if (sourceChanged) {
+      const summary = await refresh(environmentId);
+      return { ...summary, cached: false, refreshing: false };
+    }
+    const stale = !Number.isFinite(age) || age >= maxAgeMs;
     const lastAttempt = refreshAttempts.get(environmentId) || 0;
-    if (stale && (sourceChanged || Date.now() - lastAttempt >= maxAgeMs)) {
+    if (stale && Date.now() - lastAttempt >= maxAgeMs) {
       void refresh(environmentId).catch(error => {
         log.warn({ err: error, environmentId }, 'Could not refresh cached Proxmox infrastructure summary');
       });

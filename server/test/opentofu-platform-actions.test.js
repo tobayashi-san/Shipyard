@@ -244,6 +244,20 @@ test('infrastructure summary persists a compact snapshot and serves it without l
   assert.equal(cached.body.cached, true);
   assert.equal(cached.body.refreshing, false);
   assert.equal(calls.length, 0, 'a fresh snapshot must not wait for or call Proxmox');
+
+  db.db.prepare('UPDATE tofu_proxmox_connections SET name = ? WHERE id = ?')
+    .run('Renamed Proxmox source', connectionId);
+  const changed = await request(app)
+    .get('/api/opentofu/infrastructure-summary?environment_id=default')
+    .set('Authorization', `Bearer ${token}`);
+  assert.equal(changed.status, 200, JSON.stringify(changed.body));
+  assert.equal(changed.body.cached, false, 'a changed source must refresh before responding');
+  assert.equal(changed.body.refreshing, false);
+  assert.deepEqual(changed.body.clusters[0].connections.map(connection => connection.name), ['Renamed Proxmox source']);
+  assert.deepEqual(calls.map(call => call.path).sort(), [
+    '/api2/json/cluster/resources',
+    '/api2/json/nodes',
+  ]);
 });
 
 test('Proxmox actions reject invalid or stale targets before an action endpoint is reached', async () => {

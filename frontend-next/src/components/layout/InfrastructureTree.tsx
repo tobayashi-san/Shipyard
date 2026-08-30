@@ -185,7 +185,10 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
         `/opentofu/infrastructure-summary?environment_id=${encodeURIComponent(environmentId)}`,
       ),
     staleTime: 30_000,
-    refetchInterval: (query) => query.state.data?.refreshing ? 2_000 : 30_000,
+    // The endpoint normally serves its persisted snapshot without contacting
+    // Proxmox. Poll it cheaply so connections and adopted-host mappings made
+    // outside this component still appear promptly in the global tree.
+    refetchInterval: 2_000,
     retry: false,
     enabled: canViewInfrastructure,
   });
