@@ -37,6 +37,8 @@ interface UiState {
   setSidebarWidth: (width: number) => void;
   infrastructureTreeCollapsed: boolean;
   toggleInfrastructureTree: () => void;
+  showInfrastructureVmIds: boolean;
+  setShowInfrastructureVmIds: (show: boolean) => void;
   density: UiDensity;
   setDensity: (density: UiDensity) => void;
   theme: Theme;
@@ -56,6 +58,7 @@ const THEME_PRESET_KEY = 'shipyard_theme_preset_next';
 const SIDEBAR_KEY = 'shipyard_sidebar_collapsed_next';
 const SIDEBAR_WIDTH_KEY = 'shipyard_sidebar_width_next';
 const TREE_COLLAPSED_KEY = 'shipyard_tree_collapsed_next';
+const TREE_VM_IDS_KEY = 'shipyard_tree_show_vm_ids';
 const DENSITY_KEY = 'shipyard_ui_density_next';
 const TIME_FORMAT_KEY = 'timeFormat';
 const DASH_ATTENTION_KEY = 'shipyard_dash_attention';
@@ -150,6 +153,11 @@ export const useUi = create<UiState>((set) => ({
     const next = !state.infrastructureTreeCollapsed;
     try { localStorage.setItem(TREE_COLLAPSED_KEY, next ? '1' : '0'); } catch { /* ignore */ }
     return { infrastructureTreeCollapsed: next };
+  }),
+  showInfrastructureVmIds: (() => { try { return localStorage.getItem(TREE_VM_IDS_KEY) !== '0'; } catch { return true; } })(),
+  setShowInfrastructureVmIds: (show) => set(() => {
+    try { localStorage.setItem(TREE_VM_IDS_KEY, show ? '1' : '0'); } catch { /* ignore */ }
+    return { showInfrastructureVmIds: show };
   }),
   density: readDensity(),
   setDensity: (density) => set(() => {

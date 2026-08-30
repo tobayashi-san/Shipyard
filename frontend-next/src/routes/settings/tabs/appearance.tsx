@@ -7,9 +7,11 @@ import { showToast } from "@/lib/toast";
 import { useSettings } from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { SettingsRow, SettingsSection } from "../_row";
 import { THEME_PRESETS, useUi } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { useUnsavedChanges } from "@/lib/use-unsaved-changes";
 
 const DEFAULTS = {
   appName: "",
@@ -31,6 +33,10 @@ export function AppearanceTab() {
   const [color, setColor] = useState(wl.accentColor || DEFAULTS.accentColor);
   const themePreset = useUi((state) => state.themePreset);
   const setThemePreset = useUi((state) => state.setThemePreset);
+  const showVmIds = useUi((state) => state.showInfrastructureVmIds);
+  const setShowVmIds = useUi((state) => state.setShowInfrastructureVmIds);
+  const dirty = appName !== (wl.appName || "") || color !== (wl.accentColor || DEFAULTS.accentColor);
+  useUnsavedChanges(dirty);
 
   // Hydrate when settings load
   useEffect(() => {
@@ -104,7 +110,7 @@ export function AppearanceTab() {
         </SettingsRow>
 
         <SettingsRow label={null} noBorder>
-          <Button onClick={handleSave} disabled={save.isPending} size="sm">
+          <Button onClick={handleSave} disabled={save.isPending || !dirty} size="sm">
             <Save className="h-4 w-4" />{" "}
             {save.isPending ? t("set.saving") : t("set.saveApply")}
           </Button>
@@ -116,6 +122,15 @@ export function AppearanceTab() {
           >
             {t("common.reset")}
           </Button>
+        </SettingsRow>
+      </SettingsSection>
+      <SettingsSection
+        icon={<Paintbrush className="h-4 w-4" />}
+        title="Navigation"
+        description="Choose how infrastructure inventory is represented in the sidebar."
+      >
+        <SettingsRow label="Show VM IDs" hint="Display the Proxmox VMID before each guest name in the infrastructure tree." noBorder>
+          <Switch aria-label="Show VM IDs in infrastructure tree" checked={showVmIds} onCheckedChange={setShowVmIds} />
         </SettingsRow>
       </SettingsSection>
       <SettingsSection

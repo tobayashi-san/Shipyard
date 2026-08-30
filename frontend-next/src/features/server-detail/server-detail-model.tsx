@@ -19,7 +19,21 @@ export interface ServerDetail {
   storage_mounts?: { name: string; path: string }[];
   notes?: string;
   docker_enabled?: number;
+  attention?: ServerAttention;
   [k: string]: unknown;
+}
+
+export interface ServerAttentionReason {
+  code: "offline" | "active_alerts" | "reboot_required" | "os_updates" | "image_updates" | "custom_updates" | "failed_operations";
+  severity: "critical" | "warning";
+  count: number;
+  lastOccurredAt?: string | null;
+}
+
+export interface ServerAttention {
+  requiresAttention: boolean;
+  severity: "healthy" | "warning" | "critical";
+  reasons: ServerAttentionReason[];
 }
 
 export interface ServerInfo {

@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Skeleton, SkeletonRow } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SettingsRow, SettingsSection } from '../_row';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 
 interface GitConfig {
   repoUrl?: string;
@@ -60,6 +61,7 @@ function GitSetup() {
   const [userEmail, setUserEmail] = useState('');
   const [autoPull, setAutoPull] = useState(true);
   const [autoPush, setAutoPush] = useState(true);
+  useUnsavedChanges(Boolean(repoUrl || authToken || sshKey || userName || userEmail || !autoPull || !autoPush));
 
   const setup = useMutation({
     mutationFn: () => api.gitSetup({
@@ -84,14 +86,17 @@ function GitSetup() {
       title={t('git.title')}
       description={t('git.setupHint')}
     >
+      <form onSubmit={(event) => { event.preventDefault(); if (repoUrl) setup.mutate(); }} className="contents">
       <SettingsRow label={t('git.repoUrl')} hint={t('git.repoUrlSmallHint')}>
-        <Input value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://github.com/user/repo.git" className="max-w-md" />
+        <Input aria-label={t('git.repoUrl')} name="repositoryUrl" value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://github.com/user/repo.git" className="max-w-md" />
       </SettingsRow>
       <SettingsRow label={t('git.authToken')} hint={t('git.authTokenHint')}>
-        <Input type="password" value={authToken} onChange={(e) => setAuthToken(e.target.value)} placeholder="ghp_xxxxxxxxxxxx" autoComplete="off" className="max-w-md" />
+        <Input aria-label={t('git.authToken')} name="repositoryToken" type="password" value={authToken} onChange={(e) => setAuthToken(e.target.value)} placeholder="ghp_xxxxxxxxxxxx" autoComplete="new-password" className="max-w-md" />
       </SettingsRow>
       <SettingsRow label={t('git.sshKey')} hint={t('git.sshKeyHint')} align="start">
         <Textarea
+          aria-label={t('git.sshKey')}
+          name="repositorySshKey"
           value={sshKey}
           onChange={(e) => setSshKey(e.target.value)}
           rows={5}
@@ -100,22 +105,23 @@ function GitSetup() {
         />
       </SettingsRow>
       <SettingsRow label={t('git.userName')} hint={t('git.userNameHint')}>
-        <Input value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="Shipyard Bot" className="max-w-xs" />
+        <Input aria-label={t('git.userName')} name="gitUserName" autoComplete="name" value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="Shipyard Bot" className="max-w-xs" />
       </SettingsRow>
       <SettingsRow label={t('git.userEmail')} hint={t('git.userEmailHint')}>
-        <Input type="email" value={userEmail} onChange={(e) => setUserEmail(e.target.value)} placeholder="bot@example.com" className="max-w-sm" />
+        <Input aria-label={t('git.userEmail')} name="gitUserEmail" type="email" autoComplete="email" value={userEmail} onChange={(e) => setUserEmail(e.target.value)} placeholder="bot@example.com" className="max-w-sm" />
       </SettingsRow>
       <SettingsRow label={t('git.autoPull')} hint={t('git.autoPullHint')}>
-        <Switch checked={autoPull} onCheckedChange={setAutoPull} />
+        <Switch aria-label={t('git.autoPull')} checked={autoPull} onCheckedChange={setAutoPull} />
       </SettingsRow>
       <SettingsRow label={t('git.autoPush')} hint={t('git.autoPushHint')}>
-        <Switch checked={autoPush} onCheckedChange={setAutoPush} />
+        <Switch aria-label={t('git.autoPush')} checked={autoPush} onCheckedChange={setAutoPush} />
       </SettingsRow>
       <SettingsRow noBorder>
-        <Button size="sm" onClick={() => setup.mutate()} disabled={setup.isPending || !repoUrl}>
+        <Button type="submit" size="sm" disabled={setup.isPending || !repoUrl}>
           <Plug className="h-4 w-4" /> {setup.isPending ? t('git.connecting') : t('git.connectRepo')}
         </Button>
       </SettingsRow>
+      </form>
     </SettingsSection>
   );
 }
@@ -132,6 +138,8 @@ function GitDashboard({ cfg }: { cfg: GitConfig }) {
   const [statusMsg, setStatusMsg] = useState('');
   const [autoPull, setAutoPull] = useState(cfg.autoPull !== false);
   const [autoPush, setAutoPush] = useState(cfg.autoPush !== false);
+  const settingsDirty = autoPull !== (cfg.autoPull !== false) || autoPush !== (cfg.autoPush !== false);
+  useUnsavedChanges(settingsDirty);
   const [selectedBranch, setSelectedBranch] = useState(cfg.branch || 'main');
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
 
@@ -235,13 +243,13 @@ function GitDashboard({ cfg }: { cfg: GitConfig }) {
         </SettingsRow>
 
         <SettingsRow label={t('git.autoPull')} hint={t('git.autoPullHint')}>
-          <Switch checked={autoPull} onCheckedChange={setAutoPull} />
+          <Switch aria-label={t('git.autoPull')} checked={autoPull} onCheckedChange={setAutoPull} />
         </SettingsRow>
         <SettingsRow label={t('git.autoPush')} hint={t('git.autoPushHint')}>
-          <Switch checked={autoPush} onCheckedChange={setAutoPush} />
+          <Switch aria-label={t('git.autoPush')} checked={autoPush} onCheckedChange={setAutoPush} />
         </SettingsRow>
         <SettingsRow noBorder>
-          <Button size="sm" onClick={() => saveSettings.mutate()} disabled={saveSettings.isPending}>
+          <Button size="sm" onClick={() => saveSettings.mutate()} disabled={saveSettings.isPending || !settingsDirty}>
             <Save className="h-4 w-4" /> {t('git.saveSettings')}
           </Button>
         </SettingsRow>

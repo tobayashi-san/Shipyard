@@ -141,10 +141,12 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
   const navigate = useNavigate();
   const path = useRouterState({ select: (state) => state.location.pathname });
   const environmentId = useUi((state) => state.environmentId);
+  const showVmIds = useUi((state) => state.showInfrastructureVmIds);
   const queryClient = useQueryClient();
   const { data: profile } = useProfile();
   const canViewInfrastructure = canAccessInfrastructure(profile);
   const [collapsed, setCollapsed] = useState<Set<string>>(initialCollapsed);
+  const [treeFilter, setTreeFilter] = useState("");
   const [folderOpen, setFolderOpen] = useState(false);
   const [folderName, setFolderName] = useState("");
   const [folderParentId, setFolderParentId] = useState("");
@@ -197,6 +199,29 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
     () => (Array.isArray(inventory?.clusters) ? inventory.clusters : []),
     [inventory],
   );
+  const visibleClusters = useMemo(() => {
+    const needle = treeFilter.trim().toLowerCase();
+    if (!needle) return clusters;
+    return clusters.flatMap((cluster) => {
+      const clusterName = cluster.connections?.find((connection) => connection.name)?.name || cluster.endpoint || "";
+      if (`${clusterName} ${cluster.endpoint || ""}`.toLowerCase().includes(needle)) return [cluster];
+      const matchingVms = (cluster.vms || []).filter((vm) =>
+        `${vm.vm_id || ""} ${vm.name || ""} ${vm.node_name || ""}`.toLowerCase().includes(needle),
+      );
+      const matchingNodeNames = new Set(
+        (cluster.nodes || []).filter((node) => String(node.name || "").toLowerCase().includes(needle)).map((node) => node.name),
+      );
+      matchingVms.forEach((vm) => matchingNodeNames.add(vm.node_name));
+      if (matchingNodeNames.size === 0) return [];
+      return [{
+        ...cluster,
+        nodes: (cluster.nodes || []).filter((node) => matchingNodeNames.has(node.name)),
+        vms: matchingVms.length > 0
+          ? matchingVms
+          : (cluster.vms || []).filter((vm) => matchingNodeNames.has(vm.node_name)),
+      }];
+    });
+  }, [clusters, treeFilter]);
   const platformServerIds = useMemo(
     () =>
       new Set(
@@ -497,6 +522,8 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
     });
   const selectedServerCount = selectedServerIds.size;
   const serverRow = (server: ServerRow, depth = 0) => {
+    const filterNeedle = treeFilter.trim().toLowerCase();
+    if (filterNeedle && !`${server.name} ${server.ip_address || ""} ${(server.tags || []).join(" ")}`.toLowerCase().includes(filterNeedle)) return null;
     const active =
       path === `/servers/${server.id}` ||
       decodePath(path) === `/servers/${server.id}`;
@@ -831,8 +858,8 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                               >
                                 <StatusDot status={vm.status} />
                                 <Server className="h-3 w-3 shrink-0" />
+                                {showVmIds && <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{vmId}</span>}
                                 <span className="min-w-0 flex-1 truncate">{vm.name || `${vm.guest_type === "lxc" ? "CT" : "VM"} ${vmId}`}</span>
-                                <span className="font-mono text-[10px]">{vmId}</span>
                               </Link>
                             ) : (
                               <Link
@@ -844,8 +871,8 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                               >
                                 <StatusDot status={vm.status} />
                                 <Box className="h-3 w-3 shrink-0" />
+                                {showVmIds && <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{vmId}</span>}
                                 <span className="min-w-0 flex-1 truncate">{vm.name || `${vm.guest_type === "lxc" ? "CT" : "VM"} ${vmId}`}</span>
-                                <span className="font-mono text-[10px]">{vmId}</span>
                               </Link>
                             )}
                             {vm.fleet_server_id && (
@@ -876,6 +903,18 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
   };
   return (
     <div className="space-y-1">
+      {!compact && (
+        <div className="relative px-1 pb-1">
+          <Input
+            value={treeFilter}
+            onChange={(event) => setTreeFilter(event.target.value)}
+            aria-label="Filter infrastructure tree"
+            placeholder="Filter inventory…"
+            className="h-7 pr-7 text-xs"
+          />
+          {treeFilter && <button type="button" onClick={() => setTreeFilter("")} aria-label="Clear infrastructure filter" className="absolute right-2 top-1 rounded-sm p-1 text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>}
+        </div>
+      )}
       <div>
         {canViewInfrastructure && (
           <div className="mb-2 border-b pb-2">
@@ -886,7 +925,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                 <span aria-hidden="true" className="h-4 w-5 animate-pulse rounded bg-muted" />
               ) : (
                 <span className="rounded bg-muted px-1.5 py-0.5 normal-case tracking-normal">
-                  {inventoryError ? "—" : clusters.length}
+                  {inventoryError ? "—" : visibleClusters.length}
                 </span>
               )}
             </div>
@@ -903,8 +942,8 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
               <div className="mx-1 rounded-sm px-2 py-1.5 text-xs text-destructive">
                 Infrastructure could not be loaded
               </div>
-            ) : clusters.length > 0 ? (
-              clusters.map(platformNode)
+            ) : visibleClusters.length > 0 ? (
+              visibleClusters.map(platformNode)
             ) : (
               <Link
                 to="/deployments"

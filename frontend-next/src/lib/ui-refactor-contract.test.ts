@@ -53,6 +53,8 @@ describe("UI refactor contract", () => {
     expect(tree).toContain("{vm.fleet_server_id ? (");
     expect(tree).toContain('title={`Open managed host ${vm.name || vmId}`}');
     expect(tree).toContain('title="Open Proxmox guest details"');
+    expect(tree).toContain("showInfrastructureVmIds");
+    expect(tree).toContain("{showVmIds && <span");
   });
 
   it("keeps the requested host sections visible and places Docker in the primary tab rail", () => {
@@ -98,6 +100,7 @@ describe("UI refactor contract", () => {
     expect(dashboard).toContain("search={{ status: 'offline' }}");
     expect(dashboard).toContain("search={{ updates: true }}");
     expect(dashboard).toContain("search={{ scope: 'active' }}");
+    expect(dashboard).toContain("search={{ scope: 'failed' }}");
     expect(servers).toContain("routeSearch.updates === true");
     expect(servers).toContain("routeSearch.attention === true");
     expect(router).toContain("interface ServersSearch");
@@ -108,5 +111,20 @@ describe("UI refactor contract", () => {
     const servers = source("features/servers/ServersPage.tsx");
     expect(servers.indexOf("<CreateServerDialog />")).toBeLessThan(servers.indexOf('<OverflowMenu title={t("srv.resourceOptions")}>'));
     expect(servers).toContain("<OverflowItem icon={RefreshCw} onClick={handleRefresh}");
+  });
+
+  it("names fleet selection controls and the command search explicitly", () => {
+    const servers = source("features/servers/ServersPage.tsx");
+    const palette = source("components/CommandPalette.tsx");
+    expect(servers).toContain('aria-label={`Select ${s.name}`}');
+    expect(servers.match(/aria-label=\{t\("common\.all"\)\}/g)).toHaveLength(2);
+    expect(palette).toContain("aria-label={t('cmd.placeholder')}");
+  });
+
+  it("requires the VM name for an immediate force stop", () => {
+    const vm = source("routes/proxmox-vm-detail.tsx");
+    expect(vm).toContain('powerAction === "stop" ? `STOP ${vm.name}` : undefined');
+    expect(vm).toContain("Unsaved guest data may be lost.");
+    expect(vm).toContain('variant={powerAction === "stop" ? "destructive" : "warning"}');
   });
 });

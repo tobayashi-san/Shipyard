@@ -3,6 +3,7 @@ const db = require('../db');
 const { getPermissions, filterServers, can } = require('../utils/permissions');
 const { serverError } = require('../utils/http-error');
 const { authenticatedApiLimiter } = require('../utils/rate-limiters');
+const { buildServerAttention } = require('../utils/server-attention');
 
 const router = express.Router();
 
@@ -27,6 +28,13 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
     const canViewDocker = can(perms, 'canViewDocker');
     const canViewCustomUpdates = can(perms, 'canViewCustomUpdates');
     const agentEnabled = db.settings.get('agent_enabled') === '1';
+    const canViewHistory = canViewUpdates || can(perms, 'canViewSchedules') || can(perms, 'canViewAudit');
+    const visibleServerIds = servers.map(server => server.id);
+    const visibleAlerts = db.resourceAlerts.list({
+      statuses: ['active'],
+      serverIds: visibleServerIds,
+      limit: 500,
+    });
     const online = servers.filter(s => s.status === 'online').length;
     const offline = servers.filter(s => s.status === 'offline').length;
 
@@ -40,6 +48,8 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
       const imageUpdatesMeta = canViewDocker && canViewUpdates ? db.dockerImageUpdatesCache.getWithMeta(s.id) : null;
       const imageUpdates = imageUpdatesMeta ? imageUpdatesMeta.results : null;
       const agentCfg = agentEnabled ? db.agentConfig.getByServerId(s.id) : null;
+      const history = canViewHistory ? db.updateHistory.getByServer(s.id) : [];
+      const alerts = visibleAlerts.filter(alert => String(alert.server_id) === String(s.id));
 
       if (canViewUpdates && info?.reboot_required) rebootRequired++;
       if (canViewUpdates) totalUpdates += updates.filter(u => !u.phased).length;
@@ -82,6 +92,21 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
         }))
         : undefined;
 
+      const customUpdatesCount = canViewCustomUpdates ? db.customUpdateTasks.countHasUpdate(s.id) : 0;
+      const attention = buildServerAttention({
+        server: s,
+        info,
+        updates,
+        imageUpdates,
+        customUpdatesCount,
+        history,
+        alerts,
+        includeUpdates: canViewUpdates,
+        includeDockerUpdates: canViewDocker && canViewUpdates,
+        includeCustomUpdates: canViewCustomUpdates,
+        includeHistory: canViewHistory,
+      });
+
       return {
         id: s.id,
         name: s.name,
@@ -108,16 +133,16 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
           image_updates_count: imageUpdates === null ? null : imageUpdates.filter(r => r.status === 'update_available').length,
           image_updates_checked_at: imageUpdatesMeta?.updated_at || null,
         } : {}),
-        ...(canViewCustomUpdates ? { custom_updates_count: db.customUpdateTasks.countHasUpdate(s.id) } : {}),
+        ...(canViewCustomUpdates ? { custom_updates_count: customUpdatesCount } : {}),
         ...(customUpdateTasks ? { custom_update_tasks: customUpdateTasks } : {}),
         info_cached_at: info?.updated_at || null,
         agent_mode: agentMode,
         agent_state: agentState,
         agent_last_seen: agentLastSeen,
+        attention,
       };
     });
 
-    const canViewHistory = canViewUpdates || can(perms, 'canViewSchedules') || can(perms, 'canViewAudit');
     const allRecentHistory = canViewHistory ? db.db.prepare(`
       SELECT h.*, s.name as server_name
       FROM update_history h
@@ -139,10 +164,16 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
       ...h,
       server_name: h.server_name || (h.server_id === 'bulk_update' ? 'Bulk Update' : h.server_id),
     })).slice(0, 8);
+    const failedOperations = allRecentHistory.filter(h => {
+      if (h.status !== 'failed') return false;
+      if (allowedServerIds.has(h.server_id) || allowedServerNames.has(h.server_id)) return true;
+      return !isServerRestricted;
+    }).length;
 
     res.json({
-      summary: { total: servers.length, online, offline, unknown: servers.length - online - offline, rebootRequired, totalUpdates },
+      summary: { total: servers.length, online, offline, unknown: servers.length - online - offline, rebootRequired, totalUpdates, failedOperations },
       servers: serverStats,
+      alerts: visibleAlerts,
       agentEnabled,
       recentHistory,
     });

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   useMutation,
   useQuery,
@@ -54,14 +54,14 @@ interface Workspace {
 }
 interface OperationRow {
   id: string;
-  source: "Deployment" | "Workflow" | "Audit";
+  source: "Host" | "Deployment" | "Workflow" | "Audit";
   name: string;
   target: string;
   initiator: string;
   status: string;
   statusTone: StatusTone;
   time?: string;
-  href?: "/deployments/$id" | "/playbooks";
+  href?: "/servers/$id" | "/deployments/$id" | "/playbooks";
   params?: Record<string, string>;
 }
 
@@ -116,7 +116,9 @@ function maintenanceLabel(state?: string) {
       : "Completed";
 }
 function operationSourceLabel(source: OperationRow["source"]) {
-  return source === "Deployment"
+  return source === "Host"
+    ? "Host operation"
+    : source === "Deployment"
     ? "Deployment"
     : source === "Workflow"
       ? "Playbook workflow"
@@ -143,6 +145,7 @@ function operationStatusLabel(status: string) {
 
 export function OperationsPage() {
   const routeSearch = useSearch({ from: "/_protected/operations" });
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const environmentId = useUi((state) => state.environmentId);
   const { data: profile } = useProfile();
@@ -155,11 +158,11 @@ export function OperationsPage() {
   const [taskScope, setTaskScope] = useState<"all" | "active" | "failed">(
     routeSearch.scope || "all",
   );
-  const [sourceFilter, setSourceFilter] = useState<"all" | "Deployment" | "Workflow" | "Audit">("all");
-  const [targetFilter, setTargetFilter] = useState("");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
-  const [operationsPage, setOperationsPage] = useState(1);
+  const [sourceFilter, setSourceFilter] = useState<"all" | "Host" | "Deployment" | "Workflow" | "Audit">(routeSearch.source || "all");
+  const [targetFilter, setTargetFilter] = useState(routeSearch.q || "");
+  const [fromDate, setFromDate] = useState(routeSearch.from || "");
+  const [toDate, setToDate] = useState(routeSearch.to || "");
+  const [operationsPage, setOperationsPage] = useState(routeSearch.page || 1);
   const [selectedOperationId, setSelectedOperationId] = useState<string | null>(
     null,
   );
@@ -177,6 +180,27 @@ export function OperationsPage() {
     enabled: canViewDeployments,
     staleTime: 15_000,
   });
+  useEffect(() => {
+    void navigate({
+      to: "/operations",
+      search: {
+        ...(taskScope !== "all" ? { scope: taskScope } : {}),
+        ...(routeSearch.section ? { section: routeSearch.section } : {}),
+        ...(sourceFilter !== "all" ? { source: sourceFilter } : {}),
+        ...(targetFilter.trim() ? { q: targetFilter.trim() } : {}),
+        ...(fromDate ? { from: fromDate } : {}),
+        ...(toDate ? { to: toDate } : {}),
+        ...(operationsPage > 1 ? { page: operationsPage } : {}),
+      },
+      replace: true,
+    });
+  }, [fromDate, navigate, operationsPage, routeSearch.section, sourceFilter, targetFilter, taskScope, toDate]);
+
+  useEffect(() => {
+    if (!routeSearch.section) return;
+    const target = document.getElementById(`operation-${routeSearch.section}`);
+    window.requestAnimationFrame(() => target?.scrollIntoView({ block: "start" }));
+  }, [routeSearch.section]);
   const workspaces = Array.isArray(workspaceQuery.data)
     ? workspaceQuery.data
     : [];
@@ -280,8 +304,13 @@ export function OperationsPage() {
             ?.scrollIntoView({ behavior: "smooth", block: "start" });
         }}
       />
+      <nav className="flex gap-1 overflow-x-auto rounded-[3px] border bg-card p-1" aria-label="Operations sections">
+        <Button asChild size="sm" variant={routeSearch.section === "maintenance" || routeSearch.section === "audit" ? "ghost" : "secondary"}><Link to="/operations" search={{ ...routeSearch, section: "tasks" }}>Tasks</Link></Button>
+        {canViewMaintenance && <Button asChild size="sm" variant={routeSearch.section === "maintenance" ? "secondary" : "ghost"}><Link to="/operations" search={{ ...routeSearch, section: "maintenance" }}>Maintenance</Link></Button>}
+        {canViewAudit && <Button asChild size="sm" variant={routeSearch.section === "audit" ? "secondary" : "ghost"}><Link to="/operations" search={{ ...routeSearch, section: "audit" }}>Audit</Link></Button>}
+      </nav>
       <div className="flex flex-col gap-5">
-        <Card id="operation-tasks">
+        <Card id="operation-tasks" className="scroll-mt-16">
           <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b bg-muted/15 py-3">
             <div>
               <CardTitle className="flex items-center gap-2 text-base">
@@ -309,7 +338,7 @@ export function OperationsPage() {
                   </Link>
                 </Button>
               )}
-              {canViewAudit && <Button asChild size="sm" variant="ghost"><a href="#audit-log">Audit log</a></Button>}
+              {canViewAudit && <Button asChild size="sm" variant="ghost"><Link to="/operations" search={{ ...routeSearch, section: "audit" }}>Audit log</Link></Button>}
             </div>
           </CardHeader>
           <CardContent className="p-0">
@@ -344,6 +373,7 @@ export function OperationsPage() {
                     <span>Source</span>
                     <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value as typeof sourceFilter)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground">
                       <option value="all">All sources</option>
+                      <option value="Host">Hosts</option>
                       <option value="Deployment">Deployments</option>
                       <option value="Workflow">Playbooks</option>
                       {canViewAudit && <option value="Audit">Audit</option>}
@@ -385,16 +415,16 @@ export function OperationsPage() {
           </CardContent>
         </Card>
         {canViewMaintenance && (
-          <MaintenanceWindowsCard
-            windows={maintenanceWindows}
-            loading={maintenanceQuery.isLoading}
-            canManage={canManageMaintenance}
-            onCreate={() => setMaintenanceDialog("new")}
-            onEdit={setMaintenanceDialog}
-            onDelete={setWindowToDelete}
-          />
+          <div id="operation-maintenance" className="scroll-mt-16"><MaintenanceWindowsCard
+              windows={maintenanceWindows}
+              loading={maintenanceQuery.isLoading}
+              canManage={canManageMaintenance}
+              onCreate={() => setMaintenanceDialog("new")}
+              onEdit={setMaintenanceDialog}
+              onDelete={setWindowToDelete}
+            /></div>
         )}
-        {canViewAudit && <div id="audit-log" className="scroll-mt-16"><AuditLogPanel /></div>}
+        {canViewAudit && <div id="operation-audit" className="scroll-mt-16"><AuditLogPanel /></div>}
       </div>
       <MaintenanceWindowDialog
         key={
@@ -1033,7 +1063,7 @@ function OperationLink({
   children: React.ReactNode;
 }) {
   if (!row.href) return <>{children}</>;
-  if (row.href === "/deployments/$id")
+  if (row.href === "/deployments/$id" || row.href === "/servers/$id")
     return (
       <Link
         to={row.href}

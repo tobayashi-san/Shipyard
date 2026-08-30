@@ -493,7 +493,7 @@ function VmObjectSummary({
               mono
             />
             <ObjectInfo
-              label="Gastbenutzer"
+              label="Guest user"
               value={configuration?.guest?.username || "Not set"}
               mono
             />
@@ -710,7 +710,7 @@ function VmProtectionSummary({
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <Camera className="h-4 w-4" />
-            Schutz & Snapshots
+            Protection & snapshots
           </CardTitle>
           <p className="mt-1 text-xs text-muted-foreground">
             Restore points managed directly through Proxmox.
@@ -785,17 +785,28 @@ export function ProxmoxVmDetailPage() {
     queryFn: () =>
       apiFetch<InfrastructureResponse>(
         `/opentofu/infrastructure?environment_id=${encodeURIComponent(environmentId)}`,
-      ),
+    ),
     staleTime: 15_000,
+    refetchInterval: 2_500,
   });
-  const cluster = useMemo(
-    () =>
-      (Array.isArray(inventory.data?.clusters)
-        ? inventory.data!.clusters!
-        : []
-      ).find((item) => item.id === clusterId),
-    [clusterId, inventory.data],
-  );
+  const summaryInventory = useQuery({
+    queryKey: ["opentofu", "infrastructure", environmentId, "summary"],
+    queryFn: () => apiFetch<InfrastructureResponse>(
+      `/opentofu/infrastructure-summary?environment_id=${encodeURIComponent(environmentId)}`,
+    ),
+    staleTime: 30_000,
+  });
+  const refreshInventory = async () => {
+    const data = await apiFetch<InfrastructureResponse>(
+      `/opentofu/infrastructure?environment_id=${encodeURIComponent(environmentId)}&refresh=1`,
+    );
+    qc.setQueryData(["opentofu", "infrastructure", environmentId], data);
+  };
+  const cluster = useMemo(() => {
+    const full = (Array.isArray(inventory.data?.clusters) ? inventory.data!.clusters! : []).find((item) => item.id === clusterId);
+    if (full) return full;
+    return (Array.isArray(summaryInventory.data?.clusters) ? summaryInventory.data!.clusters! : []).find((item) => item.id === clusterId);
+  }, [clusterId, inventory.data, summaryInventory.data]);
   const vm = cluster?.vms.find(
     (item) => item.node_name === nodeName && item.vm_id === Number(vmId),
   );
@@ -807,13 +818,13 @@ export function ProxmoxVmDetailPage() {
   const snapshots = useQuery({
     queryKey: ["proxmox-vm-snapshots", connectionId, nodeName, vmId],
     queryFn: () => apiFetch<SnapshotResponse>(`${apiRoot}/snapshots`),
-    enabled: Boolean(apiRoot),
+    enabled: Boolean(apiRoot) && vmTabs.value === "snapshots",
     staleTime: 10_000,
   });
   const context = useQuery({
     queryKey: ["proxmox-vm-context", connectionId, nodeName, vmId],
     queryFn: () => apiFetch<VmContext>(`${apiRoot}/context`),
-    enabled: Boolean(apiRoot),
+    enabled: Boolean(apiRoot) && vmTabs.value === "overview",
     staleTime: 10_000,
   });
   // The inventory already carries the authoritative adopted-host ID. Use it
@@ -826,7 +837,7 @@ export function ProxmoxVmDetailPage() {
   const configuration = useQuery({
     queryKey: ["proxmox-vm-configuration", connectionId, nodeName, vmId],
     queryFn: () => apiFetch<VmConfiguration>(`${apiRoot}/configuration`),
-    enabled: Boolean(apiRoot),
+    enabled: Boolean(apiRoot) && (vmTabs.value === "overview" || vmTabs.value === "configuration"),
     staleTime: 15_000,
   });
   const canEdit = hasCap(profile, "canEditServers");
@@ -840,7 +851,7 @@ export function ProxmoxVmDetailPage() {
   const audit = useQuery({
     queryKey: ["audit-log", "proxmox-vm", environmentId, vmId, nodeName],
     queryFn: () => apiFetch<AuditEvent[]>("/system/audit?limit=100"),
-    enabled: canViewAudit,
+    enabled: canViewAudit && vmTabs.value === "tasks",
     staleTime: 15_000,
   });
   const vmEvents = useMemo(
@@ -1064,7 +1075,7 @@ export function ProxmoxVmDetailPage() {
               size="icon"
               variant="ghost"
               aria-label="Refresh inventory"
-              onClick={() => void inventory.refetch()}
+              onClick={() => void refreshInventory()}
               disabled={inventory.isFetching}
             >
               <RefreshCw

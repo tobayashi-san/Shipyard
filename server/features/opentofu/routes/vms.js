@@ -22,6 +22,59 @@ function snapshotNameOrError(value) {
 
 /** Register deployment VM definitions and linked-host operations. */
 function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPostDeployOverview, getProxmoxVmTemplates, getProxmoxVms, getWorkspace, getInfrastructureSummary, listProxmoxConnectionRows, loadProxmoxCatalog, loadProxmoxInfrastructure, permissionError, readSavedProxmoxConnection, runPostDeployPlaybooks, syncFleetWorkspace, validatePostDeployPlaybookAccess, writeFleetProxmoxFiles }) {
+  const infrastructureCache = new Map();
+  const infrastructureMaxAgeMs = Math.max(5_000, Number.parseInt(process.env.PROXMOX_DETAIL_MAX_AGE_MS || '5000', 10) || 5_000);
+
+  function infrastructureSourceVersion(environmentId) {
+    return JSON.stringify({
+      connections: db.db.prepare('SELECT id, updated_at FROM tofu_proxmox_connections WHERE environment_id = ? ORDER BY id').all(environmentId),
+      servers: db.db.prepare('SELECT id, name, hostname, updated_at FROM servers WHERE environment_id = ? ORDER BY id').all(environmentId),
+      mappings: db.db.prepare(`
+        SELECT mapping.connection_id, mapping.node_name, mapping.vm_id, mapping.server_id
+        FROM proxmox_inventory_servers mapping
+        JOIN tofu_proxmox_connections connection ON connection.id = mapping.connection_id
+        WHERE connection.environment_id = ?
+        ORDER BY mapping.connection_id, mapping.node_name, mapping.vm_id
+      `).all(environmentId),
+    });
+  }
+
+  async function cachedInfrastructure(environmentId, force = false) {
+    const current = infrastructureCache.get(environmentId);
+    const sourceVersion = infrastructureSourceVersion(environmentId);
+    const sourceChanged = current?.data && current.sourceVersion !== sourceVersion;
+    const fresh = current?.data && !sourceChanged && Date.now() - current.updatedAt < infrastructureMaxAgeMs;
+    if (!force && fresh) return { ...current.data, cached: true, refreshing: false, updated_at: new Date(current.updatedAt).toISOString() };
+    if (!force && current?.data && !sourceChanged) {
+      if (!current.refreshing) {
+        current.refreshing = loadProxmoxInfrastructure(environmentId)
+          .then(data => {
+            infrastructureCache.set(environmentId, { data, updatedAt: Date.now(), refreshing: null, sourceVersion });
+            return data;
+          })
+          .catch(error => {
+            current.refreshing = null;
+            log.warn({ err: error, environmentId }, 'Could not refresh cached Proxmox detail inventory');
+          });
+      }
+      return { ...current.data, cached: true, refreshing: true, updated_at: new Date(current.updatedAt).toISOString() };
+    }
+    if (current?.refreshing) {
+      const data = await current.refreshing;
+      return { ...data, cached: false, refreshing: false, updated_at: new Date().toISOString() };
+    }
+    const pending = loadProxmoxInfrastructure(environmentId);
+    infrastructureCache.set(environmentId, { data: current?.data || null, updatedAt: current?.updatedAt || 0, refreshing: pending, sourceVersion: current?.sourceVersion || sourceVersion });
+    try {
+      const data = await pending;
+      const updatedAt = Date.now();
+      infrastructureCache.set(environmentId, { data, updatedAt, refreshing: null, sourceVersion });
+      return { ...data, cached: false, refreshing: false, updated_at: new Date(updatedAt).toISOString() };
+    } catch (error) {
+      infrastructureCache.delete(environmentId);
+      throw error;
+    }
+  }
   function legacyWorkspaceOrError(workspace, res) {
     if (workspace?.workspace_kind !== 'isolated_vm') return true;
     res.status(410).json({ error: 'This VM is managed through the VM API; its internal workspace is not user-editable.' });
@@ -52,7 +105,8 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
       const environmentId = String(_req.query.environment_id || '').trim();
       if (!environmentId) return res.status(400).json({ error: 'environment_id is required' });
       if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found' });
-      res.json(await loadProxmoxInfrastructure(environmentId));
+      res.set('Cache-Control', 'private, no-cache');
+      res.json(await cachedInfrastructure(environmentId, _req.query.refresh === '1'));
     } catch (error) {
       res.status(502).json({ error: error.message || 'Proxmox inventory could not be loaded.' });
     }

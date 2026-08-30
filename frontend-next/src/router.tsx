@@ -38,6 +38,12 @@ interface ServersSearch {
 
 interface OperationsSearch {
   scope?: 'active' | 'failed';
+  section?: 'tasks' | 'maintenance' | 'audit';
+  source?: 'Host' | 'Deployment' | 'Workflow' | 'Audit';
+  q?: string;
+  from?: string;
+  to?: string;
+  page?: number;
 }
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
@@ -108,7 +114,18 @@ const infrastructureVmRoute = createRoute({ getParentRoute: () => protectedLayou
 const operationsRoute = createRoute({
   getParentRoute: () => protectedLayout,
   path: '/operations',
-  validateSearch: (search: Record<string, unknown>): OperationsSearch => search.scope === 'active' || search.scope === 'failed' ? { scope: search.scope } : {},
+  validateSearch: (search: Record<string, unknown>): OperationsSearch => {
+    const result: OperationsSearch = {};
+    if (search.scope === 'active' || search.scope === 'failed') result.scope = search.scope;
+    if (search.section === 'tasks' || search.section === 'maintenance' || search.section === 'audit') result.section = search.section;
+    if (search.source === 'Host' || search.source === 'Deployment' || search.source === 'Workflow' || search.source === 'Audit') result.source = search.source;
+    if (typeof search.q === 'string' && search.q.trim()) result.q = search.q;
+    if (typeof search.from === 'string') result.from = search.from;
+    if (typeof search.to === 'string') result.to = search.to;
+    const page = Number(search.page);
+    if (Number.isInteger(page) && page > 1) result.page = page;
+    return result;
+  },
   component: () => <PermissionGate allow={canAccessOperations}><LazyPage><OperationsPage /></LazyPage></PermissionGate>,
 });
 const networksRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/networks', component: () => <PermissionGate allow={canAccessNetworks}><LazyPage><NetworksPage /></LazyPage></PermissionGate> });

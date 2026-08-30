@@ -462,6 +462,7 @@ function ExportKeyDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
+        <form onSubmit={(event) => { event.preventDefault(); void submit(); }} className="contents">
         <DialogHeader>
           <DialogTitle>{t("set.exportKeyTitle")}</DialogTitle>
         </DialogHeader>
@@ -469,6 +470,8 @@ function ExportKeyDialog({
           {t("set.exportKeyHint")}
         </p>
         <Input
+          aria-label={t("set.exportKeyPlaceholder")}
+          name="exportKeyPassphrase"
           type="password"
           value={pass}
           onChange={(e) => setPass(e.target.value)}
@@ -476,6 +479,8 @@ function ExportKeyDialog({
           autoComplete="new-password"
         />
         <Input
+          aria-label={t("set.exportKeyConfirm")}
+          name="exportKeyPassphraseConfirmation"
           type="password"
           value={pass2}
           onChange={(e) => setPass2(e.target.value)}
@@ -486,13 +491,14 @@ function ExportKeyDialog({
           }}
         />
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
             {t("common.cancel")}
           </Button>
-          <Button onClick={submit} disabled={busy}>
+          <Button type="submit" disabled={busy}>
             <Download className="h-4 w-4" /> {t("set.exportKeyBtn")}
           </Button>
         </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );
@@ -541,6 +547,7 @@ function ImportKeyDialog({
       }}
     >
       <DialogContent className="max-w-sm" disableMotion>
+        <form onSubmit={(event) => { event.preventDefault(); void submit(); }} className="contents">
         <DialogHeader>
           <DialogTitle>{t("set.importKeyTitle")}</DialogTitle>
         </DialogHeader>
@@ -556,6 +563,8 @@ function ImportKeyDialog({
           </p>
         )}
         <Input
+          aria-label={t("set.importKeyPlaceholder")}
+          name="importKeyPassphrase"
           type="password"
           value={pass}
           onChange={(e) => setPass(e.target.value)}
@@ -566,13 +575,14 @@ function ImportKeyDialog({
           }}
         />
         <DialogFooter>
-          <Button variant="secondary" onClick={onClose}>
+          <Button type="button" variant="secondary" onClick={onClose}>
             {t("common.cancel")}
           </Button>
-          <Button onClick={submit} disabled={busy}>
+          <Button type="submit" disabled={busy}>
             <Upload className="h-4 w-4" /> {t("set.importKeyBtn")}
           </Button>
         </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );
@@ -637,19 +647,27 @@ function DeployForm() {
 
   return (
     <>
+      <form onSubmit={(event) => { event.preventDefault(); void deployOne(); }} className="contents">
       <SettingsRow label={t("set.sshTarget")} hint={t("set.sshTargetHint")}>
         <div className="grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-[1fr_90px_70px]">
           <Input
+            aria-label="SSH host address"
+            name="sshHost"
             value={ip}
             onChange={(e) => setIp(e.target.value)}
             placeholder="192.168.1.100"
           />
           <Input
+            aria-label="SSH username"
+            name="sshUsername"
+            autoComplete="username"
             value={user}
             onChange={(e) => setUser(e.target.value)}
             placeholder="root"
           />
           <Input
+            aria-label="SSH port"
+            name="sshPort"
             value={port}
             onChange={(e) => setPort(e.target.value)}
             type="number"
@@ -660,6 +678,8 @@ function DeployForm() {
 
       <SettingsRow label={t("set.sshPassword")} hint={t("set.sshPasswordHint")}>
         <Input
+          aria-label={t("set.sshPassword")}
+          name="sshPassword"
           value={pw}
           type="password"
           onChange={(e) => setPw(e.target.value)}
@@ -670,11 +690,12 @@ function DeployForm() {
       </SettingsRow>
 
       <SettingsRow label={null} hint={t("set.sshDistributeAllHint")} noBorder>
-        <Button size="sm" onClick={deployOne} disabled={busyOne || !ip}>
+        <Button type="submit" size="sm" disabled={busyOne || !ip}>
           <Key className="h-4 w-4" />{" "}
           {busyOne ? t("set.deploying") : t("set.sshDistributeBtn")}
         </Button>
         <Button
+          type="button"
           variant="secondary"
           size="sm"
           onClick={() => {
@@ -690,6 +711,7 @@ function DeployForm() {
           {busyAll ? t("set.deploying") : t("set.sshDistributeAllBtn")}
         </Button>
       </SettingsRow>
+      </form>
 
       <Dialog open={confirmAll} onOpenChange={setConfirmAll}>
         <DialogContent className="max-w-sm">

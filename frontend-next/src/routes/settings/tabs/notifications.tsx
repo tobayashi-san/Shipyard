@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { SettingsRow, SettingsSection } from '../_row';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 
 interface WhiteLabel {
   webhookUrl?: string;
@@ -58,6 +59,8 @@ function WebhookForm({ wl }: { wl: WhiteLabel }) {
   const qc = useQueryClient();
   const [url, setUrl] = useState(wl.webhookUrl || '');
   const [secret, setSecret] = useState(wl.webhookSecret || '');
+  const dirty = url !== (wl.webhookUrl || '') || secret !== (wl.webhookSecret || '');
+  useUnsavedChanges(dirty);
 
   useEffect(() => { setUrl(wl.webhookUrl || ''); setSecret(wl.webhookSecret || ''); }, [wl.webhookUrl, wl.webhookSecret]);
 
@@ -77,9 +80,11 @@ function WebhookForm({ wl }: { wl: WhiteLabel }) {
   });
 
   return (
-    <>
+    <form onSubmit={(event) => { event.preventDefault(); save.mutate(); }} className="contents">
       <SettingsRow label={t('set.webhookUrl')} hint={t('set.webhookUrlHint')}>
         <Input
+          aria-label={t('set.webhookUrl')}
+          name="webhookUrl"
           type="url"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
@@ -90,24 +95,26 @@ function WebhookForm({ wl }: { wl: WhiteLabel }) {
 
       <SettingsRow label={t('set.webhookSecret')} hint={t('set.webhookSecretHint')}>
         <Input
+          aria-label={t('set.webhookSecret')}
+          name="webhookSecret"
           type="password"
           value={secret}
           onChange={(e) => setSecret(e.target.value)}
           placeholder="optional"
-          autoComplete="off"
+          autoComplete="new-password"
           className="max-w-md"
         />
       </SettingsRow>
 
       <SettingsRow noBorder>
-        <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
+        <Button type="submit" size="sm" disabled={save.isPending || !dirty}>
           <Save className="h-4 w-4" /> {t('set.webhookSave')}
         </Button>
-        <Button variant="secondary" size="sm" onClick={() => test.mutate()} disabled={test.isPending}>
+        <Button type="button" variant="secondary" size="sm" onClick={() => test.mutate()} disabled={test.isPending}>
           <Send className="h-4 w-4" /> {t('set.webhookTest')}
         </Button>
       </SettingsRow>
-    </>
+    </form>
   );
 }
 
@@ -124,6 +131,8 @@ function SmtpForm({ wl }: { wl: WhiteLabel }) {
   const [pass, setPass] = useState('');
   const [from, setFrom] = useState(wl.smtpFrom || '');
   const [to, setTo]     = useState(wl.smtpTo || '');
+  const dirty = host !== (wl.smtpHost || '') || port !== String(wl.smtpPort || '587') || user !== (wl.smtpUser || '') || from !== (wl.smtpFrom || '') || to !== (wl.smtpTo || '') || Boolean(pass);
+  useUnsavedChanges(dirty);
 
   useEffect(() => {
     setHost(wl.smtpHost || ''); setPort(String(wl.smtpPort || '587'));
@@ -154,34 +163,34 @@ function SmtpForm({ wl }: { wl: WhiteLabel }) {
   });
 
   return (
-    <>
+    <form onSubmit={(event) => { event.preventDefault(); save.mutate(); }} className="contents">
       <SettingsRow label={t('set.smtpHost')}>
         <div className="grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-[1fr_90px]">
-          <Input value={host} onChange={(e) => setHost(e.target.value)} placeholder="smtp.example.com" />
-          <Input value={port} onChange={(e) => setPort(e.target.value)} type="number" placeholder="587" />
+          <Input aria-label={t('set.smtpHost')} name="smtpHost" value={host} onChange={(e) => setHost(e.target.value)} placeholder="smtp.example.com" />
+          <Input aria-label={`${t('set.smtpHost')} port`} name="smtpPort" value={port} onChange={(e) => setPort(e.target.value)} type="number" placeholder="587" />
         </div>
       </SettingsRow>
       <SettingsRow label={t('set.smtpUser')}>
-        <Input value={user} onChange={(e) => setUser(e.target.value)} placeholder="user@example.com" autoComplete="off" className="max-w-md" />
+        <Input aria-label={t('set.smtpUser')} name="smtpUsername" value={user} onChange={(e) => setUser(e.target.value)} placeholder="user@example.com" autoComplete="username" className="max-w-md" />
       </SettingsRow>
       <SettingsRow label={t('set.smtpPass')}>
-        <Input type="password" value={pass} onChange={(e) => setPass(e.target.value)} placeholder="••••••••" autoComplete="new-password" className="max-w-md" />
+        <Input aria-label={t('set.smtpPass')} name="smtpPassword" type="password" value={pass} onChange={(e) => setPass(e.target.value)} placeholder="••••••••" autoComplete="new-password" className="max-w-md" />
       </SettingsRow>
       <SettingsRow label={t('set.smtpFrom')}>
-        <Input type="email" value={from} onChange={(e) => setFrom(e.target.value)} placeholder="shipyard@example.com" className="max-w-md" />
+        <Input aria-label={t('set.smtpFrom')} name="smtpFrom" type="email" value={from} onChange={(e) => setFrom(e.target.value)} placeholder="shipyard@example.com" className="max-w-md" />
       </SettingsRow>
       <SettingsRow label={t('set.smtpTo')} hint={t('set.smtpToHint')}>
-        <Input value={to} onChange={(e) => setTo(e.target.value)} placeholder="admin@example.com" className="max-w-md" />
+        <Input aria-label={t('set.smtpTo')} name="smtpTo" value={to} onChange={(e) => setTo(e.target.value)} placeholder="admin@example.com" className="max-w-md" />
       </SettingsRow>
       <SettingsRow noBorder>
-        <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
+        <Button type="submit" size="sm" disabled={save.isPending || !dirty}>
           <Save className="h-4 w-4" /> {t('common.save')}
         </Button>
-        <Button variant="secondary" size="sm" onClick={() => test.mutate()} disabled={test.isPending}>
+        <Button type="button" variant="secondary" size="sm" onClick={() => test.mutate()} disabled={test.isPending}>
           <Send className="h-4 w-4" /> {t('set.smtpTest')}
         </Button>
       </SettingsRow>
-    </>
+    </form>
   );
 }
 
@@ -215,6 +224,7 @@ function NotificationToggles({ wl }: { wl: WhiteLabel }) {
           noBorder={i === items.length - 1}
         >
           <Switch
+            aria-label={it.label}
             checked={wl[it.key] !== false}
             onCheckedChange={(v) => save.mutate({ [it.key]: v })}
           />

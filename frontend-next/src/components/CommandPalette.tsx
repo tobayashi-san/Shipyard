@@ -129,6 +129,7 @@ export function CommandPalette() {
                 <Command.Input
                   value={search}
                   onValueChange={setSearch}
+                  aria-label={t('cmd.placeholder')}
                   placeholder={t('cmd.placeholder')}
                   className="flex h-10 w-full border-0 bg-transparent py-2 text-[13px] shadow-none outline-none placeholder:text-muted-foreground focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0"
                   style={{ outline: 'none', boxShadow: 'none' }}

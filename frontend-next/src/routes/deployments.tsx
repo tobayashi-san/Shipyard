@@ -55,6 +55,15 @@ function formatDate(value?: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
+function clusterIdFromEndpoint(endpoint?: string) {
+  if (!endpoint) return null;
+  try {
+    const url = new URL(endpoint);
+    return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+  } catch {
+    return null;
+  }
+}
 
 export function DeploymentsPage() {
   const environmentId = useUi((state) => state.environmentId);
@@ -93,6 +102,7 @@ export function DeploymentsPage() {
     staleTime: 15_000,
   });
   const connections = Array.isArray(connectionsQuery.data) ? connectionsQuery.data : [];
+  const inventoryClusterId = clusterIdFromEndpoint(connections[0]?.endpoint);
   const migrateMutation = useMutation({
     mutationFn: (workspace: LegacyWorkspace) => apiFetch(`/opentofu/legacy-workspaces/${encodeURIComponent(workspace.id)}/migrate-vms`, { method: "POST", body: { confirmation: `MIGRATE ${workspace.name}` } }),
     onSuccess: () => { setLegacyToMigrate(null); showToast("VM states were isolated successfully.", "success"); refresh(); },
@@ -102,12 +112,12 @@ export function DeploymentsPage() {
 
   return <div className="space-y-5">
     <PageHeader
-      title="Virtual machines"
+      title="Managed virtual machines"
       description="Each VM is managed independently with its own OpenTofu state, plans, and run history."
       actions={<>
         <Button type="button" variant="outline" onClick={refresh} disabled={vmsQuery.isFetching}><RefreshCw className={vmsQuery.isFetching ? "animate-spin" : undefined} />Refresh</Button>
         {(canManagePlatforms || connections.length > 0) && <Button type="button" variant="outline" onClick={() => setConnectionsOpen(true)}><Settings2 />Platform connections</Button>}
-        <Button type="button" onClick={() => setCreateOpen(true)} disabled={!canEdit}><Server />New VM</Button>
+        <Button type="button" onClick={() => setCreateOpen(true)} disabled={!canEdit}><Server />Create managed VM</Button>
       </>}
     />
 
@@ -123,7 +133,7 @@ export function DeploymentsPage() {
 
     {vmsQuery.isLoading ? <div className="space-y-1 rounded-md border p-4">{[0, 1, 2, 3].map((item) => <div key={item} className="h-11 animate-pulse rounded bg-muted/40" />)}</div>
       : vmsQuery.isError ? <Card><EmptyState icon={<TriangleAlert className="h-5 w-5" />} title="Virtual machines could not be loaded" description="No infrastructure has been changed." action={<Button variant="outline" onClick={() => void vmsQuery.refetch()}><RefreshCw />Try again</Button>} /></Card>
-      : vms.length === 0 ? <Card><EmptyState icon={<Server className="h-5 w-5" />} title="No managed virtual machines" description="Create a VM. Shipyard will isolate it in its own OpenTofu state." action={canEdit ? <Button onClick={() => setCreateOpen(true)}><Server />New VM</Button> : undefined} /></Card>
+      : vms.length === 0 ? <Card><EmptyState icon={<Server className="h-5 w-5" />} title="No managed virtual machines" description="Create a managed VM, or open Infrastructure inventory to inspect existing Proxmox guests for adoption." action={canEdit ? <div className="flex flex-wrap justify-center gap-2"><Button onClick={() => setCreateOpen(true)}><Server />Create managed VM</Button>{inventoryClusterId && <Button asChild variant="outline"><Link to="/infrastructure/$clusterId" params={{ clusterId: inventoryClusterId }}>Open inventory</Link></Button>}</div> : undefined} /></Card>
       : <Card>
         <CardHeader className="border-b bg-muted/15 py-3"><CardTitle className="flex items-center gap-2 text-base"><Workflow className="h-4 w-4" />Managed virtual machines</CardTitle></CardHeader>
         <CardContent className="p-0">

@@ -310,6 +310,7 @@ export function CreateServerDialog({
           <FieldRow label={t("add.name")} required htmlFor="server-name">
             <Input
               id="server-name"
+              name="serverName"
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -321,6 +322,7 @@ export function CreateServerDialog({
           <FieldRow label={t("add.ip")} required htmlFor="server-ip-address">
             <Input
               id="server-ip-address"
+              name="serverIpAddress"
               placeholder="192.168.1.100"
               value={ip}
               onChange={(e) => setIp(e.target.value)}
@@ -336,11 +338,12 @@ export function CreateServerDialog({
             >
               <Input
                 id="server-ssh-password"
+                name="sshPassword"
                 type="password"
                 placeholder={t("add.sshPasswordPlaceholder")}
                 value={sshPassword}
                 onChange={(e) => setSshPassword(e.target.value)}
-                autoComplete="off"
+                autoComplete="current-password"
                 className="w-full"
               />
             </FieldRow>
@@ -366,6 +369,7 @@ export function CreateServerDialog({
           >
             <Input
               id="server-hostname"
+              name="serverHostname"
               placeholder="plex-server"
               value={hostname}
               onChange={(e) => setHostname(e.target.value)}
@@ -382,6 +386,8 @@ export function CreateServerDialog({
           <FieldRow label={t("add.sshUser")} htmlFor="server-ssh-user">
             <Input
               id="server-ssh-user"
+              name="sshUsername"
+              autoComplete="username"
               placeholder="root"
               value={sshUser}
               onChange={(e) => setSshUser(e.target.value)}
@@ -392,6 +398,7 @@ export function CreateServerDialog({
           <FieldRow label={t("add.sshPort")} htmlFor="server-ssh-port">
             <Input
               id="server-ssh-port"
+              name="sshPort"
               type="number"
               min={1}
               max={65535}
@@ -414,6 +421,7 @@ export function CreateServerDialog({
           >
             <Input
               id="server-services"
+              name="services"
               placeholder="Plex, Docker, Nginx"
               value={services}
               onChange={(e) => setServices(e.target.value)}
@@ -428,6 +436,7 @@ export function CreateServerDialog({
           >
             <Input
               id="server-tags"
+              name="tags"
               placeholder="production, media"
               value={tags}
               onChange={(e) => setTags(e.target.value)}
@@ -441,6 +450,7 @@ export function CreateServerDialog({
           >
             <select
               id="server-environment"
+              name="environmentId"
               value={environmentId}
               onChange={(e) => setEnvironmentId(e.target.value)}
               className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -486,12 +496,16 @@ export function CreateServerDialog({
                   className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] sm:items-center"
                 >
                   <Input
+                    aria-label={`${t("add.linkNamePlaceholder")} ${i + 1}`}
+                    name={`links.${i}.name`}
                     placeholder={t("add.linkNamePlaceholder")}
                     value={link.name}
                     onChange={(e) => setLink(i, "name", e.target.value)}
                     className="h-8 w-full text-sm"
                   />
                   <Input
+                    aria-label={`Link URL ${i + 1}`}
+                    name={`links.${i}.url`}
                     type="url"
                     placeholder="https://..."
                     value={link.url}
@@ -504,6 +518,7 @@ export function CreateServerDialog({
                     size="icon"
                     onClick={() => removeLink(i)}
                     className="h-8 w-8 justify-self-end text-muted-foreground hover:text-destructive"
+                    aria-label={`Remove link ${i + 1}`}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -542,12 +557,16 @@ export function CreateServerDialog({
                   className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] sm:items-center"
                 >
                   <Input
+                    aria-label={`${t("add.storageMountNamePlaceholder")} ${i + 1}`}
+                    name={`storageMounts.${i}.name`}
                     placeholder={t("add.storageMountNamePlaceholder")}
                     value={m.name}
                     onChange={(e) => setMount(i, "name", e.target.value)}
                     className="h-8 w-full text-sm"
                   />
                   <Input
+                    aria-label={`Storage mount path ${i + 1}`}
+                    name={`storageMounts.${i}.path`}
                     placeholder="/mnt/media"
                     value={m.path}
                     onChange={(e) => setMount(i, "path", e.target.value)}
@@ -559,6 +578,7 @@ export function CreateServerDialog({
                     size="icon"
                     onClick={() => removeMount(i)}
                     className="h-8 w-8 justify-self-end text-muted-foreground hover:text-destructive"
+                    aria-label={`Remove storage mount ${i + 1}`}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>

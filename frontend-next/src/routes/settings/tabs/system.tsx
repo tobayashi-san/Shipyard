@@ -87,6 +87,8 @@ function SchedulerTimezone() {
       <SettingsRow label={t('set.schedulerTimezone')} hint={t('set.schedulerTimezoneHint')}>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <Input
+            aria-label={t('set.schedulerTimezone')}
+            name="schedulerTimezone"
             list="shipyard-timezones"
             value={timezone}
             onChange={(e) => setTimezone(e.target.value)}
@@ -231,10 +233,13 @@ function PollingConfig() {
           <SettingsRow key={p.key} label={p.label} hint={p.hint}>
             <div className="flex items-center gap-3">
               <Switch
+                aria-label={p.label}
                 checked={cfg.enabled}
                 onCheckedChange={(v) => update(p.key, { enabled: v })}
               />
               <Input
+                aria-label={`${p.label} ${t('set.minutesShort')}`}
+                name={`${p.key}IntervalMinutes`}
                 type="number"
                 min={1}
                 max={9999}

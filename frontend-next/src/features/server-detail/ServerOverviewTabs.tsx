@@ -51,6 +51,7 @@ import {
   Workflow,
   X,
   Network,
+  TriangleAlert,
 } from "lucide-react";
 import { api, apiFetch, ApiError } from "@/lib/api";
 import { ws } from "@/lib/ws";
@@ -76,6 +77,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge, LiveDot } from "@/components/ui/status-badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton, SkeletonRow } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
@@ -258,6 +260,27 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
     <>
         {/* ════ OVERVIEW ════ */}
         <TabsContent value="overview" className="space-y-4">
+          {server.attention?.requiresAttention && (
+            <Alert variant={server.attention.severity === "critical" ? "destructive" : "warning"}>
+              <TriangleAlert className="h-4 w-4" />
+              <AlertTitle>Host needs attention</AlertTitle>
+              <AlertDescription>
+                <ul className="mt-1 list-disc space-y-1 pl-4">
+                  {server.attention.reasons.map((reason) => (
+                    <li key={reason.code}>
+                      {reason.code === "reboot_required" && "A reboot is required to finish applying system changes."}
+                      {reason.code === "failed_operations" && `${reason.count} of the four most recent operations ${reason.count === 1 ? "has" : "have"} failed.`}
+                      {reason.code === "offline" && "The host is not reachable."}
+                      {reason.code === "active_alerts" && `${reason.count} active resource ${reason.count === 1 ? "alert requires" : "alerts require"} review.`}
+                      {reason.code === "os_updates" && `${reason.count} operating system ${reason.count === 1 ? "update is" : "updates are"} available.`}
+                      {reason.code === "image_updates" && `${reason.count} container image ${reason.count === 1 ? "update is" : "updates are"} available.`}
+                      {reason.code === "custom_updates" && `${reason.count} custom ${reason.count === 1 ? "update is" : "updates are"} available.`}
+                    </li>
+                  ))}
+                </ul>
+              </AlertDescription>
+            </Alert>
+          )}
           {/* Host-client summary: operator identity and live capacity share a
               single object header instead of scattered statistic tiles. */}
           <section className="console-object-summary">
@@ -310,6 +333,8 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                     value={
                       server.status === "offline"
                         ? "Not checked"
+                        : server.attention?.reasons.some((reason) => reason.code === "reboot_required")
+                          ? "Reboot required"
                         : updatesList.length === 0
                           ? t("det.statusHealthy")
                           : `${updatesList.length} ${t("det.statusAttention")}`
@@ -317,6 +342,8 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                     tone={
                       server.status === "offline"
                         ? "info"
+                        : server.attention?.reasons.some((reason) => reason.code === "reboot_required")
+                          ? "warning"
                         : updatesList.length > 0
                           ? "warning"
                           : "success"

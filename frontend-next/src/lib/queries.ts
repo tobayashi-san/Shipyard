@@ -104,7 +104,9 @@ export function canAccessOperations(profile: Profile | undefined | null): boolea
   return canAccessDeployments(profile)
     || hasCap(profile, 'canViewSchedules')
     || hasCap(profile, 'canViewAudit')
-    || hasCap(profile, 'canViewMaintenance');
+    || hasCap(profile, 'canViewMaintenance')
+    || hasCap(profile, 'canViewServerHistory')
+    || hasCap(profile, 'canViewUpdates');
 }
 
 /** Proxmox/platform inventory is deliberately separate from hosts. */

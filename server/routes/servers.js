@@ -12,6 +12,7 @@ const { parseImageUpdateReport } = require('../utils/parse-image-updates');
 const { serverError } = require('../utils/http-error');
 const { targetIncludesServer, validateInventoryHostName } = require('../utils/validate');
 const { isValidStorageMountPath, parseConfiguredStorageMounts } = require('../utils/storage-mounts');
+const { buildServerAttention } = require('../utils/server-attention');
 
 // Deserialize JSON fields for API responses
 function parseServer(s) {
@@ -444,7 +445,29 @@ router.post('/auto-group-by-tags', guard('canEditServers'), (req, res) => {
 // GET /api/servers/:id - Get single server
 router.get('/:id', guardServerAccess, guard('canViewServers'), (req, res) => {
   try {
-    res.json(parseServer(req.server));
+    const perms = getPermissions(req.user);
+    const canViewUpdates = can(perms, 'canViewUpdates');
+    const canViewDocker = can(perms, 'canViewDocker');
+    const canViewCustomUpdates = can(perms, 'canViewCustomUpdates');
+    const canViewHistory = can(perms, 'canViewServerHistory');
+    const info = db.serverInfo.get(req.server.id);
+    const imageUpdatesMeta = canViewDocker && canViewUpdates
+      ? db.dockerImageUpdatesCache.getWithMeta(req.server.id)
+      : null;
+    const attention = buildServerAttention({
+      server: req.server,
+      info,
+      updates: canViewUpdates ? (db.updatesCache.get(req.server.id) || []) : [],
+      imageUpdates: imageUpdatesMeta?.results || null,
+      customUpdatesCount: canViewCustomUpdates ? db.customUpdateTasks.countHasUpdate(req.server.id) : 0,
+      history: canViewHistory ? db.updateHistory.getByServer(req.server.id) : [],
+      alerts: db.resourceAlerts.list({ statuses: ['active'], serverIds: [req.server.id], limit: 200 }),
+      includeUpdates: canViewUpdates,
+      includeDockerUpdates: canViewDocker && canViewUpdates,
+      includeCustomUpdates: canViewCustomUpdates,
+      includeHistory: canViewHistory,
+    });
+    res.json({ ...parseServer(req.server), attention });
   } catch (error) {
     serverError(res, error, 'get server');
   }

@@ -1067,6 +1067,7 @@ export function ServersPage() {
         >
           <input
             type="checkbox"
+            aria-label={`Select ${s.name}`}
             className="rounded"
             checked={selectedIds.has(s.id)}
             onChange={() => toggleSelect(s.id)}
@@ -1811,6 +1812,7 @@ export function ServersPage() {
                       <th className="w-12 px-4 py-2.5">
                         <input
                           type="checkbox"
+                          aria-label={t("common.all")}
                           className="rounded"
                           checked={allSelected}
                           ref={(el) => {
@@ -1885,6 +1887,7 @@ export function ServersPage() {
                 <div className="flex items-center gap-2 px-4 py-2 border-b">
                   <input
                     type="checkbox"
+                    aria-label={t("common.all")}
                     className="rounded"
                     checked={allSelected}
                     ref={(el) => {
@@ -1924,6 +1927,7 @@ export function ServersPage() {
                         <div className="flex items-start gap-2">
                           <input
                             type="checkbox"
+                            aria-label={`Select ${s.name}`}
                             className="rounded mt-1"
                             checked={selectedIds.has(s.id)}
                             onChange={() => toggleSelect(s.id)}

@@ -8,7 +8,7 @@ import {
   Bell, Clock, Plus, Bot, PackagePlus, Container, Cog,
   Activity, ChevronDown, ChevronUp,
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, apiFetch } from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { ws } from '@/lib/ws';
 import { actionLabel, statusLabel } from '@/lib/history-labels';
@@ -19,7 +19,7 @@ import { Card } from '@/components/ui/card';
 import { PageHeader } from '@/components/ui/page-header';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
-import { hasCap, useProfile } from '@/lib/queries';
+import { canAccessOperations, hasCap, useProfile } from '@/lib/queries';
 
 // ---- types ----
 
@@ -42,6 +42,11 @@ interface ServerInfo {
   alert_count?: number;
   alert_thresholds?: { cpu?: number; ram?: number; disk?: number; storage?: number };
   custom_update_tasks?: CustomUpdateTask[];
+  attention?: {
+    requiresAttention: boolean;
+    severity: 'healthy' | 'warning' | 'critical';
+    reasons: { code: string; severity: 'warning' | 'critical'; count: number }[];
+  };
 }
 
 interface CustomUpdateTask {
@@ -63,6 +68,7 @@ interface Summary {
   totalUpdates: number;
   criticalDisk: number;
   criticalRam: number;
+  failedOperations?: number;
 }
 
 interface HistoryEntry {
@@ -80,6 +86,7 @@ interface DashboardData {
   alerts?: AlertInfo[];
   recentHistory: HistoryEntry[];
 }
+interface FailedOperationsData { counts?: { failed?: number } }
 
 interface AlertInfo {
   id: string;
@@ -98,6 +105,7 @@ interface AlertInfo {
 // ---- helpers ----
 
 function needsAttention(s: ServerInfo) {
+  if (s.attention) return s.attention.requiresAttention;
   return (s.alert_count ?? 0) > 0 || s.status === 'offline' || s.reboot_required ||
     (s.updates_count ?? 0) > 0 || (s.image_updates_count ?? 0) > 0 ||
     (s.custom_updates_count ?? 0) > 0;
@@ -146,10 +154,17 @@ export function DashboardPage() {
   const canViewUpdates = hasCap(profile, 'canViewUpdates');
   const canViewDocker = hasCap(profile, 'canViewDocker');
   const canViewCustomUpdates = hasCap(profile, 'canViewCustomUpdates');
+  const canViewOperations = canAccessOperations(profile);
   const { data, dataUpdatedAt, isLoading, isFetching, isError, error, refetch } = useQuery<DashboardData>({
     queryKey: ['dashboard', environmentId],
     queryFn: () => api.getDashboard() as unknown as Promise<DashboardData>,
     refetchInterval: 30_000,
+  });
+  const { data: operationsData } = useQuery<FailedOperationsData>({
+    queryKey: ['operations', environmentId, 'dashboard-counts'],
+    queryFn: () => apiFetch<FailedOperationsData>('/operations?scope=failed&page=1&page_size=1'),
+    enabled: canViewOperations,
+    staleTime: 30_000,
   });
 
   // Backend broadcasts cache_updated whenever the updates cache changes
@@ -209,7 +224,7 @@ export function DashboardPage() {
     const allServers = asArray<ServerInfo>(data?.servers);
     return allServers.filter((server) => String((server as ServerInfo & { environment_id?: string }).environment_id || 'default') === environmentId);
   }, [data?.servers, environmentId]);
-  const summary = useMemo(() => ({ total: servers.length, online: servers.filter(s => s.status === 'online').length, offline: servers.filter(s => s.status === 'offline').length, rebootRequired: servers.filter(s => s.reboot_required).length, totalUpdates: servers.reduce((total, s) => total + (s.updates_count ?? 0), 0), criticalDisk: 0, criticalRam: 0 }), [servers]);
+  const summary = useMemo(() => ({ total: servers.length, online: servers.filter(s => s.status === 'online').length, offline: servers.filter(s => s.status === 'offline').length, rebootRequired: servers.filter(s => s.reboot_required).length, totalUpdates: servers.reduce((total, s) => total + (s.updates_count ?? 0), 0), criticalDisk: 0, criticalRam: 0, failedOperations: operationsData?.counts?.failed ?? data?.summary?.failedOperations ?? 0 }), [data?.summary?.failedOperations, operationsData?.counts?.failed, servers]);
   const recentHistory = asArray<HistoryEntry>(data?.recentHistory);
   const attentionCount = useMemo(() => servers.filter(needsAttention).length, [servers]);
 
@@ -261,6 +276,7 @@ export function DashboardPage() {
         offlineHosts={summary.offline}
         updates={updateCount}
         runningTasks={runningTaskCount}
+        failedOperations={summary.failedOperations}
       />
 
       {isError && (
@@ -321,12 +337,13 @@ function alertTone(alert: AlertInfo): 'danger' | 'warning' | 'muted' {
   return alert.severity === 'critical' || alert.severity === 'error' ? 'danger' : alert.severity === 'warning' ? 'warning' : 'muted';
 }
 
-function OverviewStatusBar({ loading, criticalAlerts, offlineHosts, updates, runningTasks }: {
+function OverviewStatusBar({ loading, criticalAlerts, offlineHosts, updates, runningTasks, failedOperations }: {
   loading: boolean;
   criticalAlerts: number;
   offlineHosts: number;
   updates: number;
   runningTasks: number;
+  failedOperations: number;
 }) {
   const { t } = useTranslation();
   return (
@@ -335,6 +352,7 @@ function OverviewStatusBar({ loading, criticalAlerts, offlineHosts, updates, run
       <OverviewStatusItem icon={<Server className="h-4 w-4" />} label={t('common.offline')} value={loading ? '—' : offlineHosts} to="/servers" search={{ status: 'offline' }} tone={offlineHosts > 0 ? 'danger' : 'neutral'} />
       <OverviewStatusItem icon={<PackagePlus className="h-4 w-4" />} label={t('dash.updates')} value={loading ? '—' : updates} to="/servers" search={{ updates: true }} tone={updates > 0 ? 'warning' : 'neutral'} />
       <OverviewStatusItem icon={<Clock className="h-4 w-4" />} label={t('dash.runningTasks')} value={loading ? '—' : runningTasks} to="/operations" search={{ scope: 'active' }} tone={runningTasks > 0 ? 'info' : 'neutral'} />
+      <OverviewStatusItem icon={<Clock className="h-4 w-4" />} label="Failed operations" value={loading ? '—' : failedOperations} to="/operations" search={{ scope: 'failed' }} tone={failedOperations > 0 ? 'danger' : 'neutral'} />
     </section>
   );
 }
@@ -528,12 +546,15 @@ function AttentionReasonChips({ s }: { s: ServerInfo }) {
   const canViewDocker = hasCap(profile, 'canViewDocker');
   const canViewCustomUpdates = hasCap(profile, 'canViewCustomUpdates');
   const chips: React.ReactNode[] = [];
+  const failedOperations = s.attention?.reasons.find(reason => reason.code === 'failed_operations')?.count ?? 0;
+  const activeAlertCount = s.attention?.reasons.find(reason => reason.code === 'active_alerts')?.count ?? (s.alert_count ?? 0);
   if (s.status === 'offline') chips.push(<StatusBadge key="offline" tone="danger">{t('common.offline')}</StatusBadge>);
-  if ((s.alert_count ?? 0) > 0) chips.push(<StatusBadge key="alerts" tone="danger"><Bell className="mr-1 h-3 w-3" />{t('dash.alertCount', { count: s.alert_count })}</StatusBadge>);
+  if (activeAlertCount > 0) chips.push(<StatusBadge key="alerts" tone="danger"><Bell className="mr-1 h-3 w-3" />{t('dash.alertCount', { count: activeAlertCount })}</StatusBadge>);
   if (canViewUpdates && s.reboot_required) chips.push(<StatusBadge key="rb" tone="warning"><RotateCcw className="mr-1 h-3 w-3" />{t('dash.needsReboot')}</StatusBadge>);
   if (canViewUpdates && (s.updates_count ?? 0) > 0) chips.push(<StatusBadge key="u" tone="warning"><PackagePlus className="mr-1 h-3 w-3" />{s.updates_count} {t('dash.colUpdates')}</StatusBadge>);
   if (canViewUpdates && canViewDocker && (s.image_updates_count ?? 0) > 0) chips.push(<StatusBadge key="i" tone="warning"><Container className="mr-1 h-3 w-3" />{s.image_updates_count} {t('dash.colImageUpdates')}</StatusBadge>);
   if (canViewCustomUpdates && (s.custom_updates_count ?? 0) > 0) chips.push(<StatusBadge key="c" tone="warning"><Cog className="mr-1 h-3 w-3" />{s.custom_updates_count} {t('dash.colCustomUpdates')}</StatusBadge>);
+  if (failedOperations > 0) chips.push(<StatusBadge key="failed" tone="danger"><Clock className="mr-1 h-3 w-3" />{failedOperations} {failedOperations === 1 ? 'failed operation' : 'failed operations'}</StatusBadge>);
   if (chips.length === 0) return null;
   return <>{chips}</>;
 }

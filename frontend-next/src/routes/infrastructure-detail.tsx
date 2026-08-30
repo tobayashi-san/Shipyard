@@ -58,15 +58,30 @@ export function InfrastructureDetailPage() {
     nodeName?: string;
   };
   const environmentId = useUi((state) => state.environmentId);
+  const queryClient = useQueryClient();
   const { data: profile } = useProfile();
   const query = useQuery({
     queryKey: ["opentofu", "infrastructure", environmentId],
     queryFn: () =>
       apiFetch<InfrastructureResponse>(
         `/opentofu/infrastructure?environment_id=${encodeURIComponent(environmentId)}`,
-      ),
+    ),
     staleTime: 15_000,
+    refetchInterval: 2_500,
   });
+  const summaryQuery = useQuery({
+    queryKey: ["opentofu", "infrastructure", environmentId, "summary"],
+    queryFn: () => apiFetch<InfrastructureResponse>(
+      `/opentofu/infrastructure-summary?environment_id=${encodeURIComponent(environmentId)}`,
+    ),
+    staleTime: 30_000,
+  });
+  const refreshInventory = async () => {
+    const data = await apiFetch<InfrastructureResponse>(
+      `/opentofu/infrastructure?environment_id=${encodeURIComponent(environmentId)}&refresh=1`,
+    );
+    queryClient.setQueryData(["opentofu", "infrastructure", environmentId], data);
+  };
   const [vmToImport, setVmToImport] = useState<{
     connectionId: string;
     vm: Vm;
@@ -75,9 +90,9 @@ export function InfrastructureDetailPage() {
     connectionId: string;
     vms: Vm[];
   } | null>(null);
-  const cluster = (
-    Array.isArray(query.data?.clusters) ? query.data!.clusters! : []
-  ).find((item) => item.id === clusterId);
+  const fullCluster = (Array.isArray(query.data?.clusters) ? query.data!.clusters! : []).find((item) => item.id === clusterId);
+  const summaryCluster = (Array.isArray(summaryQuery.data?.clusters) ? summaryQuery.data!.clusters! : []).find((item) => item.id === clusterId);
+  const cluster = fullCluster || summaryCluster;
   const node = cluster?.nodes.find((item) => item.name === nodeName);
   // Audit visibility is a distinct operator capability.  Restricting this
   // object-level task view to the literal admin role made the vSphere-like
@@ -92,7 +107,7 @@ export function InfrastructureDetailPage() {
     staleTime: 15_000,
   });
 
-  if (query.isLoading)
+  if (query.isLoading && summaryQuery.isLoading)
     return (
       <div className="space-y-5">
         <div className="h-8 w-64 animate-pulse rounded bg-muted" />
@@ -135,7 +150,7 @@ export function InfrastructureDetailPage() {
       onImportVms={importVms}
       canImportVm={canImportVm}
       canRunUpdates={canRunUpdates}
-      onRefresh={() => void query.refetch()}
+      onRefresh={() => void refreshInventory()}
       refreshing={query.isFetching}
       auditTasks={
         canViewAudit ? tasksForObject(auditRows, cluster, node.name) : undefined
@@ -148,7 +163,7 @@ export function InfrastructureDetailPage() {
       onImportVms={importVms}
       canImportVm={canImportVm}
       canRunUpdates={canRunUpdates}
-      onRefresh={() => void query.refetch()}
+      onRefresh={() => void refreshInventory()}
       refreshing={query.isFetching}
       auditTasks={canViewAudit ? tasksForObject(auditRows, cluster) : undefined}
     />

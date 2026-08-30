@@ -5,11 +5,12 @@ const {
   canAccessPlaybook,
   canAccessTargets,
   getPermissions,
+  filterServers,
 } = require('../utils/permissions');
 const { filterAuditRows } = require('../utils/audit-scope');
 
 const router = express.Router();
-const SOURCE_NAMES = new Set(['Deployment', 'Workflow', 'Audit']);
+const SOURCE_NAMES = new Set(['Host', 'Deployment', 'Workflow', 'Audit']);
 
 function numericTime(value) {
   if (!value) return Number.NaN;
@@ -29,6 +30,28 @@ function permittedRows(req) {
   const permissions = getPermissions(req.user);
   const environmentId = req.environmentId || 'default';
   const rows = [];
+
+  if (can(permissions, 'canViewServerHistory') || can(permissions, 'canViewUpdates')) {
+    const visibleIds = new Set(filterServers(db.servers.getAll(environmentId), permissions).map(server => server.id));
+    const hostRows = db.db.prepare(`
+      SELECT history.*, server.name AS server_name
+      FROM update_history history
+      LEFT JOIN servers server ON server.id = history.server_id
+      WHERE history.environment_id = ?
+    `).all(environmentId).filter(row => visibleIds.has(row.server_id));
+    rows.push(...hostRows.map(row => ({
+      id: `host-${row.id}`,
+      source: 'Host',
+      name: row.action || 'Host operation',
+      target: row.server_name || row.server_id,
+      initiator: row.triggered_by || 'Shipyard',
+      status: row.status || 'unknown',
+      statusTone: statusTone(row.status),
+      time: row.completed_at || row.started_at,
+      href: '/servers/$id',
+      params: { id: row.server_id },
+    })));
+  }
 
   if (can(permissions, 'canViewDeployments') || can(permissions, 'canManageDeployments')) {
     const deploymentRows = db.db.prepare(`
@@ -101,7 +124,7 @@ router.get('/', (req, res) => {
   const rows = permittedRows(req);
   const permissions = getPermissions(req.user);
   if (!permissions || ![
-    'canViewDeployments', 'canManageDeployments', 'canViewSchedules', 'canViewAudit', 'canViewMaintenance',
+    'canViewDeployments', 'canManageDeployments', 'canViewSchedules', 'canViewAudit', 'canViewMaintenance', 'canViewServerHistory', 'canViewUpdates',
   ].some(capability => can(permissions, capability))) {
     return res.status(403).json({ error: 'Permission denied' });
   }

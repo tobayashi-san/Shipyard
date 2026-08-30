@@ -74,6 +74,11 @@ function createInfrastructureSummary({
           return {
             name,
             status: String(node?.status || '').toLowerCase() || 'unknown',
+            cpu: Number(node?.cpu) || 0,
+            maxcpu: Number(node?.maxcpu) || 0,
+            mem: Number(node?.mem) || 0,
+            maxmem: Number(node?.maxmem) || 0,
+            uptime: Number(node?.uptime) || 0,
             fleet_server_id: fleetServer?.id || null,
           };
         })
@@ -108,6 +113,11 @@ function createInfrastructureSummary({
             node_name: nodeName,
             vm_id: vmId,
             status: String(resource?.status || '').toLowerCase() || 'unknown',
+            maxcpu: Number(resource?.maxcpu) || 0,
+            mem: Number(resource?.mem) || 0,
+            maxmem: Number(resource?.maxmem) || 0,
+            disk: Number(resource?.disk) || 0,
+            maxdisk: Number(resource?.maxdisk) || 0,
             fleet_server_id: fleetServerId,
           };
         })
@@ -149,6 +159,11 @@ function createInfrastructureSummary({
         nodes: (Array.isArray(cluster.nodes) ? cluster.nodes : []).map(node => ({
           name: node.name,
           status: node.status,
+          cpu: node.cpu || 0,
+          maxcpu: node.maxcpu || 0,
+          mem: node.mem || 0,
+          maxmem: node.maxmem || 0,
+          uptime: node.uptime || 0,
           fleet_server_id: node.fleet_server_id || null,
         })),
         vms: (Array.isArray(cluster.vms) ? cluster.vms : []).map(vm => ({
@@ -157,6 +172,11 @@ function createInfrastructureSummary({
           node_name: vm.node_name,
           vm_id: vm.vm_id,
           status: vm.status,
+          maxcpu: vm.maxcpu || 0,
+          mem: vm.mem || 0,
+          maxmem: vm.maxmem || 0,
+          disk: vm.disk || 0,
+          maxdisk: vm.maxdisk || 0,
           fleet_server_id: vm.fleet_server_id || null,
         })),
       })),

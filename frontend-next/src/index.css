@@ -700,6 +700,12 @@
     padding: 0;
     scrollbar-width: thin;
   }
+  @media (max-width: 767px) {
+    .console-tabs {
+      padding-right: 1.75rem;
+      mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 1.75rem), transparent 100%);
+    }
+  }
   .console-tabs > [role='tab'] {
     flex: 0 0 auto;
     min-height: 2.5rem;

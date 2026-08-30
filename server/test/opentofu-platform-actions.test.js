@@ -216,7 +216,7 @@ test('infrastructure inventory includes QEMU VMs and LXC containers with their g
   assert.deepEqual(guests.map(guest => [guest.vm_id, guest.guest_type]), [[101, 'qemu'], [202, 'lxc']]);
 });
 
-test('infrastructure summary persists a compact snapshot and serves it without live Proxmox calls', async () => {
+test('infrastructure summary persists a fast object overview and serves it without detail calls', async () => {
   inventory = [
     { type: 'qemu', node: 'pve001', vmid: 101, name: 'app-01', status: 'running', cpu: 0.5, maxmem: 4096 },
     { type: 'lxc', node: 'pve001', vmid: 202, name: 'web-ct', status: 'stopped', mem: 1024 },
@@ -229,8 +229,8 @@ test('infrastructure summary persists a compact snapshot and serves it without l
   assert.equal(initial.body.cached, false);
   assert.equal(initial.body.refreshing, false);
   assert.deepEqual(initial.body.clusters[0].vms.map(vm => vm.name), ['app-01', 'web-ct']);
-  assert.equal('cpu' in initial.body.clusters[0].nodes[0], false);
-  assert.equal('mem' in initial.body.clusters[0].vms[0], false);
+  assert.equal('cpu' in initial.body.clusters[0].nodes[0], true);
+  assert.equal(initial.body.clusters[0].vms[0].maxmem, 4096);
   assert.deepEqual(calls.map(call => call.path).sort(), [
     '/api2/json/cluster/resources',
     '/api2/json/nodes',
