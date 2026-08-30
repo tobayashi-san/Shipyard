@@ -5,6 +5,7 @@ import { LoginPage } from '@/routes/login';
 import { OnboardingPage } from '@/routes/onboarding';
 import { DashboardPage } from '@/routes/dashboard';
 import { getToken } from '@/lib/auth';
+import { api } from '@/lib/api';
 import { canAccessDeployments, canAccessInfrastructure, canAccessNetworks, canAccessOperations, hasCap, useProfile, type Profile } from '@/lib/queries';
 
 const PlaybooksPage = lazy(() => import('@/routes/playbooks').then(module => ({ default: module.PlaybooksPage })));
@@ -50,6 +51,19 @@ const loginRoute = createRoute({
 const onboardingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/onboarding',
+  beforeLoad: async () => {
+    const status = await api.authStatus();
+    if (!status.configured) return;
+    if (getToken()) {
+      let sessionIsValid = false;
+      try {
+        await api.getProfile();
+        sessionIsValid = true;
+      } catch { /* expired or invalid token: continue to login */ }
+      if (sessionIsValid) throw redirect({ to: '/' });
+    }
+    throw redirect({ to: '/login' });
+  },
   component: OnboardingPage,
 });
 

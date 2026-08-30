@@ -21,7 +21,7 @@ function snapshotNameOrError(value) {
 }
 
 /** Register deployment VM definitions and linked-host operations. */
-function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPostDeployOverview, getProxmoxVmTemplates, getProxmoxVms, getWorkspace, listProxmoxConnectionRows, loadProxmoxCatalog, loadProxmoxInfrastructure, permissionError, readSavedProxmoxConnection, runPostDeployPlaybooks, syncFleetWorkspace, validatePostDeployPlaybookAccess, writeFleetProxmoxFiles }) {
+function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPostDeployOverview, getProxmoxVmTemplates, getProxmoxVms, getWorkspace, getInfrastructureSummary, listProxmoxConnectionRows, loadProxmoxCatalog, loadProxmoxInfrastructure, permissionError, readSavedProxmoxConnection, runPostDeployPlaybooks, syncFleetWorkspace, validatePostDeployPlaybookAccess, writeFleetProxmoxFiles }) {
   function legacyWorkspaceOrError(workspace, res) {
     if (workspace?.workspace_kind !== 'isolated_vm') return true;
     res.status(410).json({ error: 'This VM is managed through the VM API; its internal workspace is not user-editable.' });
@@ -55,6 +55,22 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
       res.json(await loadProxmoxInfrastructure(environmentId));
     } catch (error) {
       res.status(502).json({ error: error.message || 'Proxmox inventory could not be loaded.' });
+    }
+  });
+
+  // Compact, persisted navigation snapshot. A stale snapshot is returned
+  // immediately while a lightweight Proxmox tree refreshes in the background;
+  // the first request waits so an unknown state is never reported as an empty
+  // installation.
+  router.get('/infrastructure-summary', async (req, res) => {
+    try {
+      const environmentId = String(req.query.environment_id || '').trim();
+      if (!environmentId) return res.status(400).json({ error: 'environment_id is required' });
+      if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found' });
+      res.set('Cache-Control', 'private, no-cache');
+      res.json(await getInfrastructureSummary(environmentId));
+    } catch (error) {
+      res.status(502).json({ error: error.message || 'Proxmox inventory summary could not be loaded.' });
     }
   });
   

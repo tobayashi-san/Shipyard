@@ -15,6 +15,7 @@ import {
   Folder,
   FolderInput,
   FolderTree,
+  Loader2,
   Server,
   Settings2,
   Square,
@@ -133,6 +134,8 @@ interface ProxmoxCluster {
 }
 interface InfrastructureResponse {
   clusters?: ProxmoxCluster[];
+  cached?: boolean;
+  refreshing?: boolean;
 }
 export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
   const navigate = useNavigate();
@@ -173,13 +176,16 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
       api.getServerGroups(environmentId) as Promise<Record<string, unknown>[]>,
     staleTime: 30_000,
   });
-  const { data: inventory } = useQuery({
-    queryKey: ["opentofu", "infrastructure", environmentId],
+  const { data: inventory, isPending: inventoryPending, isError: inventoryError } = useQuery({
+    // Nest the summary below the established infrastructure key so existing
+    // connection, import and power-action invalidations refresh the tree too.
+    queryKey: ["opentofu", "infrastructure", environmentId, "summary"],
     queryFn: () =>
       apiFetch<InfrastructureResponse>(
-        `/opentofu/infrastructure?environment_id=${encodeURIComponent(environmentId)}`,
+        `/opentofu/infrastructure-summary?environment_id=${encodeURIComponent(environmentId)}`,
       ),
     staleTime: 30_000,
+    refetchInterval: (query) => query.state.data?.refreshing ? 2_000 : 30_000,
     retry: false,
     enabled: canViewInfrastructure,
   });
@@ -873,9 +879,28 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
             <div className="flex items-center gap-2 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
               <Database className="h-3.5 w-3.5 shrink-0" />
               <span className="min-w-0 flex-1 truncate">Proxmox</span>
-              <span className="rounded bg-muted px-1.5 py-0.5 normal-case tracking-normal">{clusters.length}</span>
+              {inventoryPending ? (
+                <span aria-hidden="true" className="h-4 w-5 animate-pulse rounded bg-muted" />
+              ) : (
+                <span className="rounded bg-muted px-1.5 py-0.5 normal-case tracking-normal">
+                  {inventoryError ? "—" : clusters.length}
+                </span>
+              )}
             </div>
-            {clusters.length > 0 ? (
+            {inventoryPending ? (
+              <div
+                role="status"
+                aria-live="polite"
+                className="mx-1 flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs text-muted-foreground"
+              >
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                <span>Infrastructure is loading…</span>
+              </div>
+            ) : inventoryError ? (
+              <div className="mx-1 rounded-sm px-2 py-1.5 text-xs text-destructive">
+                Infrastructure could not be loaded
+              </div>
+            ) : clusters.length > 0 ? (
               clusters.map(platformNode)
             ) : (
               <Link

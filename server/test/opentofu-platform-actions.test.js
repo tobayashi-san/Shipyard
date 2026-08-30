@@ -216,6 +216,36 @@ test('infrastructure inventory includes QEMU VMs and LXC containers with their g
   assert.deepEqual(guests.map(guest => [guest.vm_id, guest.guest_type]), [[101, 'qemu'], [202, 'lxc']]);
 });
 
+test('infrastructure summary persists a compact snapshot and serves it without live Proxmox calls', async () => {
+  inventory = [
+    { type: 'qemu', node: 'pve001', vmid: 101, name: 'app-01', status: 'running', cpu: 0.5, maxmem: 4096 },
+    { type: 'lxc', node: 'pve001', vmid: 202, name: 'web-ct', status: 'stopped', mem: 1024 },
+  ];
+  calls.length = 0;
+  const initial = await request(app)
+    .get('/api/opentofu/infrastructure-summary?environment_id=default')
+    .set('Authorization', `Bearer ${token}`);
+  assert.equal(initial.status, 200, JSON.stringify(initial.body));
+  assert.equal(initial.body.cached, false);
+  assert.equal(initial.body.refreshing, false);
+  assert.deepEqual(initial.body.clusters[0].vms.map(vm => vm.name), ['app-01', 'web-ct']);
+  assert.equal('cpu' in initial.body.clusters[0].nodes[0], false);
+  assert.equal('mem' in initial.body.clusters[0].vms[0], false);
+  assert.deepEqual(calls.map(call => call.path).sort(), [
+    '/api2/json/cluster/resources',
+    '/api2/json/nodes',
+  ], 'summary refreshes must not load node, storage, network, package or VM details');
+
+  calls.length = 0;
+  const cached = await request(app)
+    .get('/api/opentofu/infrastructure-summary?environment_id=default')
+    .set('Authorization', `Bearer ${token}`);
+  assert.equal(cached.status, 200, JSON.stringify(cached.body));
+  assert.equal(cached.body.cached, true);
+  assert.equal(cached.body.refreshing, false);
+  assert.equal(calls.length, 0, 'a fresh snapshot must not wait for or call Proxmox');
+});
+
 test('Proxmox actions reject invalid or stale targets before an action endpoint is reached', async () => {
   calls.length = 0;
   const invalid = await request(app).post(`${vmPath}/power`).set('Authorization', `Bearer ${token}`).send({ action: 'format-all' });

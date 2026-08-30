@@ -39,6 +39,31 @@ async function openPlatformInventory(page: Page, name: string) {
   await dialog.getByRole('link', { name, exact: true }).click();
 }
 
+test('onboarding is public only until the first admin exists', async ({ page }) => {
+  await page.goto('/onboarding');
+  await expect(page.getByRole('heading', { name: /welcome|willkommen/i })).toBeVisible();
+
+  const token = await page.evaluate(async () => {
+    const response = await fetch('/api/auth/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'e2e-admin', password: 'E2e-password-2026!' }),
+    });
+    if (!response.ok) throw new Error(`Setup failed: ${response.status}`);
+    return (await response.json()).token as string;
+  });
+
+  await page.evaluate(() => localStorage.removeItem('shipyard_token'));
+  await page.goto('/onboarding');
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole('button', { name: /sign in|anmelden/i })).toBeVisible();
+
+  await page.evaluate((validToken) => localStorage.setItem('shipyard_token', validToken), token);
+  await page.goto('/onboarding');
+  await expect(page).toHaveURL(/\/$/);
+  await page.evaluate(() => localStorage.removeItem('shipyard_token'));
+});
+
 test('initial setup, login and protected console navigation work end-to-end', async ({ page }) => {
   await page.goto('/login');
   const setupButton = page.getByRole('button', { name: /let'?s go|los geht'?s/i });
@@ -102,6 +127,29 @@ test('initial setup, login and protected console navigation work end-to-end', as
   await expect(settingsNavigation.getByRole('link', { name: 'SSH' })).toBeVisible();
   await expect(settingsNavigation.getByRole('link', { name: 'Git Integration' })).toBeVisible();
   await expect(settingsNavigation.getByRole('link', { name: 'System', exact: true })).toBeVisible();
+});
+
+test('sidebar keeps an unknown Proxmox inventory in a loading state', async ({ page }) => {
+  await loginForIsolatedTest(page);
+  let releaseSummary!: () => void;
+  const summaryCanFinish = new Promise<void>((resolve) => { releaseSummary = resolve; });
+  await page.route('**/api/opentofu/infrastructure-summary?*', async (route) => {
+    await summaryCanFinish;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ clusters: [], cached: false, refreshing: false, updated_at: new Date().toISOString() }),
+    });
+  });
+
+  await page.goto('/');
+  await expect(page.getByRole('status').filter({ hasText: 'Infrastructure is loading' })).toBeVisible();
+  await expect(page.getByText('Proxmox', { exact: true }).locator('..').getByText('0', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Connect Proxmox', { exact: true })).toHaveCount(0);
+
+  releaseSummary();
+  await expect(page.getByText('Connect Proxmox', { exact: true })).toBeVisible();
+  await page.unroute('**/api/opentofu/infrastructure-summary?*');
 });
 
 test('mobile profile menu and maintenance form remain inside the viewport', async ({ page }) => {
