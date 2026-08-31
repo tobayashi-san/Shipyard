@@ -209,7 +209,7 @@ test('console themes apply their coordinated light and dark modes immediately', 
   await page.goto('/profile');
 
   const themeChoices = page.locator('button[aria-label$=" mode"]');
-  await expect(themeChoices).toHaveCount(6);
+  await expect(themeChoices).toHaveCount(16);
 
   await page.getByRole('button', { name: 'Paper theme, light mode' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-console-theme', 'paper-light');
@@ -220,6 +220,14 @@ test('console themes apply their coordinated light and dark modes immediately', 
   await expect(page.locator('html')).toHaveAttribute('data-console-theme', 'graphite-dark');
   await expect(page.locator('html')).toHaveClass(/\bdark\b/);
   await expect(page.getByRole('button', { name: 'Graphite theme, dark mode' })).toHaveAttribute('aria-pressed', 'true');
+
+  await page.getByRole('button', { name: 'Mint theme, light mode' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-console-theme', 'mint-light');
+  await expect(page.locator('html')).not.toHaveClass(/\bdark\b/);
+
+  await page.getByRole('button', { name: 'Obsidian theme, dark mode' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-console-theme', 'obsidian-dark');
+  await expect(page.locator('html')).toHaveClass(/\bdark\b/);
 });
 
 test('agent feature visibility follows the setting immediately', async ({ page }) => {

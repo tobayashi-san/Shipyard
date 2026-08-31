@@ -15,9 +15,19 @@ export const THEME_PRESETS: Array<{ id: ThemePreset; name: string; description: 
   { id: 'cloud-light', name: 'Cloud', description: 'Light, cool console design', mode: 'light', preview: { canvas: '#f7faff', surface: '#ffffff', card: '#ffffff', accent: '#0f6cbd' } },
   { id: 'paper-light', name: 'Paper', description: 'Neutral white with clear contrast', mode: 'light', preview: { canvas: '#faf9f6', surface: '#ffffff', card: '#ffffff', accent: '#26364b' } },
   { id: 'slate-light', name: 'Slate', description: 'Blue-gray management interface', mode: 'light', preview: { canvas: '#f4f7fb', surface: '#ffffff', card: '#ffffff', accent: '#1d4fa3' } },
+  { id: 'amber-light', name: 'Amber', description: 'Warm canvas with restrained blue actions', mode: 'light', preview: { canvas: '#fdfbf5', surface: '#ffffff', card: '#ffffff', accent: '#1b4fc1' } },
+  { id: 'mint-light', name: 'Mint', description: 'Low-noise teal for long operations', mode: 'light', preview: { canvas: '#f7fcfa', surface: '#ffffff', card: '#ffffff', accent: '#08786d' } },
+  { id: 'orchid-light', name: 'Orchid', description: 'Cool violet without a decorative cast', mode: 'light', preview: { canvas: '#faf9fd', surface: '#ffffff', card: '#ffffff', accent: '#7041b3' } },
+  { id: 'glacier-light', name: 'Glacier', description: 'High surface contrast for dense inventories', mode: 'light', preview: { canvas: '#e9f1f6', surface: '#ffffff', card: '#ffffff', accent: '#067795' } },
+  { id: 'ink-light', name: 'Ink', description: 'Utilitarian monochrome for office displays', mode: 'light', preview: { canvas: '#e9ebef', surface: '#ffffff', card: '#ffffff', accent: '#0f1c43' } },
   { id: 'midnight-dark', name: 'Midnight', description: 'Calm, neutral dark console', mode: 'dark', preview: { canvas: '#0a0a0a', surface: '#0a0a0a', card: '#171717', accent: '#3b9df4' } },
   { id: 'graphite-dark', name: 'Graphite', description: 'High-contrast graphite for long sessions', mode: 'dark', preview: { canvas: '#0d0e10', surface: '#121315', card: '#18191b', accent: '#d7e0ec' } },
   { id: 'navy-dark', name: 'Navy', description: 'Deep blue for infrastructure views', mode: 'dark', preview: { canvas: '#07101e', surface: '#0c1727', card: '#101b2d', accent: '#38bdf8' } },
+  { id: 'forest-dark', name: 'Forest', description: 'Low-glare green for monitoring sessions', mode: 'dark', preview: { canvas: '#09100d', surface: '#0e1612', card: '#131c18', accent: '#22c98a' } },
+  { id: 'plum-dark', name: 'Plum', description: 'Muted violet with calm data surfaces', mode: 'dark', preview: { canvas: '#0d0a10', surface: '#121016', card: '#18131d', accent: '#b9a0f8' } },
+  { id: 'copper-dark', name: 'Copper', description: 'Warm dark console with amber actions', mode: 'dark', preview: { canvas: '#0f0c0a', surface: '#15110f', card: '#1b1613', accent: '#f3a233' } },
+  { id: 'obsidian-dark', name: 'Obsidian', description: 'Near-black with precise cyan hierarchy', mode: 'dark', preview: { canvas: '#06070a', surface: '#0c0e12', card: '#11151a', accent: '#31d7ed' } },
+  { id: 'cobalt-dark', name: 'Cobalt', description: 'Deep cloud blue with crisp separation', mode: 'dark', preview: { canvas: '#060812', surface: '#0c1020', card: '#11182b', accent: '#6a9cff' } },
 ];
 
 interface UiState {
