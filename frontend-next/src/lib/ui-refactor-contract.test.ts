@@ -95,6 +95,16 @@ describe("UI refactor contract", () => {
     expect(page).not.toContain('<TabsTrigger value="terminal"');
   });
 
+  it("keeps host reachability in the page header instead of repeating it in the overview", () => {
+    const page = source("features/server-detail/ServerDetailPage.tsx");
+    const overview = source("features/server-detail/ServerOverviewTabs.tsx");
+    expect(page).toContain('server.status === "online"');
+    expect(overview).not.toContain('label="Connection"');
+    expect(overview).not.toContain("<StatusBadge");
+    expect(overview).toContain("Management mode");
+    expect(overview).not.toContain("Verwaltungsmodus");
+  });
+
   it("renders plugin paths as code pills instead of raw HTML copy", () => {
     const locale = source("locales/en.json");
     const plugins = source("routes/settings/tabs/plugins.tsx");

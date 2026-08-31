@@ -76,7 +76,7 @@ import {
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/ui/page-header";
-import { StatusBadge, LiveDot } from "@/components/ui/status-badge";
+import { LiveDot } from "@/components/ui/status-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton, SkeletonRow } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -286,48 +286,15 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
           <section className="console-object-summary">
             <div className="grid xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,.85fr)]">
               <div className="console-object-summary-main">
-                <div className="flex items-center justify-between gap-3 border-b pb-3">
+                <div className="flex items-center gap-2 border-b pb-3">
                   <div className="flex items-center gap-2">
                     <HeartPulse className="h-4 w-4 text-muted-foreground" />
                     <h2 className="text-sm font-semibold">
                       Host summary
                     </h2>
                   </div>
-                  <StatusBadge
-                    tone={
-                      server.status === "online"
-                        ? "success"
-                        : server.status === "offline"
-                          ? "danger"
-                          : "muted"
-                    }
-                    dot
-                  >
-                    {server.status === "online"
-                      ? t("common.online")
-                      : server.status === "offline"
-                        ? t("common.offline")
-                        : t("common.unknown")}
-                  </StatusBadge>
                 </div>
                 <dl className="console-object-info-grid xl:grid-cols-3">
-                  <SummaryField
-                    label="Connection"
-                    value={
-                      server.status === "online"
-                        ? "Reachable"
-                        : server.status === "offline"
-                          ? "Not reachable"
-                          : "Status unknown"
-                    }
-                    tone={
-                      server.status === "online"
-                        ? "success"
-                        : server.status === "offline"
-                          ? "danger"
-                          : "info"
-                    }
-                  />
                   <SummaryField
                     label={t("det.tabUpdates")}
                     value={
@@ -492,7 +459,7 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                 )}
                 <dl className="console-properties">
                   <div className="console-property">
-                    <dt>Verwaltungsmodus</dt>
+                      <dt>Management mode</dt>
                     <dd>
                       {managedProxmoxDeployment
                         ? "Shipyard + Proxmox"
