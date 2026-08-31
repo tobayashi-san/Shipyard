@@ -17,13 +17,15 @@ import { applyWhiteLabel, type WhiteLabelSettings } from '@/lib/whitelabel';
 import { resolveVisibleEnvironmentId, useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { setToken } from '@/lib/auth';
+import { QueryErrorState } from '@/components/ui/query-error-state';
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { data: settings } = useSettings();
   const queryClient = useQueryClient();
-  const { data: profile } = useProfile();
+  const profileQuery = useProfile();
+  const profile = profileQuery.data;
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -38,7 +40,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const setTheme = useUi((s) => s.setTheme);
   const environmentId = useUi((s) => s.environmentId);
   const setEnvironmentId = useUi((s) => s.setEnvironmentId);
-  const { data: environmentsData } = useQuery({ queryKey: ['environments'], queryFn: () => api.getEnvironments() });
+  const environmentsQuery = useQuery({ queryKey: ['environments'], queryFn: () => api.getEnvironments() });
+  const environmentsData = environmentsQuery.data;
   const environments = Array.isArray(environmentsData) ? environmentsData : [];
   const [environmentOpen, setEnvironmentOpen] = useState(false);
   const [newEnvironmentName, setNewEnvironmentName] = useState('');
@@ -131,11 +134,36 @@ export function AppShell({ children }: { children: ReactNode }) {
   const isAdmin = profile?.role === 'admin';
   const canViewDeployments = canAccessDeployments(profile);
   const activeEnvironment = environments.find((item) => String(item.id) === environmentId) || environments[0];
+  const activeEnvironmentLabel = environmentsQuery.isError
+    ? 'Environments unavailable'
+    : environmentsQuery.isPending
+      ? t('shell.loadingEnvironments')
+      : String(activeEnvironment?.name || t('shell.defaultEnvironment'));
 
   const openCommandPalette = () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, ctrlKey: true, bubbles: true }));
   };
   const openExternal = (url: string) => window.open(url, '_blank', 'noopener,noreferrer');
+
+  if (profileQuery.isPending) {
+    return <div className="grid min-h-screen place-items-center bg-background text-sm text-muted-foreground" role="status">Loading console…</div>;
+  }
+
+  if (profileQuery.isError) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-background p-6">
+        <div className="w-full max-w-lg rounded-md border bg-card">
+          <QueryErrorState
+            error={profileQuery.error}
+            onRetry={() => {
+              void profileQuery.refetch();
+            }}
+            title="Console permissions could not be loaded"
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
@@ -159,10 +187,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             aria-label={t('shell.environment')}
             value={environmentId}
             onChange={(event) => switchEnvironment(event.target.value)}
+            disabled={environmentsQuery.isPending || environmentsQuery.isError}
             className="ml-auto h-8 min-w-0 max-w-[9rem] rounded-md border border-input bg-background px-2 text-xs text-foreground md:hidden"
           >
             {environments.length === 0 && (
-              <option value={environmentId}>{t('shell.loadingEnvironments')}</option>
+              <option value={environmentId}>{activeEnvironmentLabel}</option>
             )}
             {environments.map((item) => (
               <option key={String(item.id)} value={String(item.id)}>
@@ -177,10 +206,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
           <div ref={environmentMenuRef} className="relative ml-auto hidden md:block">
             <button type="button" onClick={() => setEnvironmentOpen((open) => !open)} className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent" aria-haspopup="menu" aria-expanded={environmentOpen}>
-              {String(activeEnvironment?.name || t('shell.defaultEnvironment'))} <ChevronDown className="h-3.5 w-3.5" />
+              {activeEnvironmentLabel} <ChevronDown className="h-3.5 w-3.5" />
             </button>
             {environmentOpen && <div className="absolute right-0 top-9 z-50 w-56 rounded-md border border-border/90 bg-popover p-1.5 shadow-xl" role="menu" aria-label={t('shell.environments')}>
               <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{t('shell.environments')}</div>
+              {environmentsQuery.isPending && <div className="px-2 py-2 text-xs text-muted-foreground">{t('shell.loadingEnvironments')}</div>}
+              {environmentsQuery.isError && <div className="space-y-2 px-2 py-2 text-xs text-destructive"><p>Environments could not be loaded.</p><Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => void environmentsQuery.refetch()}>Try again</Button></div>}
               {environments.map((item) => {
                 const id = String(item.id);
                 const name = String(item.name);
@@ -192,7 +223,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </div>}
                 </div>;
               })}
-              {isAdmin && <form className="mt-1.5 flex gap-1 border-t pt-1.5" onSubmit={(event) => { event.preventDefault(); const name = newEnvironmentName.trim(); if (name) createEnvironment.mutate(name); }}>
+              {isAdmin && environmentsQuery.isSuccess && <form className="mt-1.5 flex gap-1 border-t pt-1.5" onSubmit={(event) => { event.preventDefault(); const name = newEnvironmentName.trim(); if (name) createEnvironment.mutate(name); }}>
                 <input value={newEnvironmentName} onChange={(event) => setNewEnvironmentName(event.target.value)} placeholder={t('shell.newEnvironment')} aria-label={t('shell.newEnvironmentName')} className="h-8 min-w-0 flex-1 rounded-sm border bg-background px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring" />
                 <Button type="submit" size="sm" className="h-8 px-2 text-xs" disabled={!newEnvironmentName.trim() || createEnvironment.isPending} aria-label={t('shell.createEnvironment')}>+</Button>
               </form>}

@@ -1650,6 +1650,8 @@
     "ipSaved": "IP address saved.",
     "backPrefixes": "Back to prefixes",
     "proxmoxConnectionsFailed": "Proxmox connections could not be loaded.",
+    "managedHostReferencesFailed": "Managed host references could not be loaded.",
+    "reservationValidationFailed": "Reservation could not be validated.",
     "noProxmoxConnection": "No Proxmox connection is available in this environment.",
     "prefixSections": "Prefix sections",
     "releaseRangeTitle": "Release IP range?",

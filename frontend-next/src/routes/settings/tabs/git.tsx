@@ -262,16 +262,28 @@ function GitDashboard({ cfg }: { cfg: GitConfig }) {
         </SettingsRow>
 
         <SettingsRow label={t('git.branch')} hint={t('git.activeBranchSmall')}>
-          <select
-            value={selectedBranch}
-            onChange={(e) => setSelectedBranch(e.target.value)}
-            className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm sm:w-auto sm:min-w-[160px]"
-          >
-            {allBranches.map((b) => <option key={b} value={b}>{b}</option>)}
-          </select>
-          <Button variant="secondary" size="sm" onClick={() => checkout.mutate(selectedBranch)} disabled={checkout.isPending}>
-            {t('git.switchBranch')}
-          </Button>
+          {branchesQ.isError ? (
+            <QueryErrorState
+              compact
+              className="py-3"
+              error={branchesQ.error}
+              title="Git branches could not be loaded"
+              onRetry={() => void branchesQ.refetch()}
+            />
+          ) : (
+            <>
+              <select
+                value={selectedBranch}
+                onChange={(e) => setSelectedBranch(e.target.value)}
+                className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm sm:w-auto sm:min-w-[160px]"
+              >
+                {allBranches.map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+              <Button variant="secondary" size="sm" onClick={() => checkout.mutate(selectedBranch)} disabled={checkout.isPending || branchesQ.isLoading}>
+                {t('git.switchBranch')}
+              </Button>
+            </>
+          )}
         </SettingsRow>
 
         <SettingsRow label={t('git.syncManual')} hint={t('git.syncManualSmall')}>

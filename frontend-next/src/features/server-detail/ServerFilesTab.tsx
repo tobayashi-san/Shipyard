@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { EmptyState } from '@/components/ui/empty-state';
+import { QueryErrorState } from '@/components/ui/query-error-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -231,12 +232,13 @@ export function ServerFilesTab({ serverId, profile }: { serverId: string; profil
           <DialogHeader><DialogTitle>Transfer to another host</DialogTitle></DialogHeader>
           {transfer && <div className="space-y-4">
             <div className="rounded-md border bg-muted/20 p-3 text-sm"><span className="font-medium">{transfer.entry.name}</span><span className="ml-2 text-xs text-muted-foreground">{formatSize(transfer.entry.size)}</span></div>
+            {servers.isError && <QueryErrorState compact error={servers.error} title="Transfer targets could not be loaded" onRetry={() => void servers.refetch()} />}
             <div className="space-y-1.5"><Label htmlFor="transfer-host">Destination host</Label><select id="transfer-host" value={transfer.targetServerId} onChange={event => {
               const targetServerId = event.target.value;
               const selected = (servers.data || []).find(server => server.id === targetServerId);
               const defaultHome = selected ? (selected.name ? `/tmp/${transfer.entry.name}` : transfer.targetPath) : transfer.targetPath;
               setTransfer({ ...transfer, targetServerId, targetPath: transfer.targetPath.startsWith('/') ? transfer.targetPath : defaultHome });
-            }} className="h-8 w-full rounded-sm border bg-background px-2.5 text-[13px]"><option value="">Select a host…</option>{(servers.data || []).filter(server => server.id !== serverId).map(server => <option key={server.id} value={server.id}>{server.name}{server.ip_address ? ` — ${server.ip_address}` : ''}</option>)}</select></div>
+            }} disabled={servers.isLoading || servers.isError} className="h-8 w-full rounded-sm border bg-background px-2.5 text-[13px]"><option value="">Select a host…</option>{(servers.data || []).filter(server => server.id !== serverId).map(server => <option key={server.id} value={server.id}>{server.name}{server.ip_address ? ` — ${server.ip_address}` : ''}</option>)}</select></div>
             <div className="space-y-1.5"><Label htmlFor="transfer-target">Absolute destination path</Label><Input id="transfer-target" value={transfer.targetPath} onChange={event => setTransfer({ ...transfer, targetPath: event.target.value })} placeholder="/tmp/file.tar.gz" /></div>
             <label className="flex items-center justify-between gap-3 rounded-md border p-3 text-sm"><span><span className="block font-medium">Replace existing file</span><span className="text-xs text-muted-foreground">Disabled by default to prevent accidental overwrites.</span></span><Switch checked={transfer.overwrite} onCheckedChange={checked => setTransfer({ ...transfer, overwrite: checked })} /></label>
           </div>}

@@ -164,12 +164,13 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
   const [serverToMove, setServerToMove] = useState<ServerRow | null>(null);
   const [moveTargetId, setMoveTargetId] = useState("");
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
-  const { data: rawServers } = useQuery({
+  const serversQuery = useQuery({
     queryKey: ["servers", environmentId],
     queryFn: () => api.getServers(environmentId) as Promise<Record<string, unknown>[]>,
     staleTime: 30_000,
   });
-  const { data: rawGroups } = useQuery({
+  const rawServers = serversQuery.data;
+  const groupsQuery = useQuery({
     // Keep this key identical to the resource list. Folder moves are made
     // from both views, so a single cache entry is essential for the tree and
     // table to update together instead of showing two temporary realities.
@@ -178,6 +179,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
       api.getServerGroups(environmentId) as Promise<Record<string, unknown>[]>,
     staleTime: 30_000,
   });
+  const rawGroups = groupsQuery.data;
   const { data: inventory, isPending: inventoryPending, isError: inventoryError } = useQuery({
     // Nest the summary below the established infrastructure key so existing
     // connection, import and power-action invalidations refresh the tree too.
@@ -258,6 +260,8 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
       ),
     [rawGroups],
   );
+  const managedHostsPending = serversQuery.isPending || groupsQuery.isPending;
+  const managedHostsError = serversQuery.isError || groupsQuery.isError;
   const groupsById = useMemo(
     () => new Set(groups.map((group) => group.id)),
     [groups],
@@ -999,14 +1003,15 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
               <FolderTree className="h-3.5 w-3.5 shrink-0" />{" "}
               <span className="truncate">Hosts</span>{" "}
               <span className="rounded bg-muted px-1.5 py-0.5 normal-case tracking-normal">
-                {servers.length}
+                {managedHostsPending || managedHostsError ? "—" : servers.length}
               </span>
             </Link>
             {!compact && (
               <button
                 type="button"
                 onClick={() => setFolderOpen(true)}
-                className="rounded-sm px-1 text-sm leading-none text-muted-foreground hover:bg-accent hover:text-foreground"
+                disabled={managedHostsPending || managedHostsError}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-sm text-sm leading-none text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Create folder"
               >
                 +
@@ -1057,9 +1062,22 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
             </select>
           </div>
         )}
-        {ungrouped.map((server) => serverRow(server))}
-        {groupTree.map((group) => groupNode(group))}
-        {!servers.length && (
+        {managedHostsPending ? (
+          <div className="mx-1 flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs text-muted-foreground" role="status">
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+            <span>Managed hosts are loading…</span>
+          </div>
+        ) : managedHostsError ? (
+          <p className="mx-1 rounded-sm px-2 py-1.5 text-xs text-destructive">
+            Managed hosts could not be loaded
+          </p>
+        ) : (
+          <>
+            {ungrouped.map((server) => serverRow(server))}
+            {groupTree.map((group) => groupNode(group))}
+          </>
+        )}
+        {!managedHostsPending && !managedHostsError && !servers.length && (
           <p className="px-2 py-2 text-xs text-muted-foreground">
             No standalone hosts in this environment.
           </p>

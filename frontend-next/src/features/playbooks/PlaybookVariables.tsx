@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { EmptyState } from "@/components/ui/empty-state";
+import { QueryErrorState } from "@/components/ui/query-error-state";
 import { SkeletonRow } from "@/components/ui/skeleton";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { hasCap, useProfile } from "@/lib/queries";
@@ -21,7 +22,7 @@ export function VarsTab() {
   const { data: profile } = useProfile();
   const qc = useQueryClient();
   const environmentId = useUi((state) => state.environmentId);
-  const { data: vars, isLoading } = useQuery<AnsibleVar[]>({
+  const { data: vars, isLoading, isError, error: queryError, refetch } = useQuery<AnsibleVar[]>({
     queryKey: ["ansibleVars", environmentId],
     queryFn: () => api.getAnsibleVars(environmentId) as unknown as Promise<AnsibleVar[]>,
   });
@@ -104,6 +105,13 @@ export function VarsTab() {
               <SkeletonRow cols={4} />
               <SkeletonRow cols={4} />
             </div>
+          ) : isError ? (
+            <QueryErrorState
+              compact
+              error={queryError}
+              title="Variables and secrets could not be loaded"
+              onRetry={() => void refetch()}
+            />
           ) : !vars || vars.length === 0 ? (
             <EmptyState
               compact

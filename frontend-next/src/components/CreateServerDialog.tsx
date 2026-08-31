@@ -8,6 +8,7 @@ import { useUi } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { QueryErrorState } from "@/components/ui/query-error-state";
 import {
   Dialog,
   DialogContent,
@@ -108,10 +109,11 @@ export function CreateServerDialog({
   const { t } = useTranslation();
   const qc = useQueryClient();
   const activeEnvironmentId = useUi((s) => s.environmentId);
-  const { data: environmentsData } = useQuery({
+  const environmentsQuery = useQuery({
     queryKey: ["environments"],
     queryFn: () => api.getEnvironments(),
   });
+  const environmentsData = environmentsQuery.data;
   const environments = Array.isArray(environmentsData) ? environmentsData : [];
   const isEdit = !!editServer;
 
@@ -467,22 +469,35 @@ export function CreateServerDialog({
             hint="Controls which console environment this host appears in."
             htmlFor="server-environment"
           >
-            <select
-              id="server-environment"
-              name="environmentId"
-              value={environmentId}
-              onChange={(e) => setEnvironmentId(e.target.value)}
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            >
-              {environments.map((environment) => (
-                <option
-                  key={String(environment.id)}
-                  value={String(environment.id)}
-                >
-                  {String(environment.name)}
-                </option>
-              ))}
-            </select>
+            <div className="w-full space-y-2">
+              {environmentsQuery.isError && (
+                <QueryErrorState
+                  compact
+                  className="py-3"
+                  error={environmentsQuery.error}
+                  title="Environments could not be loaded"
+                  onRetry={() => void environmentsQuery.refetch()}
+                />
+              )}
+              <select
+                id="server-environment"
+                name="environmentId"
+                value={environmentId}
+                onChange={(e) => setEnvironmentId(e.target.value)}
+                disabled={environmentsQuery.isLoading || environmentsQuery.isError}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                {!environments.some((environment) => String(environment.id) === environmentId) && <option value={environmentId}>{environmentId}</option>}
+                {environments.map((environment) => (
+                  <option
+                    key={String(environment.id)}
+                    value={String(environment.id)}
+                  >
+                    {String(environment.name)}
+                  </option>
+                ))}
+              </select>
+            </div>
           </FieldRow>
 
           {/* ── Links ───────────────────────────────────── */}

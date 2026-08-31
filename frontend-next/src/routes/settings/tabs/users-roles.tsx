@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/dialog';
 import { SkeletonRow } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { QueryErrorState } from '@/components/ui/query-error-state';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { OverflowItem, OverflowMenu, OverflowSep } from '@/components/ui/overflow-menu';
 import { useUi } from '@/lib/store';
@@ -109,6 +110,8 @@ function UsersPanel() {
 
   const users = usersQ.data || [];
   const roles = rolesQ.data || [];
+  const usersLoading = usersQ.isLoading || rolesQ.isLoading;
+  const usersError = usersQ.error || rolesQ.error;
 
   return (
     <SettingsSection
@@ -120,26 +123,29 @@ function UsersPanel() {
         </Button>
       }
     >
-      {usersQ.isLoading && (
+      {usersLoading && (
         <div className="py-2">
           <SkeletonRow cols={3} />
           <SkeletonRow cols={3} />
           <SkeletonRow cols={3} />
         </div>
       )}
-      {usersQ.isError && (
-        <SettingsRow noBorder>
-          <span className="text-sm text-destructive">{(usersQ.error as Error)?.message}</span>
-        </SettingsRow>
+      {usersError && (
+        <QueryErrorState
+          compact
+          error={usersError}
+          title="Users and roles could not be loaded"
+          onRetry={() => void Promise.all([usersQ.refetch(), rolesQ.refetch()])}
+        />
       )}
-      {!usersQ.isLoading && users.length === 0 && (
+      {usersQ.isSuccess && rolesQ.isSuccess && users.length === 0 && (
         <EmptyState
           compact
           icon={<Users className="h-5 w-5" />}
           title={t('set.noUsersFound')}
         />
       )}
-      {users.map((u, i) => {
+      {usersQ.isSuccess && rolesQ.isSuccess && users.map((u, i) => {
         const roleName = roles.find(r => r.id === u.role)?.name || u.role;
         const shown = u.display_name || u.username;
         const initial = (shown || '?')[0].toUpperCase();
@@ -474,7 +480,16 @@ function RolesPanel() {
         title={t('set.roleManagement')}
         description={t('set.roleBuiltInHint')}
       >
-        {builtIn.map((r, i) => (
+        {rolesQ.isLoading && <div className="py-2"><SkeletonRow cols={2} /><SkeletonRow cols={2} /></div>}
+        {rolesQ.isError && (
+          <QueryErrorState
+            compact
+            error={rolesQ.error}
+            title="Roles could not be loaded"
+            onRetry={() => void rolesQ.refetch()}
+          />
+        )}
+        {rolesQ.isSuccess && builtIn.map((r, i) => (
           <SettingsRow
             key={r.id}
             noBorder={i === builtIn.length - 1}
@@ -501,7 +516,7 @@ function RolesPanel() {
             <SkeletonRow cols={3} />
           </div>
         )}
-        {!rolesQ.isLoading && custom.length === 0 && (
+        {rolesQ.isSuccess && custom.length === 0 && (
           <EmptyState
             compact
             icon={<ShieldCheck className="h-5 w-5" />}
@@ -509,7 +524,7 @@ function RolesPanel() {
             description={t('set.noCustomRolesHint')}
           />
         )}
-        {custom.map((r, i) => {
+        {rolesQ.isSuccess && custom.map((r, i) => {
           const p = r.permissions || {};
           const serverSummary = p.servers === 'all' || p.servers == null
             ? t('set.allServers')
@@ -808,6 +823,40 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
     setPbMode(preset.pbMode);
     setPlMode(preset.plMode);
   };
+
+  const referenceQueries = [serversQ, groupsQ, pluginsQ, playbooksQ];
+  const referenceError = referenceQueries.find((query) => query.isError)?.error;
+  const referencesLoading = referenceQueries.some((query) => query.isLoading);
+  if (referenceError || referencesLoading) {
+    return (
+      <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {isEdit ? t('set.editRole', { name: role!.name }) : t('set.newRole')}
+            </DialogTitle>
+          </DialogHeader>
+          {referenceError ? (
+            <QueryErrorState
+              compact
+              error={referenceError}
+              title="Role scope references could not be loaded"
+              onRetry={() => void Promise.all(referenceQueries.map((query) => query.refetch()))}
+            />
+          ) : (
+            <div className="space-y-2 py-4">
+              <SkeletonRow cols={3} />
+              <SkeletonRow cols={3} />
+              <SkeletonRow cols={3} />
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>

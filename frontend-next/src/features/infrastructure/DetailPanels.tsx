@@ -1243,7 +1243,7 @@ export function BulkImportProxmoxVmsDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="bulk-import-ssh-port">SSH-Port</Label>
+            <Label htmlFor="bulk-import-ssh-port">SSH port</Label>
             <Input
               id="bulk-import-ssh-port"
               required
@@ -1253,12 +1253,22 @@ export function BulkImportProxmoxVmsDialog({
             />
           </div>
         </div>
+        {groupsQuery.isError && (
+          <QueryErrorState
+            compact
+            className="py-3"
+            error={groupsQuery.error}
+            title="Host folders could not be loaded"
+            onRetry={() => void groupsQuery.refetch()}
+          />
+        )}
         <div className="space-y-1.5">
           <Label htmlFor="bulk-import-folder">Folder</Label>
           <select
             id="bulk-import-folder"
             value={groupId}
             onChange={(event) => setGroupId(event.target.value)}
+            disabled={groupsQuery.isLoading || groupsQuery.isError}
             className="h-8 w-full rounded-sm border bg-background px-2.5 text-[13px]"
           >
             <option value="">No folder</option>

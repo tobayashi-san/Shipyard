@@ -82,24 +82,29 @@ export function CommandPalette() {
   }, [canViewOperations, navigate, networksAvailable, openTofuAvailable, profile]);
 
   // Fetch search data only when open
-  const { data: servers = [] } = useQuery({
+  const serversQuery = useQuery({
     queryKey: ['servers', environmentId],
     queryFn: () => api.getServers(environmentId) as unknown as Promise<ServerListItem[]>,
     enabled: open && hasCap(profile, 'canViewServers'),
     staleTime: 30_000,
   });
-  const { data: playbooks = [] } = useQuery({
+  const servers = serversQuery.data ?? [];
+  const playbooksQuery = useQuery({
     queryKey: ['playbooks'],
     queryFn: () => api.getPlaybooks() as unknown as Promise<PlaybookListItem[]>,
     enabled: open && hasCap(profile, 'canViewPlaybooks'),
     staleTime: 30_000,
   });
-  const { data: ipamResults } = useQuery({
+  const playbooks = playbooksQuery.data ?? [];
+  const ipamQuery = useQuery({
     queryKey: ['ipam', 'command-search', environmentId, search.trim()],
     queryFn: () => apiFetch<IpamSearchResponse>(`/ipam/search?environment_id=${encodeURIComponent(environmentId)}&q=${encodeURIComponent(search.trim())}&page=1&page_size=20`),
     enabled: open && networksAvailable && search.trim().length >= 2,
     staleTime: 15_000,
   });
+  const ipamResults = ipamQuery.data;
+  const searchReferencesFailed =
+    serversQuery.isError || playbooksQuery.isError || ipamQuery.isError;
 
   const sidebarPlugins = useMemo(
     () => asArray<typeof plugins[number]>(plugins).filter(p => p.enabled && p.sidebar && canSeePlugin(profile, p.id)),
@@ -137,6 +142,22 @@ export function CommandPalette() {
                 <span className="kbd ml-2">ESC</span>
               </div>
               <Command.List className="max-h-[420px] overflow-y-auto p-1.5">
+                {searchReferencesFailed && (
+                  <div className="mx-1 mb-1 flex items-center justify-between gap-3 rounded-sm border border-destructive/30 bg-destructive/5 px-2.5 py-2 text-xs text-destructive" role="status">
+                    <span>Some search results could not be loaded.</span>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-sm border border-border bg-background px-2 py-1 font-medium text-foreground hover:bg-accent"
+                      onClick={() => {
+                        if (serversQuery.isError) void serversQuery.refetch();
+                        if (playbooksQuery.isError) void playbooksQuery.refetch();
+                        if (ipamQuery.isError) void ipamQuery.refetch();
+                      }}
+                    >
+                      Try again
+                    </button>
+                  </div>
+                )}
                 <Command.Empty className="py-8 text-center text-sm text-muted-foreground">
                   {t('cmd.empty')}
                 </Command.Empty>

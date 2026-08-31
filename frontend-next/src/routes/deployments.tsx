@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { QueryErrorState } from "@/components/ui/query-error-state";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { CreateDeploymentDialog } from "@/features/deployments/CreateDeploymentDialog";
 import { useUi } from "@/lib/store";
@@ -180,7 +181,7 @@ export function DeploymentsPage() {
     <Dialog open={connectionsOpen} onOpenChange={setConnectionsOpen}>
       <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-3xl overflow-y-auto p-0">
         <DialogHeader className="border-b px-5 py-4"><DialogTitle>Platform connections</DialogTitle><DialogDescription>Manage the Proxmox connections used to create and operate virtual machines.</DialogDescription></DialogHeader>
-        <div className="p-4"><ProxmoxConnectionsCard connections={connections} isAdmin={canManagePlatforms} canSyncIpam={canSyncIpam} onAdd={() => { setConnectionToEdit(null); setConnectionEditorOpen(true); }} onEdit={(connection) => { setConnectionToEdit(connection); setConnectionEditorOpen(true); }} onDelete={setConnectionToDelete} /></div>
+        <div className="p-4">{connectionsQuery.isError ? <QueryErrorState compact error={connectionsQuery.error} title="Platform connections could not be loaded" onRetry={() => void connectionsQuery.refetch()} /> : <ProxmoxConnectionsCard connections={connections} isAdmin={canManagePlatforms} canSyncIpam={canSyncIpam} onAdd={() => { setConnectionToEdit(null); setConnectionEditorOpen(true); }} onEdit={(connection) => { setConnectionToEdit(connection); setConnectionEditorOpen(true); }} onDelete={setConnectionToDelete} />}</div>
       </DialogContent>
     </Dialog>
     <ProxmoxConnectionDialog environmentId={environmentId} connection={connectionToEdit} open={connectionEditorOpen} onOpenChange={setConnectionEditorOpen} />

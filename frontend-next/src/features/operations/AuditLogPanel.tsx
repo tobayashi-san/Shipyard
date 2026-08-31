@@ -147,7 +147,9 @@ export function AuditLogPanel() {
       <div className="console-toolbar border-b border-border/70 px-0 py-2">
         <div>
           <span className="text-xs text-muted-foreground">
-            {t("set.auditTotal", { n: meta.count || 0 })} ·{" "}
+            {metaQ.isError
+              ? "Audit metadata unavailable"
+              : t("set.auditTotal", { n: meta.count || 0 })} ·{" "}
             {t("set.auditRetention")}
           </span>
           <div className="mt-1 flex rounded-md border p-0.5" aria-label="Audit event focus">
@@ -192,6 +194,17 @@ export function AuditLogPanel() {
           </Button>
         </div>
       </div>
+
+      {metaQ.isError && (
+        <QueryErrorState
+          compact
+          error={metaQ.error}
+          onRetry={() => {
+            void metaQ.refetch();
+          }}
+          title="Audit filters could not be loaded"
+        />
+      )}
 
       {filtersOpen && (
         <div className="grid gap-2 border-b border-border/70 bg-muted/10 p-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -320,14 +333,16 @@ export function AuditLogPanel() {
             </table>
           </div>
 
-          <TablePagination
-            page={page}
-            pageSize={AUDIT_PAGE_SIZE}
-            totalItems={total}
-            onPageChange={setPage}
-            disabled={rowsQ.isFetching}
-            itemLabel="audit entries"
-          />
+          {!metaQ.isError && (
+            <TablePagination
+              page={page}
+              pageSize={AUDIT_PAGE_SIZE}
+              totalItems={total}
+              onPageChange={setPage}
+              disabled={rowsQ.isFetching}
+              itemLabel="audit entries"
+            />
+          )}
         </div>
       )}
     </SettingsSection>

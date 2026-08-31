@@ -8,6 +8,7 @@ import { showToast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/ui/page-header';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { QueryErrorState } from '@/components/ui/query-error-state';
 import { THEME_PRESETS, useUi } from '@/lib/store';
 
 /* ── Section wrapper ──────────────────────────────────────────────────── */
@@ -36,11 +37,12 @@ export function ProfilePage() {
   const qc = useQueryClient();
 
   // ─ Profile data
-  const { data: profile } = useQuery<Record<string, unknown>>({
+  const profileQuery = useQuery<Record<string, unknown>>({
     queryKey: ['profile'],
     queryFn: () => api.getProfile() as Promise<Record<string, unknown>>,
     staleTime: 5 * 60_000,
   });
+  const profile = profileQuery.data;
 
   const username = (profile?.username as string) || '';
   const isAdmin = profile?.role === 'admin';
@@ -138,6 +140,18 @@ export function ProfilePage() {
     },
     onError: (e: Error) => showToast(e.message || t('profile.incorrectPassword'), 'error'),
   });
+
+  if (profileQuery.isError) {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <QueryErrorState
+          error={profileQuery.error}
+          title="Profile could not be loaded"
+          onRetry={() => void profileQuery.refetch()}
+        />
+      </div>
+    );
+  }
 
   const totpEnabled = totpStatus.data?.enabled ?? false;
   // Use qrDataUrl (old backend) or otpauthUrl (api.ts declares this)
@@ -340,6 +354,13 @@ export function ProfilePage() {
       <Section icon={ShieldCheck} title={t('profile.twoFactor')}>
         {totpStatus.isLoading ? (
           <span className="text-sm text-muted-foreground">{t('profile.checking')}</span>
+        ) : totpStatus.isError ? (
+          <QueryErrorState
+            compact
+            error={totpStatus.error}
+            title="Two-factor authentication status could not be loaded"
+            onRetry={() => void totpStatus.refetch()}
+          />
         ) : totpEnabled ? (
           <div className="space-y-4">
             <div className="flex items-center justify-between">

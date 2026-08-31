@@ -19,6 +19,7 @@ import { Card } from '@/components/ui/card';
 import { PageHeader } from '@/components/ui/page-header';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
+import { QueryErrorState } from '@/components/ui/query-error-state';
 import { canAccessOperations, hasCap, useProfile } from '@/lib/queries';
 
 // ---- types ----
@@ -160,12 +161,13 @@ export function DashboardPage() {
     queryFn: () => api.getDashboard() as unknown as Promise<DashboardData>,
     refetchInterval: 30_000,
   });
-  const { data: operationsData } = useQuery<FailedOperationsData>({
+  const operationsQuery = useQuery<FailedOperationsData>({
     queryKey: ['operations', environmentId, 'dashboard-counts'],
     queryFn: () => apiFetch<FailedOperationsData>('/operations?scope=failed&page=1&page_size=1'),
     enabled: canViewOperations,
     staleTime: 30_000,
   });
+  const operationsData = operationsQuery.data;
 
   // Backend broadcasts cache_updated whenever the updates cache changes
   // (scheduler poll, after a system update, after ansible runs). Refetch the
@@ -224,7 +226,7 @@ export function DashboardPage() {
     const allServers = asArray<ServerInfo>(data?.servers);
     return allServers.filter((server) => String((server as ServerInfo & { environment_id?: string }).environment_id || 'default') === environmentId);
   }, [data?.servers, environmentId]);
-  const summary = useMemo(() => ({ total: servers.length, online: servers.filter(s => s.status === 'online').length, offline: servers.filter(s => s.status === 'offline').length, rebootRequired: servers.filter(s => s.reboot_required).length, totalUpdates: servers.reduce((total, s) => total + (s.updates_count ?? 0), 0), criticalDisk: 0, criticalRam: 0, failedOperations: operationsData?.counts?.failed ?? data?.summary?.failedOperations ?? 0 }), [data?.summary?.failedOperations, operationsData?.counts?.failed, servers]);
+  const summary = useMemo(() => ({ total: servers.length, online: servers.filter(s => s.status === 'online').length, offline: servers.filter(s => s.status === 'offline').length, rebootRequired: servers.filter(s => s.reboot_required).length, totalUpdates: servers.reduce((total, s) => total + (s.updates_count ?? 0), 0), criticalDisk: 0, criticalRam: 0, failedOperations: operationsData?.counts?.failed ?? data?.summary?.failedOperations ?? (canViewOperations && (operationsQuery.isPending || operationsQuery.isError) ? null : 0) }), [canViewOperations, data?.summary?.failedOperations, operationsData?.counts?.failed, operationsQuery.isError, operationsQuery.isPending, servers]);
   const recentHistory = asArray<HistoryEntry>(data?.recentHistory);
   const attentionCount = useMemo(() => servers.filter(needsAttention).length, [servers]);
 
@@ -278,6 +280,17 @@ export function DashboardPage() {
         runningTasks={runningTaskCount}
         failedOperations={summary.failedOperations}
       />
+
+      {canViewOperations && operationsQuery.isError && data?.summary?.failedOperations == null && (
+        <QueryErrorState
+          compact
+          error={operationsQuery.error}
+          onRetry={() => {
+            void operationsQuery.refetch();
+          }}
+          title="Failed operation count could not be loaded"
+        />
+      )}
 
       {isError && (
         <Card className="border-destructive/40">
@@ -343,7 +356,7 @@ function OverviewStatusBar({ loading, criticalAlerts, offlineHosts, updates, run
   offlineHosts: number;
   updates: number;
   runningTasks: number;
-  failedOperations: number;
+  failedOperations: number | null;
 }) {
   const { t } = useTranslation();
   return (
@@ -352,7 +365,7 @@ function OverviewStatusBar({ loading, criticalAlerts, offlineHosts, updates, run
       <OverviewStatusItem icon={<Server className="h-4 w-4" />} label={t('common.offline')} value={loading ? '—' : offlineHosts} to="/servers" search={{ status: 'offline' }} tone={offlineHosts > 0 ? 'danger' : 'neutral'} />
       <OverviewStatusItem icon={<PackagePlus className="h-4 w-4" />} label={t('dash.updates')} value={loading ? '—' : updates} to="/servers" search={{ updates: true }} tone={updates > 0 ? 'warning' : 'neutral'} />
       <OverviewStatusItem icon={<Clock className="h-4 w-4" />} label={t('dash.runningTasks')} value={loading ? '—' : runningTasks} to="/operations" search={{ scope: 'active' }} tone={runningTasks > 0 ? 'info' : 'neutral'} />
-      <OverviewStatusItem icon={<Clock className="h-4 w-4" />} label="Failed operations" value={loading ? '—' : failedOperations} to="/operations" search={{ scope: 'failed' }} tone={failedOperations > 0 ? 'danger' : 'neutral'} />
+      <OverviewStatusItem icon={<Clock className="h-4 w-4" />} label="Failed operations" value={loading || failedOperations === null ? '—' : failedOperations} to="/operations" search={{ scope: 'failed' }} tone={(failedOperations ?? 0) > 0 ? 'danger' : 'neutral'} />
     </section>
   );
 }

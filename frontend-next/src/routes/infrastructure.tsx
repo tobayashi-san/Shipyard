@@ -22,6 +22,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PageHeader } from "@/components/ui/page-header";
+import { QueryErrorState } from "@/components/ui/query-error-state";
 import { OverflowItem, OverflowMenu, OverflowSep } from "@/components/ui/overflow-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
@@ -273,7 +274,7 @@ export function InfrastructurePage() {
         }
       />
 
-      {inventoryQuery.isLoading ? (
+      {inventoryQuery.isLoading || hostsQuery.isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {[0, 1, 2, 3].map((item) => (
             <Skeleton key={item} className="h-24" />
@@ -294,15 +295,25 @@ export function InfrastructurePage() {
               </ul>
             </div>
           ) : null}
-          {inventoryQuery.isError && hosts.length === 0 ? (
+          {inventoryQuery.isError && (
             <Card>
-              <EmptyState
-                icon={<TriangleAlert className="h-5 w-5" />}
+              <QueryErrorState
+                error={inventoryQuery.error}
                 title="Infrastructure could not be loaded"
-                description="Check the connected platforms or hosts and try again."
+                onRetry={() => void inventoryQuery.refetch()}
               />
             </Card>
-          ) : clusters.length === 0 && hosts.length === 0 ? (
+          )}
+          {hostsQuery.isError && (
+            <Card>
+              <QueryErrorState
+                error={hostsQuery.error}
+                title="Managed hosts could not be loaded"
+                onRetry={() => void hostsQuery.refetch()}
+              />
+            </Card>
+          )}
+          {inventoryQuery.isSuccess && hostsQuery.isSuccess && clusters.length === 0 && hosts.length === 0 ? (
             <Card>
               <EmptyState
                 icon={<Database className="h-5 w-5" />}
@@ -328,12 +339,9 @@ export function InfrastructurePage() {
                 }
               />
             </Card>
-          ) : (
-            <>
-              {clusters.length > 0 && <PlatformInventory clusters={clusters} />}
-              {standaloneHosts.length > 0 && <ManagedHostsReference count={standaloneHosts.length} />}
-            </>
-          )}
+          ) : null}
+          {clusters.length > 0 && <PlatformInventory clusters={clusters} />}
+          {standaloneHosts.length > 0 && <ManagedHostsReference count={standaloneHosts.length} />}
         </>
       )}
       <Dialog open={connectionsOpen} onOpenChange={setConnectionsOpen}>
@@ -346,7 +354,14 @@ export function InfrastructurePage() {
             </DialogDescription>
           </DialogHeader>
           <div className="p-4">
-            <ProxmoxConnectionsCard
+            {connectionsQuery.isError ? (
+              <QueryErrorState
+                compact
+                error={connectionsQuery.error}
+                title="Platform connections could not be loaded"
+                onRetry={() => void connectionsQuery.refetch()}
+              />
+            ) : <ProxmoxConnectionsCard
               connections={connections}
               isAdmin={isAdmin}
               canSyncIpam={canSyncIpam}
@@ -359,7 +374,7 @@ export function InfrastructurePage() {
                 setConnectionDialogOpen(true);
               }}
               onDelete={setConnectionToDelete}
-            />
+            />}
           </div>
         </DialogContent>
       </Dialog>

@@ -81,11 +81,12 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
   });
 
   // Fetch content when selecting existing playbook
-  const { data: pbData } = useQuery({
+  const playbookContentQuery = useQuery({
     queryKey: ["playbook", selected],
     queryFn: () => api.getPlaybook(selected!),
     enabled: !!selected && !isNew,
   });
+  const pbData = playbookContentQuery.data;
   useEffect(() => {
     if (pbData?.content !== undefined && !isNew) {
       setContent(pbData.content);
@@ -137,6 +138,8 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
     setIsNew(false);
     setPanel("editor");
     setFilenameInput(filename.replace(/\.ya?ml$/, ""));
+    setContent("");
+    setOrigContent("");
     void isInternal;
   };
 
@@ -385,7 +388,13 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
                   <Button
                     size="sm"
                     onClick={() => saveMut.mutate()}
-                    disabled={saveMut.isPending || !!yamlError}
+                    disabled={
+                      saveMut.isPending ||
+                      !!yamlError ||
+                      (!isNew &&
+                        (playbookContentQuery.isPending ||
+                          playbookContentQuery.isError))
+                    }
                   >
                     <Save className="h-4 w-4" /> {t("common.save")}
                   </Button>
@@ -402,6 +411,7 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
                         onClick={() => setDeleteConfirmOpen(true)}
                         disabled={deleteMut.isPending}
                         title={t("common.delete")}
+                        aria-label={t("common.delete")}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -426,14 +436,26 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
             )}
             <div className="flex min-h-0 flex-1 flex-col space-y-1 px-4 pb-4">
               <Label>{t("pb.yaml")}</Label>
-              <Suspense fallback={<Skeleton className="h-[420px] w-full" />}>
-                <PlaybookEditor
-                  value={content}
-                  onChange={setContent}
-                  onValidityChange={setYamlError}
-                  dark={isDark}
+              {!isNew && playbookContentQuery.isPending ? (
+                <Skeleton className="h-[420px] w-full" />
+              ) : !isNew && playbookContentQuery.isError ? (
+                <QueryErrorState
+                  error={playbookContentQuery.error}
+                  onRetry={() => {
+                    void playbookContentQuery.refetch();
+                  }}
+                  title="Playbook content could not be loaded"
                 />
-              </Suspense>
+              ) : (
+                <Suspense fallback={<Skeleton className="h-[420px] w-full" />}>
+                  <PlaybookEditor
+                    value={content}
+                    onChange={setContent}
+                    onValidityChange={setYamlError}
+                    dark={isDark}
+                  />
+                </Suspense>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -609,6 +631,24 @@ export function TemplateRunPanel({
     }
   };
 
+  if (servers.isError) {
+    return (
+      <Card className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
+        <CardContent className="p-0">
+          <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
+            <span className="truncate font-medium">{description || filename}</span>
+            <Button variant="outline" size="sm" onClick={onClose}>{t("common.close")}</Button>
+          </div>
+          <QueryErrorState
+            error={servers.error}
+            title="Playbook targets could not be loaded"
+            onRetry={() => void servers.refetch()}
+          />
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       <CardContent className="flex min-h-0 flex-1 flex-col space-y-0 p-0">
@@ -759,7 +799,7 @@ export function PlaybookHistoryDialog({
   onRestore: (content: string) => void;
 }) {
   const { t } = useTranslation();
-  const { data: versions, isLoading } = useQuery<PlaybookVersion[]>({
+  const { data: versions, isLoading, isError, error, refetch } = useQuery<PlaybookVersion[]>({
     queryKey: ["playbookHistory", filename],
     queryFn: () =>
       api.getPlaybookHistory(filename) as unknown as Promise<PlaybookVersion[]>,
@@ -817,6 +857,13 @@ export function PlaybookHistoryDialog({
             <SkeletonRow cols={2} />
             <SkeletonRow cols={2} />
           </div>
+        ) : isError ? (
+          <QueryErrorState
+            compact
+            error={error}
+            title="Playbook version history could not be loaded"
+            onRetry={() => void refetch()}
+          />
         ) : !versions || versions.length === 0 ? (
           <EmptyState
             compact

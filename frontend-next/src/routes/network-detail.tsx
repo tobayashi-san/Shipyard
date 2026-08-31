@@ -46,6 +46,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useUi } from "@/lib/store";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { QueryErrorState } from "@/components/ui/query-error-state";
 import { useUrlTab } from "@/lib/use-url-tab";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { ActiveFilterChips } from "@/components/ui/filter-chips";
@@ -597,6 +598,16 @@ export function NetworkDetailPage() {
           {tr("parentPrefix", { cidr: network.parent_cidr })}
         </Link>
       )}
+      {connections.isError && (
+        <Card>
+          <QueryErrorState
+            compact
+            error={connections.error}
+            title={tr("proxmoxConnectionsFailed")}
+            onRetry={() => void connections.refetch()}
+          />
+        </Card>
+      )}
       <section className="console-object-summary overflow-hidden">
         <div className="grid xl:grid-cols-[minmax(0,1.25fr)_minmax(20rem,.75fr)]">
           <div className="console-object-summary-main !py-2.5">
@@ -892,6 +903,24 @@ export function NetworkDetailPage() {
               {tr("range")}
             </Button>
           </div>
+          {servers.isError && (
+            <QueryErrorState
+              compact
+              className="py-3"
+              error={servers.error}
+              title={tr("managedHostReferencesFailed")}
+              onRetry={() => void servers.refetch()}
+            />
+          )}
+          {reservationValidation.isError && (
+            <QueryErrorState
+              compact
+              className="py-3"
+              error={reservationValidation.error}
+              title={tr("reservationValidationFailed")}
+              onRetry={() => void reservationValidation.refetch()}
+            />
+          )}
           {addKind === "address" ? (
             <AddressForm
               address={address}

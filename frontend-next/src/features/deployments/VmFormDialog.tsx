@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { QueryErrorState } from "@/components/ui/query-error-state";
 
 interface CatalogItem {
   name?: string;
@@ -487,11 +488,21 @@ export function VmFormDialog({
                 </p>
               </div>
             </div>
+            {templatesQuery.isError && (
+              <QueryErrorState
+                compact
+                className="py-3"
+                error={templatesQuery.error}
+                title="VM templates could not be loaded"
+                onRetry={() => void templatesQuery.refetch()}
+              />
+            )}
             <select
               value={templateId}
               onChange={(event) => applyTemplate(event.target.value)}
               className="h-9 w-full rounded-md border bg-background px-3 text-sm"
               aria-label="Select VM template"
+              disabled={templatesQuery.isLoading || templatesQuery.isError}
             >
               <option value="">Do not use a template</option>
               {templates.map((template) => (
@@ -828,15 +839,24 @@ export function VmFormDialog({
               <div className="flex items-center justify-between gap-3"><div><h3 className="text-sm font-semibold">Pre-deploy workflows</h3><p className="mt-0.5 text-xs text-muted-foreground">Run Ansible on an existing host before OpenTofu starts. A failed step stops the deployment.</p></div><span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{preDeploy.length} selected</span></div>
             </summary>
             <div className="mt-3 space-y-3">
+              {hostsQuery.isError && (
+                <QueryErrorState
+                  compact
+                  className="py-3"
+                  error={hostsQuery.error}
+                  title="Pre-deploy hosts could not be loaded"
+                  onRetry={() => void hostsQuery.refetch()}
+                />
+              )}
               <Field label="Execution host" hint="For example, select the Proxmox host where Ansible creates the VLAN, SDN VNet, or bridge.">
-                <select value={preDeployTarget} onChange={(event) => setPreDeployTarget(event.target.value)} required={preDeploy.length > 0} className="h-9 w-full rounded-md border bg-background px-3 text-sm">
+                <select value={preDeployTarget} onChange={(event) => setPreDeployTarget(event.target.value)} required={preDeploy.length > 0} disabled={hostsQuery.isLoading || hostsQuery.isError} className="h-9 w-full rounded-md border bg-background px-3 text-sm">
                   <option value="">Select host…</option>
                   {hosts.map((host) => <option key={host.id} value={host.id}>{host.name}{host.ip_address ? ` · ${host.ip_address}` : ""}</option>)}
                 </select>
               </Field>
               <div className="grid gap-4 lg:grid-cols-2">
                 <div className="max-h-52 overflow-y-auto rounded-md border p-2">
-                  {playbooks.length ? playbooks.map((playbook) => <label key={playbook.filename} className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 hover:bg-accent"><input type="checkbox" className="mt-0.5" checked={preDeploy.includes(playbook.filename!)} onChange={(event) => togglePreDeploy(playbook.filename!, event.target.checked)} /><span className="min-w-0"><span className="block text-sm">{playbook.filename}</span>{playbook.description && <span className="block truncate text-xs text-muted-foreground">{playbook.description}</span>}</span></label>) : <p className="p-2 text-sm text-muted-foreground">No playbooks available.</p>}
+                  {playbooksQuery.isError ? <QueryErrorState compact className="py-3" error={playbooksQuery.error} title="Pre-deploy playbooks could not be loaded" onRetry={() => void playbooksQuery.refetch()} /> : playbooks.length ? playbooks.map((playbook) => <label key={playbook.filename} className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 hover:bg-accent"><input type="checkbox" className="mt-0.5" checked={preDeploy.includes(playbook.filename!)} onChange={(event) => togglePreDeploy(playbook.filename!, event.target.checked)} /><span className="min-w-0"><span className="block text-sm">{playbook.filename}</span>{playbook.description && <span className="block truncate text-xs text-muted-foreground">{playbook.description}</span>}</span></label>) : <p className="p-2 text-sm text-muted-foreground">No playbooks available.</p>}
                 </div>
                 <div className="min-h-16 space-y-1 rounded-md border p-2">
                   {preDeploy.length ? preDeploy.map((filename, index) => <div key={filename} className="flex items-center gap-2 rounded-md bg-muted/50 px-2 py-1.5"><span className="w-5 text-center font-mono text-xs text-muted-foreground">{index + 1}</span><span className="min-w-0 flex-1 truncate text-sm">{filename}</span><Button type="button" variant="ghost" size="icon" className="h-7 w-7" disabled={index === 0} onClick={() => movePreDeploy(index, -1)} aria-label="Move up"><ArrowUp className="h-3.5 w-3.5" /></Button><Button type="button" variant="ghost" size="icon" className="h-7 w-7" disabled={index === preDeploy.length - 1} onClick={() => movePreDeploy(index, 1)} aria-label="Move down"><ArrowDown className="h-3.5 w-3.5" /></Button><Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => togglePreDeploy(filename, false)} aria-label="Remove"><X className="h-3.5 w-3.5" /></Button></div>) : <p className="p-2 text-sm text-muted-foreground">No pre-deploy workflows selected.</p>}
@@ -868,7 +888,9 @@ export function VmFormDialog({
                     Available playbooks
                   </div>
                   <div className="max-h-48 overflow-y-auto p-2">
-                    {playbooks.length ? (
+                    {playbooksQuery.isError ? (
+                      <QueryErrorState compact className="py-3" error={playbooksQuery.error} title="Post-deploy playbooks could not be loaded" onRetry={() => void playbooksQuery.refetch()} />
+                    ) : playbooks.length ? (
                       playbooks.map((playbook) => {
                         const filename = playbook.filename!;
                         return (

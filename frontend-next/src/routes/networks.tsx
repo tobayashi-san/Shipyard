@@ -34,6 +34,7 @@ import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
+import { QueryErrorState } from "@/components/ui/query-error-state";
 import { ActiveFilterChips } from "@/components/ui/filter-chips";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { OverflowItem, OverflowMenu, OverflowSep } from "@/components/ui/overflow-menu";
@@ -533,16 +534,23 @@ export function NetworksPage() {
             <DialogTitle>{tr("scanPrefixes")}</DialogTitle>
             <DialogDescription>{tr("scanPrefixesDescription", { count: selectedCount })}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
+          {connections.isError ? (
+            <QueryErrorState
+              compact
+              error={connections.error}
+              title={tr("proxmoxConnectionsFailed")}
+              onRetry={() => void connections.refetch()}
+            />
+          ) : <div className="space-y-2">
             <Label htmlFor="bulk-scan-connection">{tr("proxmoxConnection")}</Label>
             <select id="bulk-scan-connection" className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={bulkConnectionId} onChange={(event) => setBulkConnectionId(event.target.value)}>
               <option value="">{tr("selectConnection")}</option>
               {(connections.data || []).map((connection) => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
             </select>
-          </div>
+          </div>}
           <DialogFooter>
             <Button variant="outline" onClick={() => setBulkScanOpen(false)}>{tr("cancel")}</Button>
-            <Button disabled={!bulkConnectionId || bulkScanMutation.isPending} onClick={() => bulkScanMutation.mutate()}><ServerCog /> {tr("scan")}</Button>
+            <Button disabled={!bulkConnectionId || bulkScanMutation.isPending || connections.isError} onClick={() => bulkScanMutation.mutate()}><ServerCog /> {tr("scan")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { QueryErrorState } from "@/components/ui/query-error-state";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { VmFormDialog } from "@/features/deployments/VmFormDialog";
 import { hasCap, useProfile } from "@/lib/queries";
@@ -98,6 +99,7 @@ export function DeploymentDetailPage() {
   const vm = vmQuery.data;
   const runs = Array.isArray(runsQuery.data?.items) ? runsQuery.data!.items! : [];
   const activeRun = runs.find((run) => run.status === "running" || run.status === "cancelling");
+  const runStateUnavailable = runsQuery.isPending || runsQuery.isError;
   const latestPlan = runs.find((run) => run.action === "plan" && run.status === "success");
   const approvedPlan = latestPlan?.plan_safe === 1 ? latestPlan : undefined;
   const actual = actualQuery.data?.actual?.resources?.[0];
@@ -136,13 +138,14 @@ export function DeploymentDetailPage() {
   }, [runs]);
 
   if (vmQuery.isLoading) return <div className="space-y-2">{[0, 1, 2].map((item) => <div key={item} className="h-16 animate-pulse rounded bg-muted/40" />)}</div>;
+  if (vmQuery.isError) return <Card><QueryErrorState error={vmQuery.error} title="Managed virtual machine could not be loaded" onRetry={() => void vmQuery.refetch()} /></Card>;
   if (!vm) return <Card><EmptyState icon={<TriangleAlert className="h-5 w-5" />} title="Virtual machine not found" description="It may have been destroyed, unmanaged, or moved during a legacy migration." action={<Button asChild><Link to="/deployments">Back to VMs</Link></Button>} /></Card>;
 
   return <div className="space-y-5">
     <PageHeader title={vm.name} description={`Independent VM on ${vm.platform?.name || "Proxmox"}`} actions={<>
       <Button asChild variant="outline"><Link to="/deployments"><ArrowLeft />All VMs</Link></Button>
       <Button variant="outline" onClick={refresh}><RefreshCw />Refresh</Button>
-      <Button variant="outline" onClick={() => setEditOpen(true)} disabled={!canEdit || Boolean(activeRun)}><Pencil />Edit</Button>
+      <Button variant="outline" onClick={() => setEditOpen(true)} disabled={!canEdit || Boolean(activeRun) || runStateUnavailable}><Pencil />Edit</Button>
     </>} />
 
     <section className="grid gap-4 lg:grid-cols-3">
@@ -150,28 +153,28 @@ export function DeploymentDetailPage() {
         <Fact label="Node" value={vm.node_name} /><Fact label="VM ID" value={vm.vm_id || "Automatic"} /><Fact label="CPU" value={`${vm.cpu_cores} cores`} /><Fact label="Memory" value={`${vm.memory_mb} MB`} /><Fact label="Disk" value={`${vm.disk_size_gb} GB`} /><Fact label="Network" value={`${vm.bridge}${vm.vlan_id ? ` · VLAN ${vm.vlan_id}` : ""}`} /><Fact label="IPv4" value={vm.ipv4_address} />
       </CardContent></Card>
       <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><CheckCircle2 className="h-4 w-4" />Current Proxmox state</CardTitle></CardHeader><CardContent className="space-y-3 text-sm">
-        {live?.available ? <><Fact label="Node / VM ID" value={`${live.node_name || vm.node_name} · ${live.vm_id || vm.vm_id || "—"}`} /><Fact label="CPU / memory" value={`${live.cpu_cores ?? "—"} cores · ${live.memory_mb ?? "—"} MB`} /><Fact label="Disk" value={live.disk_size_gb ? `${live.disk_size_gb} GB` : "Not reported"} /><Fact label="Network" value={`${live.bridge || "—"}${live.vlan_id ? ` · VLAN ${live.vlan_id}` : ""}`} /><Fact label="IP addresses" value={actual?.ip_addresses?.join(", ") || live.ipv4_address || "Not reported"} /><Fact label="Observed" value={formatDate(live.observed_at)} /></> : <p className="text-muted-foreground">{live?.reason || (liveQuery.isLoading ? "Loading live configuration…" : actualQuery.data?.actual?.reason || "No deployed resource found.")}</p>}
+        {liveQuery.isError || actualQuery.isError ? <QueryErrorState compact error={liveQuery.error || actualQuery.error} title="Current Proxmox state could not be loaded" onRetry={() => void Promise.all([liveQuery.refetch(), actualQuery.refetch()])} /> : live?.available ? <><Fact label="Node / VM ID" value={`${live.node_name || vm.node_name} · ${live.vm_id || vm.vm_id || "—"}`} /><Fact label="CPU / memory" value={`${live.cpu_cores ?? "—"} cores · ${live.memory_mb ?? "—"} MB`} /><Fact label="Disk" value={live.disk_size_gb ? `${live.disk_size_gb} GB` : "Not reported"} /><Fact label="Network" value={`${live.bridge || "—"}${live.vlan_id ? ` · VLAN ${live.vlan_id}` : ""}`} /><Fact label="IP addresses" value={actual?.ip_addresses?.join(", ") || live.ipv4_address || "Not reported"} /><Fact label="Observed" value={formatDate(live.observed_at)} /></> : <p className="text-muted-foreground">{live?.reason || (liveQuery.isLoading ? "Loading live configuration…" : actualQuery.data?.actual?.reason || "No deployed resource found.")}</p>}
       </CardContent></Card>
       <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4" />Isolation & drift</CardTitle></CardHeader><CardContent className="space-y-3 text-sm">
-        <div><StatusBadge tone="success" dot>Independent state</StatusBadge><p className="mt-2 text-xs text-muted-foreground">Plans for this VM are rejected if they mutate any other resource address.</p></div>
+        {stateQuery.isError ? <QueryErrorState compact error={stateQuery.error} title="Independent VM state could not be loaded" onRetry={() => void stateQuery.refetch()} /> : <><div><StatusBadge tone="success" dot>Independent state</StatusBadge><p className="mt-2 text-xs text-muted-foreground">Plans for this VM are rejected if they mutate any other resource address.</p></div>
         <Fact label="State resources" value={stateQuery.data?.resources?.length ?? "—"} />
         <Fact label="Live differences" value={differences.length ? differences.length : "None observed"} />
         {differences.length > 0 && <ul className="list-disc space-y-1 pl-4 text-xs text-amber-700 dark:text-amber-300">{differences.map((difference) => <li key={difference}>{difference}</li>)}</ul>}
-        <Fact label="Drift plan" value={drift === null ? "Not checked" : drift ? "Detected" : "None detected"} />
+        <Fact label="Drift plan" value={drift === null ? "Not checked" : drift ? "Detected" : "None detected"} /></>}
       </CardContent></Card>
     </section>
 
     <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Play className="h-4 w-4" />Plan and deploy</CardTitle></CardHeader><CardContent className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        <Button onClick={() => runMutation.mutate("plan")} disabled={!canPlan || Boolean(activeRun) || runMutation.isPending}><Play />Plan changes</Button>
-        <Button onClick={() => setConfirmApply(true)} disabled={!canApply || !approvedPlan || Boolean(activeRun) || runMutation.isPending}><CheckCircle2 />Apply reviewed plan</Button>
-        <Button variant="outline" onClick={() => runMutation.mutate("check-drift")} disabled={!canPlan || Boolean(activeRun) || runMutation.isPending}><RefreshCw />Check drift</Button>
+        <Button onClick={() => runMutation.mutate("plan")} disabled={!canPlan || Boolean(activeRun) || runStateUnavailable || runMutation.isPending}><Play />Plan changes</Button>
+        <Button onClick={() => setConfirmApply(true)} disabled={!canApply || !approvedPlan || Boolean(activeRun) || runStateUnavailable || runMutation.isPending}><CheckCircle2 />Apply reviewed plan</Button>
+        <Button variant="outline" onClick={() => runMutation.mutate("check-drift")} disabled={!canPlan || Boolean(activeRun) || runStateUnavailable || runMutation.isPending}><RefreshCw />Check drift</Button>
       </div>
       {approvedPlan ? <div className="rounded-md border bg-muted/20 p-3 text-sm"><div className="flex items-center gap-2 font-medium"><ShieldCheck className="h-4 w-4 text-emerald-600" />Isolation check passed</div><p className="mt-1 text-muted-foreground">{summaryLabel(approvedPlan.plan_summary)}</p></div> : latestPlan?.plan_safe === 0 ? <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><div className="font-medium">Apply blocked by isolation check</div><p className="mt-1">{planValidationError(latestPlan) || "The plan affects resources outside this VM."}</p></div> : <p className="text-sm text-muted-foreground">Create a plan. Apply is enabled only after the saved plan passes the single-VM resource-address check.</p>}
     </CardContent></Card>
 
     <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><History className="h-4 w-4" />Run history</CardTitle></CardHeader><CardContent className="p-0">
-      {runs.length === 0 ? <div className="p-4 text-sm text-muted-foreground">No runs yet.</div> : <div className="table-scroll"><table data-density="compact" className="w-full min-w-[700px] text-sm"><thead><tr><th className="px-3">Action</th><th className="px-3">Status</th><th className="px-3">Plan</th><th className="px-3">Safety</th><th className="px-3">Completed</th></tr></thead><tbody>{runs.map((run) => <tr key={run.id}><td className="px-3 font-medium">{run.action}</td><td className="px-3"><StatusBadge tone={statusTone(run.status)} dot>{run.status}</StatusBadge></td><td className="px-3 text-xs">{run.plan_summary ? summaryLabel(run.plan_summary) : "—"}</td><td className="px-3">{run.action === "plan" ? <StatusBadge tone={run.plan_safe === 1 ? "success" : run.plan_safe === 0 ? "danger" : "muted"}>{run.plan_safe === 1 ? "Isolated" : run.plan_safe === 0 ? "Blocked" : "Pending"}</StatusBadge> : "—"}</td><td className="px-3 text-xs text-muted-foreground">{formatDate(run.completed_at || run.started_at)}</td></tr>)}</tbody></table></div>}
+      {runsQuery.isLoading ? <div className="p-4 text-sm text-muted-foreground">Loading run history…</div> : runsQuery.isError ? <QueryErrorState compact error={runsQuery.error} title="VM run history could not be loaded" onRetry={() => void runsQuery.refetch()} /> : runs.length === 0 ? <div className="p-4 text-sm text-muted-foreground">No runs yet.</div> : <div className="table-scroll"><table data-density="compact" className="w-full min-w-[700px] text-sm"><thead><tr><th className="px-3">Action</th><th className="px-3">Status</th><th className="px-3">Plan</th><th className="px-3">Safety</th><th className="px-3">Completed</th></tr></thead><tbody>{runs.map((run) => <tr key={run.id}><td className="px-3 font-medium">{run.action}</td><td className="px-3"><StatusBadge tone={statusTone(run.status)} dot>{run.status}</StatusBadge></td><td className="px-3 text-xs">{run.plan_summary ? summaryLabel(run.plan_summary) : "—"}</td><td className="px-3">{run.action === "plan" ? <StatusBadge tone={run.plan_safe === 1 ? "success" : run.plan_safe === 0 ? "danger" : "muted"}>{run.plan_safe === 1 ? "Isolated" : run.plan_safe === 0 ? "Blocked" : "Pending"}</StatusBadge> : "—"}</td><td className="px-3 text-xs text-muted-foreground">{formatDate(run.completed_at || run.started_at)}</td></tr>)}</tbody></table></div>}
     </CardContent></Card>
 
     <Card><CardHeader><CardTitle className="text-base">Deployment automation</CardTitle></CardHeader><CardContent className="space-y-4">
@@ -182,8 +185,8 @@ export function DeploymentDetailPage() {
     </CardContent></Card>
 
     <Card className="border-destructive/30"><CardHeader><CardTitle className="text-base">Lifecycle</CardTitle></CardHeader><CardContent className="flex flex-wrap gap-2">
-      <Button variant="outline" onClick={() => setConfirmForget(true)} disabled={!canEdit || Boolean(activeRun)}><Unlink />Stop managing</Button>
-      <Button variant="destructive" onClick={() => setConfirmDestroy(true)} disabled={!canDestroy || Boolean(activeRun)}><Trash2 />Destroy VM</Button>
+      <Button variant="outline" onClick={() => setConfirmForget(true)} disabled={!canEdit || Boolean(activeRun) || runStateUnavailable}><Unlink />Stop managing</Button>
+      <Button variant="destructive" onClick={() => setConfirmDestroy(true)} disabled={!canDestroy || Boolean(activeRun) || runStateUnavailable}><Trash2 />Destroy VM</Button>
     </CardContent></Card>
 
     <VmFormDialog vmId={vm.id} environmentId={vm.environment_id} connectionId={vm.connection_id} initialVm={vm} open={editOpen} onOpenChange={setEditOpen} />

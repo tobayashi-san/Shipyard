@@ -9,13 +9,14 @@ import { applyWhiteLabel } from '@/lib/whitelabel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { QueryErrorState } from '@/components/ui/query-error-state';
 
 const MFA_TOKEN_KEY = 'shipyard.login.mfa-token';
 
 export function LoginPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { data: status, isLoading } = useQuery({
+  const { data: status, isLoading, isError, error: statusError, refetch } = useQuery({
     queryKey: ['auth', 'status'],
     queryFn: () => api.authStatus(),
     retry: false,
@@ -52,6 +53,22 @@ export function LoginPage() {
 
   if (isLoading) {
     return <div className="grid min-h-screen place-items-center text-muted-foreground">{t('common.loading')}</div>;
+  }
+
+  if (isError) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-[hsl(var(--surface-1))] p-6">
+        <div className="w-full max-w-lg rounded-md border bg-card">
+          <QueryErrorState
+            error={statusError}
+            onRetry={() => {
+              void refetch();
+            }}
+            title="Shipyard could not be reached"
+          />
+        </div>
+      </div>
+    );
   }
 
   const onSubmit = async (e: React.FormEvent) => {

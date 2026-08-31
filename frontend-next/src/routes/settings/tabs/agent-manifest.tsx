@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton, SkeletonRow } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { QueryErrorState } from '@/components/ui/query-error-state';
 import { SettingsRow, SettingsSection } from '../_row';
 
 interface ManifestResp {
@@ -65,9 +66,11 @@ export function AgentManifestTab() {
 
   if (manifestQ.isError) {
     return (
-      <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
-        {t('set.agentManifestLoadError')}: {(manifestQ.error as Error)?.message}
-      </div>
+      <QueryErrorState
+        error={manifestQ.error}
+        title={t('set.agentManifestLoadError')}
+        onRetry={() => void manifestQ.refetch()}
+      />
     );
   }
 
@@ -124,6 +127,13 @@ export function AgentManifestTab() {
             <SkeletonRow cols={3} />
             <SkeletonRow cols={3} />
           </div>
+        ) : historyQ.isError ? (
+          <QueryErrorState
+            compact
+            error={historyQ.error}
+            title="Manifest history could not be loaded"
+            onRetry={() => void historyQ.refetch()}
+          />
         ) : history.length === 0 ? (
           <EmptyState
             compact

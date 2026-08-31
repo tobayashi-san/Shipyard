@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
+import { QueryErrorState } from "@/components/ui/query-error-state";
 import { SkeletonRow } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -60,10 +61,11 @@ export function SchedulesTab() {
   const qc = useQueryClient();
   const environmentId = useUi((state) => state.environmentId);
   const cronLabel = useCronLabel();
-  const { data: schedules, isLoading } = useQuery<Schedule[]>({
+  const schedulesQuery = useQuery<Schedule[]>({
     queryKey: ["schedules", environmentId],
     queryFn: () => api.getSchedules(environmentId) as unknown as Promise<Schedule[]>,
   });
+  const schedules = schedulesQuery.data;
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [deleteSchedule, setDeleteSchedule] = useState<Schedule | null>(null);
@@ -163,12 +165,19 @@ export function SchedulesTab() {
               </Button>
             )}
           </div>
-          {isLoading ? (
+          {schedulesQuery.isLoading ? (
             <div className="space-y-1">
               <SkeletonRow cols={3} />
               <SkeletonRow cols={3} />
               <SkeletonRow cols={3} />
             </div>
+          ) : schedulesQuery.isError ? (
+            <QueryErrorState
+              compact
+              error={schedulesQuery.error}
+              title="Scheduled workflows could not be loaded"
+              onRetry={() => void schedulesQuery.refetch()}
+            />
           ) : list.length === 0 ? (
             <EmptyState
               compact
@@ -211,7 +220,7 @@ export function SchedulesTab() {
                         }
                         disabled={bulkMut.isPending}
                       >
-                        Pausieren
+                        Pause
                       </Button>
                     </>
                   )}
@@ -247,8 +256,8 @@ export function SchedulesTab() {
                       </th>
                       <th className="px-3">Workflow</th>
                       <th className="px-3">Playbook</th>
-                      <th className="px-3">Ziele</th>
-                      <th className="px-3">Zeitplan</th>
+                      <th className="px-3">Targets</th>
+                      <th className="px-3">Schedule</th>
                       <th className="px-3">Last run</th>
                       <th className="w-24 px-3 text-right">Actions</th>
                     </tr>
@@ -274,7 +283,7 @@ export function SchedulesTab() {
                             <span className="font-medium">{s.name}</span>
                             {hasCap(profile, "canToggleSchedules") && (
                               <Switch
-                                aria-label={`${s.name} aktivieren`}
+                                aria-label={`Toggle ${s.name}`}
                                 checked={s.enabled}
                                 onCheckedChange={() => toggleMut.mutate(s.id)}
                               />
@@ -405,7 +414,7 @@ export function ScheduleDialog({
 }) {
   const { t } = useTranslation();
   const existing = editId ? schedules.find((s) => s.id === editId) : null;
-  const { data: playbooks } = useQuery<Playbook[]>({
+  const playbooksQuery = useQuery<Playbook[]>({
     queryKey: ["playbooks"],
     queryFn: () => api.getPlaybooks() as unknown as Promise<Playbook[]>,
   });
@@ -415,7 +424,7 @@ export function ScheduleDialog({
       api.getServers(environmentId) as unknown as Promise<Record<string, unknown>[]>,
   });
   const srvList = asArray<Record<string, unknown>>(servers.data);
-  const userPbs = asArray<Playbook>(playbooks).filter((p) => !p.isInternal);
+  const userPbs = asArray<Playbook>(playbooksQuery.data).filter((p) => !p.isInternal);
 
   const parsed = existing
     ? cronToSelectors(existing.cron_expression)
@@ -468,6 +477,25 @@ export function ScheduleDialog({
     setCustomCronMode(Boolean(existing && !isPresetCron(existing.cron_expression)));
     setCustomCron(existing?.cron_expression || "0 3 * * *");
   }, [editId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const referenceError = playbooksQuery.error || servers.error;
+  if (referenceError) {
+    return (
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            {existing ? t("sc.editTitle") : t("sc.newTitle")}
+          </DialogTitle>
+        </DialogHeader>
+        <QueryErrorState
+          compact
+          error={referenceError}
+          title="Workflow references could not be loaded"
+          onRetry={() => void Promise.all([playbooksQuery.refetch(), servers.refetch()])}
+        />
+      </DialogContent>
+    );
+  }
 
   const iv = INTERVALS.find((i) => i.value === interval);
 

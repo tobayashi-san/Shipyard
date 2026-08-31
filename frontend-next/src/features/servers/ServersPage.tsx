@@ -366,7 +366,7 @@ export function ServersPage() {
     queryKey: ["servers", environmentId],
     queryFn: () => api.getServers(environmentId) as Promise<Record<string, unknown>[]>,
   });
-  const { data: rawGroups } = useQuery({
+  const groupsQuery = useQuery({
     // The infrastructure tree and the resource list are two views of the
     // same folder hierarchy. Sharing one query key prevents stale folders
     // after drag-and-drop or a bulk move in either view.
@@ -375,6 +375,7 @@ export function ServersPage() {
       api.getServerGroups(environmentId) as unknown as Promise<ServerGroup[]>,
     staleTime: 30_000,
   });
+  const rawGroups = groupsQuery.data;
 
   const servers = useMemo(() => {
     const allServers = Array.isArray(rawServers) ? rawServers : [];
@@ -752,7 +753,7 @@ export function ServersPage() {
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [confirmDeleteGroup, setConfirmDeleteGroup] =
     useState<ServerGroup | null>(null);
-  const { data: playbooks } = useQuery({
+  const playbooksQuery = useQuery({
     queryKey: ["playbooks"],
     queryFn: () =>
       api.getPlaybooks() as Promise<
@@ -765,6 +766,7 @@ export function ServersPage() {
       >,
     enabled: playbookDialogOpen,
   });
+  const playbooks = playbooksQuery.data;
 
   const handleBulkRunPlaybook = useCallback(async () => {
     if (!selectedPlaybook) return;
@@ -1524,6 +1526,17 @@ export function ServersPage() {
         }
       />
 
+      {groupsQuery.isError && (
+        <QueryErrorState
+          compact
+          error={groupsQuery.error}
+          onRetry={() => {
+            void groupsQuery.refetch();
+          }}
+          title="Host folders could not be loaded"
+        />
+      )}
+
       <div className="flex gap-2 sm:hidden">
         <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -2184,9 +2197,20 @@ export function ServersPage() {
             </div>
             <div className="space-y-1.5">
               <Label>{t("srv.selectPlaybook")}</Label>
+              {playbooksQuery.isError && (
+                <QueryErrorState
+                  compact
+                  error={playbooksQuery.error}
+                  onRetry={() => {
+                    void playbooksQuery.refetch();
+                  }}
+                  title="Playbooks could not be loaded"
+                />
+              )}
               <select
                 value={selectedPlaybook}
                 onChange={(e) => setSelectedPlaybook(e.target.value)}
+                disabled={playbooksQuery.isPending || playbooksQuery.isError}
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
                 <option value="">{t("srv.choosePlaybook")}</option>
@@ -2230,6 +2254,8 @@ export function ServersPage() {
             <Button
               onClick={handleBulkRunPlaybook}
               disabled={
+                playbooksQuery.isPending ||
+                playbooksQuery.isError ||
                 !selectedPlaybook ||
                 (!playbookUseAll && playbookTargets.length === 0)
               }

@@ -251,4 +251,67 @@ describe("UI refactor contract", () => {
     expect(summaryCards).toContain("aria-label={`${t('common.copy')} ${label}`}");
     expect(servers).toContain("aria-label={`Remove ${name} from playbook targets`}");
   });
+
+  it("never presents failed playbook or administration references as empty data", () => {
+    const runs = source("features/playbooks/PlaybookRuns.tsx");
+    const schedules = source("features/playbooks/PlaybookSchedules.tsx");
+    const history = source("features/playbooks/PlaybookHistory.tsx");
+    const variables = source("features/playbooks/PlaybookVariables.tsx");
+    const templates = source("features/playbooks/PlaybookTemplates.tsx");
+    const users = source("routes/settings/tabs/users-roles.tsx");
+    const ssh = source("routes/settings/tabs/ssh.tsx");
+    const git = source("routes/settings/tabs/git.tsx");
+
+    expect(runs).toContain('title="Playbook run references could not be loaded"');
+    expect(schedules).toContain('title="Scheduled workflows could not be loaded"');
+    expect(schedules).toContain('title="Workflow references could not be loaded"');
+    expect(history).toContain('title="Playbook run history could not be loaded"');
+    expect(variables).toContain('title="Variables and secrets could not be loaded"');
+    expect(templates).toContain('title="Playbook targets could not be loaded"');
+    expect(templates).toContain('title="Playbook content could not be loaded"');
+    expect(templates).toContain('title="Playbook version history could not be loaded"');
+    expect(users).toContain('title="Users and roles could not be loaded"');
+    expect(users).toContain('title="Role scope references could not be loaded"');
+    expect(ssh).toContain('title="Key assignments could not be loaded"');
+    expect(ssh).toContain('title="SSH deployment targets could not be loaded"');
+    expect(git).toContain('title="Git branches could not be loaded"');
+  });
+
+  it("keeps global, host, deployment and IPAM query failures actionable", () => {
+    const shell = source("components/layout/AppShell.tsx");
+    const palette = source("components/CommandPalette.tsx");
+    const tree = source("components/layout/InfrastructureTree.tsx");
+    const login = source("routes/login.tsx");
+    const dashboard = source("routes/dashboard.tsx");
+    const servers = source("features/servers/ServersPage.tsx");
+    const audit = source("features/operations/AuditLogPanel.tsx");
+    const deployment = source("routes/deployment-detail.tsx");
+    const vmForm = source("features/deployments/VmFormDialog.tsx");
+    const infrastructure = source("routes/infrastructure.tsx");
+    const profile = source("routes/profile.tsx");
+    const createHost = source("components/CreateServerDialog.tsx");
+    const locale = source("locales/en.json");
+
+    expect(shell).toContain('title="Console permissions could not be loaded"');
+    expect(shell).toContain("Environments could not be loaded.");
+    expect(palette).toContain("Some search results could not be loaded.");
+    expect(tree).toContain("Managed hosts could not be loaded");
+    expect(login).toContain('title="Shipyard could not be reached"');
+    expect(dashboard).toContain('title="Failed operation count could not be loaded"');
+    expect(servers).toContain('title="Host folders could not be loaded"');
+    expect(servers).toContain('title="Playbooks could not be loaded"');
+    expect(audit).toContain('title="Audit filters could not be loaded"');
+    expect(deployment).toContain('title="Managed virtual machine could not be loaded"');
+    expect(deployment).toContain('title="Current Proxmox state could not be loaded"');
+    expect(deployment).toContain('title="Independent VM state could not be loaded"');
+    expect(deployment).toContain('title="VM run history could not be loaded"');
+    expect(deployment).toContain("runStateUnavailable");
+    expect(vmForm).toContain('title="VM templates could not be loaded"');
+    expect(vmForm).toContain('title="Pre-deploy hosts could not be loaded"');
+    expect(infrastructure).toContain("inventoryQuery.isSuccess && hostsQuery.isSuccess");
+    expect(profile).toContain('title="Two-factor authentication status could not be loaded"');
+    expect(createHost).toContain('title="Environments could not be loaded"');
+    expect(locale).toContain('"managedHostReferencesFailed"');
+    expect(locale).toContain('"reservationValidationFailed"');
+  });
 });

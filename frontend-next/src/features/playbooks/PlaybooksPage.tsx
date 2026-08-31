@@ -191,10 +191,11 @@ export function PlaybooksPage() {
 function GitWidget({ onGoSettings }: { onGoSettings: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const { data: cfg } = useQuery({
+  const cfgQuery = useQuery({
     queryKey: ["git-config"],
     queryFn: () => api.getGitConfig() as Promise<Record<string, unknown>>,
   });
+  const cfg = cfgQuery.data;
   const branch = (cfg?.branch as string) || "main";
   const configured = !!cfg?.repoUrl;
 
@@ -213,6 +214,19 @@ function GitWidget({ onGoSettings }: { onGoSettings: () => void }) {
     onError: (e: Error) =>
       showToast(t("git.pushFailed", { msg: e.message }), "error"),
   });
+
+  if (cfgQuery.isError) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <Button variant="outline" size="sm" onClick={() => void cfgQuery.refetch()}>
+          Git status unavailable · Retry
+        </Button>
+        <Button variant="outline" size="icon" onClick={onGoSettings} title={t("git.settings")}>
+          <Settings2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">

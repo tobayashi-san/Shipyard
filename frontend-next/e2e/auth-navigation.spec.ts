@@ -343,6 +343,11 @@ test('dashboard and deployment failures are never presented as healthy empty sta
   await expect(page.getByText('Legacy VM deployments could not be checked', { exact: true })).toBeVisible();
   await expect(page.getByText('VM templates could not be loaded', { exact: true })).toBeVisible();
   await expect(page.getByText(/no managed virtual machines|no templates yet/i)).toHaveCount(0);
+
+  await page.route('**/api/opentofu/vms/unavailable-vm', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'managed virtual machine unavailable' }) }));
+  await page.goto('/deployments/unavailable-vm');
+  await expect(page.getByText('Managed virtual machine could not be loaded', { exact: true })).toBeVisible();
+  await expect(page.getByText('Virtual machine not found', { exact: true })).toHaveCount(0);
 });
 
 test('operational and infrastructure failures provide retry states instead of healthy empty states', async ({ page }) => {
@@ -387,6 +392,32 @@ test('operational and infrastructure failures provide retry states instead of he
   await page.unroute('**/api/opentofu/proxmox-connections?*');
   await createVmDialog.getByRole('button', { name: 'Try again', exact: true }).click();
   await expect(createVmDialog.getByText('Proxmox platforms could not be loaded', { exact: true })).toHaveCount(0);
+});
+
+test('playbook and administration failures are never presented as empty configuration', async ({ page }) => {
+  await loginForIsolatedTest(page);
+
+  await page.route('**/api/ansible-vars?*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'variables unavailable' }) }));
+  await page.goto('/playbooks#tab=vars');
+  await expect(page.getByText('Variables and secrets could not be loaded', { exact: true })).toBeVisible();
+  await expect(page.getByText(/no variables configured/i)).toHaveCount(0);
+  await page.unroute('**/api/ansible-vars?*');
+  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(page.getByText('Variables and secrets could not be loaded', { exact: true })).toHaveCount(0);
+
+  await page.route('**/api/schedules?*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'schedules unavailable' }) }));
+  await page.goto('/playbooks#tab=schedules');
+  await expect(page.getByText('Scheduled workflows could not be loaded', { exact: true })).toBeVisible();
+  await expect(page.getByText(/no schedules/i)).toHaveCount(0);
+  await page.unroute('**/api/schedules?*');
+
+  await page.route('**/api/roles', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'roles unavailable' }) }));
+  await page.goto('/settings/users-roles');
+  await expect(page.getByText('Users and roles could not be loaded', { exact: true })).toBeVisible();
+  await expect(page.getByText(/no users found/i)).toHaveCount(0);
+  await page.unroute('**/api/roles');
+  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(page.getByText('Users and roles could not be loaded', { exact: true })).toHaveCount(0);
 });
 
 test('playbook workflows expose safe secrets, explicit targets and one run flow', async ({ page }) => {

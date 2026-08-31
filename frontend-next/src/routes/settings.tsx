@@ -6,6 +6,7 @@ import { useProfile, useSettings } from '@/lib/queries';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
+import { QueryErrorState } from '@/components/ui/query-error-state';
 
 import { AppearanceTab } from './settings/tabs/appearance';
 import { SshTab } from './settings/tabs/ssh';
@@ -41,12 +42,26 @@ const TABS: TabDef[] = [
 
 export function SettingsPage() {
   const { t } = useTranslation();
-  const { data: profile, isLoading } = useProfile();
+  const profileQuery = useProfile();
+  const profile = profileQuery.data;
 
-  if (isLoading) {
+  if (profileQuery.isLoading) {
     return (
       <div className="space-y-6">
         <PageHeader title={t('set.title')} description={t('set.subtitle')} />
+      </div>
+    );
+  }
+
+  if (profileQuery.isError) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title={t('set.title')} description={t('set.subtitle')} />
+        <QueryErrorState
+          error={profileQuery.error}
+          title="Administration access could not be verified"
+          onRetry={() => void profileQuery.refetch()}
+        />
       </div>
     );
   }
@@ -71,7 +86,8 @@ function AdminSettingsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const params = useParams({ strict: false }) as { tab?: string };
-  const { data: settings } = useSettings();
+  const settingsQuery = useSettings();
+  const settings = settingsQuery.data;
 
   const agentEnabled = Boolean(
     (settings as Record<string, unknown> | undefined)?.agentEnabled
@@ -85,6 +101,19 @@ function AdminSettingsPage() {
   useEffect(() => {
     if (params.tab === 'audit') void navigate({ to: '/operations', replace: true });
   }, [navigate, params.tab]);
+
+  if (settingsQuery.isError) {
+    return (
+      <div className="space-y-5">
+        <PageHeader title={t('set.title')} description={t('set.subtitle')} />
+        <QueryErrorState
+          error={settingsQuery.error}
+          title="Administration settings could not be loaded"
+          onRetry={() => void settingsQuery.refetch()}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">

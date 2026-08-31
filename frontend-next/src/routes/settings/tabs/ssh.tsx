@@ -181,6 +181,8 @@ function KeyAssignments({ environmentId }: { environmentId: string }) {
           <option value="">
             {!loadTargets || targets.isLoading
               ? "Loading targets…"
+              : targets.isError
+                ? "Targets unavailable"
               : choices.length
                 ? "Select target"
                 : "No targets available"}
@@ -201,8 +203,24 @@ function KeyAssignments({ environmentId }: { environmentId: string }) {
           Assign
         </Button>
       </div>
+      {loadTargets && targets.isError && (
+        <QueryErrorState
+          compact
+          className="py-3"
+          error={targets.error}
+          title="Assignment targets could not be loaded"
+          onRetry={() => void targets.refetch()}
+        />
+      )}
       {assignments.isLoading ? (
         <Skeleton className="h-12 w-full" />
+      ) : assignments.isError ? (
+        <QueryErrorState
+          compact
+          error={assignments.error}
+          title="Key assignments could not be loaded"
+          onRetry={() => void assignments.refetch()}
+        />
       ) : assignments.data?.length ? (
         <div className="divide-y rounded-md border">
           {assignments.data.map((assignment) => (
@@ -743,6 +761,14 @@ function DeployForm() {
           <div className="max-h-48 overflow-y-auto rounded-md border bg-muted/20 p-2 text-sm">
             {hostsQuery.isLoading ? (
               <span className="text-muted-foreground">Loading target preview…</span>
+            ) : hostsQuery.isError ? (
+              <QueryErrorState
+                compact
+                className="py-3"
+                error={hostsQuery.error}
+                title="SSH deployment targets could not be loaded"
+                onRetry={() => void hostsQuery.refetch()}
+              />
             ) : deployTargets.length ? (
               <>
                 <div className="mb-1 px-1 text-xs font-semibold text-muted-foreground">{deployTargets.length} hosts</div>

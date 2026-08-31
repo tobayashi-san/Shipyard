@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { EmptyState } from "@/components/ui/empty-state";
+import { QueryErrorState } from "@/components/ui/query-error-state";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -40,7 +41,7 @@ export function RunsTab({ initialPlaybook }: { initialPlaybook?: string }) {
 export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string }) {
   const { t } = useTranslation();
   const environmentId = useUi((state) => state.environmentId);
-  const { data: playbooks } = useQuery<Playbook[]>({
+  const playbooksQuery = useQuery<Playbook[]>({
     queryKey: ["playbooks"],
     queryFn: () => api.getPlaybooks() as unknown as Promise<Playbook[]>,
   });
@@ -57,6 +58,7 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
     queryKey: ["ansibleVars", environmentId],
     queryFn: () => api.getAnsibleVars(environmentId) as unknown as Promise<AnsibleVar[]>,
   });
+  const playbooks = playbooksQuery.data;
   const srvList = useMemo(() => asArray<Record<string, unknown>>(servers.data), [servers.data]);
   const groupList = useMemo(() => asArray<Record<string, unknown>>(serverGroups.data), [serverGroups.data]);
   const userPbs = asArray<Playbook>(playbooks).filter((p) => !p.isInternal);
@@ -271,6 +273,24 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
       setBusy(false);
     }
   };
+
+  const referenceError = playbooksQuery.error || servers.error || serverGroups.error || environmentVars.error;
+  if (referenceError) {
+    return (
+      <Card>
+        <QueryErrorState
+          error={referenceError}
+          title="Playbook run references could not be loaded"
+          onRetry={() => void Promise.all([
+            playbooksQuery.refetch(),
+            servers.refetch(),
+            serverGroups.refetch(),
+            environmentVars.refetch(),
+          ])}
+        />
+      </Card>
+    );
+  }
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">

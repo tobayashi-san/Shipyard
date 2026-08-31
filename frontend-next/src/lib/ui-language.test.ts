@@ -49,6 +49,10 @@ const germanUiTerms = [
   "entfernen",
   "Zuletzt",
   "Verwaltungsmodus",
+  "Pausieren",
+  "Ziele",
+  "Zeitplan",
+  "aktivieren",
 ];
 
 const legacyObjectTerms = [

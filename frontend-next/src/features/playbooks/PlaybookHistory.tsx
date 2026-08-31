@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
+import { QueryErrorState } from "@/components/ui/query-error-state";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { SkeletonRow } from "@/components/ui/skeleton";
 import { hasCap, useProfile } from "@/lib/queries";
@@ -24,11 +25,11 @@ export function HistoryTab() {
   const [filterSchedule, setFilterSchedule] = useState("");
   const [outputEntry, setOutputEntry] = useState<HistoryEntry | null>(null);
 
-  const { data: schedules } = useQuery<Schedule[]>({
+  const schedulesQuery = useQuery<Schedule[]>({
     queryKey: ["schedules", environmentId],
     queryFn: () => api.getSchedules(environmentId) as unknown as Promise<Schedule[]>,
   });
-  const { data: history, isLoading } = useQuery<HistoryEntry[]>({
+  const historyQuery = useQuery<HistoryEntry[]>({
     queryKey: ["scheduleHistory", environmentId, filterSchedule],
     queryFn: () =>
       api.getScheduleHistory(
@@ -38,6 +39,8 @@ export function HistoryTab() {
       ) as unknown as Promise<HistoryEntry[]>,
     refetchInterval: (query) => asArray<HistoryEntry>(query.state.data).some((entry) => entry.status === "running") ? 2_000 : false,
   });
+  const schedules = schedulesQuery.data;
+  const history = historyQuery.data;
   const cancelRun = useMutation({
     mutationFn: (id: string) => api.cancelPlaybookRun(id),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["scheduleHistory", environmentId] }),
@@ -84,13 +87,28 @@ export function HistoryTab() {
               ))}
             </select>
           </div>
-          {isLoading ? (
+          {schedulesQuery.isError && (
+            <QueryErrorState
+              compact
+              error={schedulesQuery.error}
+              title="Schedule filters could not be loaded"
+              onRetry={() => void schedulesQuery.refetch()}
+            />
+          )}
+          {historyQuery.isLoading ? (
             <div className="space-y-1">
               <SkeletonRow cols={5} />
               <SkeletonRow cols={5} />
               <SkeletonRow cols={5} />
               <SkeletonRow cols={5} />
             </div>
+          ) : historyQuery.isError ? (
+            <QueryErrorState
+              compact
+              error={historyQuery.error}
+              title="Playbook run history could not be loaded"
+              onRetry={() => void historyQuery.refetch()}
+            />
           ) : !history || history.length === 0 ? (
             <EmptyState
               compact
