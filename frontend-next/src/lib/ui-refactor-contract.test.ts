@@ -67,7 +67,7 @@ describe("UI refactor contract", () => {
     expect(sidebar).not.toContain('t("nav.virtualMachinesContainers")');
     expect(sidebar).not.toContain('t("nav.datastores")');
     expect(sidebar).toContain('t("nav.administration")');
-    expect(sidebar).toContain('t("nav.profile")');
+    expect(sidebar).not.toContain('t("nav.profile")');
     expect(sidebar).toContain('t("nav.help")');
     expect(tree).toContain("const nodeOpen = !collapsed.has(nodeKey)");
     expect(tree).toContain('to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId"');

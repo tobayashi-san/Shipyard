@@ -17,7 +17,6 @@ import {
   Puzzle,
   Server,
   Settings2,
-  User,
   X,
 } from "lucide-react";
 import { useUi, type NavigationWorkspace } from "@/lib/store";
@@ -208,7 +207,6 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
 
       <div className="shrink-0 space-y-1 border-t p-2">
         {canManageConsole && <NavItem to="/settings" label={t("nav.administration")} icon={Settings2} active={path === "/settings" || path.startsWith("/settings/")} collapsed={collapsed} onNavigate={onMobileClose} />}
-        <NavItem to="/profile" label={t("nav.profile")} icon={User} active={path === "/profile"} collapsed={collapsed} onNavigate={onMobileClose} />
         <a href="https://github.com/tobayashi-san/Shipyard" target="_blank" rel="noreferrer" title={t("nav.help")} className={cn("group flex min-h-9 items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground", collapsed && "justify-center px-2")}>
           <HelpCircle className="h-4 w-4 shrink-0" />
           {!collapsed && <span>{t("nav.help")}</span>}
