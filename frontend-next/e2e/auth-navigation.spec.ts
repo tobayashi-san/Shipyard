@@ -1050,7 +1050,11 @@ test('an isolated VM uses a platform source and guards Destroy with an exact phr
       return String((await response.json() as { id: string }).id);
     }, { connectionId: connection.id, name: vmName });
 
-    await page.goto(`/deployments/${vmId}`);
+    await page.goto('/deployments');
+    const managedVmRow = page.getByRole('row', { name: `Open ${vmName}` });
+    await expect(managedVmRow).toBeVisible();
+    await managedVmRow.getByText('pve-e2e', { exact: false }).click();
+    await expect(page).toHaveURL(new RegExp(`/deployments/${vmId}$`));
     await expect(page.getByRole('heading', { name: vmName })).toBeVisible();
     await page.getByRole('button', { name: 'Destroy VM' }).click();
     const destroyDialog = page.getByRole('dialog', { name: 'Destroy VM in Proxmox?' });

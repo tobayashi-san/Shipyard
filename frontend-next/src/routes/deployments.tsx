@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Server, Settings2, TriangleAlert, Workflow } from "lucide-react";
 import { apiFetch } from "@/lib/api";
@@ -65,6 +65,7 @@ function clusterIdFromEndpoint(endpoint?: string) {
 }
 
 export function DeploymentsPage() {
+  const navigate = useNavigate();
   const environmentId = useUi((state) => state.environmentId);
   const queryClient = useQueryClient();
   const profileQuery = useProfile();
@@ -141,8 +142,23 @@ export function DeploymentsPage() {
               <thead><tr><th className="px-3">Name</th><th className="px-3">Status</th><th className="px-3">Platform</th><th className="px-3">Proxmox</th><th className="px-3">Last run</th></tr></thead>
               <tbody>{vms.map((vm) => {
                 const status = vmStatus(vm);
-                return <tr key={vm.id}>
-                  <td className="px-3"><Link className="font-medium hover:text-primary hover:underline" to="/deployments/$id" params={{ id: vm.id }}>{vm.name}</Link><div className="text-xs text-muted-foreground">Independent state</div></td>
+                const openVm = () => void navigate({ to: "/deployments/$id", params: { id: vm.id } });
+                return <tr
+                  key={vm.id}
+                  tabIndex={0}
+                  aria-label={`Open ${vm.name}`}
+                  className="cursor-pointer transition-colors hover:bg-accent/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  onClick={(event) => {
+                    if ((event.target as HTMLElement).closest("a, button, input, select, textarea, [role='button'], [role='menuitem']")) return;
+                    openVm();
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return;
+                    event.preventDefault();
+                    openVm();
+                  }}
+                >
+                  <td className="px-3"><span className="font-medium">{vm.name}</span><div className="text-xs text-muted-foreground">Independent state</div></td>
                   <td className="px-3"><StatusBadge tone={status.tone} dot>{status.label}</StatusBadge></td>
                   <td className="px-3"><div className="font-medium">{vm.platform?.name || "—"}</div><div className="max-w-[14rem] truncate text-xs text-muted-foreground">{vm.platform?.endpoint?.replace(/^https?:\/\//, "") || "Platform unavailable"}</div></td>
                   <td className="px-3"><span className="font-mono text-xs">{vm.node_name || "—"} · {vm.vm_id || "auto"}</span></td>
