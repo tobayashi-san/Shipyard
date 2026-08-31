@@ -107,6 +107,7 @@ router.delete('/:id', (req, res) => {
       moveEnvironmentRows('schedule_history', id);
       moveEnvironmentRows('update_history', id);
       moveEnvironmentRows('audit_log', id);
+      moveEnvironmentRows('operation_acknowledgements', id);
       moveEnvironmentRows('ansible_vars', id);
       moveEnvironmentRows('ipam_subnets', id);
       moveEnvironmentRows('ipam_source_observations', id);

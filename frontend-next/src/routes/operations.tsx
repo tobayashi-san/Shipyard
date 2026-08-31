@@ -46,6 +46,7 @@ import {
   useProfile,
 } from "@/lib/queries";
 import { useUi } from "@/lib/store";
+import { showToast } from "@/lib/toast";
 import { formatDateTime } from "@/lib/utils";
 import { AuditLogPanel } from "@/features/operations/AuditLogPanel";
 
@@ -61,6 +62,9 @@ interface OperationRow {
   initiator: string;
   status: string;
   statusTone: StatusTone;
+  acknowledged?: boolean;
+  acknowledged_at?: string | null;
+  acknowledged_by?: string | null;
   time?: string;
   href?: "/servers/$id" | "/deployments/$id" | "/playbooks";
   params?: Record<string, string>;
@@ -138,6 +142,16 @@ function operationStatusLabel(status: string) {
   if (normalized === "running") return "Running";
   if (normalized === "queued") return "Queued";
   return status || "Unknown";
+}
+
+function operationDisplayTone(row: OperationRow): StatusTone {
+  return row.acknowledged ? "muted" : row.statusTone;
+}
+
+function operationDisplayLabel(row: OperationRow) {
+  return row.acknowledged
+    ? `${operationStatusLabel(row.status)} · acknowledged`
+    : operationStatusLabel(row.status);
 }
 
 export function OperationsPage() {
@@ -220,6 +234,33 @@ export function OperationsPage() {
       return apiFetch<OperationsResponse>(`/operations?${params}`);
     },
     staleTime: 10_000,
+  });
+  const refreshOperations = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["operations"] }),
+      queryClient.invalidateQueries({ queryKey: ["audit-log"] }),
+    ]);
+  };
+  const acknowledgeOperation = useMutation({
+    mutationFn: (id: string) => apiFetch(`/operations/${encodeURIComponent(id)}/acknowledge`, { method: "POST" }),
+    onSuccess: async () => {
+      showToast("Failure acknowledged.", "success");
+      await refreshOperations();
+    },
+    onError: (error: Error) => showToast(error.message, "error"),
+  });
+  const acknowledgeAllOperations = useMutation({
+    mutationFn: () => apiFetch<{ acknowledged: number }>("/operations/acknowledge-all", { method: "POST" }),
+    onSuccess: async (result) => {
+      showToast(
+        result.acknowledged === 1
+          ? "1 failure acknowledged."
+          : `${result.acknowledged} failures acknowledged.`,
+        "success",
+      );
+      await refreshOperations();
+    },
+    onError: (error: Error) => showToast(error.message, "error"),
   });
   const maintenanceQuery = useQuery({
     queryKey: ["maintenance-windows", environmentId],
@@ -371,6 +412,19 @@ export function OperationsPage() {
                   >
                     Failed <span>{failedOperationCount}</span>
                   </TaskScopeButton>
+                  {failedOperationCount > 0 && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="ml-auto"
+                      disabled={acknowledgeAllOperations.isPending}
+                      onClick={() => acknowledgeAllOperations.mutate()}
+                    >
+                      <CheckCircle2 />
+                      {acknowledgeAllOperations.isPending ? "Acknowledging…" : "Acknowledge all failures"}
+                    </Button>
+                  )}
                 </div>
                 <div className="grid gap-2 border-b bg-background/60 px-3 py-2.5 sm:grid-cols-2 xl:grid-cols-[12rem_minmax(14rem,1fr)_10rem_10rem_auto]">
                   <label className="space-y-1 text-xs text-muted-foreground">
@@ -399,7 +453,11 @@ export function OperationsPage() {
                         selectedId={selectedOperation?.id}
                         onSelect={setSelectedOperationId}
                       />
-                      <OperationDetail row={selectedOperation} />
+                      <OperationDetail
+                        row={selectedOperation}
+                        acknowledging={acknowledgeOperation.isPending}
+                        onAcknowledge={(id) => acknowledgeOperation.mutate(id)}
+                      />
                     </div>
                     <TablePagination
                       page={safeOperationsPage}
@@ -507,9 +565,9 @@ function OperationsContext({
             />
             <OperationFact
               icon={failedOperations ? TriangleAlert : CheckCircle2}
-              label="Failures"
+              label="Open failures"
               value={failedOperations}
-              detail={failedOperations ? "Show failures" : "No known failures"}
+              detail={failedOperations ? "Review and acknowledge" : "No unacknowledged failures"}
               tone={failedOperations ? "danger" : "success"}
               onClick={failedOperations ? onShowFailures : undefined}
             />
@@ -1111,7 +1169,15 @@ function OperationLink({
   );
 }
 
-function OperationDetail({ row }: { row: OperationRow | null }) {
+function OperationDetail({
+  row,
+  acknowledging,
+  onAcknowledge,
+}: {
+  row: OperationRow | null;
+  acknowledging: boolean;
+  onAcknowledge: (id: string) => void;
+}) {
   if (!row) return null;
   return (
     <aside className="border-t bg-muted/[0.12] p-4 xl:border-l xl:border-t-0">
@@ -1134,8 +1200,8 @@ function OperationDetail({ row }: { row: OperationRow | null }) {
         <div className="console-property">
           <span>Status</span>
           <b>
-            <StatusBadge tone={row.statusTone} dot>
-              {operationStatusLabel(row.status)}
+            <StatusBadge tone={operationDisplayTone(row)} dot>
+              {operationDisplayLabel(row)}
             </StatusBadge>
           </b>
         </div>
@@ -1164,7 +1230,34 @@ function OperationDetail({ row }: { row: OperationRow | null }) {
             {readableTime(row.time)}
           </b>
         </div>
+        {row.acknowledged && (
+          <>
+            <div className="console-property">
+              <span>Acknowledged by</span>
+              <b>{row.acknowledged_by || "Unknown operator"}</b>
+            </div>
+            <div className="console-property">
+              <span>Acknowledged at</span>
+              <b className="whitespace-normal text-right">
+                {readableTime(row.acknowledged_at || undefined)}
+              </b>
+            </div>
+          </>
+        )}
       </div>
+      {row.statusTone === "danger" && !row.acknowledged && (
+        <Button
+          type="button"
+          className="mt-3 w-full"
+          size="sm"
+          variant="secondary"
+          disabled={acknowledging}
+          onClick={() => onAcknowledge(row.id)}
+        >
+          <CheckCircle2 />
+          {acknowledging ? "Acknowledging…" : "Acknowledge failure"}
+        </Button>
+      )}
       {row.href && (
         <Button asChild className="mt-3 w-full" size="sm" variant="outline">
           <OperationLink row={row}>
@@ -1203,8 +1296,8 @@ function OperationList({
                   {operationSourceLabel(row.source)} · {row.initiator}
                 </div>
               </div>
-              <StatusBadge tone={row.statusTone} dot>
-                {operationStatusLabel(row.status)}
+              <StatusBadge tone={operationDisplayTone(row)} dot>
+                {operationDisplayLabel(row)}
               </StatusBadge>
             </div>
             <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
@@ -1247,8 +1340,8 @@ function OperationList({
                   </div>
                 </td>
                 <td>
-                  <StatusBadge tone={row.statusTone} dot>
-                    {operationStatusLabel(row.status)}
+                  <StatusBadge tone={operationDisplayTone(row)} dot>
+                    {operationDisplayLabel(row)}
                   </StatusBadge>
                 </td>
               </tr>

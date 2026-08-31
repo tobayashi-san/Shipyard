@@ -97,3 +97,74 @@ test('operations filters and paginates the complete permitted history', async ()
   assert.equal(oldest.body.total, 1);
   assert.equal(oldest.body.items[0].target, 'dataset-item-00');
 });
+
+test('failed activity can be acknowledged without removing its history', async () => {
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    'X-Shipyard-Environment': 'default',
+  };
+  const auditId = db.uuidv4();
+  db.db.prepare(`INSERT INTO audit_log
+    (id, environment_id, action, detail, user, success)
+    VALUES (?, 'default', 'operations.test_failure', 'acknowledge-me', 'operator', 0)`)
+    .run(auditId);
+
+  const beforeAck = await request(app)
+    .get('/api/operations?source=Audit&q=acknowledge-me&scope=failed')
+    .set(headers);
+  assert.equal(beforeAck.status, 200);
+  assert.equal(beforeAck.body.counts.failed, 1);
+  assert.equal(beforeAck.body.items.length, 1);
+  assert.equal(beforeAck.body.items[0].acknowledged, false);
+
+  const acknowledged = await request(app)
+    .post(`/api/operations/audit-${auditId}/acknowledge`)
+    .set(headers);
+  assert.equal(acknowledged.status, 200);
+  assert.equal(acknowledged.body.acknowledged, true);
+  assert.equal(acknowledged.body.acknowledged_by, 'admin');
+
+  const openFailures = await request(app)
+    .get('/api/operations?source=Audit&q=acknowledge-me&scope=failed')
+    .set(headers);
+  assert.equal(openFailures.status, 200);
+  assert.equal(openFailures.body.counts.failed, 0);
+  assert.equal(openFailures.body.items.length, 0);
+
+  const history = await request(app)
+    .get('/api/operations?source=Audit&q=acknowledge-me')
+    .set(headers);
+  assert.equal(history.status, 200);
+  assert.equal(history.body.items.length, 1);
+  assert.equal(history.body.items[0].status, 'failed');
+  assert.equal(history.body.items[0].acknowledged, true);
+  assert.ok(history.body.items[0].acknowledged_at);
+});
+
+test('all currently visible failures can be acknowledged together', async () => {
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    'X-Shipyard-Environment': 'default',
+  };
+  for (const detail of ['bulk-ack-one', 'bulk-ack-two']) {
+    db.db.prepare(`INSERT INTO audit_log
+      (id, environment_id, action, detail, user, success)
+      VALUES (?, 'default', 'operations.bulk_failure', ?, 'operator', 0)`)
+      .run(db.uuidv4(), detail);
+  }
+
+  const acknowledged = await request(app)
+    .post('/api/operations/acknowledge-all')
+    .set(headers);
+  assert.equal(acknowledged.status, 200);
+  assert.ok(acknowledged.body.acknowledged >= 2);
+
+  for (const query of ['bulk-ack-one', 'bulk-ack-two']) {
+    const response = await request(app)
+      .get(`/api/operations?source=Audit&q=${query}&scope=failed`)
+      .set(headers);
+    assert.equal(response.status, 200);
+    assert.equal(response.body.counts.failed, 0);
+    assert.equal(response.body.items.length, 0);
+  }
+});

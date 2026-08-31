@@ -11,6 +11,10 @@ const { filterAuditRows } = require('../utils/audit-scope');
 
 const router = express.Router();
 const SOURCE_NAMES = new Set(['Host', 'Deployment', 'Workflow', 'Audit']);
+const OPERATION_CAPABILITIES = [
+  'canViewDeployments', 'canManageDeployments', 'canViewSchedules',
+  'canViewAudit', 'canViewMaintenance', 'canViewServerHistory', 'canViewUpdates',
+];
 
 function numericTime(value) {
   if (!value) return Number.NaN;
@@ -54,6 +58,45 @@ function groupSuccessfulSyncRows(rows) {
     });
   }
   return visible;
+}
+
+function canViewOperations(req) {
+  const permissions = getPermissions(req.user);
+  return Boolean(permissions && OPERATION_CAPABILITIES.some(capability => can(permissions, capability)));
+}
+
+function attachAcknowledgements(rows, environmentId) {
+  const acknowledgements = new Map(db.db.prepare(`
+    SELECT operation_id, acknowledged_at, acknowledged_by
+    FROM operation_acknowledgements
+    WHERE environment_id = ?
+  `).all(environmentId).map(row => [row.operation_id, row]));
+  return rows.map(row => {
+    const acknowledgement = acknowledgements.get(row.id);
+    return {
+      ...row,
+      acknowledged: Boolean(acknowledgement),
+      acknowledged_at: acknowledgement?.acknowledged_at || null,
+      acknowledged_by: acknowledgement?.acknowledged_by || null,
+    };
+  });
+}
+
+function isOpenFailure(row) {
+  return row.statusTone === 'danger' && !row.acknowledged;
+}
+
+function acknowledgeRows(environmentId, rows, username) {
+  const insert = db.db.prepare(`
+    INSERT INTO operation_acknowledgements
+      (environment_id, operation_id, acknowledged_by)
+    VALUES (?, ?, ?)
+    ON CONFLICT(environment_id, operation_id) DO NOTHING
+  `);
+  return db.db.transaction((operationRows) => operationRows.reduce(
+    (count, row) => count + insert.run(environmentId, row.id, username || null).changes,
+    0,
+  ))(rows);
 }
 
 function permittedRows(req) {
@@ -151,13 +194,14 @@ function permittedRows(req) {
 }
 
 router.get('/', (req, res) => {
-  const rows = groupSuccessfulSyncRows(permittedRows(req));
-  const permissions = getPermissions(req.user);
-  if (!permissions || ![
-    'canViewDeployments', 'canManageDeployments', 'canViewSchedules', 'canViewAudit', 'canViewMaintenance', 'canViewServerHistory', 'canViewUpdates',
-  ].some(capability => can(permissions, capability))) {
+  if (!canViewOperations(req)) {
     return res.status(403).json({ error: 'Permission denied' });
   }
+  const environmentId = req.environmentId || 'default';
+  const rows = attachAcknowledgements(
+    groupSuccessfulSyncRows(permittedRows(req)),
+    environmentId,
+  );
 
   const source = SOURCE_NAMES.has(String(req.query.source || ''))
     ? String(req.query.source)
@@ -178,7 +222,7 @@ router.get('/', (req, res) => {
   const counts = {
     all: commonFiltered.length,
     active: commonFiltered.filter(row => ['running', 'queued'].includes(String(row.status).toLowerCase())).length,
-    failed: commonFiltered.filter(row => row.statusTone === 'danger').length,
+    failed: commonFiltered.filter(isOpenFailure).length,
   };
   const scope = ['active', 'failed'].includes(String(req.query.scope || ''))
     ? String(req.query.scope)
@@ -187,7 +231,7 @@ router.get('/', (req, res) => {
     scope === 'active'
       ? ['running', 'queued'].includes(String(row.status).toLowerCase())
       : scope === 'failed'
-        ? row.statusTone === 'danger'
+        ? isOpenFailure(row)
         : true,
   ).sort((left, right) => {
     const leftActive = ['running', 'queued'].includes(String(left.status).toLowerCase());
@@ -205,6 +249,60 @@ router.get('/', (req, res) => {
     total: filtered.length,
     total_pages: totalPages,
     counts,
+  });
+});
+
+router.post('/acknowledge-all', (req, res) => {
+  if (!canViewOperations(req)) {
+    return res.status(403).json({ error: 'Permission denied' });
+  }
+  const environmentId = req.environmentId || 'default';
+  const rows = attachAcknowledgements(permittedRows(req), environmentId).filter(isOpenFailure);
+  const acknowledged = acknowledgeRows(environmentId, rows, req.user?.username);
+  if (acknowledged > 0) {
+    db.auditLog.write(
+      'operations.acknowledge_all',
+      `Acknowledged ${acknowledged} failed operations`,
+      req.ip,
+      true,
+      req.user?.username,
+      environmentId,
+    );
+  }
+  res.json({ acknowledged });
+});
+
+router.post('/:id/acknowledge', (req, res) => {
+  if (!canViewOperations(req)) {
+    return res.status(403).json({ error: 'Permission denied' });
+  }
+  const operationId = String(req.params.id || '').slice(0, 200);
+  const environmentId = req.environmentId || 'default';
+  const row = permittedRows(req).find(operation => operation.id === operationId);
+  if (!row) return res.status(404).json({ error: 'Activity entry not found' });
+  if (row.statusTone !== 'danger') {
+    return res.status(409).json({ error: 'Only failed activity entries can be acknowledged' });
+  }
+  const acknowledged = acknowledgeRows(environmentId, [row], req.user?.username);
+  const acknowledgement = db.db.prepare(`
+    SELECT operation_id, acknowledged_at, acknowledged_by
+    FROM operation_acknowledgements
+    WHERE environment_id = ? AND operation_id = ?
+  `).get(environmentId, operationId);
+  if (acknowledged > 0) {
+    db.auditLog.write(
+      'operations.acknowledge',
+      `Acknowledged failed operation ${operationId}`,
+      req.ip,
+      true,
+      req.user?.username,
+      environmentId,
+    );
+  }
+  res.json({
+    acknowledged: true,
+    acknowledged_at: acknowledgement.acknowledged_at,
+    acknowledged_by: acknowledgement.acknowledged_by,
   });
 });
 

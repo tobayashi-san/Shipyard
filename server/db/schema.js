@@ -521,6 +521,18 @@ function applySchema(db) {
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action);`,
   );
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS operation_acknowledgements (
+      environment_id TEXT NOT NULL DEFAULT 'default',
+      operation_id TEXT NOT NULL,
+      acknowledged_at TEXT NOT NULL DEFAULT (datetime('now')),
+      acknowledged_by TEXT,
+      PRIMARY KEY (environment_id, operation_id),
+      FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_operation_acknowledgements_environment
+      ON operation_acknowledgements(environment_id, acknowledged_at DESC);
+  `);
   // Legacy databases receive environment_id in the migration phase below.
   // Creating this index here is therefore best-effort until that phase ran.
   try {

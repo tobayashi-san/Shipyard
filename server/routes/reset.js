@@ -112,6 +112,7 @@ router.delete('/all', resetLimiter, adminOnly, (req, res) => {
     db.db.transaction(() => {
       deleteServerTables();
       db.db.prepare('DELETE FROM schedules').run();
+      db.db.prepare('DELETE FROM operation_acknowledgements').run();
       db.db.prepare('DELETE FROM users').run();
     })();
     deleteUserPlaybooks();

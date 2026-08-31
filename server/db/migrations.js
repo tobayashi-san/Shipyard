@@ -1,4 +1,4 @@
-const CURRENT_SCHEMA_VERSION = 7;
+const CURRENT_SCHEMA_VERSION = 8;
 
 const REQUIRED_COLUMNS = {
   servers: ['id', 'name', 'hostname', 'ip_address', 'environment_id', 'host_fingerprint', 'docker_enabled'],
@@ -6,6 +6,7 @@ const REQUIRED_COLUMNS = {
   server_groups: ['id', 'environment_id'],
   custom_update_tasks: ['id', 'trigger_output', 'latest_command'],
   audit_log: ['id', 'environment_id', 'user'],
+  operation_acknowledgements: ['environment_id', 'operation_id', 'acknowledged_at', 'acknowledged_by'],
   update_history: ['id', 'environment_id', 'server_id'],
   agent_config: ['server_id', 'token', 'pending_token'],
   environments: ['id', 'name'],
@@ -467,6 +468,22 @@ function applyMigrations(db) {
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_schedules_environment ON schedules(environment_id, created_at)"); } catch {}
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_schedule_history_environment ON schedule_history(environment_id, started_at DESC)"); } catch {}
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_ansible_vars_environment ON ansible_vars(environment_id, key)"); } catch {}
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS operation_acknowledgements (
+        environment_id TEXT NOT NULL DEFAULT 'default',
+        operation_id TEXT NOT NULL,
+        acknowledged_at TEXT NOT NULL DEFAULT (datetime('now')),
+        acknowledged_by TEXT,
+        PRIMARY KEY (environment_id, operation_id),
+        FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_operation_acknowledgements_environment
+        ON operation_acknowledgements(environment_id, acknowledged_at DESC);
+    `);
+  } catch (error) {
+    throw new Error(`failed to create operation acknowledgements: ${error.message}`);
+  }
 
     validateMigratedSchema(db);
     db.prepare('INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)').run(CURRENT_SCHEMA_VERSION);

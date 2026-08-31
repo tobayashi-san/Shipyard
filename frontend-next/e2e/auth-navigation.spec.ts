@@ -478,6 +478,16 @@ test('a failed host task exposes its cause, duration, and full log', async ({ pa
     await page.getByRole('button', { name: 'View log', exact: true }).first().click();
     const log = page.getByRole('dialog', { name: 'Task log' });
     await expect(log.locator('pre')).not.toHaveText('No log output was recorded.');
+    await page.keyboard.press('Escape');
+
+    await page.goto(`/operations?section=tasks&scope=failed&source=Host&q=${encodeURIComponent(host.name)}`);
+    await expect(page.getByRole('button', { name: 'Failed 1', exact: true })).toBeVisible();
+    await Promise.all([
+      page.waitForResponse(response => response.url().includes('/api/operations/host-') && response.url().endsWith('/acknowledge') && response.request().method() === 'POST'),
+      page.getByRole('button', { name: 'Acknowledge failure', exact: true }).click(),
+    ]);
+    await expect(page.getByRole('button', { name: 'Failed 0', exact: true })).toBeVisible();
+    await expect(page.getByText('There are no entries for this view.', { exact: true })).toBeVisible();
   } finally {
     await page.evaluate(async (id) => {
       const token = localStorage.getItem('shipyard_token');
