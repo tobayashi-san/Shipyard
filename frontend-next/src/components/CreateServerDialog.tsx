@@ -7,6 +7,7 @@ import { showToast } from "@/lib/toast";
 import { useUi } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -616,17 +617,11 @@ export function CreateServerDialog({
                 label={t("add.dockerEnabled")}
                 hint={t("add.dockerEnabledHint")}
               >
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={dockerEnabled}
-                  onClick={() => setDockerEnabled((v) => !v)}
-                  className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${dockerEnabled ? "bg-primary" : "bg-muted-foreground/30"}`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${dockerEnabled ? "translate-x-4" : "translate-x-0"}`}
-                  />
-                </button>
+                <Switch
+                  aria-label={t("add.dockerEnabled")}
+                  checked={dockerEnabled}
+                  onCheckedChange={setDockerEnabled}
+                />
               </FieldRow>
             </>
           )}

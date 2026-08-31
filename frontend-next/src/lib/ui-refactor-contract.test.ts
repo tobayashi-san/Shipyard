@@ -32,6 +32,17 @@ describe("UI refactor contract", () => {
     expect(css).toContain("input::placeholder, textarea::placeholder { color: hsl(var(--muted-foreground)); }");
   });
 
+  it("uses one compact rectangular switch treatment throughout the app", () => {
+    const uiSwitch = source("components/ui/switch.tsx");
+    const hostDialog = source("components/CreateServerDialog.tsx");
+    expect(uiSwitch).toContain("h-4 w-8");
+    expect(uiSwitch).toContain("rounded-[4px]");
+    expect(uiSwitch).toContain("h-3 w-3 rounded-[2px]");
+    expect(uiSwitch).not.toContain("rounded-full");
+    expect(hostDialog).toContain('import { Switch } from "@/components/ui/switch"');
+    expect(hostDialog).not.toContain('role="switch"');
+  });
+
   it("keeps VM creation split into two desktop columns", () => {
     const dialog = source("features/deployments/VmFormDialog.tsx");
     expect(dialog).toContain('className="grid gap-5 lg:grid-cols-2 lg:items-start"');
