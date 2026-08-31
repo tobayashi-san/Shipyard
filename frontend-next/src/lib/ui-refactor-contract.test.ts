@@ -35,9 +35,13 @@ describe("UI refactor contract", () => {
   it("uses one compact rectangular switch treatment throughout the app", () => {
     const uiSwitch = source("components/ui/switch.tsx");
     const hostDialog = source("components/CreateServerDialog.tsx");
-    expect(uiSwitch).toContain("h-4 w-8");
-    expect(uiSwitch).toContain("rounded-[4px]");
-    expect(uiSwitch).toContain("h-3 w-3 rounded-[2px]");
+    const css = source("index.css");
+    expect(uiSwitch).toContain("h-5 w-10");
+    expect(uiSwitch).toContain("rounded-[6px]");
+    expect(uiSwitch).toContain("h-3.5 w-3.5 rounded-[3px]");
+    expect(uiSwitch).toContain("data-[state=checked]:translate-x-[22px]");
+    expect(uiSwitch).toContain("data-[state=unchecked]:translate-x-[2px]");
+    expect(css).toContain('main button:not([role="switch"])');
     expect(uiSwitch).not.toContain("rounded-full");
     expect(hostDialog).toContain('import { Switch } from "@/components/ui/switch"');
     expect(hostDialog).not.toContain('role="switch"');
@@ -59,6 +63,12 @@ describe("UI refactor contract", () => {
     expect(sidebar).toContain('value: "infrastructure"');
     expect(sidebar).toContain('workspace === "operations" ? (');
     expect(sidebar).toContain("<InfrastructureTree onNavigate={onMobileClose} />");
+    expect(sidebar).toContain('workspace === "operations"');
+    expect(sidebar).toContain('"flex flex-col gap-1 overflow-hidden"');
+    expect(sidebar).toContain('data-testid="infrastructure-tree-scroll" className="min-h-0 flex-1 overflow-y-auto py-1"');
+    expect(sidebar.indexOf('label={t("nav.networksIpam")}')).toBeLessThan(
+      sidebar.indexOf('<InfrastructureTree onNavigate={onMobileClose} />'),
+    );
     expect(sidebar).toContain('t("nav.managedHosts")');
     expect(sidebar).toContain('t("nav.managedVirtualMachines")');
     expect(sidebar).toContain('t("nav.networksIpam")');

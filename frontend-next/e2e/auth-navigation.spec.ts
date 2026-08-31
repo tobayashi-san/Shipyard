@@ -166,6 +166,12 @@ test('sidebar keeps an unknown Proxmox inventory in a loading state', async ({ p
 
   releaseSummary();
   await expect(sidebar.getByText('Connect Proxmox', { exact: true })).toBeVisible();
+  const ipamBox = await sidebar.getByRole('link', { name: 'IPAM', exact: true }).boundingBox();
+  const treeBox = await sidebar.getByTestId('infrastructure-tree-scroll').boundingBox();
+  expect(ipamBox).not.toBeNull();
+  expect(treeBox).not.toBeNull();
+  expect(ipamBox!.y).toBeLessThan(treeBox!.y);
+  expect(treeBox!.height).toBeGreaterThan(500);
   await page.unroute('**/api/opentofu/infrastructure-summary?*');
 });
 
@@ -253,6 +259,11 @@ test('agent feature visibility follows the setting immediately', async ({ page }
   await page.goto('/settings/system');
   const agentToggle = page.getByRole('switch', { name: /agent-feature aktivieren|enable agent feature/i });
   await expect(agentToggle).toHaveAttribute('data-state', 'unchecked');
+  const switchBox = await agentToggle.boundingBox();
+  expect(switchBox).not.toBeNull();
+  expect(switchBox!.width).toBe(40);
+  expect(switchBox!.height).toBe(20);
+  await expect(agentToggle).toHaveCSS('border-radius', '6px');
 
   const enabledSave = page.waitForResponse(response => response.url().includes('/api/system/settings') && response.request().method() === 'PUT' && response.status() === 200);
   await agentToggle.click();

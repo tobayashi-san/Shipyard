@@ -171,7 +171,15 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
 
       <WorkspaceSwitcher value={workspace} onChange={setWorkspace} collapsed={collapsed} />
 
-      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2" aria-label={workspace === "operations" ? t("nav.operations") : t("nav.infrastructure")}>
+      <nav
+        className={cn(
+          "min-h-0 flex-1 p-2",
+          workspace === "operations"
+            ? "space-y-1 overflow-y-auto"
+            : "flex flex-col gap-1 overflow-hidden",
+        )}
+        aria-label={workspace === "operations" ? t("nav.operations") : t("nav.infrastructure")}
+      >
         {workspace === "operations" ? (
           <>
             {canViewServers && <NavItem to="/" label={t("nav.dashboard")} icon={LayoutDashboard} active={path === "/"} collapsed={collapsed} onNavigate={onMobileClose} />}
@@ -191,16 +199,21 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
           </>
         ) : (
           <>
+            {canViewNetworks && <NavItem to="/networks" label={t("nav.networksIpam")} icon={Network} active={path === "/networks" || path.startsWith("/networks/")} collapsed={collapsed} onNavigate={onMobileClose} />}
             {(canViewServers || canViewInfrastructure) && (
-              <section className="border-y border-border-strong/60 bg-muted/20 -mx-2 my-1 px-2 py-1">
+              <section
+                className={cn(
+                  "-mx-2 flex shrink-0 flex-col border-y border-border-strong/60 bg-muted/20 px-2 py-1",
+                  !collapsed && !treeCollapsed && "min-h-0 flex-1",
+                )}
+              >
                 <button type="button" onClick={toggleTree} className={cn("flex min-h-9 w-full items-center gap-2 rounded-sm px-2.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground", collapsed && "justify-center px-2")} aria-expanded={!treeCollapsed} title={t("nav.infrastructureTree")}>
                   <Boxes className="h-4 w-4 shrink-0" />
                   {!collapsed && <><span className="min-w-0 flex-1 text-left">{t("nav.infrastructureTree")}</span>{treeCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}</>}
                 </button>
-                {!collapsed && !treeCollapsed && <div className="max-h-[min(48vh,32rem)] overflow-y-auto py-1"><InfrastructureTree onNavigate={onMobileClose} /></div>}
+                {!collapsed && !treeCollapsed && <div data-testid="infrastructure-tree-scroll" className="min-h-0 flex-1 overflow-y-auto py-1"><InfrastructureTree onNavigate={onMobileClose} /></div>}
               </section>
             )}
-            {canViewNetworks && <NavItem to="/networks" label={t("nav.networksIpam")} icon={Network} active={path === "/networks" || path.startsWith("/networks/")} collapsed={collapsed} onNavigate={onMobileClose} />}
           </>
         )}
       </nav>

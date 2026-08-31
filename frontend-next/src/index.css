@@ -1105,13 +1105,13 @@
     padding-bottom: 0.7rem !important;
   }
   :root[data-ui-density="comfortable"] .section-label { font-size: 0.75rem; }
-  :root[data-ui-density="comfortable"] main button { min-height: 2.25rem; }
+  :root[data-ui-density="comfortable"] main button:not([role="switch"]) { min-height: 2.25rem; }
 
   @media (max-width: 767px) {
-    :root[data-ui-density="comfortable"] header button,
-    :root[data-ui-density="comfortable"] main button,
+    :root[data-ui-density="comfortable"] header button:not([role="switch"]),
+    :root[data-ui-density="comfortable"] main button:not([role="switch"]),
     :root[data-ui-density="comfortable"] aside a,
-    :root[data-ui-density="comfortable"] aside button { min-height: 2.5rem; }
+    :root[data-ui-density="comfortable"] aside button:not([role="switch"]) { min-height: 2.5rem; }
   }
 
   @media (max-width: 640px) {
