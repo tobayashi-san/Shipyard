@@ -112,7 +112,7 @@ function DzRow({ action, noBorder }: { action: DzAction; noBorder: boolean }) {
     >
       {phase === 'idle' && (
         <Button variant="destructive" size="sm" onClick={() => setPhase('confirm')}>
-          {action.icon} {t('common.delete')}
+          {action.icon} {t(action.labelKey)}
         </Button>
       )}
       {phase === 'confirm' && (
@@ -122,7 +122,7 @@ function DzRow({ action, noBorder }: { action: DzAction; noBorder: boolean }) {
             {t('common.cancel')}
           </Button>
           <Button variant="destructive" size="sm" onClick={run}>
-            {t('common.yes')}, {t('common.delete')}
+            {t(action.labelKey)}
           </Button>
         </div>
       )}

@@ -478,64 +478,26 @@ export function ServerUpdatesTab({ controller }: { controller: ServerDetailContr
                                 )}
                               </td>
                               <td className="px-4 py-2 text-right">
-                                <div className="flex items-center justify-end gap-1">
+                                <div className="flex justify-end">
+                                  {(hasCap(profile, "canRunCustomUpdates") || hasCap(profile, "canEditCustomUpdates") || hasCap(profile, "canDeleteCustomUpdates")) && (
+                                  <OverflowMenu title={`Actions for ${task.name}`} width="w-44">
                                   {hasCap(profile, "canRunCustomUpdates") && (
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-7 w-7"
-                                      title={t("common.refresh")}
-                                      aria-label={t("common.refresh")}
-                                      onClick={() =>
-                                        checkTaskMut.mutate(task.id)
-                                      }
-                                    >
-                                      <RefreshCw className="h-3.5 w-3.5" />
-                                    </Button>
+                                    <OverflowItem icon={RefreshCw} onClick={() => checkTaskMut.mutate(task.id)}>{t("common.refresh")}</OverflowItem>
                                   )}
                                   {hasCap(profile, "canRunCustomUpdates") &&
                                     task.update_command && (
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-7 w-7"
-                                        title={t("common.run")}
-                                        aria-label={t("common.run")}
-                                        onClick={() =>
-                                          runTaskMut.mutate(task.id)
-                                        }
-                                      >
-                                        <Play className="h-3.5 w-3.5" />
-                                      </Button>
+                                      <OverflowItem icon={Play} onClick={() => runTaskMut.mutate(task.id)}>{t("common.run")}</OverflowItem>
                                     )}
                                   {hasCap(profile, "canEditCustomUpdates") && (
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-7 w-7"
-                                      title={t("common.edit")}
-                                      aria-label={t("common.edit")}
-                                      onClick={() =>
-                                        setTaskDialog({ open: true, task })
-                                      }
-                                    >
-                                      <Pencil className="h-3.5 w-3.5" />
-                                    </Button>
+                                    <OverflowItem icon={Pencil} onClick={() => setTaskDialog({ open: true, task })}>{t("common.edit")}</OverflowItem>
                                   )}
                                   {hasCap(
                                     profile,
                                     "canDeleteCustomUpdates",
                                   ) && (
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-7 w-7 text-destructive"
-                                      title={t("common.delete")}
-                                      aria-label={t("common.delete")}
-                                      onClick={() => setConfirmDeleteTask(task)}
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </Button>
+                                    <><OverflowSep /><OverflowItem icon={Trash2} danger onClick={() => setConfirmDeleteTask(task)}>{t("common.delete")}</OverflowItem></>
+                                  )}
+                                  </OverflowMenu>
                                   )}
                                 </div>
                               </td>

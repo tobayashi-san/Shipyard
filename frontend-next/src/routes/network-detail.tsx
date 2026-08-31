@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { showToast } from "@/lib/toast";
+import { formatDateTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -1838,7 +1839,7 @@ function SourceBadges({ row }: { row: Allocation }) {
           title={tr("managedSourceTitle", {
             name: primaryName || primarySystem,
             date: row.last_synced_at
-              ? new Date(row.last_synced_at).toLocaleString()
+              ? formatDateTime(row.last_synced_at)
               : tr("unknownTime"),
           })}
         >
@@ -1858,7 +1859,7 @@ function SourceBadges({ row }: { row: Allocation }) {
             title={tr("observedSourceTitle", {
               name: source.name,
               date: source.last_seen_at
-                ? new Date(source.last_seen_at).toLocaleString()
+                ? formatDateTime(source.last_seen_at)
                 : tr("unknownTime"),
             })}
           >
@@ -2098,7 +2099,7 @@ function SyncConflictPanel({ rows }: { rows: SyncConflict[] }) {
                   </td>
                   <td className="px-3 text-xs text-muted-foreground">
                     {row.last_seen_at
-                      ? new Date(row.last_seen_at).toLocaleString()
+                      ? formatDateTime(row.last_seen_at)
                       : "—"}
                   </td>
                 </tr>

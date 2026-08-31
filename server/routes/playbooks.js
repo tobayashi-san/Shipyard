@@ -8,6 +8,7 @@ const path = require('path');
 const gitSync = require('../services/git-sync');
 const log = require('../utils/logger').child('routes:playbooks');
 const { fileReadLimiter } = require('../utils/rate-limiters');
+const { validatePlaybookContent } = require('../utils/playbook-validation');
 
 const PLAYBOOKS_DIR = path.join(__dirname, '..', 'playbooks');
 const BUNDLED_PLAYBOOKS_DIR = path.join(__dirname, '..', '..', 'bundled-playbooks');
@@ -118,6 +119,8 @@ router.post('/', writeLimiter, (req, res, next) => { if (!can(getPermissions(req
       return res.status(400).json({ error: 'Invalid path' });
     }
     if (content.length > 512 * 1024) return res.status(400).json({ error: 'Playbook too large (max 512 KB)' });
+    const validation = validatePlaybookContent(content);
+    if (!validation.valid) return res.status(400).json({ error: validation.error });
     rotateBak(filepath);
     fs.writeFileSync(filepath, content, 'utf8');
     let pushFailed = false;

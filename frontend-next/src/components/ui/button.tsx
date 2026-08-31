@@ -19,7 +19,7 @@ const buttonVariants = cva(
         default: 'h-9 px-3 py-1.5',
         sm: 'h-8 px-2.5 text-xs',
         lg: 'h-9 px-4',
-        icon: 'h-9 w-9',
+        icon: 'h-10 w-10 min-h-9 min-w-9',
       },
     },
     defaultVariants: { variant: 'default', size: 'default' },
@@ -33,9 +33,11 @@ export interface ButtonProps
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, type, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, type, title, 'aria-label': ariaLabel, ...props }, ref) => {
     const Comp = asChild ? Slot : 'button';
-    return <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} type={asChild ? undefined : (type ?? 'button')} {...props} />;
+    const accessibleTitle = title || (typeof ariaLabel === 'string' ? ariaLabel : undefined);
+    const accessibleLabel = ariaLabel || (size === 'icon' ? accessibleTitle : undefined);
+    return <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} type={asChild ? undefined : (type ?? 'button')} title={accessibleTitle} aria-label={accessibleLabel} {...props} />;
   }
 );
 Button.displayName = 'Button';

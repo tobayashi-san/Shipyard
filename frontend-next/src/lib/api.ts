@@ -73,6 +73,8 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown;
   /** Skip Authorization header (used for /auth/login, /auth/setup, /auth/status). */
   skipAuth?: boolean;
+  /** Override the default timeout; use 0 only for intentional long polling. */
+  timeoutMs?: number;
 }
 
 export async function apiFetch<T = unknown>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -90,8 +92,17 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
     }
   }
 
-  const init: RequestInit = { ...options, headers } as RequestInit;
+  const controller = new AbortController();
+  const timeoutMs = options.timeoutMs === 0 ? 0 : Math.max(1_000, options.timeoutMs || 30_000);
+  const callerSignal = options.signal;
+  const abortFromCaller = () => controller.abort(callerSignal?.reason);
+  if (callerSignal?.aborted) abortFromCaller();
+  else callerSignal?.addEventListener('abort', abortFromCaller, { once: true });
+  const timeout = timeoutMs ? globalThis.setTimeout(() => controller.abort('timeout'), timeoutMs) : undefined;
+
+  const init: RequestInit = { ...options, headers, signal: controller.signal } as RequestInit;
   delete (init as { skipAuth?: boolean }).skipAuth;
+  delete (init as { timeoutMs?: number }).timeoutMs;
 
   if (options.body !== undefined && options.body !== null && typeof options.body === 'object' && !(options.body instanceof FormData)) {
     init.body = JSON.stringify(options.body);
@@ -99,7 +110,18 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
     init.body = options.body as BodyInit;
   }
 
-  const res = await fetch(url, init);
+  let res: Response;
+  try {
+    res = await fetch(url, init);
+  } catch (error) {
+    if (controller.signal.aborted && !callerSignal?.aborted) {
+      throw new ApiError(`Request timed out after ${Math.round(timeoutMs / 1000)} seconds. Try again.`, 408);
+    }
+    throw error;
+  } finally {
+    if (timeout !== undefined) globalThis.clearTimeout(timeout);
+    callerSignal?.removeEventListener('abort', abortFromCaller);
+  }
 
   if (res.status === 401 && !options.skipAuth) {
     notifyUnauthorized();
@@ -253,6 +275,9 @@ export const api = {
   getSettings:       () => apiFetch<AnyObj>('/system/settings'),
   saveSettings:      (data: AnyObj) => apiFetch('/system/settings', { method: 'PUT', body: data }),
   getAnsibleStatus:  () => apiFetch<AnyObj>('/system/status'),
+  getOpenTofuStatus: () => apiFetch<AnyObj>('/opentofu/status'),
+  getOpenTofuReleases: () => apiFetch<{ releases: string[] }>('/opentofu/releases'),
+  installOpenTofu:   (version: string) => apiFetch<AnyObj>('/opentofu/install', { method: 'POST', body: { version } }),
   getAuditLog:       (params: Record<string, string | number | undefined> = {}) => {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') q.set(k, String(v));

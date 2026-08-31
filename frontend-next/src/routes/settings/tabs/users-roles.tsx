@@ -10,7 +10,7 @@ import {
 import { api } from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { useProfile } from '@/lib/queries';
-import { asArray, cn } from '@/lib/utils';
+import { asArray, cn, formatDateTime } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -157,7 +157,7 @@ function UsersPanel() {
                   <span className="font-mono text-[11px] text-muted-foreground">@{u.username}</span>
                   <span className="text-[11px] text-muted-foreground">
                     {u.last_login_at
-                      ? t('set.lastLogin', { date: new Date(`${u.last_login_at}Z`).toLocaleString() })
+                      ? t('set.lastLogin', { date: formatDateTime(`${u.last_login_at}Z`) })
                       : t('set.neverLoggedIn')}
                   </span>
                 </span>
@@ -165,6 +165,7 @@ function UsersPanel() {
             }
           >
             <StatusBadge tone={u.role === 'admin' ? 'info' : 'neutral'}>{roleName}</StatusBadge>
+            <StatusBadge tone={u.totp_enabled ? 'success' : 'muted'}>{u.totp_enabled ? '2FA on' : '2FA off'}</StatusBadge>
             {u.disabled && <StatusBadge tone="danger">{t('set.disabled')}</StatusBadge>}
             <div className="flex gap-1">
               <Button variant="ghost" size="icon" title={t('common.edit')} onClick={() => setEditing(u)}>
@@ -188,8 +189,8 @@ function UsersPanel() {
                       ? <UserCheck className="h-4 w-4 text-emerald-500" />
                       : <UserX className="h-4 w-4 text-amber-500" />}
                   </Button>
-                  <Button variant="ghost" size="icon" title={t('common.delete')} onClick={() => setConfirmDelete(u)}>
-                    <Trash2 className="h-4 w-4 text-destructive" />
+                  <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(u)}>
+                    <Trash2 className="h-4 w-4" /> {t('common.delete')}
                   </Button>
                 </>
               )}
@@ -527,8 +528,8 @@ function RolesPanel() {
               <Button variant="secondary" size="sm" onClick={() => setEditing(r)}>
                 <Pencil className="h-4 w-4" /> {t('common.edit')}
               </Button>
-              <Button variant="ghost" size="icon" onClick={() => setConfirmDelete(r)}>
-                <Trash2 className="h-4 w-4 text-destructive" />
+              <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(r)}>
+                <Trash2 className="h-4 w-4" /> {t('common.delete')}
               </Button>
             </SettingsRow>
           );

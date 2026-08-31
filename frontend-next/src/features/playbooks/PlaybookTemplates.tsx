@@ -11,7 +11,6 @@ import {
   GitCommit,
   History,
   Play,
-  Plus,
   Save,
   Search,
   Terminal,
@@ -141,17 +140,6 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
     void isInternal;
   };
 
-  // New playbook
-  const startNew = () => {
-    setSelected(null);
-    setIsNew(true);
-    setFilenameInput("");
-    setContent(TEMPLATE_YAML);
-    setOrigContent("");
-    setYamlError(null);
-    setPanel("editor");
-  };
-
   useEffect(() => {
     if (createRequest <= handledCreateRequest.current) return;
     handledCreateRequest.current = createRequest;
@@ -223,20 +211,9 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
                 </Badge>
               </div>
               <p className="mt-0.5 text-[11px] text-muted-foreground">
-                Select templates or create a new one.
+                Select a playbook to inspect or edit it.
               </p>
             </div>
-            {hasCap(profile, "canEditPlaybooks") && (
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-7 w-7"
-                onClick={startNew}
-                title={t("pb.new")}
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </Button>
-            )}
           </div>
           <div className="relative border-b bg-background/70 px-3 py-2">
             <Search className="pointer-events-none absolute left-5 top-4 h-4 w-4 text-muted-foreground" />
@@ -361,15 +338,8 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
           <CardContent className="flex min-h-[22rem] items-center justify-center p-6">
             <EmptyState
               icon={<Terminal className="h-5 w-5" />}
-              title="Select a deployment"
-              description="Select a template on the left to edit its contents or run it on specific hosts."
-              action={
-                hasCap(profile, "canEditPlaybooks") ? (
-                  <Button size="sm" onClick={startNew}>
-                    <Plus className="h-4 w-4" /> {t("pb.new")}
-                  </Button>
-                ) : undefined
-              }
+              title="Select a playbook"
+              description="Select an item on the left to inspect it. Use New playbook in the page header to create one."
             />
           </CardContent>
         </Card>

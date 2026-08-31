@@ -204,7 +204,7 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
     const name = String(req.body?.name || '').trim();
     const description = String(req.body?.description || '').trim().slice(0, 512);
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(name)) {
-      return res.status(400).json({ error: 'Der Snapshot-Name darf 1–40 Zeichen (Buchstaben, Zahlen, Punkt, Unterstrich, Bindestrich) enthalten.' });
+      return res.status(400).json({ error: 'Snapshot names must contain 1–40 letters, digits, periods, underscores, or hyphens.' });
     }
     try {
       const target = getManagedProxmoxVmForServer(String(req.params.serverId || ''), req, { requireEdit: true });

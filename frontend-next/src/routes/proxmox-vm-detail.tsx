@@ -39,6 +39,7 @@ import { hasCap, useProfile } from "@/lib/queries";
 import { useUi } from "@/lib/store";
 import { showToast } from "@/lib/toast";
 import { useUrlTab } from "@/lib/use-url-tab";
+import { formatDateTime } from "@/lib/utils";
 
 interface Vm {
   name: string;
@@ -151,71 +152,11 @@ function statusLabel(value: string) {
   };
   return labels[value.toLowerCase()] || value || "Unknown";
 }
-function bytes(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return "—";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const index = Math.min(
-    Math.floor(Math.log(value) / Math.log(1024)),
-    units.length - 1,
-  );
-  return `${(value / 1024 ** index).toFixed(index >= 3 ? 1 : 0)} ${units[index]}`;
-}
 function date(value?: number) {
-  return value
-    ? new Intl.DateTimeFormat(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(new Date(value * 1000))
-    : "—";
-}
-function percent(value: number, total: number) {
-  return total > 0 ? Math.min(100, Math.round((value / total) * 100)) : 0;
+  return formatDateTime(value ? value * 1000 : undefined);
 }
 function auditTime(value?: string) {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime())
-    ? value
-    : new Intl.DateTimeFormat(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(parsed);
-}
-
-function CapacityLine({
-  label,
-  used,
-  total,
-  unit = "bytes",
-}: {
-  label: string;
-  used: number;
-  total: number;
-  unit?: "bytes" | "cores";
-}) {
-  const value = percent(used, total);
-  const display =
-    unit === "cores"
-      ? `${used.toFixed(1)} / ${total} cores`
-      : `${bytes(used)} / ${bytes(total)}`;
-  const capacityTone =
-    value >= 90 ? "critical" : value >= 75 ? "warning" : "healthy";
-  return (
-    <div className="console-capacity-line">
-      <div className="console-capacity-heading">
-        <span>{label}</span>
-        <span className="font-mono">
-          {total ? `${display} · ${value} %` : "—"}
-        </span>
-      </div>
-      <div className="console-capacity-track">
-        <span
-          data-capacity-tone={capacityTone}
-          style={{ width: `${value}%` }}
-        />
-      </div>
-    </div>
-  );
+  return formatDateTime(value);
 }
 
 function VmConfigurationOverview({
@@ -260,7 +201,7 @@ function VmConfigurationOverview({
         <CardHeader className="border-b py-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Cpu className="h-4 w-4" />
-            Hardware & guest
+            Hardware & virtual machine
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -425,103 +366,42 @@ function VmObjectSummary({
   configuration?: VmConfiguration;
   loading: boolean;
 }) {
-  const hardware = configuration?.hardware;
   const primaryNetwork = (configuration?.networks || [])[0];
   const primaryIp =
     (configuration?.guest?.ip_config || []).find(
       (item) => item.interface === primaryNetwork?.interface,
     ) || configuration?.guest?.ip_config?.[0];
-  const primaryDisk = (configuration?.disks || [])[0];
   const cpuUsed = (vm.cpu || 0) * (vm.maxcpu || 0);
   const platformName =
     cluster.connections
       ?.map((connection) => connection.name)
       .filter(Boolean)
       .join(", ") || "Proxmox";
-  const network = primaryNetwork
-    ? `${primaryNetwork.bridge || "No bridge"}${primaryNetwork.vlan_id ? ` · VLAN ${primaryNetwork.vlan_id}` : ""}`
-    : "Not reported";
   const kind = vm.guest_type === "lxc" ? "CT" : "VM";
 
   return (
     <Card className="console-object-summary">
-      <CardContent className="grid p-0 xl:grid-cols-[minmax(0,1.35fr)_minmax(22rem,.65fr)]">
-        <section className="console-object-summary-main">
-          <div className="flex items-center justify-between gap-3 border-b pb-3">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <Server className="h-4 w-4 text-muted-foreground" />
-              {vm.guest_type === "lxc" ? "LXC container" : "Virtual machine"}
-            </div>
-            {loading && (
-              <span className="text-xs text-muted-foreground">
-                Loading guest data…
-              </span>
-            )}
+      <CardContent className="flex flex-col gap-4 p-4 lg:flex-row lg:items-center">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+            <Server className="h-4 w-4 text-muted-foreground" />
+            <span>{vm.guest_type === "lxc" ? "LXC container" : "Virtual machine"}</span>
+            <StatusBadge tone={vm.status === "running" ? "success" : "muted"} dot>{vm.status || "Unknown"}</StatusBadge>
+            {loading && <span className="text-xs font-normal text-muted-foreground">Refreshing…</span>}
           </div>
-          <div className="console-object-info-grid xl:grid-cols-3">
-            <ObjectInfo label="Node" value={vm.node_name} mono />
-            <ObjectInfo label={`${kind}-ID`} value={vm.vm_id} mono />
-            <ObjectInfo label="Platform" value={platformName} />
-            <ObjectInfo
-              label="Management"
-              value={vm.fleet_server_id ? "Host" : "Inventory only"}
-            />
-            <ObjectInfo
-              label="Operating system"
-              value={hardware?.os_type || "Not reported"}
-              mono
-            />
-            {vm.guest_type !== "lxc" && <ObjectInfo
-              label="QEMU-Agent"
-              value={
-                hardware
-                  ? hardware.agent_enabled
-                    ? "Enabled"
-                    : "Not enabled"
-                  : "Not reported"
-              }
-            />}
-            <ObjectInfo
-              label="IP address"
-              value={primaryIp?.ipv4 || "DHCP / not reported"}
-              mono
-            />
-            <ObjectInfo label="Network" value={network} mono />
-            <ObjectInfo
-              label="Datastore"
-              value={primaryDisk?.storage || "Not reported"}
-              mono
-            />
-            <ObjectInfo
-              label="Guest user"
-              value={configuration?.guest?.username || "Not set"}
-              mono
-            />
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <span>Node <strong className="font-mono font-medium text-foreground">{vm.node_name}</strong></span>
+            <span>{kind}-ID <strong className="font-mono font-medium text-foreground">{vm.vm_id}</strong></span>
+            <span>Platform <strong className="font-medium text-foreground">{platformName}</strong></span>
+            <span>IP <strong className="font-mono font-medium text-foreground">{primaryIp?.ipv4 || "Not reported"}</strong></span>
+            <span>{vm.fleet_server_id ? "Managed host" : "Inventory only"}</span>
           </div>
-        </section>
-        <section
-          className="console-object-capacity border-t xl:border-l xl:border-t-0"
-          aria-label="Live usage"
-        >
-          <div className="flex items-center gap-2 border-b pb-3 text-sm font-semibold">
-            <Activity className="h-4 w-4 text-muted-foreground" />
-            Live usage
-          </div>
-          <div className="mt-3 space-y-3">
-            <CapacityLine
-              label="CPU"
-              used={cpuUsed}
-              total={vm.maxcpu || 0}
-              unit="cores"
-            />
-            <CapacityLine
-              label="Memory"
-              used={vm.mem}
-              total={vm.maxmem}
-            />
-            <CapacityLine label="Disk" used={vm.disk} total={vm.maxdisk} />
-          </div>
-        </section>
+        </div>
+        <div className="grid shrink-0 grid-cols-3 gap-4 border-t pt-3 text-xs lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0" aria-label="Live usage">
+          <div><span className="block text-muted-foreground">CPU</span><strong className="font-mono">{vm.maxcpu ? `${Math.round((cpuUsed / vm.maxcpu) * 100)}%` : "—"}</strong></div>
+          <div><span className="block text-muted-foreground">Memory</span><strong className="font-mono">{vm.maxmem ? `${Math.round((vm.mem / vm.maxmem) * 100)}%` : "—"}</strong></div>
+          <div><span className="block text-muted-foreground">Disk</span><strong className="font-mono">{vm.maxdisk ? `${Math.round((vm.disk / vm.maxdisk) * 100)}%` : "—"}</strong></div>
+        </div>
       </CardContent>
     </Card>
   );
@@ -888,7 +768,7 @@ export function ProxmoxVmDetailPage() {
     mutationFn: (action: string) => {
       if (!apiRoot)
         throw new Error(
-          "No platform connection is configured for this guest.",
+          "No platform connection is configured for this virtual machine.",
         );
       return apiFetch(`${apiRoot}/power`, { method: "POST", body: { action } });
     },
@@ -903,7 +783,7 @@ export function ProxmoxVmDetailPage() {
     mutationFn: () => {
       if (!apiRoot)
         throw new Error(
-          "No platform connection is configured for this guest.",
+          "No platform connection is configured for this virtual machine.",
         );
       return apiFetch(`${apiRoot}/snapshots`, {
         method: "POST",
@@ -923,7 +803,7 @@ export function ProxmoxVmDetailPage() {
     mutationFn: (snapshot: Snapshot) => {
       if (!apiRoot)
         throw new Error(
-          "No platform connection is configured for this guest.",
+          "No platform connection is configured for this virtual machine.",
         );
       return apiFetch(
         `${apiRoot}/snapshots/${encodeURIComponent(snapshot.name)}`,
@@ -949,8 +829,8 @@ export function ProxmoxVmDetailPage() {
     return (
       <EmptyState
         icon={<Database className="h-5 w-5" />}
-        title="Proxmox guest not found"
-        description="The inventory changed or the virtual guest is no longer present on this platform."
+        title="Proxmox virtual machine not found"
+        description="The inventory changed or the virtual machine is no longer present on this platform."
         action={
           <Button asChild variant="outline">
             <Link to="/infrastructure">
@@ -1125,7 +1005,7 @@ export function ProxmoxVmDetailPage() {
                 </CardTitle>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Connections, declaration, and management for this virtual
-                  guest.
+                  virtual machine.
                 </p>
               </CardHeader>
               <CardContent className="p-0">
@@ -1372,7 +1252,7 @@ export function ProxmoxVmDetailPage() {
           powerAction === "stop" ? (
             <>
               The {kind} <strong>{vm.name}</strong> will be powered off immediately.
-              Unsaved guest data may be lost.
+              Unsaved virtual machine data may be lost.
             </>
           ) : (
             <>
@@ -1417,23 +1297,6 @@ export function ProxmoxVmDetailPage() {
         }
         isPending={removeSnapshot.isPending}
       />
-    </div>
-  );
-}
-
-function ObjectInfo({
-  label,
-  value,
-  mono = false,
-}: {
-  label: string;
-  value: string | number;
-  mono?: boolean;
-}) {
-  return (
-    <div className="console-object-info">
-      <div>{label}</div>
-      <div className={mono ? "font-mono" : ""}>{value || "—"}</div>
     </div>
   );
 }

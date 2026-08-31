@@ -16,7 +16,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { QueryErrorState } from "@/components/ui/query-error-state";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { ActiveFilterChips } from "@/components/ui/filter-chips";
-import { asArray } from "@/lib/utils";
+import { asArray, formatDateTime } from "@/lib/utils";
 import { SettingsSection } from "@/routes/settings/_row";
 import { useUi } from "@/lib/store";
 
@@ -74,7 +74,8 @@ export function AuditLogPanel() {
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [page, setPage] = useState(1);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const filterParams = buildFilterParams(filters);
+  const [focus, setFocus] = useState<"changes" | "all">("changes");
+  const filterParams = { ...buildFilterParams(filters), focus };
 
   const metaQ = useQuery<AuditMeta>({
     queryKey: [
@@ -85,6 +86,7 @@ export function AuditLogPanel() {
       filters.success,
       filters.from,
       filters.to,
+      focus,
     ],
     queryFn: () =>
       api.getAuditMeta({ ...filterParams, environment_id: environmentId }) as unknown as Promise<AuditMeta>,
@@ -100,6 +102,7 @@ export function AuditLogPanel() {
       filters.success,
       filters.from,
       filters.to,
+      focus,
       page,
     ],
     queryFn: () =>
@@ -142,10 +145,20 @@ export function AuditLogPanel() {
       title={t("set.auditTitle")}
     >
       <div className="console-toolbar border-b border-border/70 px-0 py-2">
-        <span className="text-xs text-muted-foreground">
-          {t("set.auditTotal", { n: meta.count || 0 })} ·{" "}
-          {t("set.auditRetention")}
-        </span>
+        <div>
+          <span className="text-xs text-muted-foreground">
+            {t("set.auditTotal", { n: meta.count || 0 })} ·{" "}
+            {t("set.auditRetention")}
+          </span>
+          <div className="mt-1 flex rounded-md border p-0.5" aria-label="Audit event focus">
+            <Button size="sm" variant={focus === "changes" ? "secondary" : "ghost"} className="h-7" onClick={() => { setFocus("changes"); setPage(1); }}>
+              Security & changes
+            </Button>
+            <Button size="sm" variant={focus === "all" ? "secondary" : "ghost"} className="h-7" onClick={() => { setFocus("all"); setPage(1); }}>
+              All events
+            </Button>
+          </div>
+        </div>
         <div className="flex flex-wrap gap-2">
           <Button
             variant={filtersOpen ? "secondary" : "outline"}
@@ -360,7 +373,7 @@ function AuditTableRow({ row }: { row: AuditRow }) {
         )}
       </td>
       <td className="whitespace-nowrap font-mono text-xs text-muted-foreground">
-        {row.created_at || "—"}
+        {formatDateTime(row.created_at)}
       </td>
       <td>
         <StatusBadge tone={row.success ? "success" : "danger"} dot>
@@ -392,7 +405,7 @@ function AuditMobileRow({ row }: { row: AuditRow }) {
         <span>
           {row.user || "System"} · {row.ip || "—"}
         </span>
-        <span>{row.created_at || "—"}</span>
+        <span>{formatDateTime(row.created_at)}</span>
       </div>
       {link && (
         <a

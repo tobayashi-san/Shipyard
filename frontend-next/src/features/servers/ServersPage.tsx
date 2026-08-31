@@ -21,7 +21,6 @@ import {
   Pencil,
   Trash2,
   FolderTree,
-  CircleDot,
   Info,
   X,
   CheckCircle2,
@@ -38,7 +37,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
-import { LiveDot, StatusBadge } from "@/components/ui/status-badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ActiveFilterChips } from "@/components/ui/filter-chips";
 import { QueryErrorState } from "@/components/ui/query-error-state";
@@ -546,6 +545,9 @@ export function ServersPage() {
 
   const onlineCount = servers.filter((s) => s.status === "online").length;
   const offlineCount = servers.filter((s) => s.status === "offline").length;
+  const showFolderColumn = servers.some((server) => Boolean(server.group_id));
+  const showTagColumn = servers.some((server) => (server.tags || []).length > 0);
+  const tableColumnCount = 5 + Number(showFolderColumn) + Number(showTagColumn);
 
   // Load server info for visible rows
   const visibleIds = useMemo(() => {
@@ -1080,13 +1082,6 @@ export function ServersPage() {
           }}
         >
           <div className="flex items-center gap-2">
-            {s.status === "online" ? (
-              <LiveDot tone="success" />
-            ) : (
-              <CircleDot
-                className={`h-3.5 w-3.5 ${s.status === "offline" ? "text-destructive" : "text-muted-foreground"}`}
-              />
-            )}
             <Link
               to="/servers/$id"
               params={{ id: s.id }}
@@ -1104,9 +1099,11 @@ export function ServersPage() {
         </td>
         <td className="w-48 px-3 py-2">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <StatusBadge tone={statusTone} dot>
-              {statusLabel}
-            </StatusBadge>
+            {s.status === "online" ? (
+              <span className="text-xs text-muted-foreground">{statusLabel}</span>
+            ) : (
+              <StatusBadge tone={statusTone} dot>{statusLabel}</StatusBadge>
+            )}
             {lastSeen && (
               <span className="text-xs tabular-nums text-muted-foreground">
                 {lastSeen}
@@ -1114,7 +1111,7 @@ export function ServersPage() {
             )}
           </div>
         </td>
-        <td className="w-48 px-3 py-2">
+        {showFolderColumn && <td className="w-48 px-3 py-2">
           {group ? (
             <div className="flex min-w-0 items-center gap-1.5">
               <Folder
@@ -1128,24 +1125,21 @@ export function ServersPage() {
           ) : (
             <span className="text-xs text-muted-foreground">No folder</span>
           )}
-        </td>
-        <td className="w-56 px-3 py-2">
+        </td>}
+        {showTagColumn && <td className="w-56 px-3 py-2">
           <div className="flex flex-wrap gap-1">
             {(s.tags || []).length > 0 ? (
-              s.tags!.map((tag) => (
-                <Badge
-                  key={tag}
-                  variant="secondary"
-                  className="px-1.5 py-0 text-[10px]"
-                >
-                  {tag}
-                </Badge>
-              ))
+              <>
+                {s.tags!.slice(0, 2).map((tag) => (
+                  <Badge key={tag} variant="secondary" className="max-w-24 truncate px-1.5 py-0 text-[10px]">{tag}</Badge>
+                ))}
+                {s.tags!.length > 2 && <Badge variant="outline" className="px-1.5 py-0 text-[10px]">+{s.tags!.length - 2}</Badge>}
+              </>
             ) : (
               <span className="text-xs text-muted-foreground">—</span>
             )}
           </div>
-        </td>
+        </td>}
         <td
           className="w-28 px-4 py-2 srv-actions"
           onClick={(e) => e.stopPropagation()}
@@ -1159,7 +1153,8 @@ export function ServersPage() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7"
+                  className="h-8 w-8"
+                  aria-label={`${t("srv.moveTo")}: ${s.name}`}
                   title={t("srv.moveTo")}
                   onClick={() =>
                     setMoveFor((prev) => (prev === s.id ? null : s.id))
@@ -1180,29 +1175,22 @@ export function ServersPage() {
                 )}
               </div>
             )}
-            {hasCap(profile, "canEditServers") && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                title={t("srv.edit")}
-                asChild
-              >
-                <Link to="/servers/$id" params={{ id: s.id }}>
-                  <Pencil className="h-3.5 w-3.5" />
-                </Link>
-              </Button>
-            )}
-            {hasCap(profile, "canDeleteServers") && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 text-destructive hover:text-destructive"
-                title={t("srv.delete")}
-                onClick={() => handleDeleteServer(s.id, s.name)}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
+            {(hasCap(profile, "canEditServers") || hasCap(profile, "canDeleteServers")) && (
+              <OverflowMenu title={`Actions for ${s.name}`} width="w-44">
+                {hasCap(profile, "canEditServers") && (
+                  <OverflowItem icon={Pencil} onClick={() => navigate({ to: "/servers/$id", params: { id: s.id } })}>
+                    {t("srv.edit")}
+                  </OverflowItem>
+                )}
+                {hasCap(profile, "canDeleteServers") && (
+                  <>
+                    {hasCap(profile, "canEditServers") && <OverflowSep />}
+                    <OverflowItem icon={Trash2} danger onClick={() => handleDeleteServer(s.id, s.name)}>
+                      {t("srv.delete")}
+                    </OverflowItem>
+                  </>
+                )}
+              </OverflowMenu>
             )}
           </div>
         </td>
@@ -1252,7 +1240,7 @@ export function ServersPage() {
             handleDrop(node.id);
           }}
         >
-          <td colSpan={8} style={{ borderLeft: `3px solid ${color}` }}>
+          <td colSpan={tableColumnCount - 1} style={{ borderLeft: `3px solid ${color}` }}>
             <div
               className="flex items-center gap-2 py-1.5"
               style={{ paddingLeft: `${12 + depth * 20}px` }}
@@ -1334,7 +1322,7 @@ export function ServersPage() {
           <>
             {members.length === 0 && node.children.length === 0 && (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={tableColumnCount}>
                   <div
                     className="flex items-center gap-1.5 text-muted-foreground text-xs py-1.5"
                     style={{ paddingLeft: `${34 + depth * 20}px` }}
@@ -1824,8 +1812,8 @@ export function ServersPage() {
                       <th className="px-3 py-2.5">{t("srv.colName")}</th>
                       <th className="w-52 px-3 py-2.5">{t("srv.colIp")}</th>
                       <th className="w-48 px-3 py-2.5">{t("common.status")}</th>
-                      <th className="w-48 px-3 py-2.5">Folder</th>
-                      <th className="w-56 px-3 py-2.5">{t("srv.tags")}</th>
+                      {showFolderColumn && <th className="w-48 px-3 py-2.5">Folder</th>}
+                      {showTagColumn && <th className="w-56 px-3 py-2.5">{t("srv.tags")}</th>}
                       <th className="w-24 px-4 py-2.5 text-right">
                         {t("common.actions")}
                       </th>
@@ -1848,7 +1836,7 @@ export function ServersPage() {
                               handleDrop(null);
                             }}
                           >
-                            <td colSpan={7}>
+                            <td colSpan={tableColumnCount}>
                               <div
                                 className={`flex items-center gap-2 px-4 py-2.5 ${dragOverGroup === "__root__" ? "bg-accent/50" : ""}`}
                               >
@@ -1934,16 +1922,6 @@ export function ServersPage() {
                           />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
-                              {s.status === "online" ? (
-                                <LiveDot
-                                  tone="success"
-                                  className="flex-shrink-0"
-                                />
-                              ) : (
-                                <CircleDot
-                                  className={`h-3 w-3 flex-shrink-0 ${s.status === "offline" ? "text-destructive" : "text-muted-foreground"}`}
-                                />
-                              )}
                               <Link
                                 to="/servers/$id"
                                 params={{ id: s.id }}
@@ -1951,25 +1929,19 @@ export function ServersPage() {
                               >
                                 {s.name}
                               </Link>
-                              <StatusBadge
-                                tone={
-                                  s.status === "online"
-                                    ? "success"
-                                    : s.status === "offline"
-                                      ? "danger"
-                                      : "muted"
-                                }
-                              >
+                              {s.status === "online" ? (
+                                <span className="text-xs text-muted-foreground">{t("common.online")}</span>
+                              ) : <StatusBadge tone={s.status === "offline" ? "danger" : "muted"}>
                                 {s.status === "online"
                                   ? t("common.online")
                                   : s.status === "offline"
                                     ? t("common.offline")
                                     : t("common.unknown")}
-                              </StatusBadge>
+                              </StatusBadge>}
                             </div>
                             {(s.tags || []).length > 0 && (
                               <div className="flex flex-wrap gap-1 mt-1">
-                                {s.tags!.map((tag) => (
+                                {s.tags!.slice(0, 2).map((tag) => (
                                   <Badge
                                     key={tag}
                                     variant="secondary"
@@ -1978,6 +1950,7 @@ export function ServersPage() {
                                     {tag}
                                   </Badge>
                                 ))}
+                                {s.tags!.length > 2 && <Badge variant="outline" className="px-1.5 py-0 text-[10px]">+{s.tags!.length - 2}</Badge>}
                               </div>
                             )}
                             <div className="grid grid-cols-3 gap-2 mt-2 text-xs text-muted-foreground">
@@ -2010,30 +1983,12 @@ export function ServersPage() {
                               </span>
                             </div>
                           </div>
-                          <div className="flex items-center gap-0.5">
-                            {hasCap(profile, "canEditServers") && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7"
-                                asChild
-                              >
-                                <Link to="/servers/$id" params={{ id: s.id }}>
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </Link>
-                              </Button>
-                            )}
-                            {hasCap(profile, "canDeleteServers") && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-destructive"
-                                onClick={() => handleDeleteServer(s.id, s.name)}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
-                          </div>
+                          {(hasCap(profile, "canEditServers") || hasCap(profile, "canDeleteServers")) && (
+                            <OverflowMenu title={`Actions for ${s.name}`} width="w-44">
+                              {hasCap(profile, "canEditServers") && <OverflowItem icon={Pencil} onClick={() => navigate({ to: "/servers/$id", params: { id: s.id } })}>{t("srv.edit")}</OverflowItem>}
+                              {hasCap(profile, "canDeleteServers") && <><OverflowSep /><OverflowItem icon={Trash2} danger onClick={() => handleDeleteServer(s.id, s.name)}>{t("srv.delete")}</OverflowItem></>}
+                            </OverflowMenu>
+                          )}
                         </div>
                       </div>
                     );

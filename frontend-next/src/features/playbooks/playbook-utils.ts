@@ -1,3 +1,5 @@
+import { formatDateTime } from '@/lib/utils';
+
 export interface IntervalDef { value: string; labelKey: string; needsTime: boolean; needsWeekday: boolean; needsMonthday: boolean }
 
 export const INTERVALS: IntervalDef[] = [
@@ -69,8 +71,7 @@ export function isPresetCron(cron: string) {
 }
 
 export function formatDate(date?: string) {
-  if (!date) return '';
-  try { return new Date(date).toLocaleString(); } catch { return date; }
+  return date ? formatDateTime(date) : '';
 }
 
 export function loadCollapsedCategories(): Set<string> {

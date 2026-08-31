@@ -12,7 +12,7 @@ const { serverError } = require('../utils/http-error');
 const log = require('../utils/logger').child('system');
 const { rotateJwtSecret } = require('../utils/jwt-secret');
 const { getPermissions } = require('../utils/permissions');
-const { queryVisibleAuditRows } = require('../utils/audit-scope');
+const { filterAuditFocus, queryVisibleAuditRows } = require('../utils/audit-scope');
 
 const deployLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -220,7 +220,7 @@ router.post('/deploy', adminOnly, deployLimiter, async (req, res) => {
     // A remote SSH connection failure is an expected operational outcome,
     // not an internal Shipyard crash. Keep implementation details in the log.
     log.warn({ err: error, serverId: req.body?.server_id, ipAddress: req.body?.ip_address }, 'SSH key deployment failed');
-    if (!res.headersSent) res.status(502).json({ error: 'SSH-Schlüssel konnte nicht installiert werden. Prüfe IP-Adresse, SSH-Benutzer, Passwort und Erreichbarkeit.' });
+    if (!res.headersSent) res.status(502).json({ error: 'The SSH key could not be installed. Check the IP address, SSH user, password, and host reachability.' });
     else serverError(res, error, 'deploy SSH key');
   }
 });
@@ -276,7 +276,7 @@ router.get('/key-assignments', adminOnly, (req, res) => {
 
 router.get('/key-assignment-targets', adminOnly, (req, res) => {
   const environmentId = req.environmentId || String(req.query.environment_id || 'default').trim() || 'default';
-  if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(404).json({ error: 'Umgebung nicht gefunden.' });
+  if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(404).json({ error: 'Environment not found.' });
   res.json(sshAssignmentTargets(environmentId));
 });
 
@@ -284,9 +284,9 @@ router.put('/key-assignments', adminOnly, (req, res) => {
   const environmentId = req.environmentId || String(req.body?.environment_id || 'default').trim() || 'default';
   const targetType = String(req.body?.target_type || '').trim();
   const targetId = String(req.body?.target_id || '').trim();
-  if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Umgebung nicht gefunden.' });
+  if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found.' });
   const target = resolveSshAssignmentTarget(targetType, targetId, environmentId);
-  if (!target) return res.status(400).json({ error: 'Ziel ist ungültig oder gehört nicht zu dieser Umgebung.' });
+  if (!target) return res.status(400).json({ error: 'The target is invalid or belongs to a different environment.' });
   const existing = db.db.prepare('SELECT id FROM ssh_key_assignments WHERE key_name = ? AND target_type = ? AND target_id = ?').get('fleet', targetType, targetId);
   const id = existing?.id || db.uuidv4();
   db.db.prepare(`INSERT INTO ssh_key_assignments (id, key_name, target_type, target_id, target_label, environment_id, updated_at)
@@ -300,7 +300,7 @@ router.put('/key-assignments', adminOnly, (req, res) => {
 
 router.delete('/key-assignments/:id', adminOnly, (req, res) => {
   const row = db.db.prepare('SELECT * FROM ssh_key_assignments WHERE id = ?').get(req.params.id);
-  if (!row || (req.environmentId && row.environment_id !== req.environmentId)) return res.status(404).json({ error: 'Schlüsselzuordnung nicht gefunden.' });
+  if (!row || (req.environmentId && row.environment_id !== req.environmentId)) return res.status(404).json({ error: 'Key assignment not found.' });
   db.db.prepare('DELETE FROM ssh_key_assignments WHERE id = ?').run(row.id);
   db.auditLog.write('ssh.assignment.delete', `key=${row.key_name} type=${row.target_type} target=${row.target_id}`, req.ip, true, req.user?.username);
   res.status(204).end();
@@ -473,14 +473,14 @@ router.post('/onboarding-complete', adminOnly, (req, res) => {
 // authorised operator.  Mutating system endpoints below remain admin-only.
 router.get('/audit', requireCap('canViewAudit'), (req, res) => {
   try {
-    const { action, user, ip, success, from, to } = req.query;
+    const { action, user, ip, success, from, to, focus } = req.query;
     const environmentId = req.environmentId || String(req.query.environment_id || 'default').trim() || 'default';
     const limit = Math.min(parseInt(req.query.limit, 10) || 200, 500);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
-    const rows = queryVisibleAuditRows(
+    const rows = filterAuditFocus(queryVisibleAuditRows(
       { environmentId, action, user, ip, success, from, to },
       getPermissions(req.user),
-    ).slice(offset, offset + limit);
+    ), focus).slice(offset, offset + limit);
     res.json(rows.map(row => ({ ...row, object_links: auditObjectLinks(row.detail, environmentId) })));
   } catch (error) {
     serverError(res, error, 'audit log');
@@ -490,16 +490,16 @@ router.get('/audit', requireCap('canViewAudit'), (req, res) => {
 // GET /api/system/audit/export - filtered, spreadsheet-compatible audit export
 router.get('/audit/export', requireCap('canViewAudit'), (req, res) => {
   try {
-    const { action, user, ip, success, from, to } = req.query;
+    const { action, user, ip, success, from, to, focus } = req.query;
     const environmentId = req.environmentId || String(req.query.environment_id || 'default').trim() || 'default';
-    const rows = queryVisibleAuditRows(
+    const rows = filterAuditFocus(queryVisibleAuditRows(
       { environmentId, action, user, ip, success, from, to },
       getPermissions(req.user),
-    ).slice(0, 10_000);
+    ), focus).slice(0, 10_000);
     const csv = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
     const body = [
-      ['Zeitpunkt', 'Aktion', 'Benutzer', 'IP-Adresse', 'Erfolg', 'Details'],
-      ...rows.map(row => [row.created_at, row.action, row.user, row.ip, row.success ? 'ja' : 'nein', row.detail]),
+      ['Time', 'Action', 'User', 'IP address', 'Successful', 'Details'],
+      ...rows.map(row => [row.created_at, row.action, row.user, row.ip, row.success ? 'yes' : 'no', row.detail]),
     ].map(row => row.map(csv).join(';')).join('\n');
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="fleet-audit-log.csv"');
@@ -513,11 +513,11 @@ router.get('/audit/export', requireCap('canViewAudit'), (req, res) => {
 // GET /api/system/audit/meta - Filter options for audit log UI
 router.get('/audit/meta', requireCap('canViewAudit'), (req, res) => {
   try {
-    const { action, user, ip, success, from, to } = req.query;
+    const { action, user, ip, success, from, to, focus } = req.query;
     const environmentId = req.environmentId || String(req.query.environment_id || 'default').trim() || 'default';
     const permissions = getPermissions(req.user);
-    const rows = queryVisibleAuditRows({ environmentId, action, user, ip, success, from, to }, permissions);
-    const allVisibleRows = queryVisibleAuditRows({ environmentId }, permissions);
+    const rows = filterAuditFocus(queryVisibleAuditRows({ environmentId, action, user, ip, success, from, to }, permissions), focus);
+    const allVisibleRows = filterAuditFocus(queryVisibleAuditRows({ environmentId }, permissions), focus);
     res.json({
       actions: [...new Set(allVisibleRows.map(row => row.action).filter(Boolean))].sort(),
       users: [...new Set(allVisibleRows.map(row => row.user).filter(Boolean))].sort(),

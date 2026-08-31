@@ -748,7 +748,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
             params={{ clusterId }}
             onClick={onNavigate}
             aria-current={current ? "page" : undefined}
-            title={`${clusterName} · ${nodes.length} PVE host${nodes.length === 1 ? "" : "s"} · ${vms.length} guests`}
+            title={`${clusterName} · ${nodes.length} PVE host${nodes.length === 1 ? "" : "s"} · ${vms.length} virtual machines`}
             className={cn(
               "flex min-w-0 flex-1 items-center gap-2 rounded-sm px-1 py-1.5 text-xs transition-colors",
               current
@@ -881,8 +881,8 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                                 params={{ clusterId, nodeName, vmId }}
                                 onClick={onNavigate}
                                 aria-current={vmCurrent ? "page" : undefined}
-                                aria-label={`Open Proxmox guest ${vm.name || vmId}`}
-                                title="Open Proxmox guest details"
+                                aria-label={`Open Proxmox virtual machine ${vm.name || vmId}`}
+                                title="Open Proxmox virtual machine details"
                                 className="mr-0.5 shrink-0 rounded-sm border border-transparent p-1 text-muted-foreground hover:border-border hover:bg-background hover:text-foreground"
                               >
                                 <Box className="h-3 w-3" />
@@ -1070,7 +1070,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
           <DialogHeader>
             <DialogTitle>Create folder</DialogTitle>
             <DialogDescription>
-              Organize virtual guests and hosts in a vCenter-like tree view.
+              Organize virtual machines and hosts in an inventory tree.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -1182,7 +1182,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                 Resources in this folder
               </div>
               <p className="text-xs text-muted-foreground">
-                Select standalone hosts. Platform-linked nodes and guests stay
+                Select standalone hosts. Platform-linked nodes and virtual machines stay
                 in their Proxmox hierarchy.
               </p>
               <div className="max-h-40 space-y-1 overflow-y-auto pr-1">

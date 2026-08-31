@@ -14,6 +14,7 @@ import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Skeleton, SkeletonRow } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { QueryErrorState } from '@/components/ui/query-error-state';
 import { SettingsRow, SettingsSection } from '../_row';
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 
@@ -24,15 +25,14 @@ interface GitConfig {
   autoPush?: boolean;
   userName?: string;
   userEmail?: string;
+  hasToken?: boolean;
+  hasSshKey?: boolean;
 }
 
 export function GitTab() {
   const cfgQ = useQuery<GitConfig>({
     queryKey: ['git-config'],
-    queryFn: async () => {
-      try { return (await api.getGitConfig()) as GitConfig; }
-      catch { return {}; }
-    },
+    queryFn: () => api.getGitConfig() as Promise<GitConfig>,
   });
 
   if (cfgQ.isLoading) {
@@ -42,6 +42,9 @@ export function GitTab() {
         <Skeleton className="h-3 w-2/3" />
       </div>
     );
+  }
+  if (cfgQ.isError) {
+    return <QueryErrorState error={cfgQ.error} title="Git configuration could not be loaded" onRetry={() => void cfgQ.refetch()} />;
   }
   const cfg = cfgQ.data || {};
   return cfg.repoUrl ? <GitDashboard cfg={cfg} /> : <GitSetup />;
@@ -57,6 +60,7 @@ function GitSetup() {
   const [repoUrl, setRepoUrl] = useState('');
   const [authToken, setAuthToken] = useState('');
   const [sshKey, setSshKey] = useState('');
+  const [authMode, setAuthMode] = useState<'https' | 'ssh'>('https');
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
   const [autoPull, setAutoPull] = useState(true);
@@ -66,8 +70,8 @@ function GitSetup() {
   const setup = useMutation({
     mutationFn: () => api.gitSetup({
       repoUrl: repoUrl.trim(),
-      authToken: authToken.trim(),
-      sshKey: sshKey.trim(),
+      authToken: authMode === 'https' ? authToken.trim() : '',
+      sshKey: authMode === 'ssh' ? sshKey.trim() : '',
       userName: userName.trim(),
       userEmail: userEmail.trim(),
       autoPull,
@@ -90,20 +94,21 @@ function GitSetup() {
       <SettingsRow label={t('git.repoUrl')} hint={t('git.repoUrlSmallHint')}>
         <Input aria-label={t('git.repoUrl')} name="repositoryUrl" value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://github.com/user/repo.git" className="max-w-md" />
       </SettingsRow>
-      <SettingsRow label={t('git.authToken')} hint={t('git.authTokenHint')}>
-        <Input aria-label={t('git.authToken')} name="repositoryToken" type="password" value={authToken} onChange={(e) => setAuthToken(e.target.value)} placeholder="ghp_xxxxxxxxxxxx" autoComplete="new-password" className="max-w-md" />
+      <SettingsRow label="Authentication" hint="Choose exactly one credential method for the remote repository.">
+        <div className="inline-flex rounded-sm border p-0.5" role="radiogroup" aria-label="Git authentication method">
+          <button type="button" role="radio" aria-checked={authMode === 'https'} onClick={() => setAuthMode('https')} className={`rounded-sm px-3 py-1.5 text-xs font-medium ${authMode === 'https' ? 'bg-accent text-foreground' : 'text-muted-foreground'}`}>HTTPS token</button>
+          <button type="button" role="radio" aria-checked={authMode === 'ssh'} onClick={() => setAuthMode('ssh')} className={`rounded-sm px-3 py-1.5 text-xs font-medium ${authMode === 'ssh' ? 'bg-accent text-foreground' : 'text-muted-foreground'}`}>SSH key</button>
+        </div>
       </SettingsRow>
-      <SettingsRow label={t('git.sshKey')} hint={t('git.sshKeyHint')} align="start">
-        <Textarea
-          aria-label={t('git.sshKey')}
-          name="repositorySshKey"
-          value={sshKey}
-          onChange={(e) => setSshKey(e.target.value)}
-          rows={5}
-          placeholder={'-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----'}
-          className="max-w-md font-mono text-xs"
-        />
-      </SettingsRow>
+      {authMode === 'https' ? (
+        <SettingsRow label={t('git.authToken')} hint={t('git.authTokenHint')}>
+          <Input aria-label={t('git.authToken')} name="repositoryToken" type="password" value={authToken} onChange={(e) => setAuthToken(e.target.value)} placeholder="ghp_xxxxxxxxxxxx" autoComplete="new-password" className="max-w-md" />
+        </SettingsRow>
+      ) : (
+        <SettingsRow label={t('git.sshKey')} hint={t('git.sshKeyHint')} align="start">
+          <Textarea aria-label={t('git.sshKey')} name="repositorySshKey" value={sshKey} onChange={(e) => setSshKey(e.target.value)} rows={5} placeholder={'-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----'} className="max-w-md font-mono text-xs" />
+        </SettingsRow>
+      )}
       <SettingsRow label={t('git.userName')} hint={t('git.userNameHint')}>
         <Input aria-label={t('git.userName')} name="gitUserName" autoComplete="name" value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="Shipyard Bot" className="max-w-xs" />
       </SettingsRow>
@@ -138,8 +143,13 @@ function GitDashboard({ cfg }: { cfg: GitConfig }) {
   const [statusMsg, setStatusMsg] = useState('');
   const [autoPull, setAutoPull] = useState(cfg.autoPull !== false);
   const [autoPush, setAutoPush] = useState(cfg.autoPush !== false);
+  const initialAuthMode: 'https' | 'ssh' = cfg.hasSshKey || /^(git@|ssh:\/\/)/.test(cfg.repoUrl || '') ? 'ssh' : 'https';
+  const [authMode, setAuthMode] = useState<'https' | 'ssh'>(initialAuthMode);
+  const [authToken, setAuthToken] = useState('');
+  const [sshKey, setSshKey] = useState('');
   const settingsDirty = autoPull !== (cfg.autoPull !== false) || autoPush !== (cfg.autoPush !== false);
-  useUnsavedChanges(settingsDirty);
+  const credentialDirty = authMode !== initialAuthMode || Boolean(authToken.trim() || sshKey.trim());
+  useUnsavedChanges(settingsDirty || credentialDirty);
   const [selectedBranch, setSelectedBranch] = useState(cfg.branch || 'main');
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
 
@@ -147,7 +157,8 @@ function GitDashboard({ cfg }: { cfg: GitConfig }) {
     setAutoPull(cfg.autoPull !== false);
     setAutoPush(cfg.autoPush !== false);
     setSelectedBranch(cfg.branch || 'main');
-  }, [cfg.autoPull, cfg.autoPush, cfg.branch]);
+    setAuthMode(cfg.hasSshKey || /^(git@|ssh:\/\/)/.test(cfg.repoUrl || '') ? 'ssh' : 'https');
+  }, [cfg.autoPull, cfg.autoPush, cfg.branch, cfg.hasSshKey, cfg.repoUrl]);
 
   const branchesQ = useQuery<GitBranches>({
     queryKey: ['git-branches'],
@@ -205,6 +216,20 @@ function GitDashboard({ cfg }: { cfg: GitConfig }) {
     },
     onError: (e) => showToast(t('common.errorPrefix', { msg: (e as Error).message }), 'error'),
   });
+  const saveCredentials = useMutation({
+    mutationFn: () => api.saveGitConfig({
+      credentialMode: authMode,
+      authToken: authMode === 'https' ? authToken.trim() : undefined,
+      sshKey: authMode === 'ssh' ? sshKey.trim() : undefined,
+    }),
+    onSuccess: () => {
+      setAuthToken('');
+      setSshKey('');
+      showToast('Git credentials updated.', 'success');
+      qc.invalidateQueries({ queryKey: ['git-config'] });
+    },
+    onError: (error: Error) => showToast(error.message, 'error'),
+  });
 
   return (
     <div className="space-y-4">
@@ -217,6 +242,23 @@ function GitDashboard({ cfg }: { cfg: GitConfig }) {
 
         <SettingsRow label={t('git.connectedRemote')} hint={t('git.connectedRemoteSmall')}>
           <code className="break-all text-xs text-muted-foreground">{cfg.repoUrl}</code>
+        </SettingsRow>
+
+        <SettingsRow label="Authentication" hint="Choose one credential method. Saved credentials remain masked.">
+          <div className="space-y-2">
+            <div className="inline-flex rounded-sm border p-0.5" role="radiogroup" aria-label="Git authentication method">
+              <button type="button" role="radio" aria-checked={authMode === 'https'} onClick={() => setAuthMode('https')} className={`rounded-sm px-3 py-1.5 text-xs font-medium ${authMode === 'https' ? 'bg-accent text-foreground' : 'text-muted-foreground'}`}>HTTPS token</button>
+              <button type="button" role="radio" aria-checked={authMode === 'ssh'} onClick={() => setAuthMode('ssh')} className={`rounded-sm px-3 py-1.5 text-xs font-medium ${authMode === 'ssh' ? 'bg-accent text-foreground' : 'text-muted-foreground'}`}>SSH key</button>
+            </div>
+            {authMode === 'https' ? (
+              <Input aria-label="New HTTPS token" type="password" autoComplete="new-password" value={authToken} onChange={(event) => setAuthToken(event.target.value)} placeholder={cfg.hasToken ? 'Saved token · enter a replacement' : 'Enter HTTPS token'} className="max-w-md" />
+            ) : (
+              <Textarea aria-label="New SSH private key" value={sshKey} onChange={(event) => setSshKey(event.target.value)} rows={5} autoComplete="new-password" placeholder={cfg.hasSshKey ? 'Saved SSH key · enter a replacement' : 'Paste an OpenSSH private key'} className="max-w-md font-mono text-xs" />
+            )}
+            <Button type="button" variant="outline" size="sm" onClick={() => saveCredentials.mutate()} disabled={!credentialDirty || saveCredentials.isPending || (authMode !== initialAuthMode && !(authMode === 'https' ? authToken.trim() : sshKey.trim()))}>
+              <Save /> Save credentials
+            </Button>
+          </div>
         </SettingsRow>
 
         <SettingsRow label={t('git.branch')} hint={t('git.activeBranchSmall')}>

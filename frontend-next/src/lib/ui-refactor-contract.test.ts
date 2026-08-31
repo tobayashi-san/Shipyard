@@ -5,7 +5,7 @@ const source = (relative: string) =>
   readFileSync(new URL(`../${relative}`, import.meta.url), "utf8");
 
 describe("UI refactor contract", () => {
-  it("keeps IPAM and virtual guest tables on the compact shared density", () => {
+  it("keeps IPAM and virtual machine tables on the compact shared density", () => {
     for (const file of [
       "routes/networks.tsx",
       "routes/network-detail.tsx",
@@ -37,38 +37,46 @@ describe("UI refactor contract", () => {
     expect(dialog).toContain('className="grid gap-5 lg:grid-cols-2 lg:items-start"');
     expect(dialog.match(/className="min-w-0 space-y-5"/g)).toHaveLength(2);
     expect(dialog).toContain("Compute & Storage");
-    expect(dialog).toContain("Network & guest access");
+    expect(dialog).toContain("Network & VM access");
     expect(dialog).toContain("Post-deploy workflows");
   });
 
-  it("renders the infrastructure navigation as node and guest accordions", () => {
+  it("separates Operations and Infrastructure while keeping the tree infrastructure-only", () => {
     const sidebar = source("components/layout/Sidebar.tsx");
     const tree = source("components/layout/InfrastructureTree.tsx");
-    expect(sidebar).toContain('t("nav.infrastructure")');
-    expect(sidebar).toContain('t("nav.system")');
+    expect(sidebar).toContain('value: "operations"');
+    expect(sidebar).toContain('value: "infrastructure"');
+    expect(sidebar).toContain('workspace === "operations" ? (');
+    expect(sidebar).toContain("<InfrastructureTree onNavigate={onMobileClose} />");
+    expect(sidebar).toContain('t("nav.managedHosts")');
+    expect(sidebar).toContain('t("nav.managedVirtualMachines")');
+    expect(sidebar).toContain('t("nav.administration")');
+    expect(sidebar).toContain('t("nav.profile")');
+    expect(sidebar).toContain('t("nav.help")');
     expect(tree).toContain("const nodeOpen = !collapsed.has(nodeKey)");
     expect(tree).toContain('to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId"');
     expect(tree).toContain("!platformServerIds.has(server.id)");
     expect(tree).toContain('to="/servers/$id"');
     expect(tree).toContain("{vm.fleet_server_id ? (");
     expect(tree).toContain('title={`Open managed host ${vm.name || vmId}`}');
-    expect(tree).toContain('title="Open Proxmox guest details"');
+    expect(tree).toContain('title="Open Proxmox virtual machine details"');
     expect(tree).toContain("showInfrastructureVmIds");
     expect(tree).toContain("{showVmIds && <span");
   });
 
-  it("keeps the requested host sections visible and places Docker in the primary tab rail", () => {
+  it("uses the requested host tabs and places Files and Terminal under Access", () => {
     const page = source("features/server-detail/ServerDetailPage.tsx");
     expect(page).toContain('<TabsTrigger value="overview">');
-    expect(page).toContain('<TabsTrigger value="configuration">{t("common.details")}</TabsTrigger>');
-    expect(page).toContain('<TabsTrigger value="files">{t("det.tabFiles")}</TabsTrigger>');
-    expect(page).toContain('<TabsTrigger value="history">{t("det.tabOperations")}</TabsTrigger>');
+    expect(page).toContain('<TabsTrigger value="configuration">{t("det.tabSystem")}</TabsTrigger>');
+    expect(page).toContain('<TabsTrigger value="docker">{t("det.tabWorkloads")}</TabsTrigger>');
+    expect(page).toContain('<TabsTrigger value="updates">{t("det.tabUpdates")}</TabsTrigger>');
+    expect(page).toContain('<TabsTrigger value="history">{t("det.tabActivity")}</TabsTrigger>');
     expect(page).toContain('<TabsTrigger value="notes">');
-    expect(page).toContain('<TabsTrigger value="updates">{t("det.tabSystemUpdates")}</TabsTrigger>');
-    expect(page).toContain('<TabsTrigger value="terminal" data-terminal-trigger="true">');
-    expect(page).toContain('title={t("det.hostTools")}');
-    expect(page).toContain('<TabsTrigger value="docker">');
-    expect(page).not.toContain('OverflowItem icon={Box}');
+    expect(page).toContain('<TabsTrigger value="access">{t("det.tabAccess")}</TabsTrigger>');
+    expect(page).toContain("<ServerFilesTab serverId={id} profile={profile} />");
+    expect(page).toContain("setTerminalOpen(true)");
+    expect(page).not.toContain('<TabsTrigger value="files">');
+    expect(page).not.toContain('<TabsTrigger value="terminal"');
   });
 
   it("renders plugin paths as code pills instead of raw HTML copy", () => {
@@ -124,7 +132,29 @@ describe("UI refactor contract", () => {
   it("requires the VM name for an immediate force stop", () => {
     const vm = source("routes/proxmox-vm-detail.tsx");
     expect(vm).toContain('powerAction === "stop" ? `STOP ${vm.name}` : undefined');
-    expect(vm).toContain("Unsaved guest data may be lost.");
+    expect(vm).toContain("Unsaved virtual machine data may be lost.");
     expect(vm).toContain('variant={powerAction === "stop" ? "destructive" : "warning"}');
+  });
+
+  it("keeps playbook creation central and targeting reviewable", () => {
+    const page = source("features/playbooks/PlaybooksPage.tsx");
+    const templates = source("features/playbooks/PlaybookTemplates.tsx");
+    const runs = source("features/playbooks/PlaybookRuns.tsx");
+    const variables = source("features/playbooks/PlaybookVariables.tsx");
+    expect(page).toContain("setCreateRequest((value) => value + 1)");
+    expect(templates).not.toContain("const startNew");
+    expect(runs).toContain('placeholder="Search name, IP, or tag"');
+    expect(runs).toContain('aria-label="Filter hosts by group"');
+    expect(runs).toContain('aria-label="Filter hosts by tag"');
+    expect(runs).toContain("<summary className=\"cursor-pointer text-sm font-medium\">Advanced options</summary>");
+    expect(variables).toContain('{ label: "Secrets"');
+    expect(variables).toContain('v.is_secret ? "••••••••"');
+  });
+
+  it("focuses audit on security and configuration changes by default", () => {
+    const audit = source("features/operations/AuditLogPanel.tsx");
+    expect(audit).toContain('useState<"changes" | "all">("changes")');
+    expect(audit).toContain("Security & changes");
+    expect(audit).toContain("All events");
   });
 });

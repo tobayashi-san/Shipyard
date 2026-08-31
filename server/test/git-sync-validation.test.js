@@ -12,7 +12,7 @@ try { fs.unlinkSync(tmpDb); } catch {}
 process.env.DB_PATH = tmpDb;
 process.env.SHIPYARD_KEY_SECRET = 'test-secret-for-git-validation';
 
-const { validateGitUrl, validateBranchName } = require('../services/git-sync');
+const { getConfig, updateCredentials, validateGitUrl, validateBranchName } = require('../services/git-sync');
 
 test('validateGitUrl accepts https URLs', () => {
   assert.equal(validateGitUrl('https://github.com/user/repo.git').ok, true);
@@ -105,4 +105,14 @@ test('validateBranchName rejects shell metacharacters', () => {
   assert.equal(validateBranchName('foo;rm -rf /'), false);
   assert.equal(validateBranchName('foo bar'), false);
   assert.equal(validateBranchName('foo$bar'), false);
+});
+
+test('Git credentials use exactly one masked storage mode', () => {
+  updateCredentials({ mode: 'https', authToken: 'test-https-token' });
+  assert.equal(getConfig().authToken, 'test-https-token');
+  assert.equal(getConfig().sshKey, '');
+
+  updateCredentials({ mode: 'ssh', sshKey: '-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----' });
+  assert.equal(getConfig().authToken, '');
+  assert.match(getConfig().sshKey, /BEGIN OPENSSH PRIVATE KEY/);
 });

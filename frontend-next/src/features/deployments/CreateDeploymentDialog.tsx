@@ -36,7 +36,7 @@ export function CreateDeploymentDialog({ environmentId, open, onOpenChange }: { 
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><Server className="h-5 w-5" />New virtual machine</DialogTitle>
-          <DialogDescription>Select the Proxmox platform. The VM receives its own hidden OpenTofu directory, state, plans, and run history.</DialogDescription>
+          <DialogDescription>Select the Proxmox platform. Shipyard keeps this virtual machine isolated with its own plans and run history.</DialogDescription>
         </DialogHeader>
         <div className="space-y-2 py-2">
           <Label htmlFor="vm-platform">Proxmox platform</Label>

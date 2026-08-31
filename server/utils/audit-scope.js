@@ -57,4 +57,20 @@ function queryVisibleAuditRows(filters, permissions) {
   return rows;
 }
 
-module.exports = { auditRowVisibleToServers, filterAuditRows, queryVisibleAuditRows };
+const PRIMARY_CHANGE_PREFIXES = [
+  'auth.', 'login.', 'users.', 'roles.', 'system.', 'environment.', 'reset.',
+  'ssh.assignment.', 'maintenance_window.', 'schedule.', 'plugin.',
+  'server.create', 'server.created', 'server.update', 'server.delete',
+  'server.deleted', 'server.hidden', 'server.visible', 'servers.group_',
+  'opentofu.install',
+];
+
+function filterAuditFocus(rows, focus) {
+  if (focus !== 'changes') return Array.isArray(rows) ? rows : [];
+  return (Array.isArray(rows) ? rows : []).filter(row => {
+    const action = String(row?.action || '').toLowerCase();
+    return PRIMARY_CHANGE_PREFIXES.some(prefix => action.startsWith(prefix));
+  });
+}
+
+module.exports = { auditRowVisibleToServers, filterAuditRows, filterAuditFocus, queryVisibleAuditRows };

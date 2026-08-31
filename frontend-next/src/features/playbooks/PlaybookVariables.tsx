@@ -33,6 +33,8 @@ export function VarsTab() {
   const [desc, setDesc] = useState("");
   const [isSecret, setIsSecret] = useState(false);
   const [deleteItem, setDeleteItem] = useState<AnsibleVar | null>(null);
+  const plainVariables = (vars || []).filter((variable) => !variable.is_secret);
+  const secretVariables = (vars || []).filter((variable) => variable.is_secret);
 
   const openNew = () => {
     setEditId(null);
@@ -80,9 +82,14 @@ export function VarsTab() {
     <div className="space-y-4">
       <Card>
         <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <SlidersHorizontal className="h-4 w-4" /> {t("vars.title")}
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <SlidersHorizontal className="h-4 w-4" /> {t("vars.title")}
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Scoped to environment <code className="rounded bg-muted px-1">{environmentId}</code>. Secrets are encrypted and always masked.
+              </p>
             </div>
             {hasCap(profile, "canAddVars") && (
               <Button size="sm" onClick={openNew}>
@@ -116,45 +123,62 @@ export function VarsTab() {
                     </th>
                   </tr>
                 </thead>
-                <tbody>
-                  {vars.map((v) => (
-                    <tr key={v.id}>
-                      <td className="px-3 font-mono text-xs font-medium">
-                        {v.key}
-                      </td>
-                      <td className="max-w-[200px] px-3 font-mono text-xs truncate">
-                        {v.is_secret ? "••••••••" : v.value}
-                      </td>
-                      <td className="px-3 text-xs text-muted-foreground">
-                        {v.description}
-                      </td>
-                      <td className="px-3 text-right">
-                        <div className="flex justify-end gap-1">
-                          {hasCap(profile, "canEditVars") && (
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => openEdit(v)}
-                            >
-                              <Settings2 className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                          {hasCap(profile, "canDeleteVars") && (
-                            <Button
-                              variant="destructive"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => setDeleteItem(v)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                        </div>
+                {[
+                  { label: "Variables", description: "Plain values returned to authorized users", items: plainVariables },
+                  { label: "Secrets", description: "Encrypted values; saved values cannot be revealed", items: secretVariables },
+                ].map((group) => (
+                  <tbody key={group.label}>
+                    <tr className="bg-muted/35">
+                      <td colSpan={4} className="px-3 py-2">
+                        <span className="font-medium">{group.label}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">{group.items.length} · {group.description}</span>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
+                    {group.items.length === 0 ? (
+                      <tr><td colSpan={4} className="px-3 py-3 text-xs text-muted-foreground">No {group.label.toLowerCase()} configured.</td></tr>
+                    ) : group.items.map((v) => (
+                      <tr key={v.id}>
+                        <td className="px-3 font-mono text-xs font-medium">
+                          {v.key}
+                        </td>
+                        <td className="max-w-[200px] truncate px-3 font-mono text-xs">
+                          {v.is_secret ? "••••••••" : v.value}
+                        </td>
+                        <td className="px-3 text-xs text-muted-foreground">
+                          {v.description || "—"}
+                        </td>
+                        <td className="px-3 text-right">
+                          <div className="flex justify-end gap-1">
+                            {hasCap(profile, "canEditVars") && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                aria-label={`Edit ${v.key}`}
+                                title={`Edit ${v.key}`}
+                                onClick={() => openEdit(v)}
+                              >
+                                <Settings2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {hasCap(profile, "canDeleteVars") && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                aria-label={`Delete ${v.key}`}
+                                title={`Delete ${v.key}`}
+                                onClick={() => setDeleteItem(v)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                ))}
               </table>
             </div>
           )}
@@ -234,4 +258,3 @@ export function VarsTab() {
 // ═════════════════════════════════════════════════════════════════════════════
 // Tab: Schedules
 // ═════════════════════════════════════════════════════════════════════════════
-

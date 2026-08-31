@@ -2,23 +2,33 @@ import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
+  Activity,
   Boxes,
-  FileCode2,
-  LayoutDashboard,
-  Network,
-  Puzzle,
-  Settings2,
-  Workflow,
-  X,
+  CalendarClock,
   ChevronDown,
   ChevronRight,
+  Database,
+  FileCode2,
   GripVertical,
+  HardDrive,
+  HelpCircle,
+  LayoutDashboard,
+  Monitor,
+  Network,
+  Puzzle,
+  Server,
+  Settings2,
+  User,
+  Workflow,
+  X,
 } from "lucide-react";
-import { useUi } from "@/lib/store";
+import { useUi, type NavigationWorkspace } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import {
   canAccessDeployments,
+  canAccessInfrastructure,
   canAccessNetworks,
+  canAccessOperations,
   canSeePlugin,
   hasCap,
   usePlugins,
@@ -35,23 +45,18 @@ interface NavItemProps {
   collapsed: boolean;
   onNavigate?: () => void;
   params?: Record<string, string>;
+  search?: Record<string, unknown>;
 }
 
-function NavItem({
-  to,
-  label,
-  icon: Icon,
-  active,
-  collapsed,
-  onNavigate,
-  params,
-}: NavItemProps) {
+function NavItem({ to, label, icon: Icon, active, collapsed, onNavigate, params, search }: NavItemProps) {
   return (
     <Link
       to={to as never}
       params={params as never}
+      search={search as never}
       onClick={onNavigate}
       title={label}
+      aria-current={active ? "page" : undefined}
       className={cn(
         "group relative flex min-h-9 min-w-0 items-center gap-2.5 overflow-hidden rounded-sm px-2.5 py-2 text-sm transition-colors",
         active
@@ -60,33 +65,56 @@ function NavItem({
         collapsed && "justify-center px-2",
       )}
     >
-      <Icon
-        className={cn(
-          "h-4 w-4 shrink-0",
-          active
-            ? "text-primary"
-            : "text-muted-foreground group-hover:text-foreground",
-        )}
-      />
+      <Icon className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
       {!collapsed && <span className="min-w-0 flex-1 truncate">{label}</span>}
     </Link>
   );
 }
 
-export function Sidebar({
-  mobileOpen = false,
-  onMobileClose,
-}: {
-  mobileOpen?: boolean;
-  onMobileClose?: () => void;
-}) {
+function WorkspaceSwitcher({ value, onChange, collapsed }: { value: NavigationWorkspace; onChange: (workspace: NavigationWorkspace) => void; collapsed: boolean }) {
+  const { t } = useTranslation();
+  const options: Array<{ value: NavigationWorkspace; label: string; icon: typeof Activity }> = [
+    { value: "operations", label: t("nav.operations"), icon: Activity },
+    { value: "infrastructure", label: t("nav.infrastructure"), icon: Database },
+  ];
+  return (
+    <div className={cn("grid gap-1 border-b p-2", collapsed ? "grid-cols-1" : "grid-cols-2")} role="group" aria-label={t("nav.workspace")}>
+      {options.map((option) => {
+        const Icon = option.icon;
+        const selected = option.value === value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            aria-pressed={selected}
+            title={option.label}
+            className={cn(
+              "flex min-h-9 items-center justify-center gap-2 rounded-sm border px-2 text-xs font-semibold transition-colors",
+              selected ? "border-primary/30 bg-primary/10 text-foreground" : "border-transparent text-muted-foreground hover:bg-accent hover:text-foreground",
+            )}
+          >
+            <Icon className="h-3.5 w-3.5 shrink-0" />
+            {!collapsed && option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: boolean; onMobileClose?: () => void }) {
   const { t } = useTranslation();
   const collapsed = useUi((state) => state.sidebarCollapsed);
   const sidebarWidth = useUi((state) => state.sidebarWidth);
   const setSidebarWidth = useUi((state) => state.setSidebarWidth);
   const treeCollapsed = useUi((state) => state.infrastructureTreeCollapsed);
   const toggleTree = useUi((state) => state.toggleInfrastructureTree);
-  const path = useRouterState({ select: (state) => state.location.pathname });
+  const workspace = useUi((state) => state.navigationWorkspace);
+  const setWorkspace = useUi((state) => state.setNavigationWorkspace);
+  const location = useRouterState({ select: (state) => state.location });
+  const path = location.pathname;
+  const section = (location.search as Record<string, unknown>).section;
   const { data: profile } = useProfile();
   const { data: pluginData } = usePlugins();
   const previousPath = useRef(path);
@@ -95,12 +123,18 @@ export function Sidebar({
   const canViewPlaybooks = hasCap(profile, "canViewPlaybooks");
   const canManageConsole = profile?.role === "admin";
   const canViewDeployments = canAccessDeployments(profile);
+  const canViewInfrastructure = canAccessInfrastructure(profile);
   const canViewNetworks = canAccessNetworks(profile);
-  const otherPlugins = plugins.filter(
-    (plugin) =>
-      plugin.enabled &&
-      canSeePlugin(profile, plugin.id),
-  );
+  const canViewOperations = canAccessOperations(profile);
+  const otherPlugins = plugins.filter((plugin) => plugin.enabled && canSeePlugin(profile, plugin.id));
+
+  useEffect(() => {
+    if (path.startsWith("/infrastructure") || path.startsWith("/networks")) {
+      setWorkspace("infrastructure");
+    } else if (path === "/" || path.startsWith("/servers") || path.startsWith("/deployments") || path.startsWith("/operations") || path.startsWith("/playbooks")) {
+      setWorkspace("operations");
+    }
+  }, [path, setWorkspace]);
 
   useEffect(() => {
     if (path === previousPath.current) return;
@@ -132,151 +166,61 @@ export function Sidebar({
       style={{ width: collapsed ? undefined : `${sidebarWidth}px` }}
     >
       <div className="flex h-11 shrink-0 items-center justify-between border-b px-3 md:hidden">
-        <span className="font-mono text-sm font-semibold uppercase tracking-[0.16em]">
-          Shipyard
-        </span>
-        <button
-          type="button"
-          onClick={onMobileClose}
-          className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
-          aria-label={t("shell.closeNavigation")}
-        >
+        <span className="font-mono text-sm font-semibold uppercase tracking-[0.16em]">Shipyard</span>
+        <button type="button" onClick={onMobileClose} className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={t("shell.closeNavigation")}>
           <X className="h-4 w-4" />
         </button>
       </div>
-      <nav className="min-h-0 flex-1 space-y-3.5 overflow-y-auto p-2 md:flex md:flex-col md:gap-3.5 md:space-y-0 md:overflow-hidden">
-        {canViewServers && <section className="shrink-0 space-y-1">
-          {!collapsed && (
-            <div className="section-label px-2.5 pb-1">{t("nav.overview")}</div>
-          )}
-          <NavItem
-            to="/"
-            label={t("nav.dashboard")}
-            icon={LayoutDashboard}
-            active={path === "/"}
-            collapsed={collapsed}
-            onNavigate={onMobileClose}
-          />
-        </section>}
-        {(canViewServers || canViewDeployments || canViewNetworks) && <section className="shrink-0 space-y-1">
-          {!collapsed && (
-            <div className="section-label px-2.5 pb-1 uppercase tracking-[0.12em]">{t("nav.infrastructure")}</div>
-          )}
-          {canViewServers && (
-            <NavItem
-              to="/servers"
-              label={t("nav.servers")}
-              icon={Boxes}
-              active={path === "/servers" || path.startsWith("/servers/")}
-              collapsed={collapsed}
-              onNavigate={onMobileClose}
-            />
-          )}
-          {canViewDeployments && (
-            <NavItem
-              to="/deployments"
-              label={t("nav.virtualMachines")}
-              icon={Workflow}
-              active={path === "/deployments" || path.startsWith("/deployments/")}
-              collapsed={collapsed}
-              onNavigate={onMobileClose}
-            />
-          )}
-          {canViewNetworks && (
-            <NavItem
-              to="/networks"
-              label={t("nav.networks")}
-              icon={Network}
-              active={path === "/networks" || path.startsWith("/networks/")}
-              collapsed={collapsed}
-              onNavigate={onMobileClose}
-            />
-          )}
-        </section>}
-        {canViewServers && <section
-          className={cn(
-            "border-y border-border-strong/60 bg-muted/25 -mx-2 px-3 py-2",
-            !collapsed && "md:flex md:min-h-0 md:flex-1 md:flex-col",
-            collapsed && "px-2",
-          )}
-        >
-          {!collapsed && <button type="button" onClick={toggleTree} className="flex min-h-8 w-full items-center gap-1 rounded-sm px-1 text-left section-label uppercase tracking-[0.12em] hover:bg-accent/60" aria-expanded={!treeCollapsed}>
-            {treeCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}{t("nav.infrastructureTree")}
-          </button>}
-          {canViewServers && (
-            <div
-              className={cn(
-                "mt-1 max-h-[min(46vh,470px)] overflow-y-auto pr-1 md:min-h-0 md:max-h-none md:flex-1",
-                (collapsed || treeCollapsed) && "hidden",
-              )}
-            >
-              <InfrastructureTree onNavigate={onMobileClose} />
-            </div>
-          )}
-          {canViewServers && collapsed && (
-            <Link
-              to="/servers"
-              title={t("nav.resources")}
-              className="flex h-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
-            >
-              <Boxes className="h-4 w-4" />
-            </Link>
-          )}
-        </section>}
-        {canViewPlaybooks && <section className="shrink-0 space-y-1">
-          {!collapsed && (
-            <div className="section-label px-2.5 pb-1 uppercase tracking-[0.12em]">{t("nav.automation")}</div>
-          )}
-          {canViewPlaybooks && (
-            <NavItem
-              to="/playbooks"
-              label={t("nav.playbooks")}
-              icon={FileCode2}
-              active={path === "/playbooks"}
-              collapsed={collapsed}
-              onNavigate={onMobileClose}
-            />
-          )}
-        </section>}
 
-        {otherPlugins.length > 0 && (
-          <section className="shrink-0 space-y-1">
-            {!collapsed && (
-              <div className="section-label px-2.5 pb-1">{t("nav.integrations")}</div>
-            )}
-            {otherPlugins.map((plugin: PluginInfo) => (
-              <NavItem
-                key={plugin.id}
-                to="/plugins/$id"
-                params={{ id: plugin.id }}
-                label={plugin.sidebar?.label || plugin.name || plugin.id}
-                icon={Puzzle}
-                active={path === `/plugins/${plugin.id}`}
-                collapsed={collapsed}
-                onNavigate={onMobileClose}
-              />
-            ))}
-          </section>
-        )}
+      <WorkspaceSwitcher value={workspace} onChange={setWorkspace} collapsed={collapsed} />
 
-        {canManageConsole && (
-          <section className="shrink-0 space-y-1">
-            {!collapsed && (
-              <div className="section-label px-2.5 pb-1 uppercase tracking-[0.12em]">{t("nav.system")}</div>
+      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2" aria-label={workspace === "operations" ? t("nav.operations") : t("nav.infrastructure")}>
+        {workspace === "operations" ? (
+          <>
+            {canViewServers && <NavItem to="/" label={t("nav.dashboard")} icon={LayoutDashboard} active={path === "/"} collapsed={collapsed} onNavigate={onMobileClose} />}
+            {canViewOperations && <NavItem to="/operations" search={{ section: "tasks" }} label={t("nav.activity")} icon={Activity} active={path === "/operations" && section !== "maintenance" && section !== "audit"} collapsed={collapsed} onNavigate={onMobileClose} />}
+            {canViewServers && <NavItem to="/servers" label={t("nav.managedHosts")} icon={Server} active={path === "/servers" || path.startsWith("/servers/")} collapsed={collapsed} onNavigate={onMobileClose} />}
+            {canViewDeployments && <NavItem to="/deployments" label={t("nav.managedVirtualMachines")} icon={Monitor} active={path === "/deployments" || path.startsWith("/deployments/")} collapsed={collapsed} onNavigate={onMobileClose} />}
+            {canViewPlaybooks && <NavItem to="/playbooks" label={t("nav.playbooks")} icon={FileCode2} active={path === "/playbooks"} collapsed={collapsed} onNavigate={onMobileClose} />}
+            {canViewOperations && <NavItem to="/operations" search={{ section: "maintenance" }} label={t("nav.maintenance")} icon={CalendarClock} active={path === "/operations" && section === "maintenance"} collapsed={collapsed} onNavigate={onMobileClose} />}
+            {otherPlugins.length > 0 && (
+              <section className="space-y-1 border-t pt-2">
+                {!collapsed && <div className="section-label px-2.5 pb-1">{t("nav.integrations")}</div>}
+                {otherPlugins.map((plugin: PluginInfo) => (
+                  <NavItem key={plugin.id} to="/plugins/$id" params={{ id: plugin.id }} label={plugin.sidebar?.label || plugin.name || plugin.id} icon={Puzzle} active={path === `/plugins/${plugin.id}`} collapsed={collapsed} onNavigate={onMobileClose} />
+                ))}
+              </section>
             )}
-          {canManageConsole && (
-            <NavItem
-              to="/settings"
-              label={t("nav.settings")}
-              icon={Settings2}
-              active={path === "/settings" || path.startsWith("/settings/")}
-              collapsed={collapsed}
-              onNavigate={onMobileClose}
-            />
-          )}
-          </section>
+          </>
+        ) : (
+          <>
+            {canViewInfrastructure && <NavItem to="/infrastructure" search={{ section: "platforms" }} label={t("nav.platforms")} icon={Database} active={path === "/infrastructure" && (!section || section === "platforms")} collapsed={collapsed} onNavigate={onMobileClose} />}
+            {(canViewServers || canViewInfrastructure) && (
+              <section className="border-y border-border-strong/60 bg-muted/20 -mx-2 my-1 px-2 py-1">
+                <button type="button" onClick={toggleTree} className={cn("flex min-h-9 w-full items-center gap-2 rounded-sm px-2.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground", collapsed && "justify-center px-2")} aria-expanded={!treeCollapsed} title={t("nav.infrastructureTree")}>
+                  <Boxes className="h-4 w-4 shrink-0" />
+                  {!collapsed && <><span className="min-w-0 flex-1 text-left">{t("nav.infrastructureTree")}</span>{treeCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}</>}
+                </button>
+                {!collapsed && !treeCollapsed && <div className="max-h-[min(48vh,32rem)] overflow-y-auto py-1"><InfrastructureTree onNavigate={onMobileClose} /></div>}
+              </section>
+            )}
+            {canViewInfrastructure && <NavItem to="/infrastructure" search={{ section: "nodes" }} label={t("nav.nodes")} icon={Server} active={path === "/infrastructure" && section === "nodes"} collapsed={collapsed} onNavigate={onMobileClose} />}
+            {canViewInfrastructure && <NavItem to="/infrastructure" search={{ section: "guests" }} label={t("nav.virtualMachinesContainers")} icon={Workflow} active={path === "/infrastructure" && section === "guests"} collapsed={collapsed} onNavigate={onMobileClose} />}
+            {canViewInfrastructure && <NavItem to="/infrastructure" search={{ section: "datastores" }} label={t("nav.datastores")} icon={HardDrive} active={path === "/infrastructure" && section === "datastores"} collapsed={collapsed} onNavigate={onMobileClose} />}
+            {canViewNetworks && <NavItem to="/networks" label={t("nav.networksIpam")} icon={Network} active={path === "/networks" || path.startsWith("/networks/")} collapsed={collapsed} onNavigate={onMobileClose} />}
+          </>
         )}
       </nav>
+
+      <div className="shrink-0 space-y-1 border-t p-2">
+        {canManageConsole && <NavItem to="/settings" label={t("nav.administration")} icon={Settings2} active={path === "/settings" || path.startsWith("/settings/")} collapsed={collapsed} onNavigate={onMobileClose} />}
+        <NavItem to="/profile" label={t("nav.profile")} icon={User} active={path === "/profile"} collapsed={collapsed} onNavigate={onMobileClose} />
+        <a href="https://github.com/tobayashi-san/Shipyard" target="_blank" rel="noreferrer" title={t("nav.help")} className={cn("group flex min-h-9 items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground", collapsed && "justify-center px-2")}>
+          <HelpCircle className="h-4 w-4 shrink-0" />
+          {!collapsed && <span>{t("nav.help")}</span>}
+        </a>
+      </div>
+
       {!collapsed && <button type="button" onPointerDown={startResize} className="absolute inset-y-0 -right-2 hidden w-4 cursor-col-resize items-center justify-center text-transparent hover:text-muted-foreground md:flex" aria-label={t("nav.resizeSidebar")} title={t("nav.resizeSidebar")}><GripVertical className="h-4 w-4" /></button>}
     </aside>
   );

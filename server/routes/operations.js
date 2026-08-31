@@ -26,6 +26,36 @@ function statusTone(status) {
   return 'muted';
 }
 
+function groupSuccessfulSyncRows(rows) {
+  const grouped = new Map();
+  const visible = [];
+  for (const row of rows) {
+    const isSuccessful = row.statusTone === 'success';
+    const isPeriodicSync = /\b(sync|synchroni[sz]e|refresh|inventory|gather)\b/i.test(String(row.name || ''));
+    if (!isSuccessful || !isPeriodicSync) {
+      visible.push(row);
+      continue;
+    }
+    const timestamp = numericTime(row.time);
+    const day = Number.isFinite(timestamp) ? new Date(timestamp).toISOString().slice(0, 10) : 'unknown';
+    const key = [row.source, row.name, row.target, day].join('\u0000');
+    const entries = grouped.get(key) || [];
+    entries.push(row);
+    grouped.set(key, entries);
+  }
+  for (const entries of grouped.values()) {
+    entries.sort((left, right) => numericTime(right.time) - numericTime(left.time));
+    const latest = entries[0];
+    visible.push(entries.length === 1 ? latest : {
+      ...latest,
+      id: `grouped-${latest.id}`,
+      name: `${latest.name} · ${entries.length} successful syncs`,
+      grouped_count: entries.length,
+    });
+  }
+  return visible;
+}
+
 function permittedRows(req) {
   const permissions = getPermissions(req.user);
   const environmentId = req.environmentId || 'default';
@@ -121,7 +151,7 @@ function permittedRows(req) {
 }
 
 router.get('/', (req, res) => {
-  const rows = permittedRows(req);
+  const rows = groupSuccessfulSyncRows(permittedRows(req));
   const permissions = getPermissions(req.user);
   if (!permissions || ![
     'canViewDeployments', 'canManageDeployments', 'canViewSchedules', 'canViewAudit', 'canViewMaintenance', 'canViewServerHistory', 'canViewUpdates',

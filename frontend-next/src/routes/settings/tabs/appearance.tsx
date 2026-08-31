@@ -9,8 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { SettingsRow, SettingsSection } from "../_row";
-import { THEME_PRESETS, useUi } from "@/lib/store";
-import { cn } from "@/lib/utils";
+import { useUi } from "@/lib/store";
 import { useUnsavedChanges } from "@/lib/use-unsaved-changes";
 
 const DEFAULTS = {
@@ -31,8 +30,6 @@ export function AppearanceTab() {
 
   const [appName, setAppName] = useState(wl.appName || "");
   const [color, setColor] = useState(wl.accentColor || DEFAULTS.accentColor);
-  const themePreset = useUi((state) => state.themePreset);
-  const setThemePreset = useUi((state) => state.setThemePreset);
   const showVmIds = useUi((state) => state.showInfrastructureVmIds);
   const setShowVmIds = useUi((state) => state.setShowInfrastructureVmIds);
   const dirty = appName !== (wl.appName || "") || color !== (wl.accentColor || DEFAULTS.accentColor);
@@ -129,67 +126,9 @@ export function AppearanceTab() {
         title="Navigation"
         description="Choose how infrastructure inventory is represented in the sidebar."
       >
-        <SettingsRow label="Show VM IDs" hint="Display the Proxmox VMID before each guest name in the infrastructure tree." noBorder>
+        <SettingsRow label="Show VM IDs" hint="Display the Proxmox VMID before each virtual machine name in the infrastructure tree." noBorder>
           <Switch aria-label="Show VM IDs in infrastructure tree" checked={showVmIds} onCheckedChange={setShowVmIds} />
         </SettingsRow>
-      </SettingsSection>
-      <SettingsSection
-        icon={<Paintbrush className="h-4 w-4" />}
-        title="Console theme"
-        description="Choose a complete, coordinated color palette. The selection is applied to this console immediately."
-      >
-        <div className="grid gap-3 p-1 sm:grid-cols-2 xl:grid-cols-3">
-          {THEME_PRESETS.map((preset) => (
-            <button
-              key={preset.id}
-              type="button"
-              onClick={() => setThemePreset(preset.id)}
-              aria-pressed={themePreset === preset.id}
-              aria-label={`${preset.name} theme, ${preset.mode} mode`}
-              className={cn(
-                "rounded-[3px] border p-3 text-left transition-colors hover:border-primary/50",
-                themePreset === preset.id
-                  ? "border-primary bg-primary/5 ring-1 ring-primary/30"
-                  : "bg-card hover:bg-muted/30",
-              )}
-            >
-              <div
-                className="mb-3 flex h-12 overflow-hidden rounded-sm border border-black/10"
-                style={{ backgroundColor: preset.preview.canvas }}
-              >
-                <span
-                  className="w-[34%]"
-                  style={{
-                    backgroundColor: preset.preview.surface,
-                    borderRight: `3px solid ${preset.preview.accent}`,
-                  }}
-                />
-                <span
-                  className="flex-1 p-2"
-                  style={{ backgroundColor: preset.preview.canvas }}
-                >
-                  <span
-                    className="block h-2.5 w-2/3 rounded-sm"
-                    style={{ backgroundColor: preset.preview.accent }}
-                  />
-                  <span
-                    className="mt-2 block h-2 w-full rounded-sm shadow-sm"
-                    style={{ backgroundColor: preset.preview.card }}
-                  />
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-medium">{preset.name}</span>
-                <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  {preset.mode === "dark" ? "Dark" : "Light"}
-                </span>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {preset.description}
-              </p>
-            </button>
-          ))}
-        </div>
       </SettingsSection>
     </div>
   );

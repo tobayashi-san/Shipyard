@@ -114,7 +114,21 @@ import {
 
 import type { ServerDetailController } from "./useServerDetailController";
 
+function historyDuration(item: Partial<HistoryRow>) {
+  if (!item.started_at || !item.completed_at) return item.status === "running" ? "Running" : "—";
+  const milliseconds = new Date(item.completed_at).getTime() - new Date(item.started_at).getTime();
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) return "—";
+  const seconds = Math.round(milliseconds / 1000);
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+function historyFailureCause(item: HistoryRow) {
+  if (item.status !== "failed" || !item.output) return "—";
+  return item.output.split("\n").map((line) => line.trim()).filter(Boolean).at(-1) || "Task failed without an error message.";
+}
+
 export function ServerOperationsTabs({ controller }: { controller: ServerDetailController }) {
+  const [selectedHistory, setSelectedHistory] = useState<HistoryRow | null>(null);
   const {
     t,
     qc,
@@ -322,11 +336,8 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                             {statusLabel(t, h.status)}
                           </StatusBadge>
                         </div>
-                        {h.completed_at && (
-                          <div className="text-xs text-muted-foreground">
-                            Abgeschlossen: {formatDate(h.completed_at, hour12)}
-                          </div>
-                        )}
+                        <div className="text-xs text-muted-foreground">Duration: {historyDuration(h)}</div>
+                        {h.status === "failed" && <div className="rounded-sm bg-destructive/5 p-2 text-xs text-destructive"><span className="font-medium">Cause: </span>{historyFailureCause(h)}{h.output && <button type="button" className="ml-2 underline" onClick={() => setSelectedHistory(h)}>View log</button>}</div>}
                       </div>
                     ))}
                   </div>
@@ -342,6 +353,8 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                           <th className="px-3 py-2">{t("common.status")}</th>
                           <th className="px-3 py-2">{t("det.colStarted")}</th>
                           <th className="px-3 py-2">{t("det.colDone")}</th>
+                          <th className="px-3 py-2">Duration</th>
+                          <th className="px-3 py-2">Failure / log</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
@@ -378,6 +391,10 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                             </td>
                             <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">
                               {formatDate(h.completed_at, hour12)}
+                            </td>
+                            <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{historyDuration(h)}</td>
+                            <td className="max-w-[22rem] px-3 py-2 text-xs">
+                              {h.status === "failed" ? <><span className="block truncate text-destructive" title={historyFailureCause(h)}>{historyFailureCause(h)}</span>{h.output && <button type="button" className="mt-0.5 text-primary underline" onClick={() => setSelectedHistory(h)}>View log</button>}</> : <span className="text-muted-foreground">—</span>}
                             </td>
                           </tr>
                         ))}
@@ -563,6 +580,13 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
             </Card>
           </TabsContent>
         )}
+        <Dialog open={Boolean(selectedHistory)} onOpenChange={(open) => !open && setSelectedHistory(null)}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader><DialogTitle>Task log</DialogTitle></DialogHeader>
+            <div className="text-xs text-muted-foreground">{selectedHistory?.action || selectedHistory?.playbook_name || "Task"} · {historyDuration(selectedHistory || {})}</div>
+            <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-md bg-slate-950 p-4 font-mono text-xs text-slate-100">{selectedHistory?.output || "No log output was recorded."}</pre>
+          </DialogContent>
+        </Dialog>
 
         {/* ════ NOTES ════ */}
         {hasCap(profile, "canViewNotes") && (

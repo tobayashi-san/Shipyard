@@ -196,12 +196,12 @@ function canAccessEnvironment(permissions, environmentId) {
 
 function guardServerGroupAccess(req, res, next) {
   const group = db.db.prepare('SELECT * FROM server_groups WHERE id = ?').get(req.params.groupId);
-  if (!group) return res.status(404).json({ error: 'Ordner nicht gefunden.' });
+  if (!group) return res.status(404).json({ error: 'Folder not found.' });
   if (req.environmentId && String(group.environment_id || 'default') !== req.environmentId) {
-    return res.status(404).json({ error: 'Ordner nicht gefunden.' });
+    return res.status(404).json({ error: 'Folder not found.' });
   }
   const permissions = getPermissions(req.user);
-  if (!canAccessServerGroup(permissions, group)) return res.status(403).json({ error: 'Ordnerzugriff verweigert.' });
+  if (!canAccessServerGroup(permissions, group)) return res.status(403).json({ error: 'Folder access denied.' });
   req.serverGroup = group;
   next();
 }

@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
-import { History, Play, Terminal, X } from "lucide-react";
+import { History, Play, Search, Terminal, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { asArray } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
@@ -49,11 +49,16 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
     queryFn: () =>
       api.getServers(environmentId) as unknown as Promise<Record<string, unknown>[]>,
   });
+  const serverGroups = useQuery<Record<string, unknown>[]>({
+    queryKey: ["server-groups", environmentId],
+    queryFn: () => api.getServerGroups(environmentId) as unknown as Promise<Record<string, unknown>[]>,
+  });
   const environmentVars = useQuery<AnsibleVar[]>({
     queryKey: ["ansibleVars", environmentId],
     queryFn: () => api.getAnsibleVars(environmentId) as unknown as Promise<AnsibleVar[]>,
   });
-  const srvList = asArray<Record<string, unknown>>(servers.data);
+  const srvList = useMemo(() => asArray<Record<string, unknown>>(servers.data), [servers.data]);
+  const groupList = useMemo(() => asArray<Record<string, unknown>>(serverGroups.data), [serverGroups.data]);
   const userPbs = asArray<Playbook>(playbooks).filter((p) => !p.isInternal);
 
   const [selPb, setSelPb] = useState(initialPlaybook);
@@ -69,6 +74,9 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
   const [reviewVars, setReviewVars] = useState<Record<string, unknown>>({});
   const [checkMode, setCheckMode] = useState(false);
   const [forks, setForks] = useState(5);
+  const [hostSearch, setHostSearch] = useState("");
+  const [groupFilter, setGroupFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -112,9 +120,27 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
     return () => { stopped = true; window.clearInterval(timer); };
   }, [activeRunId, activeRunStorageKey]);
 
+  const allTags = useMemo(() => [...new Set(srvList.flatMap((server) => (
+    Array.isArray(server.tags) ? server.tags.map(String) : []
+  )))].sort((a, b) => a.localeCompare(b)), [srvList]);
+  const visibleServers = useMemo(() => {
+    const needle = hostSearch.trim().toLowerCase();
+    return srvList.filter((server) => {
+      const tags = Array.isArray(server.tags) ? server.tags.map(String) : [];
+      const searchable = [server.name, server.hostname, server.ip_address, ...tags]
+        .map(String)
+        .join(" ")
+        .toLowerCase();
+      return (!needle || searchable.includes(needle)) &&
+        (!groupFilter || String(server.group_id || "") === groupFilter) &&
+        (!tagFilter || tags.includes(tagFilter));
+    });
+  }, [groupFilter, hostSearch, srvList, tagFilter]);
   const previewTargets = allChecked
     ? srvList.map((server) => String(server.name)).filter((name) => !checked.has(name))
     : [...checked].filter((name) => name !== "localhost");
+  const selectedTargets = allChecked ? previewTargets : [...checked];
+  const shortTargetPreview = selectedTargets.slice(0, 8);
 
   const toggleServer = (name: string) => {
     setChecked((prev) => {
@@ -122,6 +148,15 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
       if (n.has(name)) n.delete(name);
       else n.add(name);
       return n;
+    });
+  };
+
+  const applyVisibleSelection = () => {
+    const names = visibleServers.map((server) => String(server.name)).filter(Boolean);
+    setChecked((previous) => {
+      const next = new Set(previous);
+      names.forEach((name) => next.add(name));
+      return next;
     });
   };
 
@@ -266,6 +301,44 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
             <p className="text-xs text-muted-foreground">
               {allChecked ? t("run.excludeHint") : t("run.includeHint")}
             </p>
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_9rem_9rem]">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  aria-label="Search hosts"
+                  value={hostSearch}
+                  onChange={(event) => setHostSearch(event.target.value)}
+                  placeholder="Search name, IP, or tag"
+                  className="pl-8"
+                />
+              </div>
+              <select
+                aria-label="Filter hosts by group"
+                className="flex h-9 rounded-md border border-input bg-background px-2 text-sm"
+                value={groupFilter}
+                onChange={(event) => setGroupFilter(event.target.value)}
+              >
+                <option value="">All groups</option>
+                {groupList.map((group) => <option key={String(group.id)} value={String(group.id)}>{String(group.name)}</option>)}
+              </select>
+              <select
+                aria-label="Filter hosts by tag"
+                className="flex h-9 rounded-md border border-input bg-background px-2 text-sm"
+                value={tagFilter}
+                onChange={(event) => setTagFilter(event.target.value)}
+              >
+                <option value="">All tags</option>
+                {allTags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
+              </select>
+            </div>
+            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span>{visibleServers.length} of {srvList.length} managed hosts</span>
+              {visibleServers.length > 0 && (
+                <Button type="button" variant="ghost" size="sm" className="h-7" onClick={applyVisibleSelection}>
+                  {allChecked ? "Exclude filtered" : "Select filtered"}
+                </Button>
+              )}
+            </div>
             <div className="max-h-80 min-h-44 space-y-1 overflow-y-auto rounded-md border p-2">
               <label className="flex items-center gap-2 text-sm font-medium">
                 <input
@@ -279,14 +352,15 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
                 {t("pb.allServers")}
               </label>
               <Separator />
-              {srvList.map((s) => {
+              {visibleServers.map((s) => {
                 const nm = String(s.name);
                 const dis = allChecked && nm === "localhost";
                 const isExcluded = allChecked && checked.has(nm);
+                const tags = Array.isArray(s.tags) ? s.tags.map(String) : [];
                 return (
                   <label
                     key={nm}
-                    className={`flex items-center gap-2 text-sm rounded px-1 py-0.5 transition-colors ${dis ? "opacity-40" : ""} ${isExcluded ? "bg-destructive/10 text-destructive" : ""}`}
+                    className={`flex min-h-9 items-center gap-2 rounded px-2 py-1 text-sm transition-colors ${dis ? "opacity-40" : ""} ${isExcluded ? "bg-destructive/10 text-destructive" : "hover:bg-muted/50"}`}
                   >
                     <input
                       type="checkbox"
@@ -295,20 +369,23 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
                       onChange={() => toggleServer(nm)}
                       className={isExcluded ? "accent-destructive" : ""}
                     />
-                    <span className="min-w-0 truncate">{nm}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">{nm}</span>
+                      <span className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
+                        {s.ip_address ? <span className="truncate font-mono">{String(s.ip_address)}</span> : null}
+                        {tags.slice(0, 2).map((tag) => <span key={tag} className="max-w-24 truncate rounded bg-muted px-1">{tag}</span>)}
+                        {tags.length > 2 ? <span>+{tags.length - 2}</span> : null}
+                      </span>
+                    </span>
                     {isExcluded && (
                       <span className="text-xs font-medium text-destructive">
                         {t("run.excluded")}
                       </span>
                     )}
-                    <StatusBadge
-                      tone={s.status === "online" ? "success" : "muted"}
-                      className="ml-auto flex-shrink-0"
-                    >
-                      {s.status === "online"
-                        ? t("common.online")
-                        : t("common.offline")}
-                    </StatusBadge>
+                    <span className={`ml-auto flex shrink-0 items-center gap-1 text-xs ${s.status === "online" ? "text-muted-foreground" : "text-destructive"}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${s.status === "online" ? "bg-emerald-500" : "bg-destructive"}`} />
+                      {s.status === "online" ? t("common.online") : t("common.offline")}
+                    </span>
                   </label>
                 );
               })}
@@ -331,9 +408,10 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
             </div>
           </div>
           <div className="rounded-md border bg-muted/20 p-3 text-sm">
-            <div className="font-medium">Target preview · {allChecked ? previewTargets.length : checked.size} host{(allChecked ? previewTargets.length : checked.size) === 1 ? "" : "s"}</div>
+            <div className="font-medium">Target preview · {selectedTargets.length} host{selectedTargets.length === 1 ? "" : "s"}</div>
             <p className="mt-1 break-words font-mono text-xs text-muted-foreground">
-              {(allChecked ? previewTargets : [...checked]).join(", ") || "Select at least one host."}
+              {shortTargetPreview.join(", ") || "Select at least one host."}
+              {selectedTargets.length > shortTargetPreview.length ? ` +${selectedTargets.length - shortTargetPreview.length} more` : ""}
             </p>
           </div>
           <div className="space-y-1">
@@ -351,17 +429,20 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
             />
             <p className="text-xs text-muted-foreground">Environment variables and encrypted secrets are merged automatically. Values entered here override them for this run.</p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm">
-              <span><span className="block font-medium">Dry run</span><span className="text-xs text-muted-foreground">Ansible check mode with diff</span></span>
-              <Switch aria-label="Dry run" checked={checkMode} onCheckedChange={setCheckMode} />
-            </label>
-            <div className="space-y-1">
-              <Label htmlFor="playbook-forks">Parallel hosts</Label>
-              <Input id="playbook-forks" type="number" min={1} max={50} value={forks} onChange={(event) => setForks(Math.min(50, Math.max(1, Number(event.target.value) || 1)))} />
-              <p className="text-xs text-muted-foreground">Set to 1 for serial execution.</p>
+          <details className="rounded-md border bg-muted/10 px-3 py-2">
+            <summary className="cursor-pointer text-sm font-medium">Advanced options</summary>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm">
+                <span><span className="block font-medium">Dry run</span><span className="text-xs text-muted-foreground">Ansible check mode with diff</span></span>
+                <Switch aria-label="Dry run" checked={checkMode} onCheckedChange={setCheckMode} />
+              </label>
+              <div className="space-y-1">
+                <Label htmlFor="playbook-forks">Parallel hosts</Label>
+                <Input id="playbook-forks" type="number" min={1} max={50} value={forks} onChange={(event) => setForks(Math.min(50, Math.max(1, Number(event.target.value) || 1)))} />
+                <p className="text-xs text-muted-foreground">Set to 1 for serial execution.</p>
+              </div>
             </div>
-          </div>
+          </details>
           <div className="flex flex-wrap gap-2">
             <Button onClick={run} disabled={busy}>
               <Play className="h-4 w-4" /> {busy ? t("qr.running") : checkMode ? "Start dry run" : t("qr.run")}
@@ -401,8 +482,15 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
                 <div>
                   <div className="mb-2 font-medium">Hosts ({(reviewAllMode ? previewTargets : [...checked]).length})</div>
                   <div className="flex flex-wrap gap-1.5">
-                    {(reviewAllMode ? previewTargets : [...checked]).map((host) => <StatusBadge key={host} tone="neutral">{host}</StatusBadge>)}
+                    {(reviewAllMode ? previewTargets : [...checked]).slice(0, 12).map((host) => <StatusBadge key={host} tone="neutral">{host}</StatusBadge>)}
+                    {(reviewAllMode ? previewTargets : [...checked]).length > 12 && <StatusBadge tone="muted">+{(reviewAllMode ? previewTargets : [...checked]).length - 12} more</StatusBadge>}
                   </div>
+                  {(reviewAllMode ? previewTargets : [...checked]).length > 12 && (
+                    <details className="mt-2 text-xs text-muted-foreground">
+                      <summary className="cursor-pointer">Show full host list</summary>
+                      <p className="mt-2 max-h-28 overflow-auto break-words rounded bg-muted/40 p-2 font-mono">{(reviewAllMode ? previewTargets : [...checked]).join(", ")}</p>
+                    </details>
+                  )}
                 </div>
                 <div>
                   <div className="mb-2 font-medium">Variables passed to every selected host</div>

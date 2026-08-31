@@ -10,6 +10,7 @@ process.env.NODE_ENV = 'test';
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const db = require('../db');
+const { filterAuditFocus } = require('../utils/audit-scope');
 
 before(() => {
   db.auditLog.write('login.success',  'user a',     '10.0.0.1', true,  'alice');
@@ -82,4 +83,22 @@ test('auditLog.query clamps absurdly large limit to 500', () => {
   const rows = db.auditLog.query({ limit: 10_000_000 });
   // Just ensure it doesn't throw and returns existing rows
   assert.equal(rows.length, 4);
+});
+
+test('audit change focus keeps user, security, and configuration events', () => {
+  const rows = [
+    { action: 'users.update' },
+    { action: 'auth.totp' },
+    { action: 'system.polling' },
+    { action: 'maintenance_window.create' },
+    { action: 'ansible.run' },
+    { action: 'ipam.proxmox_sync' },
+  ];
+  assert.deepEqual(filterAuditFocus(rows, 'changes').map(row => row.action), [
+    'users.update',
+    'auth.totp',
+    'system.polling',
+    'maintenance_window.create',
+  ]);
+  assert.equal(filterAuditFocus(rows, 'all').length, rows.length);
 });

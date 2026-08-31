@@ -10,6 +10,7 @@ export const serversApi = {
   updateServer: (id: Id, data: AnyObj) => apiFetch(`/servers/${id}`, { method: 'PUT', body: data }),
   deleteServer: (id: Id) => apiFetch(`/servers/${id}`, { method: 'DELETE' }),
   testConnection: (id: Id) => apiFetch(`/servers/${id}/test`, { method: 'POST' }),
+  testNewServerConnection: (data: AnyObj) => apiFetch<{ connected: boolean; error?: string }>('/servers/connection-test', { method: 'POST', body: data }),
   resetServerHostKey: (id: Id) => apiFetch(`/servers/${id}/reset-host-key`, { method: 'POST' }),
   autoGroupByTags: () => apiFetch('/servers/auto-group-by-tags', { method: 'POST' }),
   setServerGroup: (serverId: Id, groupId: Id | null) => apiFetch(`/servers/${serverId}/group`, { method: 'PUT', body: { group_id: groupId } }),

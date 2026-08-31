@@ -160,14 +160,14 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, publicP
     const safeNodeName = String(nodeName || '').trim();
     const safeVmId = Number.parseInt(String(vmId || ''), 10);
     if (!safeConnectionId || !safeNodeName || !PROXMOX_IDENTIFIER_RE.test(safeNodeName) || !Number.isInteger(safeVmId) || safeVmId <= 0) {
-      const error = new Error('Connection, node and guest ID are required.'); error.status = 400; throw error;
+      const error = new Error('Connection, node and VM or container ID are required.'); error.status = 400; throw error;
     }
     const { source, connection } = getProxmoxConnectionSource(safeConnectionId);
     const resources = await requestProxmoxApi(connection, '/cluster/resources?type=vm');
     const resource = (Array.isArray(resources) ? resources : []).find(item =>
       ['qemu', 'lxc'].includes(String(item?.type || '').toLowerCase()) && String(item?.node || '') === safeNodeName && Number(item?.vmid) === safeVmId);
     if (!resource) {
-      const error = new Error('The guest was not found on this Proxmox platform.'); error.status = 404; throw error;
+      const error = new Error('The VM or container was not found on this Proxmox platform.'); error.status = 404; throw error;
     }
     const guestType = String(resource.type).toLowerCase();
     return { source, connection, vm: { name: String(resource.name || `${guestType === 'lxc' ? 'CT' : 'VM'} ${safeVmId}`), node_name: safeNodeName, vm_id: safeVmId, guest_type: guestType } };
@@ -176,7 +176,7 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, publicP
   function snapshotNameOrError(value) {
     const name = String(value || '').trim();
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(name)) {
-      const error = new Error('Der Snapshot-Name darf 1–40 Zeichen (Buchstaben, Zahlen, Punkt, Unterstrich, Bindestrich) enthalten.'); error.status = 400; throw error;
+      const error = new Error('Snapshot names must contain 1–40 letters, digits, periods, underscores, or hyphens.'); error.status = 400; throw error;
     }
     return name;
   }
@@ -343,7 +343,7 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, publicP
       const target = await getInventoryVmTarget(req.params.id, nodeName, vmId, req);
       const records = await getGuestNetworkRecords(target.connection, target.vm);
       res.json({ ip_address: records[0]?.address || null, guest_type: target.vm.guest_type });
-    } catch (error) { res.status(error.status || 502).json({ error: error.message || 'The guest IP could not be read.' }); }
+    } catch (error) { res.status(error.status || 502).json({ error: error.message || 'The VM or container IP could not be read.' }); }
   });
   
   // Synchronise guest addresses without making Proxmox the source of truth for
@@ -368,7 +368,7 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, publicP
       const sshUser = String(body.ssh_user || 'root').trim().slice(0, 100) || 'root';
       const sshPort = Number.parseInt(String(body.ssh_port || 22), 10);
       const groupId = String(body.group_id || '').trim() || null;
-      if (!nodeName || !PROXMOX_IDENTIFIER_RE.test(nodeName) || !Number.isInteger(vmId) || vmId <= 0 || !name) return res.status(400).json({ error: 'Name, node and guest ID are required.' });
+      if (!nodeName || !PROXMOX_IDENTIFIER_RE.test(nodeName) || !Number.isInteger(vmId) || vmId <= 0 || !name) return res.status(400).json({ error: 'Name, node, and VM or container ID are required.' });
       if (!Number.isInteger(sshPort) || sshPort < 1 || sshPort > 65535) return res.status(400).json({ error: 'Invalid SSH port.' });
       const target = await getInventoryVmTarget(req.params.id, nodeName, vmId, req, { requireEdit: true });
       const { source, connection } = target;

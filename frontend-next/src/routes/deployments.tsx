@@ -13,6 +13,7 @@ import { CreateDeploymentDialog } from "@/features/deployments/CreateDeploymentD
 import { useUi } from "@/lib/store";
 import { hasCap, useProfile } from "@/lib/queries";
 import { showToast } from "@/lib/toast";
+import { formatDateTime } from "@/lib/utils";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ProxmoxConnectionDialog, type ProxmoxConnection } from "@/features/infrastructure/ProxmoxConnectionDialog";
 import { ConfirmDeleteConnection, ProxmoxConnectionsCard } from "@/routes/infrastructure";
@@ -51,9 +52,7 @@ function vmStatus(vm: ManagedVm) {
   return { label: vm.started ? "Managed" : "Stopped", tone: (vm.started ? "success" : "muted") as StatusTone };
 }
 function formatDate(value?: string) {
-  if (!value) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+  return formatDateTime(value);
 }
 function clusterIdFromEndpoint(endpoint?: string) {
   if (!endpoint) return null;
@@ -133,7 +132,7 @@ export function DeploymentsPage() {
 
     {vmsQuery.isLoading ? <div className="space-y-1 rounded-md border p-4">{[0, 1, 2, 3].map((item) => <div key={item} className="h-11 animate-pulse rounded bg-muted/40" />)}</div>
       : vmsQuery.isError ? <Card><EmptyState icon={<TriangleAlert className="h-5 w-5" />} title="Virtual machines could not be loaded" description="No infrastructure has been changed." action={<Button variant="outline" onClick={() => void vmsQuery.refetch()}><RefreshCw />Try again</Button>} /></Card>
-      : vms.length === 0 ? <Card><EmptyState icon={<Server className="h-5 w-5" />} title="No managed virtual machines" description="Create a managed VM, or open Infrastructure inventory to inspect existing Proxmox guests for adoption." action={canEdit ? <div className="flex flex-wrap justify-center gap-2"><Button onClick={() => setCreateOpen(true)}><Server />Create managed VM</Button>{inventoryClusterId && <Button asChild variant="outline"><Link to="/infrastructure/$clusterId" params={{ clusterId: inventoryClusterId }}>Open inventory</Link></Button>}</div> : undefined} /></Card>
+      : vms.length === 0 ? <Card><EmptyState icon={<Server className="h-5 w-5" />} title="No managed virtual machines" description="Create a managed VM, or open Infrastructure inventory to inspect existing Proxmox virtual machines for adoption." action={canEdit ? <div className="flex flex-wrap justify-center gap-2"><Button onClick={() => setCreateOpen(true)}><Server />Create managed VM</Button>{inventoryClusterId && <Button asChild variant="outline"><Link to="/infrastructure/$clusterId" params={{ clusterId: inventoryClusterId }}>Open inventory</Link></Button>}</div> : undefined} /></Card>
       : <Card>
         <CardHeader className="border-b bg-muted/15 py-3"><CardTitle className="flex items-center gap-2 text-base"><Workflow className="h-4 w-4" />Managed virtual machines</CardTitle></CardHeader>
         <CardContent className="p-0">

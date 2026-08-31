@@ -362,6 +362,9 @@ function applySchema(db) {
       ends_at TEXT NOT NULL,
       description TEXT DEFAULT '',
       created_by TEXT DEFAULT '',
+      affected_resources TEXT DEFAULT '',
+      timezone TEXT NOT NULL DEFAULT 'Europe/Zurich',
+      owner TEXT DEFAULT '',
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE
     );

@@ -134,6 +134,7 @@ export function CreateServerDialog({
   const [dockerEnabled, setDockerEnabled] = React.useState(false);
   const [environmentId, setEnvironmentId] = React.useState(activeEnvironmentId);
   const [error, setError] = React.useState<string | null>(null);
+  const [connectionTest, setConnectionTest] = React.useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [advancedOpen, setAdvancedOpen] = React.useState(isEdit);
 
   const reset = React.useCallback(() => {
@@ -166,6 +167,7 @@ export function CreateServerDialog({
     }
     setSshPassword("");
     setError(null);
+    setConnectionTest('idle');
     setAdvancedOpen(isEdit);
   }, [editServer, initialValues, activeEnvironmentId, isEdit]);
 
@@ -250,6 +252,22 @@ export function CreateServerDialog({
     onError: (err) =>
       setError(err instanceof ApiError ? err.message : String(err)),
   });
+  const testConnection = async () => {
+    setConnectionTest('testing');
+    try {
+      const result = await api.testNewServerConnection({
+        ip_address: ip.trim(),
+        ssh_user: sshUser.trim() || 'root',
+        ssh_port: Math.min(65535, Math.max(1, parseInt(sshPort) || 22)),
+        password: sshPassword,
+      });
+      setConnectionTest(result.connected ? 'success' : 'error');
+      if (!result.connected) showToast(result.error || 'Connection test failed.', 'error');
+    } catch (testError) {
+      setConnectionTest('error');
+      showToast((testError as Error).message, 'error');
+    }
+  };
 
   return (
     <Dialog
@@ -333,19 +351,19 @@ export function CreateServerDialog({
           {!isEdit && (
             <FieldRow
               label={t("add.sshPasswordPlaceholder")}
-              hint={t("add.sshKeyHint")}
+              hint="Used only for the connection test and initial key installation. The password is never stored."
               htmlFor="server-ssh-password"
             >
-              <Input
-                id="server-ssh-password"
-                name="sshPassword"
-                type="password"
-                placeholder={t("add.sshPasswordPlaceholder")}
-                value={sshPassword}
-                onChange={(e) => setSshPassword(e.target.value)}
-                autoComplete="current-password"
-                className="w-full"
-              />
+              <div className="w-full space-y-1.5">
+                <div className="flex gap-2">
+                  <Input id="server-ssh-password" name="sshPassword" type="password" placeholder={t("add.sshPasswordPlaceholder")} value={sshPassword} onChange={(e) => { setSshPassword(e.target.value); setConnectionTest('idle'); }} autoComplete="current-password" className="w-full" />
+                  <Button type="button" variant="outline" size="sm" onClick={() => void testConnection()} disabled={!ip.trim() || !sshPassword || connectionTest === 'testing'}>
+                    <Wifi className={connectionTest === 'testing' ? 'h-4 w-4 animate-pulse' : 'h-4 w-4'} />Test
+                  </Button>
+                </div>
+                {connectionTest === 'success' && <p role="status" className="text-xs text-success">Connection successful.</p>}
+                {connectionTest === 'error' && <p role="status" className="text-xs text-destructive">Connection failed. Review the connection details.</p>}
+              </div>
             </FieldRow>
           )}
 

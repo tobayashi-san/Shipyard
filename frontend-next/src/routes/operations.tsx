@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   useMutation,
@@ -46,6 +46,7 @@ import {
   useProfile,
 } from "@/lib/queries";
 import { useUi } from "@/lib/store";
+import { formatDateTime } from "@/lib/utils";
 import { AuditLogPanel } from "@/features/operations/AuditLogPanel";
 
 interface Workspace {
@@ -82,18 +83,14 @@ interface MaintenanceWindow {
   starts_at: string;
   ends_at: string;
   description?: string;
+  affected_resources?: string;
+  timezone?: string;
+  owner?: string;
   state?: "scheduled" | "active" | "completed";
 }
 
 function readableTime(value?: string) {
-  if (!value) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value
-    : new Intl.DateTimeFormat(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(date);
+  return formatDateTime(value);
 }
 function dateTimeInput(value?: string) {
   const date = value ? new Date(value) : new Date();
@@ -163,6 +160,7 @@ export function OperationsPage() {
   const [fromDate, setFromDate] = useState(routeSearch.from || "");
   const [toDate, setToDate] = useState(routeSearch.to || "");
   const [operationsPage, setOperationsPage] = useState(routeSearch.page || 1);
+  const initialFailureFilterApplied = useRef(false);
   const [selectedOperationId, setSelectedOperationId] = useState<string | null>(
     null,
   );
@@ -255,6 +253,12 @@ export function OperationsPage() {
     operationRows.find((row) => row.id === selectedOperationId) ||
     operationRows[0] ||
     null;
+  const activeSection = routeSearch.section || "tasks";
+  useEffect(() => {
+    if (initialFailureFilterApplied.current || routeSearch.scope || operationsQuery.isLoading) return;
+    initialFailureFilterApplied.current = true;
+    if ((operationsQuery.data?.counts.failed || 0) > 0) setTaskScope("failed");
+  }, [operationsQuery.data?.counts.failed, operationsQuery.isLoading, routeSearch.scope]);
   useEffect(() => {
     setOperationsPage(1);
   }, [taskScope, sourceFilter, targetFilter, fromDate, toDate]);
@@ -283,7 +287,7 @@ export function OperationsPage() {
     <div className="space-y-5">
       <PageHeader
         title="Operations"
-        description="Cross-feature run history, failures, audits, and maintenance windows for the selected environment."
+        description="Activity, maintenance planning, and security-relevant changes for the selected environment."
         actions={
           <Button variant="outline" onClick={refresh} disabled={isRefreshing}>
             <RefreshCw className={isRefreshing ? "animate-spin" : undefined} />
@@ -291,7 +295,7 @@ export function OperationsPage() {
           </Button>
         }
       />
-      <OperationsContext
+      {activeSection === "tasks" && <OperationsContext
         active={activeMaintenance}
         next={nextMaintenance}
         activeOperations={activeOperationCount}
@@ -303,19 +307,19 @@ export function OperationsPage() {
             .getElementById("operation-tasks")
             ?.scrollIntoView({ behavior: "smooth", block: "start" });
         }}
-      />
+      />}
       <nav className="flex gap-1 overflow-x-auto rounded-[3px] border bg-card p-1" aria-label="Operations sections">
-        <Button asChild size="sm" variant={routeSearch.section === "maintenance" || routeSearch.section === "audit" ? "ghost" : "secondary"}><Link to="/operations" search={{ ...routeSearch, section: "tasks" }}>Tasks</Link></Button>
-        {canViewMaintenance && <Button asChild size="sm" variant={routeSearch.section === "maintenance" ? "secondary" : "ghost"}><Link to="/operations" search={{ ...routeSearch, section: "maintenance" }}>Maintenance</Link></Button>}
-        {canViewAudit && <Button asChild size="sm" variant={routeSearch.section === "audit" ? "secondary" : "ghost"}><Link to="/operations" search={{ ...routeSearch, section: "audit" }}>Audit</Link></Button>}
+        <Button asChild size="sm" variant={activeSection === "tasks" ? "secondary" : "ghost"}><Link to="/operations" search={{ ...routeSearch, section: "tasks" }}>Activity</Link></Button>
+        {canViewMaintenance && <Button asChild size="sm" variant={activeSection === "maintenance" ? "secondary" : "ghost"}><Link to="/operations" search={{ ...routeSearch, section: "maintenance" }}>Maintenance</Link></Button>}
+        {canViewAudit && <Button asChild size="sm" variant={activeSection === "audit" ? "secondary" : "ghost"}><Link to="/operations" search={{ ...routeSearch, section: "audit" }}>Audit</Link></Button>}
       </nav>
       <div className="flex flex-col gap-5">
-        <Card id="operation-tasks" className="scroll-mt-16">
+        {activeSection === "tasks" && <Card id="operation-tasks" className="scroll-mt-16">
           <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b bg-muted/15 py-3">
             <div>
               <CardTitle className="flex items-center gap-2 text-base">
                 <ClipboardList className="h-4 w-4" />
-                Tasks & events
+                Activity
               </CardTitle>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 Running tasks appear first. Select a task to review its context.
@@ -344,7 +348,7 @@ export function OperationsPage() {
           <CardContent className="p-0">
             {operationsQuery.isLoading ? (
               <div className="p-5 text-sm text-muted-foreground">
-                Loading tasks…
+                Loading activity…
               </div>
             ) : (
               <>
@@ -402,7 +406,7 @@ export function OperationsPage() {
                       pageSize={OPERATIONS_PAGE_SIZE}
                       totalItems={operationsQuery.data?.total || 0}
                       onPageChange={setOperationsPage}
-                      itemLabel="tasks"
+                      itemLabel="events"
                     />
                   </>
                 ) : (
@@ -413,8 +417,8 @@ export function OperationsPage() {
               </>
             )}
           </CardContent>
-        </Card>
-        {canViewMaintenance && (
+        </Card>}
+        {activeSection === "maintenance" && canViewMaintenance && (
           <div id="operation-maintenance" className="scroll-mt-16"><MaintenanceWindowsCard
               windows={maintenanceWindows}
               loading={maintenanceQuery.isLoading}
@@ -424,7 +428,7 @@ export function OperationsPage() {
               onDelete={setWindowToDelete}
             /></div>
         )}
-        {canViewAudit && <div id="operation-audit" className="scroll-mt-16"><AuditLogPanel /></div>}
+        {activeSection === "audit" && canViewAudit && <div id="operation-audit" className="scroll-mt-16"><AuditLogPanel /></div>}
       </div>
       <MaintenanceWindowDialog
         key={
@@ -744,6 +748,7 @@ function MaintenanceWindowsCard({
                             {window.description}
                           </div>
                         )}
+                        {(window.affected_resources || window.owner) && <div className="mt-1 text-xs text-muted-foreground">{window.affected_resources || "All resources"}{window.owner ? ` · Owner: ${window.owner}` : ""}</div>}
                       </div>
                       <StatusBadge tone={maintenanceTone(window.state)} dot>
                         {maintenanceLabel(window.state)}
@@ -766,13 +771,12 @@ function MaintenanceWindowsCard({
                         </Button>
                         <Button
                           type="button"
-                          size="icon"
+                          size="sm"
                           variant="ghost"
-                          className="text-destructive hover:text-destructive"
                           onClick={() => onDelete(window)}
-                          aria-label={`Delete ${window.name}`}
                         >
                           <Trash2 className="h-4 w-4" />
+                          Delete
                         </Button>
                       </div>
                     )}
@@ -835,10 +839,12 @@ function MaintenanceWindowsCard({
                             {window.description}
                           </div>
                         )}
+                        {(window.affected_resources || window.owner) && <div className="mt-0.5 max-w-xl truncate text-xs text-muted-foreground">{window.affected_resources || "All resources"}{window.owner ? ` · Owner: ${window.owner}` : ""}</div>}
                       </td>
                       <td className="px-3 whitespace-nowrap text-xs text-muted-foreground">
                         {readableTime(window.starts_at)} –{" "}
                         {readableTime(window.ends_at)}
+                        <div>{window.timezone || "Europe/Zurich"}</div>
                       </td>
                       <td className="px-3">
                         <StatusBadge tone={maintenanceTone(window.state)} dot>
@@ -928,6 +934,9 @@ function MaintenanceWindowDialog({
     ),
   );
   const [description, setDescription] = useState(initial?.description || "");
+  const [affectedResources, setAffectedResources] = useState(initial?.affected_resources || "");
+  const [timezone, setTimezone] = useState(initial?.timezone || "Europe/Zurich");
+  const [owner, setOwner] = useState(initial?.owner || "");
   const hasValidRange = Boolean(
     startsAt &&
       endsAt &&
@@ -945,6 +954,9 @@ function MaintenanceWindowDialog({
             starts_at: new Date(startsAt).toISOString(),
             ends_at: new Date(endsAt).toISOString(),
             description,
+            affected_resources: affectedResources,
+            timezone,
+            owner,
           },
         },
       ),
@@ -1006,6 +1018,25 @@ function MaintenanceWindowDialog({
                 onChange={(event) => setEndsAt(event.target.value)}
               />
             </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="maintenance-resources">Affected resources</Label>
+              <Input id="maintenance-resources" value={affectedResources} onChange={(event) => setAffectedResources(event.target.value)} placeholder="e.g. Cluster A, hosts tagged production" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="maintenance-owner">Owner</Label>
+              <Input id="maintenance-owner" value={owner} onChange={(event) => setOwner(event.target.value)} placeholder="Team or responsible person" />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="maintenance-timezone">Timezone</Label>
+            <select id="maintenance-timezone" value={timezone} onChange={(event) => setTimezone(event.target.value)} className="h-9 w-full rounded-sm border border-input bg-background px-3 text-sm">
+              <option value="Europe/Zurich">Europe/Zurich</option>
+              <option value="UTC">UTC</option>
+              <option value="Europe/London">Europe/London</option>
+              <option value="America/New_York">America/New_York</option>
+            </select>
           </div>
           {!hasValidRange && (
             <p className="text-sm text-destructive">

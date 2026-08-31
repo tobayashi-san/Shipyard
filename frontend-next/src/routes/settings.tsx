@@ -92,12 +92,12 @@ function AdminSettingsPage() {
 
       <div className="flex flex-col gap-5 lg:flex-row">
         <label className="space-y-1.5 lg:hidden">
-          <span className="text-[13px] font-medium text-muted-foreground">Settings section</span>
+          <span className="text-[13px] font-medium text-muted-foreground">Administration section</span>
           <select
             value={activeId}
             onChange={(event) => void navigate({ to: '/settings/$tab', params: { tab: event.target.value } })}
             className="h-10 w-full rounded-sm border border-input bg-background px-3 text-sm"
-            aria-label="Settings section"
+            aria-label="Administration section"
           >
             {sections.map(section => (
               <optgroup key={section} label={section}>
@@ -108,7 +108,7 @@ function AdminSettingsPage() {
             ))}
           </select>
         </label>
-        <nav className="shrink-0 lg:w-60 lg:rounded-[3px] lg:border lg:border-border-strong/80 lg:bg-card lg:p-2 lg:shadow-[0_1px_2px_hsl(var(--foreground)/0.035)]" aria-label="Settings">
+        <nav className="shrink-0 lg:w-60 lg:rounded-[3px] lg:border lg:border-border-strong/80 lg:bg-card lg:p-2 lg:shadow-[0_1px_2px_hsl(var(--foreground)/0.035)]" aria-label="Administration">
           <div className="hidden px-2 pb-2 pt-1 text-xs font-semibold text-muted-foreground lg:block">Administration</div>
           <div className="hidden lg:flex lg:flex-col lg:gap-3">
             {sections.map(section => {

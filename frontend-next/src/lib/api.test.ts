@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiFetch, apiFetchArray, apiUploadFile } from './api';
+import { api, apiFetch, apiFetchArray, apiUploadFile } from './api';
 
 describe('apiFetch', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -55,6 +56,35 @@ describe('apiFetch', () => {
     })));
 
     await expect(apiFetchArray('/servers', { skipAuth: true })).resolves.toEqual([]);
+  });
+
+  it('turns stalled requests into a retryable timeout error', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+    })));
+
+    const request = apiFetch('/stalled', { skipAuth: true, timeoutMs: 1_000 });
+    const assertion = expect(request).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 408,
+      message: 'Request timed out after 1 seconds. Try again.',
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+    await assertion;
+  });
+
+  it('sends the selected OpenTofu version to the managed installer', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, version: '1.10.0' }), {
+      headers: { 'content-type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(api.installOpenTofu('1.10.0')).resolves.toMatchObject({ success: true });
+    expect(fetchMock).toHaveBeenCalledWith('/api/opentofu/install', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ version: '1.10.0' }),
+    }));
   });
 });
 

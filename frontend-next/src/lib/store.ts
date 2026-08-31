@@ -9,24 +9,15 @@ export type ThemePreset =
   | 'forest-dark' | 'plum-dark' | 'copper-dark' | 'obsidian-dark' | 'cobalt-dark';
 type TimeFormat = '24h' | '12h';
 export type UiDensity = 'comfortable' | 'compact';
+export type NavigationWorkspace = 'operations' | 'infrastructure';
 
 export const THEME_PRESETS: Array<{ id: ThemePreset; name: string; description: string; mode: Exclude<Theme, 'system'>; preview: { canvas: string; surface: string; card: string; accent: string } }> = [
   { id: 'cloud-light', name: 'Cloud', description: 'Light, cool console design', mode: 'light', preview: { canvas: '#f7faff', surface: '#ffffff', card: '#ffffff', accent: '#0f6cbd' } },
   { id: 'paper-light', name: 'Paper', description: 'Neutral white with clear contrast', mode: 'light', preview: { canvas: '#faf9f6', surface: '#ffffff', card: '#ffffff', accent: '#26364b' } },
   { id: 'slate-light', name: 'Slate', description: 'Blue-gray management interface', mode: 'light', preview: { canvas: '#f4f7fb', surface: '#ffffff', card: '#ffffff', accent: '#1d4fa3' } },
-  { id: 'amber-light', name: 'Amber', description: 'Warm surfaces with a cool blue work accent', mode: 'light', preview: { canvas: '#fdfaf0', surface: '#ffffff', card: '#ffffff', accent: '#1d4ed8' } },
-  { id: 'mint-light', name: 'Mint', description: 'Calm teal for focused work', mode: 'light', preview: { canvas: '#f5fcfa', surface: '#ffffff', card: '#ffffff', accent: '#08766c' } },
-  { id: 'orchid-light', name: 'Orchid', description: 'Clear violet with neutral surfaces', mode: 'light', preview: { canvas: '#faf9fd', surface: '#ffffff', card: '#ffffff', accent: '#6941c6' } },
-  { id: 'glacier-light', name: 'Glacier Contrast', description: 'Cool surfaces with clearly separated cards and tables', mode: 'light', preview: { canvas: '#e9f2fb', surface: '#ffffff', card: '#ffffff', accent: '#075985' } },
-  { id: 'ink-light', name: 'Ink Contrast', description: 'Neutral light theme with strong ink and clear lines', mode: 'light', preview: { canvas: '#e9eaec', surface: '#ffffff', card: '#ffffff', accent: '#172554' } },
   { id: 'midnight-dark', name: 'Midnight', description: 'Calm, neutral dark console', mode: 'dark', preview: { canvas: '#0a0a0a', surface: '#0a0a0a', card: '#171717', accent: '#3b9df4' } },
   { id: 'graphite-dark', name: 'Graphite', description: 'High-contrast graphite for long sessions', mode: 'dark', preview: { canvas: '#0d0e10', surface: '#121315', card: '#18191b', accent: '#d7e0ec' } },
   { id: 'navy-dark', name: 'Navy', description: 'Deep blue for infrastructure views', mode: 'dark', preview: { canvas: '#07101e', surface: '#0c1727', card: '#101b2d', accent: '#38bdf8' } },
-  { id: 'forest-dark', name: 'Forest', description: 'Muted forest green with high readability', mode: 'dark', preview: { canvas: '#09110d', surface: '#101c17', card: '#17251f', accent: '#34d399' } },
-  { id: 'plum-dark', name: 'Plum', description: 'Violet accent on relaxed charcoal', mode: 'dark', preview: { canvas: '#100b10', surface: '#171117', card: '#221922', accent: '#b59cff' } },
-  { id: 'copper-dark', name: 'Copper', description: 'Warm copper accent for clear priorities', mode: 'dark', preview: { canvas: '#110d0a', surface: '#18110d', card: '#241a14', accent: '#f5a524' } },
-  { id: 'obsidian-dark', name: 'Obsidian Contrast', description: 'Black console with clearly separated work surfaces', mode: 'dark', preview: { canvas: '#06080d', surface: '#0f1420', card: '#151c29', accent: '#67e8f9' } },
-  { id: 'cobalt-dark', name: 'Cobalt Contrast', description: 'Deep blue with highly visible levels and borders', mode: 'dark', preview: { canvas: '#06102e', surface: '#0b1638', card: '#13224a', accent: '#60a5fa' } },
 ];
 
 interface UiState {
@@ -37,6 +28,8 @@ interface UiState {
   setSidebarWidth: (width: number) => void;
   infrastructureTreeCollapsed: boolean;
   toggleInfrastructureTree: () => void;
+  navigationWorkspace: NavigationWorkspace;
+  setNavigationWorkspace: (workspace: NavigationWorkspace) => void;
   showInfrastructureVmIds: boolean;
   setShowInfrastructureVmIds: (show: boolean) => void;
   density: UiDensity;
@@ -58,6 +51,7 @@ const THEME_PRESET_KEY = 'shipyard_theme_preset_next';
 const SIDEBAR_KEY = 'shipyard_sidebar_collapsed_next';
 const SIDEBAR_WIDTH_KEY = 'shipyard_sidebar_width_next';
 const TREE_COLLAPSED_KEY = 'shipyard_tree_collapsed_next';
+const NAVIGATION_WORKSPACE_KEY = 'shipyard_navigation_workspace';
 const TREE_VM_IDS_KEY = 'shipyard_tree_show_vm_ids';
 const DENSITY_KEY = 'shipyard_ui_density_next';
 const TIME_FORMAT_KEY = 'timeFormat';
@@ -101,6 +95,16 @@ function readSidebarWidth(): number {
 function readDensity(): UiDensity {
   try { if (localStorage.getItem(DENSITY_KEY) === 'compact') return 'compact'; } catch { /* ignore */ }
   return 'comfortable';
+}
+
+function readNavigationWorkspace(): NavigationWorkspace {
+  try {
+    return localStorage.getItem(NAVIGATION_WORKSPACE_KEY) === 'infrastructure'
+      ? 'infrastructure'
+      : 'operations';
+  } catch {
+    return 'operations';
+  }
 }
 
 function applyDensity(density: UiDensity): void {
@@ -153,6 +157,11 @@ export const useUi = create<UiState>((set) => ({
     const next = !state.infrastructureTreeCollapsed;
     try { localStorage.setItem(TREE_COLLAPSED_KEY, next ? '1' : '0'); } catch { /* ignore */ }
     return { infrastructureTreeCollapsed: next };
+  }),
+  navigationWorkspace: readNavigationWorkspace(),
+  setNavigationWorkspace: (navigationWorkspace) => set(() => {
+    try { localStorage.setItem(NAVIGATION_WORKSPACE_KEY, navigationWorkspace); } catch { /* ignore */ }
+    return { navigationWorkspace };
   }),
   showInfrastructureVmIds: (() => { try { return localStorage.getItem(TREE_VM_IDS_KEY) !== '0'; } catch { return true; } })(),
   setShowInfrastructureVmIds: (show) => set(() => {

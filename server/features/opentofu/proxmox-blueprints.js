@@ -82,7 +82,7 @@ function normalizeProxmoxVm(input = {}) {
     ipv4_prefix: ipv4Address === 'dhcp' ? null : Number(ipv4Address.split('/')[1]),
     ipv4_gateway: ipv4Address === 'dhcp' ? '' : gateway,
     dns_servers: dnsServers,
-    username: proxmoxString(input.username, 'ubuntu', { field: 'Guest username', pattern: /^[a-z_][a-z0-9_-]{0,31}$/, max: 32 }),
+    username: proxmoxString(input.username, 'ubuntu', { field: 'VM username', pattern: /^[a-z_][a-z0-9_-]{0,31}$/, max: 32 }),
     ssh_public_key_variable: sshPublicKeyVariable,
     pre_deploy_target_server_id: preDeployTargetServerId,
     pre_deploy_playbooks: preDeployPlaybooks,

@@ -888,6 +888,25 @@ class SSHManager {
     }
   }
 
+  /** Test credentials for a host that has not been saved yet. */
+  async testPasswordConnection(serverIp, sshUser, password, sshPort = 22) {
+    const ssh = new NodeSSH();
+    try {
+      await ssh.connect({
+        host: serverIp,
+        port: sshPort,
+        username: sshUser,
+        password,
+        tryKeyboard: true,
+        hostVerifier: makeHostVerifier({ serverId: null, out: {}, hostLabel: serverIp }),
+      });
+      const result = await ssh.execCommand('echo "connected"');
+      return result.stdout.trim() === 'connected';
+    } finally {
+      ssh.dispose();
+    }
+  }
+
   /**
    * Close all connections and stop the cleanup timer
    */

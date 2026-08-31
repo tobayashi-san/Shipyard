@@ -661,7 +661,7 @@ export function VmFormDialog({
 
           <section className="space-y-3 border-t pt-5">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold">Network & guest access</h3>
+              <h3 className="text-sm font-semibold">Network & VM access</h3>
               <Button
                 type="button"
                 variant="ghost"
@@ -708,7 +708,7 @@ export function VmFormDialog({
                 <p className="text-xs text-muted-foreground">You can enter a custom bridge or VNet that a pre-deploy workflow creates later.</p>
               </Field>
               <Field
-                label="Guest VLAN-ID (optional)"
+                label="VM VLAN-ID (optional)"
                 hint={selectedBridge?.source === "sdn" && selectedBridge.vlan_id
                   ? `VLAN ${selectedBridge.vlan_id} is defined by the SDN VNet and is not added again to the VM NIC.`
                   : "A NIC tag for a VLAN-aware bridge. SDN VNet VLANs are shown in the network selection."}
@@ -790,7 +790,7 @@ export function VmFormDialog({
                   inputMode="decimal"
                 />
               </Field>
-              <Field label="Guest user">
+              <Field label="VM user">
                 <Input
                   required
                   value={form.username}
@@ -805,7 +805,7 @@ export function VmFormDialog({
             )}
             <details className="border-t pt-3">
               <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
-                Advanced guest access
+                Advanced VM access
               </summary>
               <div className="mt-3 max-w-md">
                 <Field

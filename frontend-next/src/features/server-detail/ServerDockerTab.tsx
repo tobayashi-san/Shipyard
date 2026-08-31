@@ -473,27 +473,22 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
                                 </span>
                               </td>
                               <td className="px-3 py-2">
-                                <div className="flex items-center gap-0.5">
+                                {(hasCap(profile, "canManageDockerCompose") || hasCap(profile, "canPullDocker")) && (
+                                  <OverflowMenu title={`Actions for ${proj}`}>
                                   {hasCap(
                                     profile,
                                     "canManageDockerCompose",
                                   ) && (
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-6 w-6"
-                                      title={t("det.editCompose")}
+                                    <OverflowItem
+                                      icon={FileText}
                                       onClick={() => openEditCompose(data.dir)}
                                     >
-                                      <FileText className="h-3 w-3" />
-                                    </Button>
+                                      {t("det.editCompose")}
+                                    </OverflowItem>
                                   )}
                                   {hasCap(profile, "canPullDocker") && (
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-6 w-6"
-                                      title="pull"
+                                    <OverflowItem
+                                      icon={CloudDownload}
                                       onClick={() =>
                                         composeActionMut.mutate({
                                           dir: data.dir,
@@ -502,18 +497,15 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
                                       }
                                       disabled={composeActionMut.isPending}
                                     >
-                                      <CloudDownload className="h-3 w-3" />
-                                    </Button>
+                                      Pull images
+                                    </OverflowItem>
                                   )}
                                   {hasCap(
                                     profile,
                                     "canManageDockerCompose",
                                   ) && (
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-6 w-6"
-                                      title="up -d"
+                                    <OverflowItem
+                                      icon={Play}
                                       onClick={() =>
                                         composeActionMut.mutate({
                                           dir: data.dir,
@@ -522,18 +514,15 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
                                       }
                                       disabled={composeActionMut.isPending}
                                     >
-                                      <Play className="h-3 w-3" />
-                                    </Button>
+                                      Start stack
+                                    </OverflowItem>
                                   )}
                                   {hasCap(
                                     profile,
                                     "canManageDockerCompose",
                                   ) && (
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-6 w-6 text-destructive"
-                                      title="down"
+                                    <OverflowItem
+                                      icon={Square}
                                       onClick={() =>
                                         setConfirmComposeDown({
                                           proj,
@@ -542,18 +531,15 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
                                       }
                                       disabled={composeActionMut.isPending}
                                     >
-                                      <Square className="h-3 w-3" />
-                                    </Button>
+                                      Stop stack
+                                    </OverflowItem>
                                   )}
                                   {hasCap(
                                     profile,
                                     "canManageDockerCompose",
                                   ) && (
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-6 w-6 text-destructive"
-                                      title={t("det.removeStack")}
+                                    <OverflowItem
+                                      icon={Trash2}
                                       onClick={() =>
                                         setConfirmDeleteStack({
                                           proj,
@@ -562,10 +548,11 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
                                       }
                                       disabled={deleteStackMut.isPending}
                                     >
-                                      <Trash2 className="h-3 w-3" />
-                                    </Button>
+                                      {t("det.removeStack")}
+                                    </OverflowItem>
                                   )}
-                                </div>
+                                  </OverflowMenu>
+                                )}
                               </td>
                             </tr>,
                             ...data.containers

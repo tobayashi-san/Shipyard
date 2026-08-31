@@ -16,12 +16,12 @@ const guard = (cap) => (req, res, next) =>
     : res.status(403).json({ error: "Permission denied" });
 const guardEnvironment = (req, res, environmentId) => {
   if (req.environmentId && String(environmentId || "default") !== req.environmentId) {
-    res.status(404).json({ error: "Ressource in dieser Umgebung nicht gefunden." });
+    res.status(404).json({ error: "Resource not found in this environment." });
     return false;
   }
   if (canAccessEnvironment(getPermissions(req.user), environmentId))
     return true;
-  res.status(403).json({ error: "Keine Berechtigung für diese Umgebung." });
+  res.status(403).json({ error: "Permission denied for this environment." });
   return false;
 };
 const SUBNET_STATUSES = new Set([
@@ -120,11 +120,11 @@ function syncIntervalMinutes(value, fallback = 15) {
 }
 function sourceRequest(type, endpoint, path, token, insecure) {
   const base = validEndpoint(endpoint);
-  if (!base) return Promise.reject(new Error("Ungültige Quellen-URL."));
+  if (!base) return Promise.reject(new Error("Invalid source URL."));
   const url = new URL(path || "/", base);
   if (url.origin !== base.origin)
     return Promise.reject(
-      new Error("Der API-Pfad darf die konfigurierte Quelle nicht verlassen."),
+      new Error("The API path cannot leave the configured source."),
     );
   const client = url.protocol === "https:" ? https : http;
   return new Promise((resolve, reject) => {
@@ -153,25 +153,25 @@ function sourceRequest(type, endpoint, path, token, insecure) {
         response.on("data", (chunk) => {
           data += chunk;
           if (data.length > 2_000_000)
-            req.destroy(new Error("Antwort der Quelle ist zu groß."));
+            req.destroy(new Error("The source response is too large."));
         });
         response.on("end", () => {
           if (response.statusCode < 200 || response.statusCode >= 300)
             return reject(
-              new Error(`Quelle antwortet mit HTTP ${response.statusCode}.`),
+              new Error(`The source responded with HTTP ${response.statusCode}.`),
             );
           try {
             resolve(JSON.parse(data || "[]"));
           } catch {
             reject(
-              new Error("Quelle hat keine gültige JSON-Antwort geliefert."),
+              new Error("The source did not return valid JSON."),
             );
           }
         });
       },
     );
     req.on("timeout", () =>
-      req.destroy(new Error("Zeitüberschreitung beim Abruf der Quelle.")),
+      req.destroy(new Error("Timed out while fetching the source.")),
     );
     req.on("error", reject);
     req.end();
@@ -183,7 +183,7 @@ function sourceList(payload) {
   if (Array.isArray(payload?.items)) return payload.items;
   if (Array.isArray(payload?.results)) return payload.results;
   throw new Error(
-    "Quelle hat kein unterstütztes Listenformat geliefert. Erwartet wird ein Array oder data/items/results.",
+    "The source did not return a supported list format. Expected an array or data/items/results.",
   );
 }
 function sourceRecords(type, payload) {
@@ -233,7 +233,7 @@ function sourceRecords(type, payload) {
   // Treating it as empty would delete the source's prior inventory on sync.
   if (sourceItems.length > 0 && records.length === 0) {
     throw new Error(
-      "Quelle lieferte Einträge, aber keine auslesbaren IPv4-Adressen. Bestehende Lease-Daten wurden nicht verändert.",
+      "The source returned entries but no readable IPv4 addresses. Existing lease data was left unchanged.",
     );
   }
   return records;
@@ -346,7 +346,7 @@ function validateChoice(value, choices, fallback = "") {
     .trim()
     .toLowerCase();
   if (!choices.has(normalized))
-    throw new Error("Ungültiger Status oder Rolle.");
+    throw new Error("Invalid status or role.");
   return normalized;
 }
 function getRanges(subnetId) {
@@ -444,7 +444,7 @@ function requestedDhcpRange(body, subnet, parsed, otherSubnets = []) {
   if (!startText && !endText)
     return { dhcpStart: "", dhcpEnd: "", range: null };
   if (!startText || !endText)
-    throw new Error("DHCP-Start und DHCP-Ende müssen gemeinsam angegeben werden.");
+    throw new Error("DHCP start and end must be provided together.");
   const start = ipv4(startText);
   const end = ipv4(endText);
   if (
@@ -454,10 +454,10 @@ function requestedDhcpRange(body, subnet, parsed, otherSubnets = []) {
     !isUsableAddress(start, parsed) ||
     !isUsableAddress(end, parsed)
   )
-    throw new Error("Der DHCP-Bereich muss aus verwendbaren Adressen dieses Prefixes bestehen.");
+    throw new Error("The DHCP range must contain usable addresses from this prefix.");
   const gateway = ipv4(String(body.gateway ?? subnet?.gateway ?? "").trim());
   if (gateway !== null && gateway >= start && gateway <= end)
-    throw new Error("Der DHCP-Bereich darf das konfigurierte Gateway nicht enthalten.");
+    throw new Error("The DHCP range cannot contain the configured gateway.");
   const overlapsChild = otherSubnets.some((candidate) => {
     if (candidate.id && subnet?.id && candidate.id === subnet.id) return false;
     const child = parseCidr(candidate.cidr);
@@ -466,7 +466,7 @@ function requestedDhcpRange(body, subnet, parsed, otherSubnets = []) {
     return rangesOverlap({ first: start, last: end }, prefixRange(child));
   });
   if (overlapsChild)
-    throw new Error("Der DHCP-Bereich darf kein delegiertes Child-Prefix überdecken.");
+    throw new Error("The DHCP range cannot overlap a delegated child prefix.");
   return {
     dhcpStart: toIpv4(start),
     dhcpEnd: toIpv4(end),
@@ -706,7 +706,7 @@ function assignedServerError(environmentId, serverId) {
     .prepare("SELECT environment_id FROM servers WHERE id = ?")
     .get(serverId);
   if (!server || String(server.environment_id || "default") !== environmentId)
-    return "Zugewiesener Host wurde in dieser Umgebung nicht gefunden.";
+    return "The assigned host was not found in this environment.";
   return null;
 }
 
@@ -752,21 +752,21 @@ function overlapsEnvironmentAllocation(environmentId, subnetId, start, end = sta
 
 function reservationSpaceError(subnet, start, end = start) {
   const parsed = subnet && parseCidr(subnet.cidr);
-  if (!subnet || !parsed) return "Netzwerk wurde nicht gefunden.";
+  if (!subnet || !parsed) return "Network not found.";
   if (
     start === null || end === null || start > end ||
     !isUsableAddress(start, parsed) || !isUsableAddress(end, parsed)
   )
     return start === end
-      ? "Adresse liegt ausserhalb des nutzbaren Bereichs dieses Prefixes."
-      : "Der Bereich muss vollständig innerhalb der nutzbaren Adressen dieses Prefixes liegen.";
+      ? "The address is outside the usable range of this prefix."
+      : "The range must be fully inside the usable addresses of this prefix.";
   const gateway = gatewayNumber(subnet);
   if (gateway !== null && gateway >= start && gateway <= end)
-    return "Die Auswahl enthält das konfigurierte Gateway.";
+    return "The selection contains the configured gateway.";
   if (overlapsDelegatedPrefix(subnet, start, end))
-    return "Die Auswahl überschneidet sich mit einem delegierten Child-Prefix.";
+    return "The selection overlaps a delegated child prefix.";
   if (overlapsEnvironmentAllocation(subnet.environment_id, subnet.id, start, end))
-    return "Die Auswahl überschneidet sich mit einer Belegung in einem anderen Prefix.";
+    return "The selection overlaps an allocation in another prefix.";
   const addressOverlap = db.db
     .prepare("SELECT address FROM ipam_reservations WHERE subnet_id = ?")
     .all(subnet.id)
@@ -783,7 +783,7 @@ function reservationSpaceError(subnet, start, end = start) {
     );
   });
   if (addressOverlap || rangeOverlap)
-    return "Die Auswahl überschneidet sich mit einer bestehenden Reservierung.";
+    return "The selection overlaps an existing reservation.";
   return null;
 }
 function parseDns(value) {
@@ -792,7 +792,7 @@ function parseDns(value) {
     .map((item) => String(item || "").trim())
     .filter(Boolean);
   if (servers.some((server) => ipv4(server) === null))
-    throw new Error("DNS-Server müssen IPv4-Adressen sein.");
+    throw new Error("DNS servers must be IPv4 addresses.");
   return [...new Set(servers)].slice(0, 6);
 }
 function normalizedHostname(value) {
@@ -814,7 +814,7 @@ function parseMac(value) {
   const input = String(value || "").trim();
   if (!input) return "";
   const mac = canonicalMac(input);
-  if (!mac) throw new Error("MAC-Adresse muss aus 12 hexadezimalen Zeichen bestehen.");
+  if (!mac) throw new Error("A MAC address must contain 12 hexadecimal characters.");
   return mac;
 }
 function sameMachine(left, right) {
@@ -905,14 +905,14 @@ function withReservationConflicts(rows, environmentId) {
         (other) => other.id !== row.id && !sameMachine(row, other),
       )
     )
-      conflicts.push("IP-Adresse mehrfach in der Umgebung erfasst");
+      conflicts.push("IP address is recorded more than once in this environment");
     for (const external of externalByAddress.get(
       String(row.address || "").trim(),
     ) || []) {
       const origin =
         external.source_kind === "proxmox"
-          ? `Proxmox ${external.source_name || "Verbindung"}`
-          : external.source_name || "externer Quelle";
+          ? `Proxmox ${external.source_name || "connection"}`
+          : external.source_name || "external source";
       conflicts.push(`Konflikt mit ${origin}: ${external.reason}`);
     }
     return {
@@ -1024,7 +1024,7 @@ router.get("/subnets/:id", guard("canViewNetworks"), (req, res) => {
     .prepare("SELECT * FROM ipam_subnets WHERE id = ?")
     .get(req.params.id);
   if (!subnet)
-    return res.status(404).json({ error: "Netzwerk nicht gefunden." });
+    return res.status(404).json({ error: "Network not found." });
   if (!guardEnvironment(req, res, subnet.environment_id)) return;
   const allSubnets = db.db
     .prepare("SELECT * FROM ipam_subnets WHERE environment_id = ?")
@@ -1046,19 +1046,19 @@ router.post("/subnets", guard("canEditNetworks"), (req, res) => {
     if (!name || !parsed)
       return res
         .status(400)
-        .json({ error: "Name und gültiges IPv4-CIDR sind erforderlich." });
+        .json({ error: "A name and valid IPv4 CIDR are required." });
     if (
       !db.db
         .prepare("SELECT 1 FROM environments WHERE id = ?")
         .get(environmentId)
     )
-      return res.status(400).json({ error: "Umgebung nicht gefunden." });
+      return res.status(400).json({ error: "Environment not found." });
     if (
       gateway &&
       (ipv4(gateway) === null ||
         !isUsableAddress(ipv4(gateway), parsed))
     )
-      return res.status(400).json({ error: "Gateway ist keine verwendbare Adresse im Subnetz." });
+      return res.status(400).json({ error: "The gateway is not a usable address in this subnet." });
     const vlan =
       body.vlan_id === "" || body.vlan_id === undefined
         ? null
@@ -1066,7 +1066,7 @@ router.post("/subnets", guard("canEditNetworks"), (req, res) => {
     if (vlan !== null && (!Number.isInteger(vlan) || vlan < 1 || vlan > 4094))
       return res
         .status(400)
-        .json({ error: "VLAN muss zwischen 1 und 4094 liegen." });
+        .json({ error: "VLAN must be between 1 and 4094." });
     const existing = db.db
       .prepare("SELECT id, cidr, dhcp_start, dhcp_end FROM ipam_subnets WHERE environment_id = ?")
       .all(environmentId);
@@ -1083,12 +1083,12 @@ router.post("/subnets", guard("canEditNetworks"), (req, res) => {
         .status(409)
         .json({
           error:
-            "Dieses Prefix überschneidet sich nur teilweise mit einem bestehenden Prefix.",
+            "This prefix partially overlaps an existing prefix.",
         });
     if (existing.some((row) => parseCidr(row.cidr)?.cidr === parsed.cidr))
       return res
         .status(409)
-        .json({ error: "Dieses Prefix existiert in dieser Umgebung bereits." });
+        .json({ error: "This prefix already exists in this environment." });
     const overlapsParentDhcpPool = existing.some((row) => {
       const parent = parseCidr(row.cidr);
       const pool = configuredDhcpRange(row);
@@ -1102,7 +1102,7 @@ router.post("/subnets", guard("canEditNetworks"), (req, res) => {
     });
     if (overlapsParentDhcpPool)
       return res.status(409).json({
-        error: "Das Child-Prefix überschneidet sich mit dem DHCP-Bereich seines Parent-Prefixes.",
+        error: "The child prefix overlaps its parent prefix's DHCP range.",
       });
     const { dhcpStart, dhcpEnd } = requestedDhcpRange(
       body,
@@ -1162,21 +1162,21 @@ router.put("/subnets/:id", guard("canEditNetworks"), (req, res) => {
     .prepare("SELECT * FROM ipam_subnets WHERE id = ?")
     .get(req.params.id);
   if (!subnet)
-    return res.status(404).json({ error: "Netzwerk nicht gefunden." });
+    return res.status(404).json({ error: "Network not found." });
   if (!guardEnvironment(req, res, subnet.environment_id)) return;
   try {
     const body = req.body || {};
     if (body.cidr !== undefined && parseCidr(body.cidr)?.cidr !== subnet.cidr)
       return res.status(409).json({
-        error: "Das CIDR eines bestehenden Prefixes kann nicht geändert werden. Erstelle dafür ein neues Prefix.",
+        error: "The CIDR of an existing prefix cannot be changed. Create a new prefix instead.",
       });
     const parsed = parseCidr(subnet.cidr);
     const name = String(body.name ?? subnet.name).trim().slice(0, 80);
     const gateway = String(body.gateway ?? subnet.gateway ?? "").trim();
-    if (!name) return res.status(400).json({ error: "Name ist erforderlich." });
+    if (!name) return res.status(400).json({ error: "Name is required." });
     if (gateway && (ipv4(gateway) === null || !isUsableAddress(ipv4(gateway), parsed)))
       return res.status(400).json({
-        error: "Gateway ist keine verwendbare Adresse im Subnetz.",
+        error: "The gateway is not a usable address in this subnet.",
       });
     const gatewayValue = gateway ? ipv4(gateway) : null;
     if (
@@ -1185,12 +1185,12 @@ router.put("/subnets/:id", guard("canEditNetworks"), (req, res) => {
         (gatewayValue !== null && overlapsDelegatedPrefix(subnet, gatewayValue)))
     )
       return res.status(409).json({
-        error: "Die Gateway-Adresse ist bereits durch eine Adresse, einen Bereich oder ein Child-Prefix belegt.",
+        error: "The gateway address is already occupied by an address, range, or child prefix.",
       });
     const vlanValue = body.vlan_id === undefined ? subnet.vlan_id : body.vlan_id;
     const vlan = vlanValue === "" || vlanValue === null ? null : Number(vlanValue);
     if (vlan !== null && (!Number.isInteger(vlan) || vlan < 1 || vlan > 4094))
-      return res.status(400).json({ error: "VLAN muss zwischen 1 und 4094 liegen." });
+      return res.status(400).json({ error: "VLAN must be between 1 and 4094." });
     const dnsServers = body.dns_servers === undefined
       ? (() => { try { return JSON.parse(subnet.dns_servers || "[]"); } catch { return []; } })()
       : parseDns(body.dns_servers);
@@ -1242,7 +1242,7 @@ router.delete("/subnets/:id", guard("canEditNetworks"), (req, res) => {
     .prepare("SELECT * FROM ipam_subnets WHERE id = ?")
     .get(req.params.id);
   if (!subnet)
-    return res.status(404).json({ error: "Netzwerk nicht gefunden." });
+    return res.status(404).json({ error: "Network not found." });
   if (!guardEnvironment(req, res, subnet.environment_id)) return;
   const counts = {
     reservations: Number(db.db.prepare("SELECT COUNT(*) AS count FROM ipam_reservations WHERE subnet_id = ?").get(subnet.id)?.count || 0),
@@ -1264,7 +1264,7 @@ router.delete("/subnets/:id", guard("canEditNetworks"), (req, res) => {
     transaction();
   } catch (error) {
     return res.status(409).json({
-      error: error.message || "Prefix konnte nicht gelöscht werden.",
+      error: error.message || "The prefix could not be deleted.",
     });
   }
   db.auditLog.write(
@@ -1284,7 +1284,7 @@ router.patch("/subnets/:id/status", guard("canEditNetworks"), (req, res) => {
     .prepare("SELECT * FROM ipam_subnets WHERE id = ?")
     .get(req.params.id);
   if (!subnet)
-    return res.status(404).json({ error: "Netzwerk nicht gefunden." });
+    return res.status(404).json({ error: "Network not found." });
   if (!guardEnvironment(req, res, subnet.environment_id)) return;
   try {
     const status = validateChoice(req.body?.status, SUBNET_STATUSES);
@@ -1305,7 +1305,7 @@ router.patch("/subnets/:id/status", guard("canEditNetworks"), (req, res) => {
     res
       .status(400)
       .json({
-        error: error.message || "Prefix-Status konnte nicht geändert werden.",
+        error: error.message || "The prefix status could not be changed.",
       });
   }
 });
@@ -1315,7 +1315,7 @@ router.get("/subnets/:id/reservations", guard("canViewNetworks"), (req, res) => 
     .prepare("SELECT environment_id FROM ipam_subnets WHERE id = ?")
     .get(req.params.id);
   if (!subnet)
-    return res.status(404).json({ error: "Netzwerk nicht gefunden." });
+    return res.status(404).json({ error: "Network not found." });
   if (!guardEnvironment(req, res, subnet.environment_id)) return;
   const rows = db.db
     .prepare(
@@ -1347,7 +1347,7 @@ router.get("/subnets/:id/conflicts", guard("canViewNetworks"), (req, res) => {
     .prepare("SELECT id, environment_id FROM ipam_subnets WHERE id = ?")
     .get(req.params.id);
   if (!subnet)
-    return res.status(404).json({ error: "Netzwerk nicht gefunden." });
+    return res.status(404).json({ error: "Network not found." });
   if (!guardEnvironment(req, res, subnet.environment_id)) return;
   const externalRows = db.db
     .prepare(
@@ -1355,7 +1355,7 @@ router.get("/subnets/:id/conflicts", guard("canViewNetworks"), (req, res) => {
     SELECT
       conflict.id, conflict.address, conflict.hostname, conflict.mac_address,
       conflict.reason, conflict.last_seen_at, 'external' AS source_kind,
-      source.type AS source_type, COALESCE(source.name, 'Externe Quelle') AS source_name,
+      source.type AS source_type, COALESCE(source.name, 'External source') AS source_name,
       reservation.id AS existing_reservation_id, reservation.address AS existing_address,
       reservation.hostname AS existing_hostname, reservation.source_type AS existing_source_type,
       server.id AS existing_server_id, server.name AS existing_server_name
@@ -1415,7 +1415,7 @@ router.get("/reservations", guard("canViewNetworks"), (req, res) => {
     .prepare("SELECT environment_id FROM servers WHERE id = ?")
     .get(serverId);
   if (!server)
-    return res.status(404).json({ error: "Host nicht gefunden." });
+    return res.status(404).json({ error: "Host not found." });
   if (!guardEnvironment(req, res, server.environment_id)) return;
   const rows = db.db
     .prepare(
@@ -1447,7 +1447,7 @@ router.get("/subnets/:id/allocations", guard("canViewNetworks"), (req, res) => {
     .prepare("SELECT id, cidr, gateway, dhcp_start, dhcp_end, environment_id FROM ipam_subnets WHERE id = ?")
     .get(req.params.id);
   if (!subnet)
-    return res.status(404).json({ error: "Netzwerk nicht gefunden." });
+    return res.status(404).json({ error: "Network not found." });
   if (!guardEnvironment(req, res, subnet.environment_id)) return;
   const addresses = withReservationConflicts(
     withProxmoxSourceNames(db.db
@@ -1518,13 +1518,13 @@ router.get("/subnets/:id/children", guard("canViewNetworks"), (req, res) => {
     .prepare("SELECT * FROM ipam_subnets WHERE id = ?")
     .get(req.params.id);
   if (!subnet)
-    return res.status(404).json({ error: "Netzwerk nicht gefunden." });
+    return res.status(404).json({ error: "Network not found." });
   if (!guardEnvironment(req, res, subnet.environment_id)) return;
   const parsed = parseCidr(subnet.cidr);
   const all = db.db
     .prepare("SELECT * FROM ipam_subnets WHERE environment_id = ?")
     .all(subnet.environment_id);
-  if (!parsed) return res.status(400).json({ error: "Ungültiges Prefix." });
+  if (!parsed) return res.status(400).json({ error: "Invalid prefix." });
   res.json(
     all
       .filter(
@@ -1539,7 +1539,7 @@ router.get("/subnets/:id/ranges", guard("canViewNetworks"), (req, res) => {
     .prepare("SELECT environment_id FROM ipam_subnets WHERE id = ?")
     .get(req.params.id);
   if (!subnet)
-    return res.status(404).json({ error: "Netzwerk nicht gefunden." });
+    return res.status(404).json({ error: "Network not found." });
   if (!guardEnvironment(req, res, subnet.environment_id)) return;
   const rows = getRanges(req.params.id).sort(
     (left, right) =>
@@ -1554,13 +1554,13 @@ router.post("/subnets/:id/reservations/validate", guard("canViewNetworks"), (req
     .prepare("SELECT * FROM ipam_subnets WHERE id = ?")
     .get(req.params.id);
   if (!subnet)
-    return res.status(404).json({ error: "Netzwerk nicht gefunden." });
+    return res.status(404).json({ error: "Network not found." });
   if (!guardEnvironment(req, res, subnet.environment_id)) return;
   const kind = String(req.body?.kind || "address");
   const start = ipv4(kind === "range" ? req.body?.start_address : req.body?.address);
   const end = ipv4(kind === "range" ? req.body?.end_address : req.body?.address);
   const error = reservationSpaceError(subnet, start, end);
-  res.json({ valid: !error, message: error || "Adresse ist verfügbar." });
+  res.json({ valid: !error, message: error || "Address is available." });
 });
 
 router.post(
@@ -1573,30 +1573,30 @@ router.post(
     const address = String(req.body?.address || "").trim();
     const parsed = subnet && parseCidr(subnet.cidr);
     if (!subnet || !parsed)
-      return res.status(404).json({ error: "Subnetz nicht gefunden." });
+      return res.status(404).json({ error: "Subnet not found." });
     if (!guardEnvironment(req, res, subnet.environment_id)) return;
     const numeric = ipv4(address);
     if (numeric === null || !isUsableAddress(numeric, parsed))
       return res
         .status(400)
         .json({
-          error: "Adresse ist keine verwendbare Host-Adresse dieses Netzwerks.",
+          error: "The address is not a usable host address in this network.",
         });
     if (gatewayNumber(subnet) === numeric)
       return res.status(409).json({
-        error: "Die Adresse ist als Gateway dieses Prefixes belegt.",
+        error: "The address is used as this prefix's gateway.",
       });
     if (overlapsDelegatedPrefix(subnet, numeric))
       return res.status(409).json({
-        error: "Adresse gehört zu einem delegierten Child-Prefix.",
+        error: "The address belongs to a delegated child prefix.",
       });
     if (overlapsEnvironmentAllocation(subnet.environment_id, subnet.id, numeric))
       return res.status(409).json({
-        error: "Adresse ist bereits in einem anderen Prefix dieser Umgebung belegt.",
+        error: "The address is already allocated in another prefix in this environment.",
       });
     if (String(req.body?.status || "").trim().toLowerCase() === "dhcp")
       return res.status(400).json({
-        error: "DHCP wird automatisch aus dem Bereich des Prefixes abgeleitet.",
+        error: "DHCP is derived automatically from the prefix range.",
       });
     const id = db.uuidv4();
     try {
@@ -1609,7 +1609,7 @@ router.post(
         return res
           .status(409)
           .json({
-            error: "Adresse ist bereits Teil eines reservierten IP-Bereichs.",
+            error: "The address is already part of a reserved IP range.",
           });
       const status = validateChoice(
         req.body?.status,
@@ -1658,7 +1658,7 @@ router.post(
     } catch (error) {
       res
         .status(409)
-        .json({ error: error.message || "Adresse ist bereits reserviert." });
+        .json({ error: error.message || "The address is already reserved." });
     }
   },
 );
@@ -1668,17 +1668,17 @@ router.put("/reservations/:id", guard("canEditNetworks"), (req, res) => {
     .prepare("SELECT * FROM ipam_reservations WHERE id = ?")
     .get(req.params.id);
   if (!reservation)
-    return res.status(404).json({ error: "IP-Adresse nicht gefunden." });
+    return res.status(404).json({ error: "IP address not found." });
   if (reservation.source_type && reservation.source_type !== "manual")
     return res.status(409).json({
-      error: "Synchronisierte Adressen werden in ihrer Quelle gepflegt.",
+      error: "Synchronized addresses are managed in their source.",
     });
   const subnet = db.db
     .prepare("SELECT * FROM ipam_subnets WHERE id = ?")
     .get(reservation.subnet_id);
   const parsed = subnet && parseCidr(subnet.cidr);
   if (!subnet || !parsed)
-    return res.status(404).json({ error: "Prefix nicht gefunden." });
+    return res.status(404).json({ error: "Prefix not found." });
   if (!guardEnvironment(req, res, subnet.environment_id)) return;
   try {
     const address = String(req.body?.address || reservation.address).trim();
@@ -1687,15 +1687,15 @@ router.put("/reservations/:id", guard("canEditNetworks"), (req, res) => {
       return res
         .status(400)
         .json({
-          error: "Adresse ist keine verwendbare Host-Adresse dieses Prefixes.",
+          error: "The address is not a usable host address in this prefix.",
         });
     if (gatewayNumber(subnet) === numeric)
       return res.status(409).json({
-        error: "Die Adresse ist als Gateway dieses Prefixes belegt.",
+        error: "The address is used as this prefix's gateway.",
       });
     if (overlapsDelegatedPrefix(subnet, numeric))
       return res.status(409).json({
-        error: "Adresse gehört zu einem delegierten Child-Prefix.",
+        error: "The address belongs to a delegated child prefix.",
       });
     if (
       overlapsEnvironmentAllocation(
@@ -1706,11 +1706,11 @@ router.put("/reservations/:id", guard("canEditNetworks"), (req, res) => {
       )
     )
       return res.status(409).json({
-        error: "Adresse ist bereits in einem anderen Prefix dieser Umgebung belegt.",
+        error: "The address is already allocated in another prefix in this environment.",
       });
     if (String(req.body?.status || "").trim().toLowerCase() === "dhcp")
       return res.status(400).json({
-        error: "DHCP wird automatisch aus dem Bereich des Prefixes abgeleitet.",
+        error: "DHCP is derived automatically from the prefix range.",
       });
     if (
       getRanges(subnet.id).some(
@@ -1721,7 +1721,7 @@ router.put("/reservations/:id", guard("canEditNetworks"), (req, res) => {
     )
       return res
         .status(409)
-        .json({ error: "Adresse ist Teil eines reservierten IP-Bereichs." });
+        .json({ error: "The address is part of a reserved IP range." });
     const status = validateChoice(
       req.body?.status,
       ADDRESS_STATUSES,
@@ -1772,7 +1772,7 @@ router.put("/reservations/:id", guard("canEditNetworks"), (req, res) => {
     res
       .status(400)
       .json({
-        error: error.message || "IP-Adresse konnte nicht gespeichert werden.",
+        error: error.message || "The IP address could not be saved.",
       });
   }
 });
@@ -1791,7 +1791,7 @@ router.patch("/reservations/:id/device-name", guard("canEditNetworks"), (req, re
     `)
     .get(req.params.id);
   if (!reservation)
-    return res.status(404).json({ error: "IP-Adresse nicht gefunden." });
+    return res.status(404).json({ error: "IP address not found." });
   if (!guardEnvironment(req, res, reservation.environment_id)) return;
 
   try {
@@ -1819,7 +1819,7 @@ router.patch("/reservations/:id/device-name", guard("canEditNetworks"), (req, re
     res.json({ mac_address: macAddress, device_name: name });
   } catch (error) {
     res.status(400).json({
-      error: error.message || "Gerätename konnte nicht gespeichert werden.",
+      error: error.message || "The device name could not be saved.",
     });
   }
 });
@@ -1835,7 +1835,7 @@ router.post(
     const start = ipv4(req.body?.start_address);
     const end = ipv4(req.body?.end_address);
     if (!subnet || !parsed)
-      return res.status(404).json({ error: "Netzwerk nicht gefunden." });
+      return res.status(404).json({ error: "Network not found." });
     if (!guardEnvironment(req, res, subnet.environment_id)) return;
     if (
       start === null ||
@@ -1848,21 +1848,21 @@ router.post(
         .status(400)
         .json({
           error:
-            "Der Bereich muss aus verwendbaren Adressen dieses Netzwerks bestehen.",
+            "The range must contain usable addresses from this network.",
         });
     const count = end - start + 1;
     const gateway = gatewayNumber(subnet);
     if (gateway !== null && gateway >= start && gateway <= end)
       return res.status(409).json({
-        error: "Der Bereich enthält das konfigurierte Gateway.",
+        error: "The range contains the configured gateway.",
       });
     if (overlapsDelegatedPrefix(subnet, start, end))
       return res.status(409).json({
-        error: "Der Bereich überschneidet sich mit einem delegierten Child-Prefix.",
+        error: "The range overlaps a delegated child prefix.",
       });
     if (overlapsEnvironmentAllocation(subnet.environment_id, subnet.id, start, end))
       return res.status(409).json({
-        error: "Der Bereich überschneidet eine Belegung in einem anderen Prefix dieser Umgebung.",
+        error: "The range overlaps an allocation in another prefix in this environment.",
       });
     try {
       const reservedAddress = db.db
@@ -1890,7 +1890,7 @@ router.post(
           .status(409)
           .json({
             error:
-              "Mindestens eine Adresse des Bereichs ist bereits reserviert.",
+              "At least one address in this range is already reserved.",
           });
       const status = validateChoice(
         req.body?.status,
@@ -1925,7 +1925,7 @@ router.post(
       res
         .status(409)
         .json({
-          error: "Mindestens eine Adresse des Bereichs ist bereits reserviert.",
+          error: "At least one address in this range is already reserved.",
         });
     }
   },
@@ -1938,17 +1938,17 @@ router.delete("/reservations/:id", guard("canEditNetworks"), (req, res) => {
     )
     .get(req.params.id);
   if (!reservation)
-    return res.status(404).json({ error: "Reservierung nicht gefunden." });
+    return res.status(404).json({ error: "Reservation not found." });
   if (!guardEnvironment(req, res, reservation.environment_id)) return;
   if (reservation.source_type && reservation.source_type !== "manual")
     return res.status(409).json({
-      error: "Synchronisierte Adressen können nur über ihre Quelle entfernt werden.",
+      error: "Synchronized addresses can only be removed through their source.",
     });
   const result = db.db
     .prepare("DELETE FROM ipam_reservations WHERE id = ?")
     .run(req.params.id);
   if (!result.changes)
-    return res.status(404).json({ error: "Reservierung nicht gefunden." });
+    return res.status(404).json({ error: "Reservation not found." });
   db.auditLog.write(
     "ipam.reservation_delete",
     `subnet=${reservation.cidr} address=${reservation.address} source=${reservation.source_type || "manual"} hostname=${reservation.hostname || "-"}`,
@@ -1966,13 +1966,13 @@ router.delete("/ranges/:id", guard("canEditNetworks"), (req, res) => {
     )
     .get(req.params.id);
   if (!range)
-    return res.status(404).json({ error: "IP-Bereich nicht gefunden." });
+    return res.status(404).json({ error: "IP range not found." });
   if (!guardEnvironment(req, res, range.environment_id)) return;
   const result = db.db
     .prepare("DELETE FROM ipam_ip_ranges WHERE id = ?")
     .run(req.params.id);
   if (!result.changes)
-    return res.status(404).json({ error: "IP-Bereich nicht gefunden." });
+    return res.status(404).json({ error: "IP range not found." });
   db.auditLog.write(
     "ipam.reservation_range_delete",
     `subnet=${range.cidr} start=${range.start_address} end=${range.end_address} description=${range.description || "-"}`,
@@ -2013,18 +2013,18 @@ router.post("/sources", guard("canEditNetworks"), (req, res) => {
     const token = String(body.api_token || "").trim();
     if (!SOURCE_TYPES.has(type))
       throw new Error(
-        "Als Quelle werden derzeit UniFi oder pfSense unterstützt.",
+        "The currently supported source types are UniFi and pfSense.",
       );
     if (!name || !endpoint)
-      throw new Error("Name und gültige HTTPS-/HTTP-URL sind erforderlich.");
+      throw new Error("A name and valid HTTP or HTTPS URL are required.");
     if (!token)
-      throw new Error("Für diese Quelle ist ein API-Token erforderlich.");
+      throw new Error("An API token is required for this source.");
     if (
       !db.db
         .prepare("SELECT 1 FROM environments WHERE id = ?")
         .get(environmentId)
     )
-      throw new Error("Umgebung nicht gefunden.");
+      throw new Error("Environment not found.");
     const id = db.uuidv4();
     const defaultPath =
       type === "unifi"
@@ -2032,11 +2032,11 @@ router.post("/sources", guard("canEditNetworks"), (req, res) => {
         : "/api/v2/status/dhcp_server/leases";
     const path = String(body.path || defaultPath).trim();
     if (!path.startsWith("/"))
-      throw new Error("Der API-Pfad muss mit / beginnen.");
+      throw new Error("The API path must start with /.");
     const encryptedToken = encrypt(token);
     if (encryptedToken === token)
       throw new Error(
-        "SHIPYARD_KEY_SECRET ist erforderlich, damit Quell-Tokens verschlüsselt gespeichert werden.",
+        "SHIPYARD_KEY_SECRET is required to store source tokens securely.",
       );
     db.db
       .prepare(
@@ -2073,7 +2073,7 @@ router.post("/sources", guard("canEditNetworks"), (req, res) => {
   } catch (error) {
     res
       .status(400)
-      .json({ error: error.message || "Quelle konnte nicht erstellt werden." });
+      .json({ error: error.message || "The source could not be created." });
   }
 });
 
@@ -2083,7 +2083,7 @@ router.put("/sources/:id", guard("canEditNetworks"), (req, res) => {
       .prepare("SELECT * FROM ipam_sync_sources WHERE id = ?")
       .get(req.params.id);
     if (!source)
-      return res.status(404).json({ error: "Quelle nicht gefunden." });
+      return res.status(404).json({ error: "Source not found." });
     if (!guardEnvironment(req, res, source.environment_id)) return;
     const body = req.body || {};
     const type = String(body.type || source.type)
@@ -2095,7 +2095,7 @@ router.put("/sources/:id", guard("canEditNetworks"), (req, res) => {
     const endpoint = validEndpoint(body.endpoint || source.endpoint);
     const path = String(body.path ?? source.path).trim();
     if (!SOURCE_TYPES.has(type) || !name || !endpoint || !path.startsWith("/"))
-      throw new Error("Quelle enthält ungültige Werte.");
+      throw new Error("The source contains invalid values.");
     const nextToken =
       typeof body.api_token === "string" && body.api_token.trim()
         ? encrypt(body.api_token.trim())
@@ -2106,7 +2106,7 @@ router.put("/sources/:id", guard("canEditNetworks"), (req, res) => {
       nextToken === body.api_token.trim()
     )
       throw new Error(
-        "SHIPYARD_KEY_SECRET ist erforderlich, damit Quell-Tokens verschlüsselt gespeichert werden.",
+        "SHIPYARD_KEY_SECRET is required to store source tokens securely.",
       );
     db.db
       .prepare(
@@ -2149,7 +2149,7 @@ router.put("/sources/:id", guard("canEditNetworks"), (req, res) => {
     res
       .status(400)
       .json({
-        error: error.message || "Quelle konnte nicht aktualisiert werden.",
+        error: error.message || "The source could not be updated.",
       });
   }
 });
@@ -2158,7 +2158,7 @@ router.delete("/sources/:id", guard("canEditNetworks"), (req, res) => {
   const source = db.db
     .prepare("SELECT * FROM ipam_sync_sources WHERE id = ?")
     .get(req.params.id);
-  if (!source) return res.status(404).json({ error: "Quelle nicht gefunden." });
+  if (!source) return res.status(404).json({ error: "Source not found." });
   if (!guardEnvironment(req, res, source.environment_id)) return;
   const remove = db.db.transaction(() => {
     const affected = db.db
@@ -2194,17 +2194,17 @@ router.post("/sources/:id/test", guard("canEditNetworks"), async (req, res) => {
   const source = db.db
     .prepare("SELECT * FROM ipam_sync_sources WHERE id = ?")
     .get(req.params.id);
-  if (!source) return res.status(404).json({ error: "Quelle nicht gefunden." });
+  if (!source) return res.status(404).json({ error: "Source not found." });
   if (!guardEnvironment(req, res, source.environment_id)) return;
   if (!source.enabled)
-    return res.status(409).json({ error: "Diese Quelle ist deaktiviert." });
+    return res.status(409).json({ error: "This source is disabled." });
   const token = decrypt(String(source.api_token || ""));
   if (!token)
     return res
       .status(409)
       .json({
         error:
-          "Das Token dieser Quelle kann nicht entschlüsselt werden. Bitte hinterlege es erneut.",
+          "This source token cannot be decrypted. Save the token again.",
       });
   try {
     const payload = await sourceRequest(
@@ -2255,7 +2255,7 @@ router.post("/sources/:id/test", guard("canEditNetworks"), async (req, res) => {
       )
       .run(
         new Date().toISOString(),
-        String(error.message || "Verbindungstest fehlgeschlagen.").slice(
+        String(error.message || "Connection test failed.").slice(
           0,
           500,
         ),
@@ -2270,7 +2270,7 @@ router.post("/sources/:id/test", guard("canEditNetworks"), async (req, res) => {
     );
     res
       .status(502)
-      .json({ error: error.message || "Verbindungstest fehlgeschlagen." });
+      .json({ error: error.message || "Connection test failed." });
   }
 });
 
@@ -2334,14 +2334,14 @@ function reconcileSourceReservation(reservationId, sourceId) {
 }
 
 async function syncIpamSource(source, { ip, actor } = {}) {
-  if (!source?.id) throw new Error("Quelle nicht gefunden.");
-  if (!source.enabled) throw new Error("Diese Quelle ist deaktiviert.");
+  if (!source?.id) throw new Error("Source not found.");
+  if (!source.enabled) throw new Error("This source is disabled.");
   if (syncingSources.has(source.id))
-    throw new Error("Diese Quelle wird bereits synchronisiert.");
+    throw new Error("This source is already being synchronized.");
   const token = decrypt(String(source.api_token || ""));
   if (!token)
     throw new Error(
-      "Das Token dieser Quelle kann nicht entschlüsselt werden. Bitte hinterlege es erneut.",
+      "This source token cannot be decrypted. Save the token again.",
     );
   syncingSources.add(source.id);
   try {
@@ -2463,7 +2463,7 @@ async function syncIpamSource(source, { ip, actor } = {}) {
               record.address,
               record.hostname.slice(0, 100),
               canonicalMac(record.mac),
-              `Adresse ist bereits ${collision.source_type === "manual" ? "manuell" : "aus einer anderen Quelle"} reserviert${collision.hostname ? ` (${collision.hostname})` : ""}`,
+              `The address is already reserved ${collision.source_type === "manual" ? "manually" : "by another source"}${collision.hostname ? ` (${collision.hostname})` : ""}`,
               collision.id,
               now,
             );
@@ -2574,7 +2574,7 @@ async function syncIpamSource(source, { ip, actor } = {}) {
         `UPDATE ipam_sync_sources SET last_status = 'failed', last_error = ?, updated_at = datetime('now') WHERE id = ?`,
       )
       .run(
-        String(error.message || "Synchronisierung fehlgeschlagen").slice(
+        String(error.message || "Synchronization failed").slice(
           0,
           500,
         ),
@@ -2597,15 +2597,15 @@ router.post("/sources/:id/sync", guard("canEditNetworks"), async (req, res) => {
   const source = db.db
     .prepare("SELECT * FROM ipam_sync_sources WHERE id = ?")
     .get(req.params.id);
-  if (!source) return res.status(404).json({ error: "Quelle nicht gefunden." });
+  if (!source) return res.status(404).json({ error: "Source not found." });
   if (!guardEnvironment(req, res, source.environment_id)) return;
   try {
     res.json(
       await syncIpamSource(source, { ip: req.ip, actor: req.user?.username }),
     );
   } catch (error) {
-    const message = error.message || "Synchronisierung fehlgeschlagen.";
-    const status = /nicht gefunden/.test(message)
+    const message = error.message || "Synchronization failed.";
+    const status = /not found/i.test(message)
       ? 404
       : /deaktiviert|entschl/.test(message)
         ? 409

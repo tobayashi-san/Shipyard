@@ -31,6 +31,12 @@ const PLAYBOOKS_SUBDIR = 'playbooks';
 // Path to temp SSH key file – written once, reused, cleaned on exit
 let _tmpKeyPath = null;
 
+function clearTmpKey() {
+  if (!_tmpKeyPath) return;
+  try { fs.unlinkSync(_tmpKeyPath); } catch {}
+  _tmpKeyPath = null;
+}
+
 // Plugins can register sync hooks that run before every push/status check
 const _syncHooks = [];
 function registerSyncHook(fn) { _syncHooks.push(fn); }
@@ -43,6 +49,7 @@ function getConfig() {
   return {
     repoUrl:   g('git_repo_url'),
     authToken: getSecret(db, 'git_auth_token') || '',
+    sshKey:    getSecret(db, 'git_ssh_key') || '',
     autoPull:  db.settings.get('git_auto_pull') !== '0',
     autoPush:  db.settings.get('git_auto_push') !== '0',
     userName:  g('git_user_name')  || 'Shipyard',
@@ -53,6 +60,23 @@ function getConfig() {
 
 function isConfigured() {
   return !!db.settings.get('git_repo_url');
+}
+
+function updateCredentials({ mode, authToken, sshKey }) {
+  if (mode !== 'https' && mode !== 'ssh') throw new Error('Credential mode must be https or ssh.');
+  const current = getConfig();
+  if (mode === 'https') {
+    const nextToken = String(authToken || '').trim() || current.authToken;
+    if (!nextToken) throw new Error('An HTTPS token is required.');
+    setSecret(db, 'git_auth_token', nextToken);
+    setSecret(db, 'git_ssh_key', '');
+  } else {
+    const nextKey = String(sshKey || '').trim() || current.sshKey;
+    if (!nextKey) throw new Error('An SSH private key is required.');
+    setSecret(db, 'git_ssh_key', nextKey);
+    setSecret(db, 'git_auth_token', '');
+  }
+  clearTmpKey();
 }
 
 // ── Validation ────────────────────────────────────────────────
@@ -145,8 +169,8 @@ async function getTmpKeyPath() {
   if (_tmpKeyPath && fs.existsSync(_tmpKeyPath)) return _tmpKeyPath;
   try {
     const crypto = require('crypto');
-    const sshManager = require('./ssh-manager');
-    const keyContent = sshManager.getPrivateKey();
+    const configuredKey = getConfig().sshKey;
+    const keyContent = configuredKey || require('./ssh-manager').getPrivateKey();
     const tmpPath = path.join(os.tmpdir(), `.shipyard_git_key_${crypto.randomUUID()}`);
     fs.writeFileSync(tmpPath, keyContent, { mode: 0o600 });
     _tmpKeyPath = tmpPath;
@@ -479,7 +503,7 @@ async function autoPush(message = 'Update playbooks') {
 /**
  * First-time setup: save config, init workspace, set remote, initial pull.
  */
-async function setup({ repoUrl, authToken, autoPull: ap, autoPush: ap2, userName, userEmail, branch }) {
+async function setup({ repoUrl, authToken, sshKey, autoPull: ap, autoPush: ap2, userName, userEmail, branch }) {
   const urlCheck = validateGitUrl(repoUrl);
   if (!urlCheck.ok) return { success: false, error: urlCheck.error };
   const targetBranch = (branch || 'main').trim();
@@ -487,6 +511,8 @@ async function setup({ repoUrl, authToken, autoPull: ap, autoPush: ap2, userName
 
   db.settings.set('git_repo_url',   repoUrl);
   setSecret(db, 'git_auth_token', authToken || '');
+  setSecret(db, 'git_ssh_key', sshKey || '');
+  clearTmpKey();
   db.settings.set('git_auto_pull',  ap  !== false ? '1' : '0');
   db.settings.set('git_auto_push',  ap2 !== false ? '1' : '0');
   db.settings.set('git_user_name',  userName  || 'Shipyard');
@@ -543,4 +569,4 @@ process.on('exit', () => {
   }
 });
 
-module.exports = { getConfig, isConfigured, getStatus, getLog, getBranches, checkout, pull, commit, push, autoPull, autoPush, setup, registerSyncHook, validateGitUrl, validateBranchName };
+module.exports = { getConfig, isConfigured, getStatus, getLog, getBranches, checkout, pull, commit, push, autoPull, autoPush, setup, updateCredentials, registerSyncHook, validateGitUrl, validateBranchName };

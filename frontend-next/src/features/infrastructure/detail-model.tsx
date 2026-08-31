@@ -1,6 +1,7 @@
 import { Activity, Server } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
+import { formatDateTime } from "@/lib/utils";
 
 export interface Datastore {
   id: string;
@@ -126,12 +127,7 @@ export function uptime(seconds: number) {
       : "—";
 }
 export function taskDate(value?: string) {
-  return value
-    ? new Intl.DateTimeFormat("en-US", {
-        dateStyle: "short",
-        timeStyle: "short",
-      }).format(new Date(value))
-    : "—";
+  return formatDateTime(value, { dateStyle: "short", timeStyle: "short" });
 }
 
 // Inventory APIs may return directory, ISO and ZFS stores in arbitrary order.

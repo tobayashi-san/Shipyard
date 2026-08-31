@@ -3,7 +3,7 @@ import { resolveVisibleEnvironmentId, THEME_PRESETS } from './store';
 
 describe('console theme presets', () => {
   it('provides one unique, complete preview contract for every selectable theme', () => {
-    expect(THEME_PRESETS).toHaveLength(16);
+    expect(THEME_PRESETS).toHaveLength(6);
     expect(new Set(THEME_PRESETS.map(theme => theme.id)).size).toBe(THEME_PRESETS.length);
 
     for (const theme of THEME_PRESETS) {

@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { QueryErrorState } from "@/components/ui/query-error-state";
 import { SettingsRow, SettingsSection } from "../_row";
 
 interface SSHKey {
@@ -53,13 +54,7 @@ export function SshTab() {
 
   const { data, isLoading, isError } = useQuery<SSHKey | null>({
     queryKey: ["ssh-key"],
-    queryFn: async () => {
-      try {
-        return (await api.getSSHKey()) as SSHKey;
-      } catch {
-        return null;
-      }
-    },
+    queryFn: () => api.getSSHKey() as Promise<SSHKey>,
   });
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["ssh-key"] });
@@ -74,6 +69,8 @@ export function SshTab() {
           <SettingsRow label={t("set.sshStatus")} noBorder>
             <Skeleton className="h-4 w-32" />
           </SettingsRow>
+        ) : isError ? (
+          <QueryErrorState compact title="SSH key status could not be loaded" onRetry={() => void refresh()} />
         ) : data && data.publicKey ? (
           <SshKeyView ssh={data} onChanged={refresh} />
         ) : (
@@ -168,7 +165,7 @@ function KeyAssignments({ environmentId }: { environmentId: string }) {
             setTargetId("");
           }}
           className="h-9 rounded-sm border border-input bg-background px-2.5 text-[13px]"
-          aria-label="Zieltyp"
+          aria-label="Target type"
         >
           <option value="server">Host</option>
           <option value="deployment">Deployment</option>
@@ -183,7 +180,7 @@ function KeyAssignments({ environmentId }: { environmentId: string }) {
         >
           <option value="">
             {!loadTargets || targets.isLoading
-              ? "Ziele laden…"
+              ? "Loading targets…"
               : choices.length
                 ? "Select target"
                 : "No targets available"}
@@ -201,7 +198,7 @@ function KeyAssignments({ environmentId }: { environmentId: string }) {
           onClick={() => save.mutate()}
           disabled={!targetId || save.isPending}
         >
-          Zuordnen
+          Assign
         </Button>
       </div>
       {assignments.isLoading ? (
@@ -221,14 +218,13 @@ function KeyAssignments({ environmentId }: { environmentId: string }) {
               </span>
               <Button
                 type="button"
-                size="icon"
+                size="sm"
                 variant="ghost"
-                className="h-7 w-7 text-destructive hover:text-destructive"
                 onClick={() => remove.mutate(assignment.id)}
                 disabled={remove.isPending}
                 aria-label={`Remove ${assignment.target_label}`}
               >
-                <Trash2 className="h-3.5 w-3.5" />
+                <Trash2 className="h-3.5 w-3.5" /> Remove
               </Button>
             </div>
           ))}
@@ -590,13 +586,21 @@ function ImportKeyDialog({
 
 function DeployForm() {
   const { t } = useTranslation();
+  const environmentId = useUi((state) => state.environmentId);
   const [ip, setIp] = useState("");
   const [user, setUser] = useState("root");
   const [port, setPort] = useState("22");
   const [pw, setPw] = useState("");
   const [busyOne, setBusyOne] = useState(false);
   const [busyAll, setBusyAll] = useState(false);
+  const [confirmOne, setConfirmOne] = useState(false);
   const [confirmAll, setConfirmAll] = useState(false);
+  const hostsQuery = useQuery<Array<{ id: string; name: string; ip_address?: string }>>({
+    queryKey: ["servers", environmentId],
+    queryFn: () => api.getServers(environmentId) as unknown as Promise<Array<{ id: string; name: string; ip_address?: string }>>,
+    enabled: confirmAll,
+  });
+  const deployTargets = Array.isArray(hostsQuery.data) ? hostsQuery.data : [];
 
   const deployOne = async () => {
     setBusyOne(true);
@@ -609,6 +613,7 @@ function DeployForm() {
       });
       showToast(t("set.sshDistributed"), "success");
       setPw("");
+      setConfirmOne(false);
     } catch (err) {
       showToast(
         t("common.errorPrefix", { msg: (err as Error).message }),
@@ -647,7 +652,7 @@ function DeployForm() {
 
   return (
     <>
-      <form onSubmit={(event) => { event.preventDefault(); void deployOne(); }} className="contents">
+      <form onSubmit={(event) => { event.preventDefault(); if (ip) setConfirmOne(true); }} className="contents">
       <SettingsRow label={t("set.sshTarget")} hint={t("set.sshTargetHint")}>
         <div className="grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-[1fr_90px_70px]">
           <Input
@@ -713,12 +718,39 @@ function DeployForm() {
       </SettingsRow>
       </form>
 
+      <Dialog open={confirmOne} onOpenChange={setConfirmOne}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Install SSH key on this host?</DialogTitle>
+          </DialogHeader>
+          <div className="rounded-md border bg-muted/20 p-3 text-sm">
+            <div className="font-medium">{user || "root"}@{ip}</div>
+            <div className="mt-1 text-xs text-muted-foreground">Port {parseInt(port, 10) || 22} · the password is used only for this installation request.</div>
+          </div>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setConfirmOne(false)}>{t("common.cancel")}</Button>
+            <Button onClick={deployOne} disabled={busyOne || !ip}>{busyOne ? t("set.deploying") : t("set.sshDistributeBtn")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={confirmAll} onOpenChange={setConfirmAll}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>{t("set.sshDistributeAllBtn")}</DialogTitle>
           </DialogHeader>
           <p className="text-sm">{t("set.sshDeployAllConfirm")}</p>
+          <div className="max-h-48 overflow-y-auto rounded-md border bg-muted/20 p-2 text-sm">
+            {hostsQuery.isLoading ? (
+              <span className="text-muted-foreground">Loading target preview…</span>
+            ) : deployTargets.length ? (
+              <>
+                <div className="mb-1 px-1 text-xs font-semibold text-muted-foreground">{deployTargets.length} hosts</div>
+                {deployTargets.slice(0, 8).map((host) => <div key={host.id} className="flex justify-between gap-3 rounded-sm px-1 py-1"><span className="truncate">{host.name}</span><span className="font-mono text-xs text-muted-foreground">{host.ip_address || "—"}</span></div>)}
+                {deployTargets.length > 8 && <div className="px-1 pt-1 text-xs text-muted-foreground">+{deployTargets.length - 8} more hosts</div>}
+              </>
+            ) : <span className="text-muted-foreground">No hosts in this environment.</span>}
+          </div>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setConfirmAll(false)}>
               {t("common.cancel")}
@@ -726,7 +758,7 @@ function DeployForm() {
             <Button
               variant="destructive"
               onClick={deployAll}
-              disabled={busyAll}
+              disabled={busyAll || hostsQuery.isLoading || deployTargets.length === 0}
             >
               {t("set.sshDistributeAllBtn")}
             </Button>

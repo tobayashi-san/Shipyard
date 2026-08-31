@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { metricTextClass } from "@/components/ui/metric-bar";
 import { ThresholdBar } from "./components/summary-cards";
+import { formatDateTime } from "@/lib/utils";
 
 export interface ServerDetail {
   id: string;
@@ -78,6 +79,7 @@ export interface HistoryRow {
   started_at?: string;
   completed_at?: string;
   triggered_by?: string;
+  output?: string;
   playbook_name?: string;
   _type?: string;
 }
@@ -179,14 +181,7 @@ export function formatBytes(mb: number | null | undefined): string {
 export function formatDate(d?: string, hour12?: boolean): string {
   if (!d) return "—";
   const utc = !d.endsWith("Z") ? d.replace(" ", "T") + "Z" : d;
-  try {
-    return new Date(utc).toLocaleString(
-      undefined,
-      hour12 !== undefined ? { hour12 } : undefined,
-    );
-  } catch {
-    return d;
-  }
+  return formatDateTime(utc, hour12 !== undefined ? { hour12 } : undefined);
 }
 
 export function SummaryField({

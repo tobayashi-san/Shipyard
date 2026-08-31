@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useUi } from "@/lib/store";
+import { formatDateTime } from "@/lib/utils";
 import { showToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -993,7 +994,7 @@ export function IpamSourcesDialog({
                               </div>
                               <p className="mt-1 text-xs text-muted-foreground">
                                 {source.last_tested_at
-                                  ? tr("testedAt", { date: new Date(source.last_tested_at).toLocaleString() })
+                                  ? tr("testedAt", { date: formatDateTime(source.last_tested_at) })
                                   : tr("noConnectionTest")}
                               </p>
                               {source.last_test_error && (
@@ -1016,7 +1017,7 @@ export function IpamSourcesDialog({
                               </div>
                               <p className="mt-1 text-xs text-muted-foreground">
                                 {source.last_synced_at
-                                  ? tr("lastSyncAt", { date: new Date(source.last_synced_at).toLocaleString() })
+                                  ? tr("lastSyncAt", { date: formatDateTime(source.last_synced_at) })
                                   : tr("noImport")}
                               </p>
                               <p className="mt-1 text-xs text-muted-foreground">

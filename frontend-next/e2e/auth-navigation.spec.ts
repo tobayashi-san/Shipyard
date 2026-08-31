@@ -103,16 +103,14 @@ test('initial setup, login and protected console navigation work end-to-end', as
 
   await page.goto('/operations');
   await expect(page.getByRole('heading', { name: /operations|betrieb/i })).toBeVisible();
+  await page.getByLabel('Operations sections').getByRole('link', { name: 'Maintenance', exact: true }).click();
   await page.getByRole('button', { name: 'Add maintenance window', exact: true }).first().click();
   await expect(page.getByRole('dialog', { name: /schedule maintenance window/i })).toBeVisible();
   await page.getByLabel('Name').fill('E2E-Proxmox-Wartung');
   await page.getByLabel('Start').fill('2026-12-01T10:00');
   await page.getByLabel('End').fill('2026-12-01T11:00');
   await page.getByRole('button', { name: 'Schedule maintenance window', exact: true }).click();
-  // The operation is intentionally shown in the maintenance overview and the
-  // upcoming-work summary. Assert that at least one rendered record is visible
-  // instead of relying on a unique text node.
-  await expect(page.getByText('E2E-Proxmox-Wartung', { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('row', { name: /E2E-Proxmox-Wartung/ })).toBeVisible();
 
   await page.getByRole('button', { name: 'Actions for E2E-Proxmox-Wartung' }).click();
   await page.getByRole('menuitem', { name: 'Delete window' }).click();
@@ -121,8 +119,8 @@ test('initial setup, login and protected console navigation work end-to-end', as
   await expect(page.getByText('E2E-Proxmox-Wartung', { exact: true })).toHaveCount(0);
 
   await page.goto('/settings');
-  await expect(page.getByRole('heading', { name: /einstellungen|settings/i })).toBeVisible();
-  const settingsNavigation = page.getByRole('navigation', { name: 'Settings' });
+  await expect(page.getByRole('heading', { name: /administration/i })).toBeVisible();
+  const settingsNavigation = page.getByRole('navigation', { name: 'Administration' });
   await expect(settingsNavigation.getByRole('link', { name: 'Appearance' })).toBeVisible();
   await expect(settingsNavigation.getByRole('link', { name: 'SSH' })).toBeVisible();
   await expect(settingsNavigation.getByRole('link', { name: 'Git Integration' })).toBeVisible();
@@ -142,13 +140,14 @@ test('sidebar keeps an unknown Proxmox inventory in a loading state', async ({ p
     });
   });
 
-  await page.goto('/');
-  await expect(page.getByRole('status').filter({ hasText: 'Infrastructure is loading' })).toBeVisible();
-  await expect(page.getByText('Proxmox', { exact: true }).locator('..').getByText('0', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('Connect Proxmox', { exact: true })).toHaveCount(0);
+  await page.goto('/infrastructure');
+  const sidebar = page.locator('aside');
+  await expect(sidebar.getByRole('status').filter({ hasText: 'Infrastructure is loading' })).toBeVisible();
+  await expect(sidebar.getByText('Proxmox', { exact: true }).locator('..').getByText('0', { exact: true })).toHaveCount(0);
+  await expect(sidebar.getByText('Connect Proxmox', { exact: true })).toHaveCount(0);
 
   releaseSummary();
-  await expect(page.getByText('Connect Proxmox', { exact: true })).toBeVisible();
+  await expect(sidebar.getByText('Connect Proxmox', { exact: true })).toBeVisible();
   await page.unroute('**/api/opentofu/infrastructure-summary?*');
 });
 
@@ -192,6 +191,7 @@ test('mobile profile menu and maintenance form remain inside the viewport', asyn
   await page.keyboard.press('Escape');
 
   await page.goto('/operations');
+  await page.getByLabel('Operations sections').getByRole('link', { name: 'Maintenance', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Add maintenance window', exact: true })).toHaveCount(1);
   await page.getByRole('button', { name: 'Add maintenance window', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: /schedule maintenance window/i });
@@ -206,20 +206,20 @@ test('mobile profile menu and maintenance form remain inside the viewport', asyn
 
 test('console themes apply their coordinated light and dark modes immediately', async ({ page }) => {
   await loginForIsolatedTest(page);
-  await page.goto('/settings/appearance');
+  await page.goto('/profile');
 
   const themeChoices = page.locator('button[aria-label$=" mode"]');
-  await expect(themeChoices).toHaveCount(16);
+  await expect(themeChoices).toHaveCount(6);
 
-  await page.getByRole('button', { name: 'Glacier Contrast theme, light mode' }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-console-theme', 'glacier-light');
+  await page.getByRole('button', { name: 'Paper theme, light mode' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-console-theme', 'paper-light');
   await expect(page.locator('html')).not.toHaveClass(/\bdark\b/);
-  await expect(page.getByRole('button', { name: 'Glacier Contrast theme, light mode' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Paper theme, light mode' })).toHaveAttribute('aria-pressed', 'true');
 
-  await page.getByRole('button', { name: 'Obsidian Contrast theme, dark mode' }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-console-theme', 'obsidian-dark');
+  await page.getByRole('button', { name: 'Graphite theme, dark mode' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-console-theme', 'graphite-dark');
   await expect(page.locator('html')).toHaveClass(/\bdark\b/);
-  await expect(page.getByRole('button', { name: 'Obsidian Contrast theme, dark mode' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Graphite theme, dark mode' })).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('agent feature visibility follows the setting immediately', async ({ page }) => {
@@ -243,12 +243,13 @@ test('agent feature visibility follows the setting immediately', async ({ page }
   });
   await expect(agentToggle).toHaveAttribute('data-state', 'checked');
   await page.goto(`/servers/${serverId}`);
-  await expect(page.getByRole('tab', { name: 'Details', exact: true })).toBeVisible();
-  await expect(page.getByRole('tab', { name: 'Files', exact: true })).toBeVisible();
-  await expect(page.getByRole('tab', { name: 'Operations', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'System', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Access', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Activity', exact: true })).toBeVisible();
   await expect(page.getByRole('tab', { name: /notes/i })).toBeVisible();
 
-  await page.getByRole('tab', { name: /terminal/i }).click();
+  await page.getByRole('tab', { name: 'Access', exact: true }).click();
+  await page.getByRole('button', { name: /open terminal/i }).click();
   const terminalDialog = page.getByRole('dialog', { name: /terminal/i });
   await expect(terminalDialog).toBeVisible();
   await terminalDialog.getByRole('button', { name: /close/i }).click();
@@ -259,10 +260,12 @@ test('agent feature visibility follows the setting immediately', async ({ page }
   const hostToolsMenu = page.getByRole('menu', { name: 'Host tools' });
   await expect(hostToolsMenu.getByRole('menuitem', { name: /agent/i })).toBeVisible();
   await page.keyboard.press('Escape');
-  await page.getByRole('tab', { name: 'Operations', exact: true }).click();
+  await page.getByRole('tab', { name: 'Activity', exact: true }).click();
   await expect(page).toHaveURL(/#tab=history$/);
   await page.reload();
-  await expect(page.getByRole('tab', { name: 'Operations', exact: true })).toHaveAttribute('data-state', 'active');
+  await expect(page.getByRole('tab', { name: 'Activity', exact: true })).toHaveAttribute('data-state', 'active');
+  await page.goBack();
+  await expect(page.getByRole('tab', { name: 'Access', exact: true })).toHaveAttribute('data-state', 'active');
   await page.goBack();
   await expect(page.getByRole('tab', { name: /overview/i })).toHaveAttribute('data-state', 'active');
 
@@ -325,8 +328,9 @@ test('playbook workflows expose safe secrets, explicit targets and one run flow'
   const variableKey = `PLAYBOOK_E2E_${suffix.toUpperCase()}`;
   const secretValue = `never-return-${suffix}`;
   const scheduleName = `Playbook E2E ${suffix}`;
+  const groupName = `Playbook Group ${suffix}`;
 
-  await page.evaluate(async ({ hostName, filename }) => {
+  const groupId = await page.evaluate(async ({ hostName, filename, groupName }) => {
     const token = localStorage.getItem('shipyard_token');
     const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
     const host = await fetch('/api/servers', {
@@ -334,12 +338,24 @@ test('playbook workflows expose safe secrets, explicit targets and one run flow'
       body: JSON.stringify({ name: hostName, hostname: `${hostName}.local`, ip_address: '10.252.0.20', environment_id: 'default' }),
     });
     if (!host.ok) throw new Error(`Could not create playbook test host: ${host.status}`);
+    const hostRow = await host.json() as { id: string };
+    const group = await fetch('/api/servers/groups', {
+      method: 'POST', headers,
+      body: JSON.stringify({ name: groupName, color: '#2563eb', environment_id: 'default' }),
+    });
+    if (!group.ok) throw new Error(`Could not create playbook host group: ${group.status}`);
+    const groupRow = await group.json() as { id: string };
+    const assignment = await fetch(`/api/servers/${hostRow.id}/group`, {
+      method: 'PUT', headers, body: JSON.stringify({ group_id: groupRow.id }),
+    });
+    if (!assignment.ok) throw new Error(`Could not assign playbook host group: ${assignment.status}`);
     const playbook = await fetch('/api/playbooks', {
       method: 'POST', headers,
       body: JSON.stringify({ filename, content: '---\n- name: Browser test\n  hosts: all\n  gather_facts: false\n  tasks:\n    - ansible.builtin.debug:\n        msg: browser-test\n' }),
     });
     if (!playbook.ok) throw new Error(`Could not create playbook fixture: ${playbook.status}`);
-  }, { hostName, filename });
+    return groupRow.id;
+  }, { hostName, filename, groupName });
 
   try {
     await page.goto('/playbooks');
@@ -395,8 +411,17 @@ test('playbook workflows expose safe secrets, explicit targets and one run flow'
     await page.getByRole('button', { name: `Run ${filename}`, exact: true }).click();
     await expect(page.getByRole('tab', { name: 'Runs', exact: true })).toHaveAttribute('data-state', 'active');
     await expect(page.getByLabel('Playbook', { exact: true })).toHaveValue(filename);
+    await page.getByLabel('Filter hosts by group').selectOption({ label: groupName });
+    await page.getByRole('button', { name: 'Select filtered', exact: true }).click();
+    await expect(page.getByText(new RegExp(`Target preview.*1 host`))).toBeVisible();
+    await expect(page.getByText(hostName, { exact: true }).first()).toBeVisible();
+    await page.getByRole('button', { name: 'Run', exact: true }).click();
+    const review = page.getByRole('dialog', { name: 'Review playbook run' });
+    await expect(review).toContainText(hostName);
+    await review.getByRole('button', { name: 'Start run', exact: true }).click();
+    await expect(page.getByText(/playbook started|run started/i).first()).toBeVisible();
   } finally {
-    await page.evaluate(async ({ hostName, filename, variableKey, scheduleName }) => {
+    await page.evaluate(async ({ hostName, filename, variableKey, scheduleName, groupId }) => {
       const token = localStorage.getItem('shipyard_token');
       const auth = { Authorization: `Bearer ${token}` };
       const jsonHeaders = { ...auth, 'Content-Type': 'application/json' };
@@ -413,8 +438,51 @@ test('playbook workflows expose safe secrets, explicit targets and one run flow'
         ...variables.filter((row: { key: string }) => row.key === variableKey).map((row: { id: string }) => fetch(`/api/ansible-vars/${row.id}`, { method: 'DELETE', headers: auth })),
         ...schedules.filter((row: { name: string }) => row.name === scheduleName).map((row: { id: string }) => fetch(`/api/schedules/${row.id}`, { method: 'DELETE', headers: auth })),
       ]);
+      await fetch(`/api/servers/groups/${groupId}`, { method: 'DELETE', headers: auth });
       await fetch(`/api/playbooks/${encodeURIComponent(filename)}`, { method: 'DELETE', headers: jsonHeaders });
-    }, { hostName, filename, variableKey, scheduleName });
+    }, { hostName, filename, variableKey, scheduleName, groupId });
+  }
+});
+
+test('a failed host task exposes its cause, duration, and full log', async ({ page }) => {
+  test.setTimeout(30_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await loginForIsolatedTest(page);
+  const host = await page.evaluate(async () => {
+    const token = localStorage.getItem('shipyard_token');
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+    const created = await fetch('/api/servers', {
+      method: 'POST', headers,
+      body: JSON.stringify({ name: `failed-host-${Date.now().toString(36)}`, hostname: '127.0.0.1', ip_address: '127.0.0.1', ssh_port: 1, ssh_user: 'root' }),
+    });
+    if (!created.ok) throw new Error(`Could not create failed-host fixture: ${created.status}`);
+    const row = await created.json() as { id: string; name: string };
+    const started = await fetch(`/api/servers/${row.id}/update`, { method: 'POST', headers });
+    if (!started.ok) throw new Error(`Could not start failed-host task: ${started.status}`);
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      const response = await fetch(`/api/servers/${row.id}/history`, { headers: { Authorization: `Bearer ${token}` } });
+      const history = response.ok ? await response.json() as Array<{ status: string }> : [];
+      if (history.some(item => item.status === 'failed')) return row;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    throw new Error('The failed-host task did not finish in time');
+  });
+
+  try {
+    await page.goto(`/servers/${host.id}`);
+    await page.getByRole('tab', { name: 'Activity', exact: true }).click();
+    await expect(page.getByText(/Duration: (?:\d+s|\d+m|—)/).first()).toBeVisible();
+    const cause = page.getByText(/Cause:/).first();
+    await expect(cause).toBeVisible();
+    await expect(cause).not.toHaveText(/Cause:\s*—$/);
+    await page.getByRole('button', { name: 'View log', exact: true }).first().click();
+    const log = page.getByRole('dialog', { name: 'Task log' });
+    await expect(log.locator('pre')).not.toHaveText('No log output was recorded.');
+  } finally {
+    await page.evaluate(async (id) => {
+      const token = localStorage.getItem('shipyard_token');
+      await fetch(`/api/servers/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+    }, host.id);
   }
 });
 
@@ -543,7 +611,7 @@ test('the inventory tree moves a selected Shipyard host without drag and drop', 
     const host = await hostResponse.json() as { id: string };
     return { folder, host };
   });
-  await page.goto('/');
+  await page.goto('/infrastructure');
   const sidebar = page.locator('aside');
   // A freshly created test host has no poll result yet, therefore its status
   // is intentionally "Unbekannt". Select it by the stable action label,
@@ -730,7 +798,7 @@ test('a discovered Proxmox VM can be adopted through the browser without changin
     await expect(page.getByRole('heading', { name: 'E2E Inventory Platform' })).toBeVisible();
     // Adoption is an inventory action. The overview deliberately stays focused
     // on platform capacity and node health.
-    await page.getByRole('tab', { name: /virtual guests/i }).click();
+    await page.getByRole('tab', { name: /virtual machines/i }).click();
     await page.getByRole('button', { name: 'Actions for e2e-import-vm' }).click();
     await page.getByRole('menuitem', { name: 'Adopt as host' }).click();
     const dialog = page.getByRole('dialog', { name: 'Adopt VM as host' });
@@ -748,7 +816,7 @@ test('a discovered Proxmox VM can be adopted through the browser without changin
     await expect(inventoryTree.getByText('e2e-import-vm', { exact: true })).toHaveCount(1);
     const managedVmLink = inventoryTree.getByRole('link').filter({ hasText: 'e2e-import-vm' });
     await expect(managedVmLink).toHaveAttribute('href', /\/servers\//);
-    await expect(inventoryTree.getByRole('link', { name: 'Open Proxmox guest e2e-import-vm' })).toHaveAttribute('href', /\/infrastructure\/.*\/vms\/207/);
+    await expect(inventoryTree.getByRole('link', { name: 'Open Proxmox virtual machine e2e-import-vm' })).toHaveAttribute('href', /\/infrastructure\/.*\/vms\/207/);
     await page.goto('/servers');
     const row = page.getByRole('row', { name: /e2e-import-vm/i });
     await expect(row).toBeVisible();
@@ -867,12 +935,16 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
       page.waitForResponse(response => response.url().includes('/updates/refresh') && response.request().method() === 'POST' && response.status() === 202),
       page.getByRole('button', { name: 'Refresh catalog' }).click(),
     ]);
-    await page.getByRole('tab', { name: /virtual guests/i }).click();
+    await page.getByRole('tab', { name: /virtual machines/i }).click();
     await expect(page.getByRole('link', { name: 'hierarchy-vm', exact: true })).toBeVisible();
     const ctRow = page.getByRole('row', { name: /hierarchy-ct/i });
     await expect(ctRow).toBeVisible();
     await expect(ctRow).toContainText('CT');
     await expect(ctRow.getByRole('button', { name: 'Actions for hierarchy-ct' })).toBeVisible();
+    await page.getByRole('link', { name: 'hierarchy-vm', exact: true }).click();
+    await expect(page).toHaveURL(/\/infrastructure\/.*\/nodes\/hierarchy-node\/vms\/208/);
+    await expect(page.getByRole('heading', { name: 'hierarchy-vm', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'hierarchy-node', exact: true })).toBeVisible();
   } finally {
     if (fleetServerId) await page.evaluate(async (id) => {
       const token = localStorage.getItem('shipyard_token');
@@ -915,12 +987,12 @@ test('a Proxmox VM keeps configuration and tasks in distinct object tabs', async
     }, address.port);
 
     await openPlatformInventory(page, 'E2E Object Platform');
-    await page.getByRole('tab', { name: /virtual guests/i }).click();
+    await page.getByRole('tab', { name: /virtual machines/i }).click();
     await page.getByRole('link', { name: 'object-vm', exact: true }).click();
     await expect(page.getByText('Virtual machine', { exact: true }).first()).toBeVisible();
     await expect(page.getByRole('tab', { name: /configuration/i })).toBeVisible();
     await page.getByRole('tab', { name: /configuration/i }).click();
-    await expect(page.getByText('Hardware & guest', { exact: true })).toBeVisible();
+    await expect(page.getByText('Hardware & virtual machine', { exact: true })).toBeVisible();
     await expect(page.getByText(/^(BIOS \/ machine|BIOS \/ Maschine)$/i)).toBeVisible();
     await page.getByRole('tab', { name: /tasks/i }).click();
     await expect(page.getByText('No direct Proxmox actions have been recorded for this VM yet.')).toBeVisible();

@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { VmFormDialog } from "@/features/deployments/VmFormDialog";
 import { hasCap, useProfile } from "@/lib/queries";
+import { formatDateTime } from "@/lib/utils";
 
 interface PlanSummary { create?: number; update?: number; delete?: number; replace?: number; read?: number }
 interface Run {
@@ -72,9 +73,7 @@ function statusTone(status?: string): StatusTone {
   return "muted";
 }
 function formatDate(value?: string | null) {
-  if (!value) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+  return formatDateTime(value);
 }
 
 export function DeploymentDetailPage() {

@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { OverflowItem, OverflowMenu } from '@/components/ui/overflow-menu';
+import { formatDateTime } from '@/lib/utils';
 
 interface FileEntry {
   name: string;
@@ -201,7 +202,7 @@ export function ServerFilesTab({ serverId, profile }: { serverId: string; profil
                   return <tr key={`${entry.type}:${entry.name}`} className="border-b last:border-0 hover:bg-muted/20">
                     <td className="max-w-[28rem] px-4 py-2.5"><button type="button" disabled={entry.type !== 'directory'} onClick={() => openPath(fullPath)} className="flex max-w-full items-center gap-2 text-left disabled:cursor-default"><span className="text-muted-foreground">{entry.type === 'directory' ? <Folder className="h-4 w-4" /> : <File className="h-4 w-4" />}</span><span className={entry.type === 'directory' ? 'truncate font-medium hover:underline' : 'truncate'}>{entry.name}</span>{entry.type === 'symlink' && <Badge variant="outline">link</Badge>}</button></td>
                     <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-muted-foreground">{entry.type === 'directory' ? '—' : formatSize(entry.size)}</td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-xs text-muted-foreground">{entry.modified_at ? new Date(entry.modified_at * 1000).toLocaleString() : '—'}</td>
+                    <td className="whitespace-nowrap px-4 py-2.5 text-xs text-muted-foreground">{formatDateTime(entry.modified_at ? entry.modified_at * 1000 : undefined)}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{permissionLabel(entry.permissions)}</td>
                     <td className="px-4 py-2"><div className="flex justify-end">{entry.type !== 'symlink' ? <OverflowMenu title={`Actions for ${entry.name}`}><OverflowItem icon={Download} disabled={downloadingPath !== null} onClick={() => void downloadEntry(entry)}>{entry.type === 'directory' ? 'Download as .tar.gz' : 'Download file'}</OverflowItem>{canManage && entry.type === 'file' && <OverflowItem icon={ArrowRightLeft} onClick={() => setTransfer({ entry, targetServerId: '', targetPath: entry.name, overwrite: false })}>Transfer file</OverflowItem>}</OverflowMenu> : <span className="text-muted-foreground">—</span>}</div></td>
                   </tr>;

@@ -323,14 +323,14 @@ router.post('/groups', guard('canEditServers'), (req, res) => {
   const { name, color, parent_id } = req.body;
   const environmentId = req.environmentId || String(req.body?.environment_id || 'default').trim() || 'default';
   if (!name?.trim()) return res.status(400).json({ error: 'Name required' });
-  if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Umgebung nicht gefunden.' });
+  if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found.' });
   const parent = parent_id ? db.db.prepare('SELECT * FROM server_groups WHERE id = ?').get(String(parent_id)) : null;
-  if (parent_id && (!parent || parent.environment_id !== environmentId)) return res.status(400).json({ error: 'Übergeordneter Ordner gehört nicht zu dieser Umgebung.' });
+  if (parent_id && (!parent || parent.environment_id !== environmentId)) return res.status(400).json({ error: 'The parent folder belongs to a different environment.' });
   const perms = getPermissions(req.user);
   // A restricted operator may add a child folder only below an explicitly
   // assigned folder.  Root folders remain an environment administration task.
   if (!perms?.full && perms?.servers !== 'all' && (!parent || !canAccessServerGroup(perms, parent))) {
-    return res.status(403).json({ error: 'Ordner dürfen nur innerhalb eines zugewiesenen Ordners angelegt werden.' });
+    return res.status(403).json({ error: 'Folders may only be created inside an assigned folder.' });
   }
   res.json(db.serverGroups.create(name.trim(), color, parent_id || null, environmentId));
 });
@@ -355,17 +355,17 @@ router.put('/groups/:groupId/parent', guard('canEditServers'), guardServerGroupA
   const parentId = req.body.parent_id ? String(req.body.parent_id) : null;
   const groups = db.serverGroups.getAll();
   const current = groups.find(group => group.id === groupId);
-  if (!current) return res.status(404).json({ error: 'Ordner nicht gefunden.' });
+  if (!current) return res.status(404).json({ error: 'Folder not found.' });
   const parent = parentId ? groups.find(group => group.id === parentId) : null;
-  if (parentId && !parent) return res.status(400).json({ error: 'Übergeordneter Ordner nicht gefunden.' });
+  if (parentId && !parent) return res.status(400).json({ error: 'Parent folder not found.' });
   const perms = getPermissions(req.user);
-  if (parent && !canAccessServerGroup(perms, parent)) return res.status(403).json({ error: 'Zielordnerzugriff verweigert.' });
-  if (parent && parent.environment_id !== current.environment_id) return res.status(400).json({ error: 'Ordner können nicht umgebungsübergreifend verschachtelt werden.' });
-  if (parentId === groupId) return res.status(400).json({ error: 'Ein Ordner kann nicht sein eigener Überordner sein.' });
+  if (parent && !canAccessServerGroup(perms, parent)) return res.status(403).json({ error: 'Target folder access denied.' });
+  if (parent && parent.environment_id !== current.environment_id) return res.status(400).json({ error: 'Folders cannot be nested across environments.' });
+  if (parentId === groupId) return res.status(400).json({ error: 'A folder cannot be its own parent.' });
   const descendantIds = new Set([groupId]);
   let changed = true;
   while (changed) { changed = false; for (const group of groups) if (group.parent_id && descendantIds.has(group.parent_id) && !descendantIds.has(group.id)) { descendantIds.add(group.id); changed = true; } }
-  if (parentId && descendantIds.has(parentId)) return res.status(400).json({ error: 'Ein Ordner kann nicht in einen eigenen Unterordner verschoben werden.' });
+  if (parentId && descendantIds.has(parentId)) return res.status(400).json({ error: 'A folder cannot be moved into one of its descendants.' });
   db.serverGroups.setGroupParent(groupId, parentId);
   res.json({ success: true });
 });
@@ -376,23 +376,23 @@ router.put('/group/bulk', guard('canEditServers'), (req, res) => {
   const serverIds = [...new Set((Array.isArray(req.body?.server_ids) ? req.body.server_ids : [])
     .map(value => String(value || '').trim()).filter(Boolean))];
   const groupId = req.body?.group_id ? String(req.body.group_id) : null;
-  if (serverIds.length === 0 || serverIds.length > 500) return res.status(400).json({ error: 'Wähle zwischen 1 und 500 Hosts aus.' });
+  if (serverIds.length === 0 || serverIds.length > 500) return res.status(400).json({ error: 'Select between 1 and 500 hosts.' });
 
   const placeholders = serverIds.map(() => '?').join(',');
   const servers = db.db.prepare(`SELECT * FROM servers WHERE id IN (${placeholders})`).all(...serverIds);
-  if (servers.length !== serverIds.length) return res.status(404).json({ error: 'Mindestens ein Host wurde nicht gefunden.' });
+  if (servers.length !== serverIds.length) return res.status(404).json({ error: 'At least one host was not found.' });
   if (req.environmentId && servers.some(server => String(server.environment_id || 'default') !== req.environmentId)) {
-    return res.status(404).json({ error: 'Mindestens ein Host wurde nicht gefunden.' });
+    return res.status(404).json({ error: 'At least one host was not found.' });
   }
   const permissions = getPermissions(req.user);
-  if (filterServers(servers, permissions).length !== servers.length) return res.status(403).json({ error: 'Mindestens ein Host liegt außerhalb deiner Berechtigung.' });
+  if (filterServers(servers, permissions).length !== servers.length) return res.status(403).json({ error: 'At least one host is outside your permissions.' });
 
   const environments = new Set(servers.map(server => String(server.environment_id || 'default')));
-  if (environments.size !== 1) return res.status(400).json({ error: 'Hosts aus verschiedenen Umgebungen können nicht gemeinsam verschoben werden.' });
+  if (environments.size !== 1) return res.status(400).json({ error: 'Hosts from different environments cannot be moved together.' });
   const target = groupId ? db.db.prepare('SELECT * FROM server_groups WHERE id = ?').get(groupId) : null;
-  if (groupId && !target) return res.status(400).json({ error: 'Zielordner nicht gefunden.' });
-  if (target && !canAccessServerGroup(permissions, target)) return res.status(403).json({ error: 'Zielordnerzugriff verweigert.' });
-  if (target && String(target.environment_id || 'default') !== [...environments][0]) return res.status(400).json({ error: 'Zielordner gehört zu einer anderen Umgebung.' });
+  if (groupId && !target) return res.status(400).json({ error: 'Target folder not found.' });
+  if (target && !canAccessServerGroup(permissions, target)) return res.status(403).json({ error: 'Target folder access denied.' });
+  if (target && String(target.environment_id || 'default') !== [...environments][0]) return res.status(400).json({ error: 'The target folder belongs to a different environment.' });
 
   db.db.transaction(() => {
     const update = db.db.prepare('UPDATE servers SET group_id = ? WHERE id = ?');
@@ -408,9 +408,9 @@ router.put('/:id/group', guardServerAccess, guard('canEditServers'), (req, res) 
   const server = db.servers.getById(req.params.id);
   if (!server) return res.status(404).json({ error: 'Server not found' });
   const target = groupId ? db.serverGroups.getAll().find(group => group.id === groupId) : null;
-  if (groupId && !target) return res.status(400).json({ error: 'Zielordner nicht gefunden.' });
-  if (target && !canAccessServerGroup(getPermissions(req.user), target)) return res.status(403).json({ error: 'Zielordnerzugriff verweigert.' });
-  if (target && String(target.environment_id || 'default') !== String(server.environment_id || 'default')) return res.status(400).json({ error: 'Zielordner gehört zu einer anderen Umgebung.' });
+  if (groupId && !target) return res.status(400).json({ error: 'Target folder not found.' });
+  if (target && !canAccessServerGroup(getPermissions(req.user), target)) return res.status(403).json({ error: 'Target folder access denied.' });
+  if (target && String(target.environment_id || 'default') !== String(server.environment_id || 'default')) return res.status(400).json({ error: 'The target folder belongs to a different environment.' });
   db.serverGroups.setServerGroup(req.params.id, groupId);
   res.json({ success: true });
 });
@@ -595,6 +595,20 @@ const testConnectionLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many SSH test requests. Please slow down.' },
+});
+router.post('/connection-test', testConnectionLimiter, guard('canEditServers'), async (req, res) => {
+  const ipAddress = String(req.body?.ip_address || '').trim();
+  const sshUser = String(req.body?.ssh_user || 'root').trim() || 'root';
+  const password = String(req.body?.password || '');
+  const sshPort = Math.min(65535, Math.max(1, parseInt(req.body?.ssh_port, 10) || 22));
+  if (!ipAddress || !password) return res.status(400).json({ error: 'Host address and password are required.' });
+  try {
+    const connected = await sshManager.testPasswordConnection(ipAddress, sshUser, password, sshPort);
+    res.json({ connected });
+  } catch (error) {
+    log.warn({ err: error, host: ipAddress }, 'Pre-save SSH test failed');
+    res.json({ connected: false, error: 'Connection test failed. Check the address, port, username, and password.' });
+  }
 });
 router.post('/:id/test', testConnectionLimiter, guardServerAccess, guard('canUseTerminal'), async (req, res) => {
   try {
@@ -843,6 +857,7 @@ router.get('/:id/history', guardServerAccess, guard('canViewServerHistory'), (re
           status: r.status,
           started_at: r.started_at,
           completed_at: r.completed_at,
+          output: r.output,
           _type: 'schedule',
           schedule_name: r.schedule_name,
           playbook: r.playbook,
@@ -900,7 +915,7 @@ router.get('/:id/docker', guardServerAccess, guard('canViewDocker'), async (req,
     const refreshed = await refreshDockerCache(server);
     if (!refreshed) {
       if (cached.length > 0) return res.json(cached.map(c => ({ ...c, _cached: true })));
-      return res.status(502).json({ error: 'Docker-Inventar konnte auf diesem Host nicht geladen werden. Prüfe die SSH-Verbindung und Docker-Berechtigungen.' });
+      return res.status(502).json({ error: 'Docker inventory could not be loaded from this host. Check its SSH connection and Docker permissions.' });
     }
     res.json(buildDockerResponse(req.params.id));
   } catch (error) {

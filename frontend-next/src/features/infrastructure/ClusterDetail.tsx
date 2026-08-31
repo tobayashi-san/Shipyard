@@ -150,7 +150,7 @@ export function ClusterPage({
           </TabsTrigger>
           <TabsTrigger value="vms">
             <Boxes className="h-4 w-4" />
-            Virtual guests{" "}
+            Virtual machines{" "}
             <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">
               {cluster.vms.length}
             </span>
@@ -332,7 +332,7 @@ export function PlatformOperatingState({
         </div>
         <div className="border-b p-4 md:border-b-0 md:border-r">
           <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Virtual guests
+            Virtual machines
           </div>
           <div className="mt-1 text-sm font-medium">
             {vms.filter((vm) => vm.status === "running").length} running ·{" "}
@@ -341,7 +341,7 @@ export function PlatformOperatingState({
           <p className="mt-1 text-xs text-muted-foreground">
             {unknownVms.length
               ? `${unknownVms.length} VM(s) with unknown status.`
-              : "Stopped guests are not automatically an error."}
+              : "Stopped virtual machines are not automatically an error."}
           </p>
           <Button
             type="button"
@@ -414,7 +414,7 @@ export function ClusterConfiguration({ cluster }: { cluster: Cluster }) {
                 value={`${onlineNodes} online · ${cluster.nodes.length} insgesamt`}
               />
               <Property
-                label="Virtual guests"
+                label="Virtual machines"
                 value={`${running} running · ${Math.max(0, cluster.vms.length - running)} stopped`}
               />
               <Property
@@ -512,7 +512,7 @@ export function NodesCard({ cluster }: { cluster: Cluster }) {
                     </b>
                   </span>
                   <span className="text-muted-foreground">
-                    Guests{" "}
+                    Virtual machines{" "}
                     <b className="ml-1 text-foreground">
                       {
                         cluster.vms.filter((vm) => vm.node_name === node.name)
@@ -546,7 +546,7 @@ export function NodesCard({ cluster }: { cluster: Cluster }) {
                 <th>Status</th>
                 <th>CPU</th>
                 <th>Memory</th>
-                <th>Guests</th>
+                <th>Virtual machines</th>
                 <th>Uptime</th>
               </tr>
             </thead>

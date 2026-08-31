@@ -76,12 +76,12 @@ export function ObjectInventoryPreview({
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <Boxes className="h-4 w-4" />
-            {isNode ? "Virtual guests" : "Inventory"}
+            {isNode ? "Virtual machines" : "Inventory"}
           </CardTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {isNode
               ? `${running} running · ${stopped} stopped · ${managed} managed in Shipyard`
-              : `${cluster.nodes.length} nodes · ${cluster.vms.length} virtual guests · ${managed} managed in Shipyard`}
+              : `${cluster.nodes.length} nodes · ${cluster.vms.length} virtual machines · ${managed} managed in Shipyard`}
           </p>
         </div>
         <Button
@@ -90,14 +90,14 @@ export function ObjectInventoryPreview({
           variant="outline"
           onClick={onOpenInventory}
         >
-          {isNode ? "Show all guests" : "Show all nodes"}
+          {isNode ? "Show all virtual machines" : "Show all nodes"}
         </Button>
       </CardHeader>
       <CardContent className="p-0">
         {preview.length === 0 ? (
           <div className="px-4 py-5 text-sm text-muted-foreground">
             {isNode
-              ? "No virtual guests on this node."
+              ? "No virtual machines on this node."
               : "No nodes in platform inventory."}
           </div>
         ) : isNode ? (
@@ -150,7 +150,7 @@ export function ObjectInventoryPreview({
               >
                 <thead>
                   <tr>
-                    <th>Guest</th>
+                    <th>VM / container</th>
                     <th>ID</th>
                     <th>Status</th>
                     <th>vCPU</th>
@@ -243,7 +243,7 @@ export function ObjectInventoryPreview({
                         </b>
                       </span>
                       <span>
-                        Guests{" "}
+                        Virtual machines{" "}
                         <b className="font-mono text-foreground">{vmCount}</b>
                       </span>
                       <span>
@@ -268,7 +268,7 @@ export function ObjectInventoryPreview({
                     <th>Status</th>
                     <th>CPU</th>
                     <th>Memory</th>
-                    <th>Guests</th>
+                    <th>Virtual machines</th>
                     <th>Uptime</th>
                   </tr>
                 </thead>
@@ -316,7 +316,7 @@ export function ObjectInventoryPreview({
         )}
         {isNode && vms.length > preview.length && (
           <div className="border-t px-4 py-2 text-xs text-muted-foreground">
-            {vms.length - preview.length} more guests in the complete inventory.
+            {vms.length - preview.length} more virtual machines in the complete inventory.
           </div>
         )}
         {!isNode && cluster.nodes.length > preview.length && (
@@ -414,10 +414,10 @@ export function NodeConfiguration({ node, vms }: { node: Node; vms: Vm[] }) {
             <Property label="Node" value={statusLabel(node.status)} />
             <Property label="Uptime" value={uptime(node.uptime)} mono />
             <Property
-              label="Guests running"
+              label="Virtual machines running"
               value={`${running} / ${vms.length}`}
             />
-            <Property label="Guests stopped" value={String(stopped)} />
+            <Property label="Virtual machines stopped" value={String(stopped)} />
             <Property
               label="Snapshots"
               value="Manage on the individual VM"
@@ -913,7 +913,7 @@ export function VmTable({
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <Boxes className="h-4 w-4" />
-            Virtual guests
+            Virtual machines
           </CardTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Explicitly select inventory VMs and CTs and adopt them into Shipyard with their
@@ -924,7 +924,7 @@ export function VmTable({
           <div className="flex flex-wrap items-center gap-2 rounded-md border bg-background px-2 py-1.5">
             <Button size="sm" onClick={() => onImportVms(selectable)}>
               <ServerCog />
-              Import all orphaned guests
+              Import all orphaned virtual machines
             </Button>
             {selectedVms.length > 0 && <>
             <span className="text-xs text-muted-foreground">
@@ -1017,7 +1017,7 @@ export function VmTable({
             })
           ) : (
             <div className="p-6 text-center text-sm text-muted-foreground">
-              No virtual guests on this node.
+              No virtual machines on this node.
             </div>
           )}
         </div>
@@ -1032,7 +1032,7 @@ export function VmTable({
                   <th className="w-11">
                     <input
                       type="checkbox"
-                      aria-label="Select all adoptable guests"
+                      aria-label="Select all adoptable virtual machines"
                       checked={allSelected}
                       ref={(input) => {
                         if (input) input.indeterminate = someSelected;
@@ -1041,7 +1041,7 @@ export function VmTable({
                     />
                   </th>
                 )}
-                <th>Guest</th>
+                <th>VM / container</th>
                 <th>Node</th>
                 <th>Type</th>
                 <th>ID</th>
@@ -1103,7 +1103,7 @@ export function VmTable({
                     colSpan={canImportVm ? 10 : 9}
                     className="py-7 text-center text-muted-foreground"
                   >
-                    No virtual guests on this node.
+                    No virtual machines on this node.
                   </td>
                 </tr>
               )}
@@ -1178,12 +1178,12 @@ export function BulkImportProxmoxVmsDialog({
       });
       if (failed.length)
         showToast(
-          `${succeeded} guests adopted; ${failed.length} could not be adopted. Check the guest IP address and duplicate hosts.`,
+          `${succeeded} virtual machines adopted; ${failed.length} could not be adopted. Check the VM IP address and duplicate hosts.`,
           "warning",
         );
       else
         showToast(
-          `${succeeded} guests were adopted as hosts.`,
+          `${succeeded} virtual machines were adopted as hosts.`,
           "success",
         );
       onOpenChange(false);
@@ -1196,7 +1196,7 @@ export function BulkImportProxmoxVmsDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ServerCog className="h-5 w-5" />
-            Adopt {vms.length} guests into Shipyard
+            Adopt {vms.length} virtual machines into Shipyard
           </DialogTitle>
           <DialogDescription>
             The VMs and CTs remain unchanged in Proxmox. Shipyard only creates
@@ -1254,7 +1254,7 @@ export function BulkImportProxmoxVmsDialog({
           </select>
         </div>
         <p className="rounded-md border border-amber-500/25 bg-amber-500/5 p-3 text-xs text-muted-foreground">
-          Guests without a reported IPv4 address are skipped. QEMU VMs require
+          Virtual machines without a reported IPv4 address are skipped. QEMU VMs require
           an enabled Guest Agent for automatic address detection.
           They can later be adopted individually with a manually entered IP.
         </p>

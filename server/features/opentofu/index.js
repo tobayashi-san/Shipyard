@@ -128,7 +128,9 @@ function register({ router, db, broadcast }) {
   let _cachedVersion = undefined;
   let _installing = false;
 
-  const TOFU_INSTALL_PATH = '/app/server/data/bin/tofu';
+  const TOFU_INSTALL_PATH = path.resolve(
+    process.env.OPENTOFU_INSTALL_PATH || path.join(__dirname, '..', '..', 'data', 'bin', 'tofu')
+  );
 
   function findBinary() {
     if (_cachedBinary !== undefined) return _cachedBinary;

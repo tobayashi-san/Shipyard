@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { User, KeyRound, ShieldCheck, ShieldOff, Eye, EyeOff } from 'lucide-react';
+import { User, KeyRound, ShieldCheck, ShieldOff, Eye, EyeOff, Paintbrush } from 'lucide-react';
 import { api } from '@/lib/api';
 import { setToken } from '@/lib/auth';
 import { showToast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/ui/page-header';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { THEME_PRESETS, useUi } from '@/lib/store';
 
 /* ── Section wrapper ──────────────────────────────────────────────────── */
 function Section({ icon: Icon, title, children, className }: {
@@ -43,6 +44,8 @@ export function ProfilePage() {
 
   const username = (profile?.username as string) || '';
   const isAdmin = profile?.role === 'admin';
+  const themePreset = useUi((state) => state.themePreset);
+  const setThemePreset = useUi((state) => state.setThemePreset);
 
   // ─ Account form
   const [displayName, setDisplayName] = useState('');
@@ -207,7 +210,32 @@ export function ProfilePage() {
         </div>
       </Section>
 
-      {/* ── Password ─────────────────────────────────────────────────── */}
+      {/* ── Personal appearance ─────────────────────────────────────── */}
+      <Section icon={Paintbrush} title="Personal appearance">
+        <p className="mb-3 text-sm text-muted-foreground">This preference applies only to your browser. Global Shipyard branding remains in Administration.</p>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {THEME_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => setThemePreset(preset.id)}
+              aria-pressed={themePreset === preset.id}
+              aria-label={`${preset.name} theme, ${preset.mode} mode`}
+              className={cn(
+                'rounded-sm border p-3 text-left transition-colors hover:border-primary/50',
+                themePreset === preset.id ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'hover:bg-muted/30',
+              )}
+            >
+              <span className="mb-2 flex h-7 overflow-hidden rounded-sm border" style={{ backgroundColor: preset.preview.canvas }}>
+                <span className="w-1/3" style={{ backgroundColor: preset.preview.surface, borderRight: `3px solid ${preset.preview.accent}` }} />
+              </span>
+              <span className="block text-sm font-medium">{preset.name}</span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">{preset.description}</span>
+            </button>
+          ))}
+        </div>
+      </Section>
+
       <Section icon={KeyRound} title={t('profile.passwordSection')}>
         {!pwOpen ? (
           <div className="flex items-center justify-between">

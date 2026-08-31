@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Terminal, Clock, Bot, CheckCircle2, XCircle, Save, AlertTriangle } from 'lucide-react';
+import { Terminal, Clock, Bot, CheckCircle2, XCircle, Save, AlertTriangle, Download, RefreshCw } from 'lucide-react';
 import { api } from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { useSettings } from '@/lib/queries';
@@ -19,6 +19,14 @@ export function SystemTab() {
     <div className="space-y-4">
       <SettingsSection icon={<Terminal className="h-4 w-4" />} title={t('set.ansible')}>
         <AnsibleStatus />
+      </SettingsSection>
+
+      <SettingsSection
+        icon={<Terminal className="h-4 w-4" />}
+        title={t('set.openTofu')}
+        description={t('set.openTofuHint')}
+      >
+        <OpenTofuStatus />
       </SettingsSection>
 
       <SettingsSection
@@ -45,6 +53,116 @@ export function SystemTab() {
         <AgentToggle />
       </SettingsSection>
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// OpenTofu installation
+// ─────────────────────────────────────────────────────────────
+
+interface OpenTofuStatusResp {
+  installed: boolean;
+  binary: string | null;
+  version: string | null;
+  installing: boolean;
+}
+
+interface OpenTofuReleasesResp { releases: string[] }
+
+function OpenTofuStatus() {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const status = useQuery<OpenTofuStatusResp>({
+    queryKey: ['opentofu', 'status'],
+    queryFn: () => api.getOpenTofuStatus() as unknown as Promise<OpenTofuStatusResp>,
+    refetchInterval: (query) => query.state.data?.installing ? 2_000 : false,
+    staleTime: 15_000,
+  });
+  const releases = useQuery<OpenTofuReleasesResp>({
+    queryKey: ['opentofu', 'releases'],
+    queryFn: () => api.getOpenTofuReleases(),
+    staleTime: 5 * 60_000,
+  });
+  const available = releases.data?.releases || [];
+  const [selectedVersion, setSelectedVersion] = useState('');
+
+  useEffect(() => {
+    if (available.length && !available.includes(selectedVersion)) setSelectedVersion(available[0]);
+  }, [available, selectedVersion]);
+
+  const install = useMutation({
+    mutationFn: (version: string) => api.installOpenTofu(version),
+    onSuccess: (result) => {
+      const installedVersion = String((result as Record<string, unknown>)?.version || selectedVersion);
+      showToast(t('set.openTofuInstalled', { version: installedVersion }), 'success');
+      void qc.invalidateQueries({ queryKey: ['opentofu'] });
+    },
+    onError: (err) => showToast((err as Error).message, 'error'),
+  });
+
+  if (status.isLoading) {
+    return <SettingsRow noBorder><Skeleton className="h-4 w-full max-w-sm" /></SettingsRow>;
+  }
+  if (status.isError) {
+    return <SettingsRow noBorder><span className="text-sm text-destructive">{(status.error as Error)?.message || t('common.error')}</span></SettingsRow>;
+  }
+
+  const installed = Boolean(status.data?.installed);
+  const busy = install.isPending || Boolean(status.data?.installing);
+  const isUpdate = installed && Boolean(selectedVersion) && selectedVersion !== status.data?.version;
+
+  return (
+    <>
+      <SettingsRow label={t('set.openTofuInstallation')}>
+        {installed ? (
+          <StatusBadge tone="success"><CheckCircle2 className="h-3 w-3" /> {t('set.installed')}</StatusBadge>
+        ) : (
+          <StatusBadge tone="muted"><XCircle className="h-3 w-3" /> {t('set.notInstalled')}</StatusBadge>
+        )}
+      </SettingsRow>
+      <SettingsRow label={t('set.version')}>
+        <span className="font-mono text-xs">{status.data?.version || '—'}</span>
+      </SettingsRow>
+      <SettingsRow label={t('set.openTofuBinary')} hint={t('set.openTofuBinaryHint')}>
+        <span className="break-all font-mono text-xs">{status.data?.binary || t('set.openTofuBinaryMissing')}</span>
+      </SettingsRow>
+      <SettingsRow label={t('set.openTofuTargetVersion')} noBorder>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <select
+            aria-label={t('set.openTofuTargetVersion')}
+            value={selectedVersion}
+            onChange={(event) => setSelectedVersion(event.target.value)}
+            disabled={releases.isLoading || busy || available.length === 0}
+            className="h-9 w-full rounded-sm border border-input bg-background px-3 text-sm sm:w-40"
+          >
+            {available.length === 0 && <option value="">{releases.isError ? t('set.openTofuReleasesUnavailable') : t('common.loading')}</option>}
+            {available.map(version => <option key={version} value={version}>{version}</option>)}
+          </select>
+          <Button
+            size="sm"
+            onClick={() => install.mutate(selectedVersion)}
+            disabled={!selectedVersion || releases.isError || busy}
+          >
+            {busy ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {busy
+              ? t('set.openTofuInstalling')
+              : isUpdate
+                ? t('set.openTofuUpdate')
+                : installed
+                  ? t('set.openTofuReinstall')
+                  : t('set.openTofuInstall')}
+          </Button>
+        </div>
+      </SettingsRow>
+      {!installed && (
+        <SettingsRow noBorder>
+          <Alert variant="warning" className="w-full">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>{t('set.openTofuMissingHint')}</AlertDescription>
+          </Alert>
+        </SettingsRow>
+      )}
+    </>
   );
 }
 

@@ -739,7 +739,7 @@ test('IPAM refuses an invalid non-empty source response without releasing existi
     payload = { data: [{ hostname: 'missing-address', id: 'bad-record' }] };
     const failedSync = await auth(request(app).post(`/api/ipam/sources/${source.body.id}/sync`));
     assert.equal(failedSync.status, 502);
-    assert.match(failedSync.body.error, /keine auslesbaren IPv4-Adressen/);
+    assert.match(failedSync.body.error, /no readable IPv4 addresses/);
     const allocations = await auth(request(app).get(`/api/ipam/subnets/${parentSubnetId}/allocations`));
     assert.equal(allocations.body.some(row => row.address === '10.44.0.63'), true);
     const sources = await auth(request(app).get(`/api/ipam/sources?environment_id=${environmentId}`));

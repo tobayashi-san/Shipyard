@@ -21,6 +21,7 @@ router.get('/config', (req, res) => {
   res.json({
     repoUrl:   cfg.repoUrl,
     hasToken:  !!cfg.authToken,
+    hasSshKey: !!cfg.sshKey,
     autoPull:  cfg.autoPull,
     autoPush:  cfg.autoPush,
     userName:  cfg.userName,
@@ -51,7 +52,7 @@ router.post('/settings', (req, res) => {
 
 // POST /api/playbooks-git/setup  (initial config + clone/init)
 router.post('/setup', async (req, res) => {
-  const { repoUrl, authToken, autoPull, autoPush, userName, userEmail, branch } = req.body;
+  const { repoUrl, authToken, sshKey, autoPull, autoPush, userName, userEmail, branch } = req.body;
   const urlCheck = gitSync.validateGitUrl(repoUrl);
   if (!urlCheck.ok) return res.status(400).json({ error: urlCheck.error });
   if (branch !== undefined && !gitSync.validateBranchName(branch)) {
@@ -61,7 +62,7 @@ router.post('/setup', async (req, res) => {
   catch (e) { return res.status(400).json({ error: e.message }); }
 
   try {
-    const result = await gitSync.setup({ repoUrl, authToken, autoPull, autoPush, userName, userEmail, branch });
+    const result = await gitSync.setup({ repoUrl, authToken, sshKey, autoPull, autoPush, userName, userEmail, branch });
     if (!result.success) return res.status(400).json({ error: result.error });
     res.json({ success: true, pullOutput: result.pullOutput });
   } catch (e) {
@@ -71,14 +72,17 @@ router.post('/setup', async (req, res) => {
 
 // PUT /api/playbooks-git/config  (update settings without re-cloning)
 router.put('/config', (req, res) => {
-  const { autoPull, autoPush, userName, userEmail, authToken } = req.body;
+  const { autoPull, autoPush, userName, userEmail, authToken, sshKey, credentialMode } = req.body;
   try { requireBool(autoPull, 'autoPull'); requireBool(autoPush, 'autoPush'); }
   catch (e) { return res.status(400).json({ error: e.message }); }
   if (autoPull  !== undefined) db.settings.set('git_auto_pull',  autoPull  ? '1' : '0');
   if (autoPush  !== undefined) db.settings.set('git_auto_push',  autoPush  ? '1' : '0');
   if (userName  !== undefined) db.settings.set('git_user_name',  userName);
   if (userEmail !== undefined) db.settings.set('git_user_email', userEmail);
-  if (authToken !== undefined) setSecret(db, 'git_auth_token', authToken);
+  if (credentialMode !== undefined) {
+    try { gitSync.updateCredentials({ mode: credentialMode, authToken, sshKey }); }
+    catch (error) { return res.status(400).json({ error: error.message }); }
+  } else if (authToken !== undefined) setSecret(db, 'git_auth_token', authToken);
   res.json({ success: true });
 });
 

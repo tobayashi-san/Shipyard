@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
+import { formatDateTime } from "@/lib/utils";
 
 interface RunDetails {
   id: string;
@@ -31,14 +32,7 @@ function tone(status?: string): StatusTone {
 }
 
 function formatDate(value?: string) {
-  if (!value) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value
-    : new Intl.DateTimeFormat(undefined, {
-        dateStyle: "medium",
-        timeStyle: "medium",
-      }).format(date);
+  return formatDateTime(value);
 }
 
 export function RunDetailsDialog({

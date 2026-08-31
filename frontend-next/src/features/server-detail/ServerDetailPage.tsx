@@ -276,7 +276,8 @@ export function ServerDetailPage() {
     if (hasCap(profile, "canViewServerHistory")) values.push("history");
     if (agentEnabled && profile?.role === "admin") values.push("agent");
     if (hasCap(profile, "canViewNotes")) values.push("notes");
-    if (hasCap(profile, "canViewFiles")) values.push("files");
+    if (hasCap(profile, "canViewFiles") || hasCap(profile, "canUseTerminal"))
+      values.push("access");
     return values;
   }, [agentEnabled, profile, server?.docker_enabled]);
   const serverTabs = useUrlTab("overview", availableTabs);
@@ -564,18 +565,9 @@ export function ServerDetailPage() {
           <div className="min-w-0 overflow-x-auto">
           <TabsList aria-label="Host sections" className="console-tabs min-w-max border-b-0">
             <TabsTrigger value="overview">{t("det.tabOverview")}</TabsTrigger>
-            <TabsTrigger value="configuration">{t("common.details")}</TabsTrigger>
+            <TabsTrigger value="configuration">{t("det.tabSystem")}</TabsTrigger>
             {hasCap(profile, "canViewDocker") && !!server.docker_enabled && (
-              <TabsTrigger value="docker">{t("det.tabDocker")}</TabsTrigger>
-            )}
-            {hasCap(profile, "canViewFiles") && (
-              <TabsTrigger value="files">{t("det.tabFiles")}</TabsTrigger>
-            )}
-            {hasCap(profile, "canViewServerHistory") && (
-              <TabsTrigger value="history">{t("det.tabOperations")}</TabsTrigger>
-            )}
-            {hasCap(profile, "canViewNotes") && (
-              <TabsTrigger value="notes">{t("det.tabNotes")}{server.notes?.trim() ? " •" : ""}</TabsTrigger>
+              <TabsTrigger value="docker">{t("det.tabWorkloads")}</TabsTrigger>
             )}
             {(hasCap(profile, "canViewUpdates") ||
               hasCap(profile, "canRunUpdates") ||
@@ -584,10 +576,16 @@ export function ServerDetailPage() {
               hasCap(profile, "canRunCustomUpdates") ||
               hasCap(profile, "canEditCustomUpdates") ||
               hasCap(profile, "canDeleteCustomUpdates")) && (
-              <TabsTrigger value="updates">{t("det.tabSystemUpdates")}</TabsTrigger>
+              <TabsTrigger value="updates">{t("det.tabUpdates")}</TabsTrigger>
             )}
-            {hasCap(profile, "canUseTerminal") && (
-              <TabsTrigger value="terminal" data-terminal-trigger="true"><Terminal className="h-3.5 w-3.5" />{t("common.terminal")}</TabsTrigger>
+            {hasCap(profile, "canViewServerHistory") && (
+              <TabsTrigger value="history">{t("det.tabActivity")}</TabsTrigger>
+            )}
+            {hasCap(profile, "canViewNotes") && (
+              <TabsTrigger value="notes">{t("det.tabNotes")}{server.notes?.trim() ? " •" : ""}</TabsTrigger>
+            )}
+            {(hasCap(profile, "canViewFiles") || hasCap(profile, "canUseTerminal")) && (
+              <TabsTrigger value="access">{t("det.tabAccess")}</TabsTrigger>
             )}
           </TabsList>
           </div>
@@ -603,11 +601,23 @@ export function ServerDetailPage() {
         <ServerOverviewTabs controller={controller} />
         <ServerDockerTab controller={controller} />
         <ServerUpdatesTab controller={controller} />
-        {hasCap(profile, "canViewFiles") && (
-          <TabsContent value="files" className="space-y-4">
-            <ServerFilesTab serverId={id} profile={profile} />
-          </TabsContent>
-        )}
+        <TabsContent value="access" className="space-y-4">
+          {hasCap(profile, "canUseTerminal") && (
+            <Card>
+              <CardContent className="flex flex-wrap items-center gap-3 p-4">
+                <Terminal className="h-5 w-5 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold">{t("common.terminal")}</div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{t("det.terminalAccessHint")}</p>
+                </div>
+                <Button type="button" size="sm" variant="outline" onClick={() => setTerminalOpen(true)}>
+                  <Terminal className="h-4 w-4" />{t("det.openTerminal")}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+          {hasCap(profile, "canViewFiles") && <ServerFilesTab serverId={id} profile={profile} />}
+        </TabsContent>
         <ServerOperationsTabs controller={controller} />
       </Tabs>
 
