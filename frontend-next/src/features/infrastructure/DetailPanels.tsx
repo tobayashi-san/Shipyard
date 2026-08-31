@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { OverflowItem, OverflowLink, OverflowMenu } from "@/components/ui/overflow-menu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { QueryErrorState } from "@/components/ui/query-error-state";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -532,7 +533,14 @@ export function NodeConfiguration({ node, vms }: { node: Node; vms: Vm[] }) {
  * pattern: it does not duplicate the entire audit table, but immediately
  * answers whether the selected platform/node has recently changed.
  */
-export function RecentObjectTasks({ tasks }: { tasks: AuditTask[] }) {
+interface ObjectTaskStateProps {
+  tasks?: AuditTask[];
+  loading?: boolean;
+  error?: unknown;
+  onRetry?: () => void;
+}
+
+export function RecentObjectTasks({ tasks = [], loading = false, error, onRetry }: ObjectTaskStateProps) {
   const recent = tasks.slice(0, 4);
   return (
     <Card>
@@ -551,7 +559,11 @@ export function RecentObjectTasks({ tasks }: { tasks: AuditTask[] }) {
         </span>
       </CardHeader>
       <CardContent className="p-0">
-        {recent.length === 0 ? (
+        {loading ? (
+          <div className="px-4 py-5 text-sm text-muted-foreground">Loading tasks…</div>
+        ) : error ? (
+          <QueryErrorState compact error={error} title="Object tasks could not be loaded" onRetry={onRetry} />
+        ) : recent.length === 0 ? (
           <div className="px-4 py-5 text-sm text-muted-foreground">
             No tasks have been recorded for this object yet.
           </div>
@@ -614,7 +626,7 @@ export function Property({
   );
 }
 
-export function ObjectTasksCard({ tasks }: { tasks: AuditTask[] }) {
+export function ObjectTasksCard({ tasks = [], loading = false, error, onRetry }: ObjectTaskStateProps) {
   return (
     <Card>
       <CardHeader className="border-b py-3">
@@ -624,7 +636,11 @@ export function ObjectTasksCard({ tasks }: { tasks: AuditTask[] }) {
         </CardTitle>
       </CardHeader>
       <CardContent className="p-0">
-        {tasks.length === 0 ? (
+        {loading ? (
+          <div className="p-5 text-sm text-muted-foreground">Loading tasks…</div>
+        ) : error ? (
+          <QueryErrorState compact error={error} title="Object tasks could not be loaded" onRetry={onRetry} />
+        ) : tasks.length === 0 ? (
           <div className="p-7 text-center text-sm text-muted-foreground">
             No tasks have been recorded for this object yet.
           </div>

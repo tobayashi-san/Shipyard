@@ -5,6 +5,7 @@ import { apiFetch } from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { QueryErrorState } from '@/components/ui/query-error-state';
 import { Label } from '@/components/ui/label';
 import { useUi } from '@/lib/store';
 import type { ProxmoxConnection } from '@/features/infrastructure/ProxmoxConnectionDialog';
@@ -65,7 +66,9 @@ export function DeploymentConnectionDialog({ workspaceId, open, onOpenChange }: 
         <DialogTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5" />Infrastructure source</DialogTitle>
         <DialogDescription>Deployments use a central platform connection. Credentials are managed from Virtual machines.</DialogDescription>
       </DialogHeader>
-      {configQuery.isLoading ? <div className="space-y-3 py-4"><div className="h-10 animate-pulse rounded-md bg-muted" /><div className="h-10 animate-pulse rounded-md bg-muted" /></div> : <form className="space-y-5" onSubmit={event => { event.preventDefault(); saveMutation.mutate(); }}>
+      {configQuery.isLoading || sourcesQuery.isLoading ? <div className="space-y-3 py-4"><div className="h-10 animate-pulse rounded-md bg-muted" /><div className="h-10 animate-pulse rounded-md bg-muted" /></div> : configQuery.isError || sourcesQuery.isError ? (
+        <QueryErrorState compact error={configQuery.error || sourcesQuery.error} title="Infrastructure source could not be loaded" onRetry={() => void Promise.all([configQuery.refetch(), sourcesQuery.refetch()])} />
+      ) : <form className="space-y-5" onSubmit={event => { event.preventDefault(); saveMutation.mutate(); }}>
         <div className="grid gap-4 sm:grid-cols-2"><Status label="API token" configured={config?.api_token_configured} /><Status label="Default SSH key" configured={config?.ssh_public_key_configured} /></div>
         <div className="space-y-1.5"><Label htmlFor="deployment-source">Proxmox platform</Label><select id="deployment-source" value={sourceId} onChange={event => setSourceId(event.target.value)} className="h-8 w-full rounded-sm border bg-background px-2.5 text-[13px]" disabled={sourcesQuery.isLoading || sources.length === 0}><option value="">{sourcesQuery.isLoading ? 'Loading…' : 'Select platform…'}</option>{sources.map(source => <option key={source.id} value={source.id}>{source.name} · {source.endpoint}</option>)}</select><p className="text-xs text-muted-foreground">Changes to the token, TLS, and default SSH key are made centrally from Virtual machines.</p></div>
         {!config?.source_id && config?.api_token_configured && <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3"><div className="text-sm font-medium">Existing workspace connection found</div><p className="mt-1 text-xs text-muted-foreground">Adopt it once as a central platform. The deployment is then linked to it directly.</p><Button type="button" size="sm" variant="outline" className="mt-3" onClick={() => promoteMutation.mutate()} disabled={promoteMutation.isPending}>{promoteMutation.isPending ? <RefreshCw className="animate-spin" /> : <ArrowRightLeft />}Adopt centrally now</Button></div>}

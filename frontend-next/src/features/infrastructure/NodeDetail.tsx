@@ -71,7 +71,11 @@ export function NodePage({
   canRunUpdates,
   onRefresh,
   refreshing,
+  showAudit,
   auditTasks,
+  auditLoading,
+  auditError,
+  onRetryAudit,
 }: {
   cluster: Cluster;
   node: Node;
@@ -81,14 +85,17 @@ export function NodePage({
   canRunUpdates: boolean;
   onRefresh: () => void;
   refreshing: boolean;
+  showAudit: boolean;
   auditTasks?: AuditTask[];
+  auditLoading?: boolean;
+  auditError?: unknown;
+  onRetryAudit?: () => void;
 }) {
   const vms = cluster.vms.filter((vm) => vm.node_name === node.name);
   const platformName = cluster.connections?.[0]?.name || "Proxmox";
-  const hasAuditTasks = Boolean(auditTasks);
   const availableTabs = useMemo(
-    () => ["overview", "configuration", "vms", "datastores", "updates", ...(hasAuditTasks ? ["tasks"] : [])],
-    [hasAuditTasks],
+    () => ["overview", "configuration", "vms", "datastores", "updates", ...(showAudit ? ["tasks"] : [])],
+    [showAudit],
   );
   const nodeTabs = useUrlTab("overview", availableTabs);
   return (
@@ -186,13 +193,10 @@ export function NodePage({
               {node.update_count || 0}
             </span>
           </TabsTrigger>
-          {auditTasks && (
+          {showAudit && (
             <TabsTrigger value="tasks">
               <ClipboardList className="h-4 w-4" />
-              Tasks{" "}
-              <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">
-                {auditTasks.length}
-              </span>
+              Tasks
             </TabsTrigger>
           )}
         </TabsList>
@@ -200,7 +204,11 @@ export function NodePage({
           <NodeOverview
             cluster={cluster}
             node={node}
+            showAudit={showAudit}
             auditTasks={auditTasks}
+            auditLoading={auditLoading}
+            auditError={auditError}
+            onRetryAudit={onRetryAudit}
             onOpenVms={() => nodeTabs.onValueChange("vms")}
           />
         </TabsContent>
@@ -225,9 +233,9 @@ export function NodePage({
         <TabsContent value="updates" className="mt-0">
           <NodeUpdatesCard cluster={cluster} node={node} canRunUpdates={canRunUpdates} canAddFleetHost={canImportVm} />
         </TabsContent>
-        {auditTasks && (
+        {showAudit && (
           <TabsContent value="tasks" className="mt-0">
-            <ObjectTasksCard tasks={auditTasks} />
+            <ObjectTasksCard tasks={auditTasks} loading={auditLoading} error={auditError} onRetry={onRetryAudit} />
           </TabsContent>
         )}
       </Tabs>
@@ -238,12 +246,20 @@ export function NodePage({
 function NodeOverview({
   cluster,
   node,
+  showAudit,
   auditTasks,
+  auditLoading,
+  auditError,
+  onRetryAudit,
   onOpenVms,
 }: {
   cluster: Cluster;
   node: Node;
+  showAudit: boolean;
   auditTasks?: AuditTask[];
+  auditLoading?: boolean;
+  auditError?: unknown;
+  onRetryAudit?: () => void;
   onOpenVms: () => void;
 }) {
   return (
@@ -254,7 +270,7 @@ function NodeOverview({
         node={node}
         onOpenInventory={onOpenVms}
       />
-      {auditTasks && <RecentObjectTasks tasks={auditTasks} />}
+      {showAudit && <RecentObjectTasks tasks={auditTasks} loading={auditLoading} error={auditError} onRetry={onRetryAudit} />}
     </div>
   );
 }

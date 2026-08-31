@@ -38,6 +38,7 @@ import { useUi } from "@/lib/store";
 import { asArray } from "@/lib/utils";
 import { showToast } from "@/lib/toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { QueryErrorState } from "@/components/ui/query-error-state";
 import { CreateServerDialog } from "@/components/CreateServerDialog";
 import { ClusterPage } from "@/features/infrastructure/ClusterDetail";
 import { NodePage } from "@/features/infrastructure/NodeDetail";
@@ -107,12 +108,21 @@ export function InfrastructureDetailPage() {
     staleTime: 15_000,
   });
 
-  if (query.isLoading && summaryQuery.isLoading)
+  const objectMissing = !cluster || Boolean(nodeName && !node);
+  if (objectMissing && (query.isLoading || summaryQuery.isLoading))
     return (
       <div className="space-y-5">
         <div className="h-8 w-64 animate-pulse rounded bg-muted" />
         <div className="h-56 animate-pulse rounded-lg border bg-muted/30" />
       </div>
+    );
+  if (objectMissing && query.isError && summaryQuery.isError)
+    return (
+      <QueryErrorState
+        error={query.error || summaryQuery.error}
+        title="Infrastructure inventory could not be loaded"
+        onRetry={() => void Promise.all([query.refetch(), summaryQuery.refetch()])}
+      />
     );
   if (!cluster || (nodeName && !node))
     return (
@@ -152,9 +162,13 @@ export function InfrastructureDetailPage() {
       canRunUpdates={canRunUpdates}
       onRefresh={() => void refreshInventory()}
       refreshing={query.isFetching}
+      showAudit={canViewAudit}
       auditTasks={
-        canViewAudit ? tasksForObject(auditRows, cluster, node.name) : undefined
+        canViewAudit && auditQuery.isSuccess ? tasksForObject(auditRows, cluster, node.name) : undefined
       }
+      auditLoading={canViewAudit && auditQuery.isLoading}
+      auditError={canViewAudit && auditQuery.isError ? auditQuery.error : undefined}
+      onRetryAudit={() => void auditQuery.refetch()}
     />
   ) : (
     <ClusterPage
@@ -165,7 +179,11 @@ export function InfrastructureDetailPage() {
       canRunUpdates={canRunUpdates}
       onRefresh={() => void refreshInventory()}
       refreshing={query.isFetching}
-      auditTasks={canViewAudit ? tasksForObject(auditRows, cluster) : undefined}
+      showAudit={canViewAudit}
+      auditTasks={canViewAudit && auditQuery.isSuccess ? tasksForObject(auditRows, cluster) : undefined}
+      auditLoading={canViewAudit && auditQuery.isLoading}
+      auditError={canViewAudit && auditQuery.isError ? auditQuery.error : undefined}
+      onRetryAudit={() => void auditQuery.refetch()}
     />
   );
   return (

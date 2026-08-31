@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Route } from '@playwright/test';
 import http from 'node:http';
 import https from 'node:https';
 
@@ -333,6 +333,50 @@ test('dashboard and deployment failures are never presented as healthy empty sta
   await expect(page.getByText('Legacy VM deployments could not be checked', { exact: true })).toBeVisible();
   await expect(page.getByText('VM templates could not be loaded', { exact: true })).toBeVisible();
   await expect(page.getByText(/no managed virtual machines|no templates yet/i)).toHaveCount(0);
+});
+
+test('operational and infrastructure failures provide retry states instead of healthy empty states', async ({ page }) => {
+  await loginForIsolatedTest(page);
+
+  await page.route('**/api/operations?*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'activity unavailable' }) }));
+  await page.goto('/operations?section=tasks');
+  await expect(page.getByText('Activity could not be loaded', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
+  await expect(page.getByText('There are no entries for this view.', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('No unacknowledged failures', { exact: true })).toHaveCount(0);
+  await page.unroute('**/api/operations?*');
+  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(page.getByText('Activity could not be loaded', { exact: true })).toHaveCount(0);
+
+  await page.route('**/api/maintenance-windows?*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'maintenance unavailable' }) }));
+  await page.goto('/operations?section=maintenance');
+  await expect(page.getByText('Maintenance windows could not be loaded', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
+  await expect(page.getByText('No maintenance windows scheduled', { exact: true })).toHaveCount(0);
+  await page.unroute('**/api/maintenance-windows?*');
+  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(page.getByText('Maintenance windows could not be loaded', { exact: true })).toHaveCount(0);
+
+  const failInventory = (route: Route) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'inventory unavailable' }) });
+  await page.route('**/api/opentofu/infrastructure?*', failInventory);
+  await page.route('**/api/opentofu/infrastructure-summary?*', failInventory);
+  await page.goto('/infrastructure/unavailable-platform');
+  await expect(page.getByText('Infrastructure inventory could not be loaded', { exact: true })).toBeVisible();
+  await expect(page.getByText('Infrastructure object not found', { exact: true })).toHaveCount(0);
+
+  await page.goto('/infrastructure/unavailable-platform/nodes/unavailable-node/vms/999');
+  await expect(page.getByText('Virtual machine inventory could not be loaded', { exact: true })).toBeVisible();
+  await expect(page.getByText('Proxmox virtual machine not found', { exact: true })).toHaveCount(0);
+
+  await page.route('**/api/opentofu/proxmox-connections?*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'platforms unavailable' }) }));
+  await page.goto('/deployments');
+  await page.getByRole('button', { name: 'Create managed VM', exact: true }).first().click();
+  const createVmDialog = page.getByRole('dialog', { name: 'New virtual machine' });
+  await expect(createVmDialog.getByText('Proxmox platforms could not be loaded', { exact: true })).toBeVisible();
+  await expect(createVmDialog.getByText(/create a proxmox connection/i)).toHaveCount(0);
+  await page.unroute('**/api/opentofu/proxmox-connections?*');
+  await createVmDialog.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(createVmDialog.getByText('Proxmox platforms could not be loaded', { exact: true })).toHaveCount(0);
 });
 
 test('playbook workflows expose safe secrets, explicit targets and one run flow', async ({ page }) => {

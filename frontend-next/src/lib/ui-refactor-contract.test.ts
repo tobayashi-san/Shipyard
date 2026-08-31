@@ -195,4 +195,39 @@ describe("UI refactor contract", () => {
     expect(audit).toContain("Security & changes");
     expect(audit).toContain("All events");
   });
+
+  it("never presents failed operations queries as healthy empty activity", () => {
+    const operations = source("routes/operations.tsx");
+    expect(operations).toContain("operationsQuery.isError ? (");
+    expect(operations).toContain('title="Activity could not be loaded"');
+    expect(operations).toContain('title="Maintenance windows could not be loaded"');
+    expect(operations).toContain("operationsQuery.isSuccess && (!canViewMaintenance || maintenanceQuery.isSuccess)");
+  });
+
+  it("distinguishes infrastructure detail failures from confirmed empty inventory", () => {
+    const infrastructure = source("routes/infrastructure-detail.tsx");
+    const vm = source("routes/proxmox-vm-detail.tsx");
+    expect(infrastructure).toContain('title="Infrastructure inventory could not be loaded"');
+    expect(vm).toContain('title="Virtual machine inventory could not be loaded"');
+    expect(vm).toContain('title="Virtual machine configuration could not be loaded"');
+    expect(vm).toContain('title="VM management context could not be loaded"');
+    expect(vm).toContain('title="Snapshots could not be loaded"');
+    expect(vm).toContain('title="VM tasks could not be loaded"');
+    expect(vm).toContain('(vmTabs.value === "overview" || vmTabs.value === "snapshots")');
+    expect(vm).toContain('(vmTabs.value === "overview" || vmTabs.value === "tasks")');
+    expect(vm).not.toContain('Connections, declaration, and management for this virtual\n                  virtual machine.');
+    const detailPanels = source("features/infrastructure/DetailPanels.tsx");
+    const cluster = source("features/infrastructure/ClusterDetail.tsx");
+    const node = source("features/infrastructure/NodeDetail.tsx");
+    expect(detailPanels).toContain('title="Object tasks could not be loaded"');
+    expect(cluster).toContain("showAudit && (");
+    expect(node).toContain("showAudit && (");
+    expect(cluster).not.toContain("{auditTasks.length}");
+    expect(node).not.toContain("{auditTasks.length}");
+    const createVm = source("features/deployments/CreateDeploymentDialog.tsx");
+    const sourceDialog = source("features/deployments/DeploymentConnectionDialog.tsx");
+    expect(createVm).toContain('title="Proxmox platforms could not be loaded"');
+    expect(createVm).toContain("connections.length === 0 && connectionsQuery.isSuccess");
+    expect(sourceDialog).toContain('title="Infrastructure source could not be loaded"');
+  });
 });

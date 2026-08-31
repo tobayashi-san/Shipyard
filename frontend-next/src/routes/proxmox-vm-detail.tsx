@@ -33,6 +33,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
+import { QueryErrorState } from "@/components/ui/query-error-state";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { hasCap, useProfile } from "@/lib/queries";
@@ -162,10 +163,14 @@ function auditTime(value?: string) {
 function VmConfigurationOverview({
   configuration,
   loading,
+  error,
+  onRetry,
   unavailable,
 }: {
   configuration?: VmConfiguration;
   loading: boolean;
+  error?: unknown;
+  onRetry: () => void;
   unavailable: boolean;
 }) {
   if (unavailable)
@@ -189,6 +194,23 @@ function VmConfigurationOverview({
           <div className="h-4 w-40 animate-pulse rounded bg-muted" />
           <div className="h-16 animate-pulse rounded bg-muted" />
         </CardContent>
+      </Card>
+    );
+  if (error)
+    return (
+      <Card>
+        <CardHeader className="border-b py-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Server className="h-4 w-4" />
+            Hardware & network
+          </CardTitle>
+        </CardHeader>
+        <QueryErrorState
+          compact
+          error={error}
+          title="Virtual machine configuration could not be loaded"
+          onRetry={onRetry}
+        />
       </Card>
     );
   const hardware = configuration?.hardware;
@@ -539,7 +561,17 @@ function VmTaskRows({
   );
 }
 
-function RecentVmTasks({ events }: { events: AuditEvent[] }) {
+function RecentVmTasks({
+  events,
+  loading,
+  error,
+  onRetry,
+}: {
+  events: AuditEvent[];
+  loading: boolean;
+  error?: unknown;
+  onRetry: () => void;
+}) {
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between gap-3 border-b py-3">
@@ -557,7 +589,13 @@ function RecentVmTasks({ events }: { events: AuditEvent[] }) {
         </span>
       </CardHeader>
       <CardContent className="p-0">
-        <VmTaskRows events={events} limit={4} />
+        {loading ? (
+          <div className="p-4 text-sm text-muted-foreground">Loading tasks…</div>
+        ) : error ? (
+          <QueryErrorState compact error={error} title="VM tasks could not be loaded" onRetry={onRetry} />
+        ) : (
+          <VmTaskRows events={events} limit={4} />
+        )}
       </CardContent>
     </Card>
   );
@@ -566,11 +604,17 @@ function RecentVmTasks({ events }: { events: AuditEvent[] }) {
 function VmProtectionSummary({
   snapshots,
   available,
+  loading,
+  error,
+  onRetry,
   canManage,
   onCreate,
 }: {
   snapshots: Snapshot[];
   available: boolean;
+  loading: boolean;
+  error?: unknown;
+  onRetry: () => void;
   canManage: boolean;
   onCreate: () => void;
 }) {
@@ -608,6 +652,10 @@ function VmProtectionSummary({
           <div className="px-4 py-5 text-sm text-muted-foreground">
             No direct platform connection configured.
           </div>
+        ) : loading ? (
+          <div className="p-4 text-sm text-muted-foreground">Loading snapshots…</div>
+        ) : error ? (
+          <QueryErrorState compact error={error} title="Snapshots could not be loaded" onRetry={onRetry} />
         ) : (
           <dl className="console-properties">
             <VmProperty
@@ -698,7 +746,7 @@ export function ProxmoxVmDetailPage() {
   const snapshots = useQuery({
     queryKey: ["proxmox-vm-snapshots", connectionId, nodeName, vmId],
     queryFn: () => apiFetch<SnapshotResponse>(`${apiRoot}/snapshots`),
-    enabled: Boolean(apiRoot) && vmTabs.value === "snapshots",
+    enabled: Boolean(apiRoot) && (vmTabs.value === "overview" || vmTabs.value === "snapshots"),
     staleTime: 10_000,
   });
   const context = useQuery({
@@ -731,7 +779,7 @@ export function ProxmoxVmDetailPage() {
   const audit = useQuery({
     queryKey: ["audit-log", "proxmox-vm", environmentId, vmId, nodeName],
     queryFn: () => apiFetch<AuditEvent[]>("/system/audit?limit=100"),
-    enabled: canViewAudit && vmTabs.value === "tasks",
+    enabled: canViewAudit && (vmTabs.value === "overview" || vmTabs.value === "tasks"),
     staleTime: 15_000,
   });
   const vmEvents = useMemo(
@@ -818,12 +866,21 @@ export function ProxmoxVmDetailPage() {
     onError: (error: Error) => showToast(error.message, "error"),
   });
 
-  if (inventory.isLoading)
+  const vmMissing = !cluster || !vm;
+  if (vmMissing && (inventory.isLoading || summaryInventory.isLoading))
     return (
       <div className="space-y-5">
         <div className="h-8 w-72 animate-pulse rounded bg-muted" />
         <div className="h-64 animate-pulse rounded-lg border bg-muted/30" />
       </div>
+    );
+  if (vmMissing && inventory.isError && summaryInventory.isError)
+    return (
+      <QueryErrorState
+        error={inventory.error || summaryInventory.error}
+        title="Virtual machine inventory could not be loaded"
+        onRetry={() => void Promise.all([inventory.refetch(), summaryInventory.refetch()])}
+      />
     );
   if (!cluster || !vm)
     return (
@@ -980,18 +1037,12 @@ export function ProxmoxVmDetailPage() {
           </TabsTrigger>
           <TabsTrigger value="snapshots">
             <Camera className="h-4 w-4" />
-            Snapshots{" "}
-            <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">
-              {snapshotItems.length}
-            </span>
+            Snapshots
           </TabsTrigger>
           {canViewAudit && (
             <TabsTrigger value="tasks">
               <ClipboardList className="h-4 w-4" />
-              Tasks{" "}
-              <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">
-                {vmEvents.length}
-              </span>
+              Tasks
             </TabsTrigger>
           )}
         </TabsList>
@@ -1005,7 +1056,7 @@ export function ProxmoxVmDetailPage() {
                 </CardTitle>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Connections, declaration, and management for this virtual
-                  virtual machine.
+                  machine.
                 </p>
               </CardHeader>
               <CardContent className="p-0">
@@ -1013,6 +1064,8 @@ export function ProxmoxVmDetailPage() {
                   <div className="p-4 text-sm text-muted-foreground">
                     Loading connections…
                   </div>
+                ) : context.isError ? (
+                  <QueryErrorState compact error={context.error} title="VM management context could not be loaded" onRetry={() => void context.refetch()} />
                 ) : (
                   <div className="grid divide-y lg:grid-cols-2 lg:divide-x lg:divide-y-0">
                     <section className="p-4">
@@ -1092,16 +1145,28 @@ export function ProxmoxVmDetailPage() {
             <VmProtectionSummary
               snapshots={snapshotItems}
               available={Boolean(apiRoot)}
+              loading={snapshots.isLoading}
+              error={snapshots.error}
+              onRetry={() => void snapshots.refetch()}
               canManage={canManageSnapshots}
               onCreate={() => setSnapshotOpen(true)}
             />
           </div>
-          {canViewAudit && <RecentVmTasks events={vmEvents} />}
+          {canViewAudit && (
+            <RecentVmTasks
+              events={vmEvents}
+              loading={audit.isLoading}
+              error={audit.error}
+              onRetry={() => void audit.refetch()}
+            />
+          )}
         </TabsContent>
         <TabsContent value="configuration" className="mt-0">
           <VmConfigurationOverview
             configuration={configuration.data}
             loading={configuration.isLoading}
+            error={configuration.error}
+            onRetry={() => void configuration.refetch()}
             unavailable={!apiRoot}
           />
         </TabsContent>
@@ -1135,6 +1200,8 @@ export function ProxmoxVmDetailPage() {
                 <div className="p-4 text-sm text-muted-foreground">
                   Loading snapshots…
                 </div>
+              ) : snapshots.isError ? (
+                <QueryErrorState compact error={snapshots.error} title="Snapshots could not be loaded" onRetry={() => void snapshots.refetch()} />
               ) : snapshotItems.length === 0 ? (
                 <div className="p-5 text-sm text-muted-foreground">
                   No snapshots available.
@@ -1193,6 +1260,8 @@ export function ProxmoxVmDetailPage() {
                   <div className="p-4 text-sm text-muted-foreground">
                     Loading tasks…
                   </div>
+                ) : audit.isError ? (
+                  <QueryErrorState compact error={audit.error} title="VM tasks could not be loaded" onRetry={() => void audit.refetch()} />
                 ) : (
                   <VmTaskRows events={vmEvents} />
                 )}

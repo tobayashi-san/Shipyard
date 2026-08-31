@@ -38,6 +38,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TablePagination } from "@/components/ui/table-pagination";
+import { QueryErrorState } from "@/components/ui/query-error-state";
 import { OverflowItem, OverflowMenu } from "@/components/ui/overflow-menu";
 import {
   canAccessDeployments,
@@ -336,7 +337,7 @@ export function OperationsPage() {
           </Button>
         }
       />
-      {activeSection === "tasks" && <OperationsContext
+      {activeSection === "tasks" && operationsQuery.isSuccess && (!canViewMaintenance || maintenanceQuery.isSuccess) && <OperationsContext
         active={activeMaintenance}
         next={nextMaintenance}
         activeOperations={activeOperationCount}
@@ -391,6 +392,12 @@ export function OperationsPage() {
               <div className="p-5 text-sm text-muted-foreground">
                 Loading activity…
               </div>
+            ) : operationsQuery.isError ? (
+              <QueryErrorState
+                error={operationsQuery.error}
+                title="Activity could not be loaded"
+                onRetry={() => void operationsQuery.refetch()}
+              />
             ) : (
               <>
                 <div className="flex items-center gap-1 border-b bg-muted/10 px-3 py-2">
@@ -480,6 +487,8 @@ export function OperationsPage() {
           <div id="operation-maintenance" className="scroll-mt-16"><MaintenanceWindowsCard
               windows={maintenanceWindows}
               loading={maintenanceQuery.isLoading}
+              error={maintenanceQuery.error}
+              onRetry={() => void maintenanceQuery.refetch()}
               canManage={canManageMaintenance}
               onCreate={() => setMaintenanceDialog("new")}
               onEdit={setMaintenanceDialog}
@@ -676,6 +685,8 @@ function OperationFact({
 function MaintenanceWindowsCard({
   windows,
   loading,
+  error,
+  onRetry,
   canManage,
   onCreate,
   onEdit,
@@ -683,6 +694,8 @@ function MaintenanceWindowsCard({
 }: {
   windows: MaintenanceWindow[];
   loading: boolean;
+  error?: unknown;
+  onRetry: () => void;
   canManage: boolean;
   onCreate: () => void;
   onEdit: (window: MaintenanceWindow) => void;
@@ -770,6 +783,13 @@ function MaintenanceWindowsCard({
           <div className="p-4 text-sm text-muted-foreground">
             Loading maintenance windows…
           </div>
+        ) : error ? (
+          <QueryErrorState
+            compact
+            error={error}
+            title="Maintenance windows could not be loaded"
+            onRetry={onRetry}
+          />
         ) : windows.length === 0 ? (
           <EmptyState
             compact

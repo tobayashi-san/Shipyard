@@ -54,7 +54,11 @@ export function ClusterPage({
   canRunUpdates,
   onRefresh,
   refreshing,
+  showAudit,
   auditTasks,
+  auditLoading,
+  auditError,
+  onRetryAudit,
 }: {
   cluster: Cluster;
   onImportVm: (vm: Vm) => void;
@@ -63,7 +67,11 @@ export function ClusterPage({
   canRunUpdates: boolean;
   onRefresh: () => void;
   refreshing: boolean;
+  showAudit: boolean;
   auditTasks?: AuditTask[];
+  auditLoading?: boolean;
+  auditError?: unknown;
+  onRetryAudit?: () => void;
 }) {
   const stores = preferredDatastores(
     Array.isArray(cluster.datastores) ? cluster.datastores : [],
@@ -72,10 +80,9 @@ export function ClusterPage({
   // not turn its title into a comma-separated duplicate in breadcrumbs,
   // headings and the infrastructure tree.
   const title = cluster.connections?.[0]?.name || "Proxmox platform";
-  const hasAuditTasks = Boolean(auditTasks);
   const availableTabs = useMemo(
-    () => ["overview", "configuration", "nodes", "vms", "datastores", "updates", ...(hasAuditTasks ? ["tasks"] : [])],
-    [hasAuditTasks],
+    () => ["overview", "configuration", "nodes", "vms", "datastores", "updates", ...(showAudit ? ["tasks"] : [])],
+    [showAudit],
   );
   const clusterTabs = useUrlTab("overview", availableTabs);
   return (
@@ -169,20 +176,21 @@ export function ClusterPage({
               {cluster.nodes.reduce((sum, item) => sum + (item.update_count || 0), 0)}
             </span>
           </TabsTrigger>
-          {auditTasks && (
+          {showAudit && (
             <TabsTrigger value="tasks">
               <ClipboardList className="h-4 w-4" />
-              Tasks{" "}
-              <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">
-                {auditTasks.length}
-              </span>
+              Tasks
             </TabsTrigger>
           )}
         </TabsList>
         <TabsContent value="overview" className="mt-0">
           <ClusterOverview
             cluster={cluster}
+            showAudit={showAudit}
             auditTasks={auditTasks}
+            auditLoading={auditLoading}
+            auditError={auditError}
+            onRetryAudit={onRetryAudit}
             onOpenNodes={() => clusterTabs.onValueChange("nodes")}
             onOpenVms={() => clusterTabs.onValueChange("vms")}
             onOpenDatastores={() => clusterTabs.onValueChange("datastores")}
@@ -212,9 +220,9 @@ export function ClusterPage({
         <TabsContent value="updates" className="mt-0">
           <PlatformUpdatesCard cluster={cluster} canRunUpdates={canRunUpdates} canAddFleetHost={canImportVm} />
         </TabsContent>
-        {auditTasks && (
+        {showAudit && (
           <TabsContent value="tasks" className="mt-0">
-            <ObjectTasksCard tasks={auditTasks} />
+            <ObjectTasksCard tasks={auditTasks} loading={auditLoading} error={auditError} onRetry={onRetryAudit} />
           </TabsContent>
         )}
       </Tabs>
@@ -224,13 +232,21 @@ export function ClusterPage({
 
 export function ClusterOverview({
   cluster,
+  showAudit,
   auditTasks,
+  auditLoading,
+  auditError,
+  onRetryAudit,
   onOpenNodes,
   onOpenVms,
   onOpenDatastores,
 }: {
   cluster: Cluster;
+  showAudit: boolean;
   auditTasks?: AuditTask[];
+  auditLoading?: boolean;
+  auditError?: unknown;
+  onRetryAudit?: () => void;
   onOpenNodes: () => void;
   onOpenVms: () => void;
   onOpenDatastores: () => void;
@@ -245,7 +261,7 @@ export function ClusterOverview({
         onOpenDatastores={onOpenDatastores}
       />
       <ObjectInventoryPreview cluster={cluster} onOpenInventory={onOpenNodes} />
-      {auditTasks && <RecentObjectTasks tasks={auditTasks} />}
+      {showAudit && <RecentObjectTasks tasks={auditTasks} loading={auditLoading} error={auditError} onRetry={onRetryAudit} />}
     </div>
   );
 }
