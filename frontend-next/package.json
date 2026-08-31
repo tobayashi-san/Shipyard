@@ -1,7 +1,7 @@
 {
   "name": "shipyard-frontend",
   "private": true,
-  "version": "3.0.8-rc.20",
+  "version": "3.0.8-rc.21",
   "type": "module",
   "description": "Shipyard Frontend (next) — React + TS + shadcn/ui",
   "scripts": {
