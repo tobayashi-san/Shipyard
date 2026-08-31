@@ -118,7 +118,7 @@ export function OnboardingPage() {
           </div>
           <div className="mt-4 lg:hidden"><Stepper current={step} /></div>
           <div className="mt-5 hidden rounded-[3px] border border-border-strong/70 bg-background/40 p-3 text-xs leading-5 text-muted-foreground lg:block">
-            Configuration is saved as each section is completed. Optional sections can be changed later in Settings.
+            Configuration is saved as each section is completed. Optional sections can be changed later in Administration.
           </div>
         </aside>
 

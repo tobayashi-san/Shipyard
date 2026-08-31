@@ -12,7 +12,6 @@ import { Textarea } from '@/components/ui/textarea';
 interface WorkspaceMetadata {
   id: string;
   name: string;
-  path?: string;
   description?: string;
 }
 
@@ -41,12 +40,11 @@ export function DeploymentSettingsDialog({ workspace, open, onOpenChange }: { wo
     <DialogContent className="max-w-lg">
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2"><Pencil className="h-5 w-5" />Edit deployment</DialogTitle>
-        <DialogDescription>Name and description are console metadata only. The OpenTofu path and secret variables are unchanged.</DialogDescription>
+        <DialogDescription>Change how this deployment is identified in Shipyard. Infrastructure configuration and credentials are not changed.</DialogDescription>
       </DialogHeader>
       <form className="space-y-4" onSubmit={event => { event.preventDefault(); saveMutation.mutate(); }}>
         <div className="space-y-1.5"><Label htmlFor="deployment-name">Name</Label><Input id="deployment-name" required maxLength={120} value={name} onChange={event => setName(event.target.value)} /></div>
         <div className="space-y-1.5"><Label htmlFor="deployment-description">Description <span className="font-normal text-muted-foreground">(optional)</span></Label><Textarea id="deployment-description" maxLength={1000} rows={4} value={description} onChange={event => setDescription(event.target.value)} placeholder="Purpose and ownership of this deployment" /></div>
-        <div className="rounded-md border bg-muted/20 px-3 py-2"><div className="text-xs text-muted-foreground">OpenTofu path</div><div className="mt-1 break-all font-mono text-xs">{workspace.path || '—'}</div></div>
         <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button type="submit" disabled={saveMutation.isPending || !name.trim()}>{saveMutation.isPending ? <RefreshCw className="animate-spin" /> : <Pencil />}Save</Button></DialogFooter>
       </form>
     </DialogContent>

@@ -125,6 +125,14 @@ test('initial setup, login and protected console navigation work end-to-end', as
   await expect(settingsNavigation.getByRole('link', { name: 'SSH' })).toBeVisible();
   await expect(settingsNavigation.getByRole('link', { name: 'Git Integration' })).toBeVisible();
   await expect(settingsNavigation.getByRole('link', { name: 'System', exact: true })).toBeVisible();
+  await settingsNavigation.getByRole('link', { name: 'User Management' }).click();
+  const userActions = page.getByRole('button', { name: 'Actions for e2e-admin' });
+  await expect(userActions).toBeVisible();
+  await userActions.click();
+  await expect(page.getByRole('menuitem', { name: 'Edit', exact: true })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Reset Password', exact: true })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Revoke sessions', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
 });
 
 test('sidebar keeps an unknown Proxmox inventory in a loading state', async ({ page }) => {

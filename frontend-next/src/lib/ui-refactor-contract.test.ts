@@ -137,6 +137,18 @@ describe("UI refactor contract", () => {
     expect(servers).toContain("<OverflowItem icon={RefreshCw} onClick={handleRefresh}");
   });
 
+  it("keeps implementation paths out of normal deployment copy and administration actions in menus", () => {
+    const deployment = source("features/deployments/DeploymentSettingsDialog.tsx");
+    const onboarding = source("routes/onboarding.tsx");
+    const users = source("routes/settings/tabs/users-roles.tsx");
+    expect(deployment).not.toContain("OpenTofu path");
+    expect(deployment).not.toContain("workspace.path");
+    expect(onboarding).toContain("changed later in Administration");
+    expect(onboarding).not.toContain("changed later in Settings");
+    expect(users).toContain("<OverflowMenu title={`Actions for ${shown}`}>");
+    expect(users).toContain("<OverflowMenu title={`Actions for ${r.name}`}>");
+  });
+
   it("names fleet selection controls and the command search explicitly", () => {
     const servers = source("features/servers/ServersPage.tsx");
     const palette = source("components/CommandPalette.tsx");

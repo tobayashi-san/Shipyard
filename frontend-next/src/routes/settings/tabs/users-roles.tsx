@@ -23,6 +23,7 @@ import {
 import { SkeletonRow } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { OverflowItem, OverflowMenu, OverflowSep } from '@/components/ui/overflow-menu';
 import { useUi } from '@/lib/store';
 import { SettingsRow, SettingsSection } from '../_row';
 import { useUrlTab } from '@/lib/use-url-tab';
@@ -167,34 +168,33 @@ function UsersPanel() {
             <StatusBadge tone={u.role === 'admin' ? 'info' : 'neutral'}>{roleName}</StatusBadge>
             <StatusBadge tone={u.totp_enabled ? 'success' : 'muted'}>{u.totp_enabled ? '2FA on' : '2FA off'}</StatusBadge>
             {u.disabled && <StatusBadge tone="danger">{t('set.disabled')}</StatusBadge>}
-            <div className="flex gap-1">
-              <Button variant="ghost" size="icon" title={t('common.edit')} onClick={() => setEditing(u)}>
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="icon" title={t('set.resetPassword')} onClick={() => setResetTarget(u)}>
-                <KeyRound className="h-4 w-4" />
-              </Button>
+            <OverflowMenu title={`Actions for ${shown}`}>
+              <OverflowItem icon={Pencil} onClick={() => setEditing(u)}>
+                {t('common.edit')}
+              </OverflowItem>
+              <OverflowItem icon={KeyRound} onClick={() => setResetTarget(u)}>
+                {t('set.resetPassword')}
+              </OverflowItem>
               {Boolean(u.totp_enabled) && (
-                <Button variant="ghost" size="icon" title={t('set.disable2fa')} onClick={() => setConfirm2fa(u)}>
-                  <ShieldAlert className="h-4 w-4 text-amber-500" />
-                </Button>
+                <OverflowItem icon={ShieldAlert} warning onClick={() => setConfirm2fa(u)}>
+                  {t('set.disable2fa')}
+                </OverflowItem>
               )}
-              <Button variant="ghost" size="icon" title={t('set.revokeSessions')} onClick={() => setRevokeTarget(u)}>
-                <LogOut className="h-4 w-4" />
-              </Button>
+              <OverflowItem icon={LogOut} onClick={() => setRevokeTarget(u)}>
+                {t('set.revokeSessions')}
+              </OverflowItem>
               {!isSelf && (
                 <>
-                  <Button variant="ghost" size="icon" title={u.disabled ? t('set.enableUser') : t('set.disableUser')} onClick={() => setStatusTarget(u)}>
-                    {u.disabled
-                      ? <UserCheck className="h-4 w-4 text-emerald-500" />
-                      : <UserX className="h-4 w-4 text-amber-500" />}
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(u)}>
-                    <Trash2 className="h-4 w-4" /> {t('common.delete')}
-                  </Button>
+                  <OverflowSep />
+                  <OverflowItem icon={u.disabled ? UserCheck : UserX} warning={!u.disabled} onClick={() => setStatusTarget(u)}>
+                    {u.disabled ? t('set.enableUser') : t('set.disableUser')}
+                  </OverflowItem>
+                  <OverflowItem icon={Trash2} danger onClick={() => setConfirmDelete(u)}>
+                    {t('common.delete')}
+                  </OverflowItem>
                 </>
               )}
-            </div>
+            </OverflowMenu>
           </SettingsRow>
         );
       })}
@@ -525,12 +525,15 @@ function RolesPanel() {
               label={r.name}
               hint={`${serverSummary} · ${pbSummary} · ${plSummary}`}
             >
-              <Button variant="secondary" size="sm" onClick={() => setEditing(r)}>
-                <Pencil className="h-4 w-4" /> {t('common.edit')}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(r)}>
-                <Trash2 className="h-4 w-4" /> {t('common.delete')}
-              </Button>
+              <OverflowMenu title={`Actions for ${r.name}`}>
+                <OverflowItem icon={Pencil} onClick={() => setEditing(r)}>
+                  {t('common.edit')}
+                </OverflowItem>
+                <OverflowSep />
+                <OverflowItem icon={Trash2} danger onClick={() => setConfirmDelete(r)}>
+                  {t('common.delete')}
+                </OverflowItem>
+              </OverflowMenu>
             </SettingsRow>
           );
         })}
