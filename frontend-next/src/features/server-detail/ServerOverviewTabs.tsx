@@ -667,6 +667,7 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7"
+                aria-label={t("common.refresh")}
                 onClick={() => refetchInfo()}
                 disabled={fetchingInfo}
               >

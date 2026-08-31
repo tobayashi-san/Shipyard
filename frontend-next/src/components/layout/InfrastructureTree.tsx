@@ -591,7 +591,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
           <button
             type="button"
             onClick={() => openMoveServer(server)}
-            className="mt-0.5 shrink-0 rounded-sm p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100 focus:opacity-100"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100 focus:opacity-100"
             aria-label={`Move ${server.name}`}
             title="Move to folder"
           >
@@ -693,7 +693,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
             <button
               type="button"
               onClick={openManager}
-              className="rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
               aria-label={`Manage ${node.name}`}
               title="Manage folder"
             >
@@ -912,7 +912,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
             placeholder="Filter inventory…"
             className="h-7 pr-7 text-xs"
           />
-          {treeFilter && <button type="button" onClick={() => setTreeFilter("")} aria-label="Clear infrastructure filter" className="absolute right-2 top-1 rounded-sm p-1 text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>}
+          {treeFilter && <button type="button" onClick={() => setTreeFilter("")} aria-label="Clear infrastructure filter" title="Clear infrastructure filter" className="absolute inset-y-0 right-1 inline-flex min-w-9 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>}
         </div>
       )}
       <div>
@@ -1024,7 +1024,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
               <button
                 type="button"
                 onClick={() => setSelectedServerIds(new Set())}
-                className="rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
                 aria-label="Clear selection"
                 title="Clear selection"
               >

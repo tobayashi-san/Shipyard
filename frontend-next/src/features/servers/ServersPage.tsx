@@ -2117,7 +2117,9 @@ export function ServersPage() {
                       {name}
                       <button
                         type="button"
-                        className="text-muted-foreground hover:text-foreground"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+                        aria-label={`Remove ${name} from playbook targets`}
+                        title={`Remove ${name}`}
                         onClick={() =>
                           setPlaybookTargets((prev) =>
                             prev.filter((v) => v !== name),

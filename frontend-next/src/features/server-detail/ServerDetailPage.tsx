@@ -327,6 +327,7 @@ export function ServerDetailPage() {
           <Button
             variant="ghost"
             size="icon"
+            aria-label={t("common.back")}
             onClick={() =>
               navigate({
                 to:

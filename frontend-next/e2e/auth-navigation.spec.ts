@@ -128,11 +128,21 @@ test('initial setup, login and protected console navigation work end-to-end', as
   await settingsNavigation.getByRole('link', { name: 'User Management' }).click();
   const userActions = page.getByRole('button', { name: 'Actions for e2e-admin' });
   await expect(userActions).toBeVisible();
-  await userActions.click();
-  await expect(page.getByRole('menuitem', { name: 'Edit', exact: true })).toBeVisible();
-  await expect(page.getByRole('menuitem', { name: 'Reset Password', exact: true })).toBeVisible();
-  await expect(page.getByRole('menuitem', { name: 'Revoke sessions', exact: true })).toBeVisible();
+  await userActions.focus();
+  await page.keyboard.press('Enter');
+  const editUser = page.getByRole('menuitem', { name: 'Edit', exact: true });
+  const resetPassword = page.getByRole('menuitem', { name: 'Reset Password', exact: true });
+  const revokeSessions = page.getByRole('menuitem', { name: 'Revoke sessions', exact: true });
+  await expect(editUser).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(resetPassword).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(revokeSessions).toBeFocused();
+  await page.keyboard.press('Home');
+  await expect(editUser).toBeFocused();
   await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu', { name: 'Actions for e2e-admin' })).toHaveCount(0);
+  await expect(userActions).toBeFocused();
 });
 
 test('sidebar keeps an unknown Proxmox inventory in a loading state', async ({ page }) => {

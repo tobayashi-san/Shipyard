@@ -164,7 +164,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
     >
       <div className="flex h-11 shrink-0 items-center justify-between border-b px-3 md:hidden">
         <span className="font-mono text-sm font-semibold uppercase tracking-[0.16em]">Shipyard</span>
-        <button type="button" onClick={onMobileClose} className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={t("shell.closeNavigation")}>
+          <button type="button" onClick={onMobileClose} className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={t("shell.closeNavigation")} title={t("shell.closeNavigation")}>
           <X className="h-4 w-4" />
         </button>
       </div>

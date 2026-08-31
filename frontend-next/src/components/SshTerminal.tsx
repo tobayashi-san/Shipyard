@@ -249,7 +249,7 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
               }}
               onClick={closeTerminal}
               aria-label={t('common.close')}
-              className={cn('rounded p-1 focus-visible:outline-none', isDark ? 'text-[#8b949e] hover:bg-[#21262d] hover:text-[#c9d1d9]' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}
+              className={cn('inline-flex h-9 w-9 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', isDark ? 'text-[#8b949e] hover:bg-[#21262d] hover:text-[#c9d1d9]' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}
               title={`${t('common.close')} (Esc)`}
             >
               <X className="h-4 w-4" />

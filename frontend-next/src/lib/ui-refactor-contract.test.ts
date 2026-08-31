@@ -230,4 +230,25 @@ describe("UI refactor contract", () => {
     expect(createVm).toContain("connections.length === 0 && connectionsQuery.isSuccess");
     expect(sourceDialog).toContain('title="Infrastructure source could not be loaded"');
   });
+
+  it("keeps icon and context actions keyboard and screen-reader accessible", () => {
+    const menu = source("components/ui/overflow-menu.tsx");
+    const button = source("components/ui/button.tsx");
+    const host = source("features/server-detail/ServerDetailPage.tsx");
+    const docker = source("features/server-detail/ServerDockerTab.tsx");
+    const overview = source("features/server-detail/ServerOverviewTabs.tsx");
+    const summaryCards = source("features/server-detail/components/summary-cards.tsx");
+    const servers = source("features/servers/ServersPage.tsx");
+
+    expect(button).toContain("icon: 'h-10 w-10 min-h-9 min-w-9'");
+    expect(menu).toContain("['ArrowDown', 'ArrowUp', 'Home', 'End']");
+    expect(menu).toContain("triggerRef.current?.focus()");
+    expect(menu).toContain('role="separator"');
+    expect(menu).toContain("flex min-h-9 w-full");
+    expect(host).toContain('aria-label={t("common.back")}');
+    expect(docker).toContain('aria-label={t("common.refresh")}');
+    expect(overview).toContain('aria-label={t("common.refresh")}');
+    expect(summaryCards).toContain("aria-label={`${t('common.copy')} ${label}`}");
+    expect(servers).toContain("aria-label={`Remove ${name} from playbook targets`}");
+  });
 });

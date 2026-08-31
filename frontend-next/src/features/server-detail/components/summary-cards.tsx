@@ -43,7 +43,7 @@ export function StatCard({ icon, label, value, hint, variant, compact = false }:
 export function CopyButton({ value, label }: { value: string; label: string }) {
   const { t } = useTranslation();
   return (
-    <Button variant="ghost" size="icon" className="h-6 w-6"
+    <Button variant="ghost" size="icon" aria-label={`${t('common.copy')} ${label}`}
       onClick={async () => {
         try { await navigator.clipboard.writeText(value); showToast(`${label} ${t('common.copied')}`, 'success'); }
         catch { showToast(t('common.error'), 'error'); }

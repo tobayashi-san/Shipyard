@@ -359,6 +359,7 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7"
+                    aria-label={t("common.refresh")}
                     onClick={() =>
                       qc.invalidateQueries({
                         queryKey: ["server", id, "docker"],

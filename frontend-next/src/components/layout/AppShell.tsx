@@ -187,8 +187,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                 return <div key={id} className={cn('group flex items-center rounded-sm hover:bg-accent', id === environmentId && 'bg-accent')}>
                   <button type="button" onClick={() => { switchEnvironment(id); setEnvironmentOpen(false); }} className={cn('flex min-w-0 flex-1 items-center justify-between px-2 py-2 text-sm', id === environmentId && 'font-medium')}><span className="truncate">{name}</span><span className="ml-2 shrink-0 text-xs text-muted-foreground">{t('shell.hostCount', { count: Number(item.server_count ?? 0) })}{canViewDeployments ? ` · ${t('shell.deploymentCount', { count: Number(item.deployment_count ?? 0) })}` : ''}</span></button>
                   {isAdmin && <div className="mr-1 hidden items-center gap-0.5 group-hover:flex">
-                    <button type="button" title={t('shell.renameEnvironment')} aria-label={t('shell.renameNamed', { name })} className="rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground" onClick={() => { setEnvironmentToRename({ id, name }); setEnvironmentOpen(false); }}><Pencil className="h-3 w-3" /></button>
-                    {id !== 'default' && <button type="button" title={t('shell.deleteEnvironment')} aria-label={t('shell.deleteNamed', { name })} className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={() => { setEnvironmentToDelete({ id, name }); setEnvironmentOpen(false); }}><Trash2 className="h-3 w-3" /></button>}
+                    <button type="button" title={t('shell.renameEnvironment')} aria-label={t('shell.renameNamed', { name })} className="inline-flex h-9 w-9 items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground" onClick={() => { setEnvironmentToRename({ id, name }); setEnvironmentOpen(false); }}><Pencil className="h-3 w-3" /></button>
+                    {id !== 'default' && <button type="button" title={t('shell.deleteEnvironment')} aria-label={t('shell.deleteNamed', { name })} className="inline-flex h-9 w-9 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={() => { setEnvironmentToDelete({ id, name }); setEnvironmentOpen(false); }}><Trash2 className="h-3 w-3" /></button>}
                   </div>}
                 </div>;
               })}
@@ -221,7 +221,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           <ActivityCenter placement="header" />
           <div ref={profileMenuRef} className="relative">
-            <button type="button" onClick={() => { setProfileOpen((open) => !open); setHelpOpen(false); setMobileNavOpen(false); }} aria-expanded={profileOpen} aria-haspopup="menu" aria-label={t('nav.openProfileMenu')} className="flex h-10 w-10 items-center justify-center rounded-full border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:h-8 md:w-8">
+          <button type="button" onClick={() => { setProfileOpen((open) => !open); setHelpOpen(false); setMobileNavOpen(false); }} aria-expanded={profileOpen} aria-haspopup="menu" aria-label={t('nav.openProfileMenu')} title={t('nav.openProfileMenu')} className="flex h-10 w-10 items-center justify-center rounded-full border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:h-8 md:w-8">
               <User className="h-4 w-4" />
             </button>
             {profileOpen && (
