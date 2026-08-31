@@ -74,7 +74,7 @@
     "nodes": "Nodes",
     "virtualMachinesContainers": "VMs / Containers",
     "datastores": "Datastores",
-    "networksIpam": "Networks / IPAM",
+    "networksIpam": "IPAM",
     "automation": "Automation",
     "resizeSidebar": "Resize navigation",
     "resources": "Resources",

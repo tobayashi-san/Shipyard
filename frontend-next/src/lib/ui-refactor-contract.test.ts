@@ -50,6 +50,11 @@ describe("UI refactor contract", () => {
     expect(sidebar).toContain("<InfrastructureTree onNavigate={onMobileClose} />");
     expect(sidebar).toContain('t("nav.managedHosts")');
     expect(sidebar).toContain('t("nav.managedVirtualMachines")');
+    expect(sidebar).toContain('t("nav.networksIpam")');
+    expect(sidebar).not.toContain('t("nav.platforms")');
+    expect(sidebar).not.toContain('t("nav.nodes")');
+    expect(sidebar).not.toContain('t("nav.virtualMachinesContainers")');
+    expect(sidebar).not.toContain('t("nav.datastores")');
     expect(sidebar).toContain('t("nav.administration")');
     expect(sidebar).toContain('t("nav.profile")');
     expect(sidebar).toContain('t("nav.help")');

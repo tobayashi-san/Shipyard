@@ -10,7 +10,6 @@ import {
   Database,
   FileCode2,
   GripVertical,
-  HardDrive,
   HelpCircle,
   LayoutDashboard,
   Monitor,
@@ -19,7 +18,6 @@ import {
   Server,
   Settings2,
   User,
-  Workflow,
   X,
 } from "lucide-react";
 import { useUi, type NavigationWorkspace } from "@/lib/store";
@@ -194,7 +192,6 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
           </>
         ) : (
           <>
-            {canViewInfrastructure && <NavItem to="/infrastructure" search={{ section: "platforms" }} label={t("nav.platforms")} icon={Database} active={path === "/infrastructure" && (!section || section === "platforms")} collapsed={collapsed} onNavigate={onMobileClose} />}
             {(canViewServers || canViewInfrastructure) && (
               <section className="border-y border-border-strong/60 bg-muted/20 -mx-2 my-1 px-2 py-1">
                 <button type="button" onClick={toggleTree} className={cn("flex min-h-9 w-full items-center gap-2 rounded-sm px-2.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground", collapsed && "justify-center px-2")} aria-expanded={!treeCollapsed} title={t("nav.infrastructureTree")}>
@@ -204,9 +201,6 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
                 {!collapsed && !treeCollapsed && <div className="max-h-[min(48vh,32rem)] overflow-y-auto py-1"><InfrastructureTree onNavigate={onMobileClose} /></div>}
               </section>
             )}
-            {canViewInfrastructure && <NavItem to="/infrastructure" search={{ section: "nodes" }} label={t("nav.nodes")} icon={Server} active={path === "/infrastructure" && section === "nodes"} collapsed={collapsed} onNavigate={onMobileClose} />}
-            {canViewInfrastructure && <NavItem to="/infrastructure" search={{ section: "guests" }} label={t("nav.virtualMachinesContainers")} icon={Workflow} active={path === "/infrastructure" && section === "guests"} collapsed={collapsed} onNavigate={onMobileClose} />}
-            {canViewInfrastructure && <NavItem to="/infrastructure" search={{ section: "datastores" }} label={t("nav.datastores")} icon={HardDrive} active={path === "/infrastructure" && section === "datastores"} collapsed={collapsed} onNavigate={onMobileClose} />}
             {canViewNetworks && <NavItem to="/networks" label={t("nav.networksIpam")} icon={Network} active={path === "/networks" || path.startsWith("/networks/")} collapsed={collapsed} onNavigate={onMobileClose} />}
           </>
         )}
