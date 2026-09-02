@@ -1,10 +1,9 @@
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Activity,
   Boxes,
-  CalendarClock,
   ChevronDown,
   ChevronRight,
   Database,
@@ -109,9 +108,9 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
   const toggleTree = useUi((state) => state.toggleInfrastructureTree);
   const workspace = useUi((state) => state.navigationWorkspace);
   const setWorkspace = useUi((state) => state.setNavigationWorkspace);
+  const navigate = useNavigate();
   const location = useRouterState({ select: (state) => state.location });
   const path = location.pathname;
-  const section = (location.search as Record<string, unknown>).section;
   const { data: profile } = useProfile();
   const { data: pluginData } = usePlugins();
   const previousPath = useRef(path);
@@ -128,10 +127,28 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
   useEffect(() => {
     if (path.startsWith("/infrastructure") || path.startsWith("/networks")) {
       setWorkspace("infrastructure");
+      try { localStorage.setItem("shipyard.lastInfrastructureRoute", path); } catch { /* storage unavailable */ }
     } else if (path === "/" || path.startsWith("/servers") || path.startsWith("/deployments") || path.startsWith("/operations") || path.startsWith("/playbooks")) {
       setWorkspace("operations");
     }
   }, [path, setWorkspace]);
+
+  const changeWorkspace = (nextWorkspace: NavigationWorkspace) => {
+    setWorkspace(nextWorkspace);
+    if (nextWorkspace === "infrastructure" && !path.startsWith("/infrastructure") && !path.startsWith("/networks")) {
+      let target = canViewNetworks ? "/networks" : "/infrastructure";
+      try {
+        const remembered = localStorage.getItem("shipyard.lastInfrastructureRoute");
+        if ((remembered?.startsWith("/networks") && canViewNetworks) || (remembered?.startsWith("/infrastructure") && canViewInfrastructure)) {
+          target = remembered;
+        }
+      } catch { /* storage unavailable */ }
+      void navigate({ to: target as never });
+    } else if (nextWorkspace === "operations" && (path.startsWith("/infrastructure") || path.startsWith("/networks"))) {
+      void navigate({ to: "/" });
+    }
+    onMobileClose?.();
+  };
 
   useEffect(() => {
     if (path === previousPath.current) return;
@@ -169,7 +186,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
         </button>
       </div>
 
-      <WorkspaceSwitcher value={workspace} onChange={setWorkspace} collapsed={collapsed} />
+      <WorkspaceSwitcher value={workspace} onChange={changeWorkspace} collapsed={collapsed} />
 
       <nav
         className={cn(
@@ -183,11 +200,10 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
         {workspace === "operations" ? (
           <>
             {canViewServers && <NavItem to="/" label={t("nav.dashboard")} icon={LayoutDashboard} active={path === "/"} collapsed={collapsed} onNavigate={onMobileClose} />}
-            {canViewOperations && <NavItem to="/operations" search={{ section: "tasks" }} label={t("nav.activity")} icon={Activity} active={path === "/operations" && section !== "maintenance" && section !== "audit"} collapsed={collapsed} onNavigate={onMobileClose} />}
+            {canViewOperations && <NavItem to="/operations" search={{ section: "tasks" }} label={t("nav.operations")} icon={Activity} active={path === "/operations"} collapsed={collapsed} onNavigate={onMobileClose} />}
             {canViewServers && <NavItem to="/servers" label={t("nav.managedHosts")} icon={Server} active={path === "/servers" || path.startsWith("/servers/")} collapsed={collapsed} onNavigate={onMobileClose} />}
             {canViewDeployments && <NavItem to="/deployments" label={t("nav.managedVirtualMachines")} icon={Monitor} active={path === "/deployments" || path.startsWith("/deployments/")} collapsed={collapsed} onNavigate={onMobileClose} />}
             {canViewPlaybooks && <NavItem to="/playbooks" label={t("nav.playbooks")} icon={FileCode2} active={path === "/playbooks"} collapsed={collapsed} onNavigate={onMobileClose} />}
-            {canViewOperations && <NavItem to="/operations" search={{ section: "maintenance" }} label={t("nav.maintenance")} icon={CalendarClock} active={path === "/operations" && section === "maintenance"} collapsed={collapsed} onNavigate={onMobileClose} />}
             {otherPlugins.length > 0 && (
               <section className="space-y-1 border-t pt-2">
                 {!collapsed && <div className="section-label px-2.5 pb-1">{t("nav.integrations")}</div>}

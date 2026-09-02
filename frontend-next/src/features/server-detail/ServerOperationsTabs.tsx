@@ -337,7 +337,7 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                           </StatusBadge>
                         </div>
                         <div className="text-xs text-muted-foreground">Duration: {historyDuration(h)}</div>
-                        {h.status === "failed" && <div className="rounded-sm bg-destructive/5 p-2 text-xs text-destructive"><span className="font-medium">Cause: </span>{historyFailureCause(h)}{h.output && <button type="button" className="ml-2 underline" onClick={() => setSelectedHistory(h)}>View log</button>}</div>}
+                        {h.status === "failed" && <div className="rounded-sm bg-destructive/5 p-2 text-xs text-destructive"><span className="font-medium">Cause: </span>{historyFailureCause(h)}{h.output && <button type="button" className="ml-2 underline" onClick={() => setSelectedHistory(h)}>Open log</button>}</div>}
                       </div>
                     ))}
                   </div>
@@ -394,7 +394,7 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                             </td>
                             <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{historyDuration(h)}</td>
                             <td className="max-w-[22rem] px-3 py-2 text-xs">
-                              {h.status === "failed" ? <><span className="block truncate text-destructive" title={historyFailureCause(h)}>{historyFailureCause(h)}</span>{h.output && <button type="button" className="mt-0.5 text-primary underline" onClick={() => setSelectedHistory(h)}>View log</button>}</> : <span className="text-muted-foreground">—</span>}
+                              {h.status === "failed" ? <><span className="block truncate text-destructive" title={historyFailureCause(h)}>{historyFailureCause(h)}</span>{h.output && <button type="button" className="mt-0.5 text-primary underline" onClick={() => setSelectedHistory(h)}>Open log</button>}</> : <span className="text-muted-foreground">—</span>}
                             </td>
                           </tr>
                         ))}

@@ -65,7 +65,7 @@
     "managedHosts": "Managed Hosts",
     "managedVirtualMachines": "Managed VMs",
     "maintenance": "Maintenance",
-    "servers": "Hosts",
+    "servers": "Managed Hosts",
     "virtualMachines": "Managed VMs",
     "networks": "Networks",
     "infrastructure": "Infrastructure",
@@ -164,7 +164,7 @@
     "featureControlDesc": "Hosts and automation in one place."
   },
   "servers": {
-    "title": "Hosts",
+    "title": "Managed Hosts",
     "addServer": "Add host",
     "host": "Host",
     "user": "User",
@@ -1054,11 +1054,11 @@
     "refreshPartial": "Refresh complete — {{failed}} of {{total}} host(s) failed"
   },
   "srv": {
-    "resourceTitle": "Hosts",
+    "resourceTitle": "Managed Hosts",
     "resourceScope": "Day-2 operations for hosts: health, updates, Docker, tasks, and access. Platform inventory is under Infrastructure",
     "openPlatformInventory": "Platform inventory",
     "fleetHostInventory": "Host inventory",
-    "title": "Hosts",
+    "title": "Managed Hosts",
     "searchServers": "Search hosts…",
     "filterTags": "Filter by tags",
     "filters": "Filters",
@@ -1448,7 +1448,7 @@
     "navigate2": "navigate",
     "open": "open",
     "shortcuts": "Shortcuts",
-    "servers": "Hosts",
+    "servers": "Managed Hosts",
     "playbooks": "Playbooks",
     "actions": "Actions",
     "themeLight": "Light mode",
@@ -1816,7 +1816,7 @@
     "next": "Next"
   },
   "deploy": {
-    "title": "Virtual machines",
+    "title": "Managed VMs",
     "description": "Independently managed Proxmox VMs with one OpenTofu state per VM.",
     "advanced": "Files & variables (expert view)",
     "refresh": "Refresh",

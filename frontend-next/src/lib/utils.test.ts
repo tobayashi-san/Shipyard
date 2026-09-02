@@ -24,6 +24,12 @@ describe('formatDateTime', () => {
     expect(formatted).toContain('13:30');
   });
 
+  it('renders maintenance timestamps unambiguously with a 24-hour clock', () => {
+    const formatted = formatDateTime('2026-09-02T17:30:00.000Z');
+    expect(formatted).toMatch(/^2 Sept? 2026, 19:30$/);
+    expect(formatted).not.toMatch(/AM|PM/i);
+  });
+
   it('returns a dash for missing or invalid values', () => {
     expect(formatDateTime()).toBe('—');
     expect(formatDateTime('not-a-date')).toBe('—');

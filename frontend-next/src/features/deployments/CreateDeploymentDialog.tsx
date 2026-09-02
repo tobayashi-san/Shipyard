@@ -48,7 +48,7 @@ export function CreateDeploymentDialog({ environmentId, open, onOpenChange }: { 
               <option value="">{connectionsQuery.isLoading ? "Loading…" : "Select platform…"}</option>
               {connections.map((connection) => <option key={connection.id} value={connection.id}>{connection.name} · {connection.endpoint}</option>)}
             </select>
-            {connections.length === 0 && connectionsQuery.isSuccess && <p className="text-xs text-amber-700 dark:text-amber-300">Create a Proxmox connection from the Virtual machines page first.</p>}
+            {connections.length === 0 && connectionsQuery.isSuccess && <p className="text-xs text-amber-700 dark:text-amber-300">Create a Proxmox connection from the Managed VMs page first.</p>}
           </div>
         )}
         <DialogFooter>

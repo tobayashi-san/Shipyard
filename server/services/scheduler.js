@@ -300,6 +300,7 @@ function register(schedule) {
             broadcast({
               type: "update_output",
               scheduleId: schedule.id,
+              name: schedule.name,
               stream: type,
               data,
             });
@@ -322,6 +323,7 @@ function register(schedule) {
           type: "schedule_complete",
           scheduleId: schedule.id,
           runId: histId,
+          name: schedule.name,
           success: result.success,
           status,
         });
@@ -339,6 +341,7 @@ function register(schedule) {
         broadcast({
           type: "schedule_error",
           scheduleId: schedule.id,
+          name: schedule.name,
           error: error.message,
         });
         log.error({ err: error, schedule: schedule.name }, "Schedule error");

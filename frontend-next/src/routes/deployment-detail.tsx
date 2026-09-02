@@ -138,12 +138,12 @@ export function DeploymentDetailPage() {
   }, [runs]);
 
   if (vmQuery.isLoading) return <div className="space-y-2">{[0, 1, 2].map((item) => <div key={item} className="h-16 animate-pulse rounded bg-muted/40" />)}</div>;
-  if (vmQuery.isError) return <Card><QueryErrorState error={vmQuery.error} title="Managed virtual machine could not be loaded" onRetry={() => void vmQuery.refetch()} /></Card>;
-  if (!vm) return <Card><EmptyState icon={<TriangleAlert className="h-5 w-5" />} title="Virtual machine not found" description="It may have been destroyed, unmanaged, or moved during a legacy migration." action={<Button asChild><Link to="/deployments">Back to VMs</Link></Button>} /></Card>;
+  if (vmQuery.isError) return <Card><QueryErrorState error={vmQuery.error} title="Managed VM could not be loaded" onRetry={() => void vmQuery.refetch()} /></Card>;
+  if (!vm) return <Card><EmptyState icon={<TriangleAlert className="h-5 w-5" />} title="Managed VM not found" description="It may have been destroyed, unmanaged, or moved during a legacy migration." action={<Button asChild><Link to="/deployments">Back to managed VMs</Link></Button>} /></Card>;
 
   return <div className="space-y-5">
     <PageHeader title={vm.name} description={`Independent VM on ${vm.platform?.name || "Proxmox"}`} actions={<>
-      <Button asChild variant="outline"><Link to="/deployments"><ArrowLeft />All VMs</Link></Button>
+      <Button asChild variant="outline"><Link to="/deployments"><ArrowLeft />All managed VMs</Link></Button>
       <Button variant="outline" onClick={refresh}><RefreshCw />Refresh</Button>
       <Button variant="outline" onClick={() => setEditOpen(true)} disabled={!canEdit || Boolean(activeRun) || runStateUnavailable}><Pencil />Edit</Button>
     </>} />

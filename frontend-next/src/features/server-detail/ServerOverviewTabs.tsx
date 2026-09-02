@@ -275,6 +275,10 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                       {reason.code === "os_updates" && `${reason.count} operating system ${reason.count === 1 ? "update is" : "updates are"} available.`}
                       {reason.code === "image_updates" && `${reason.count} container image ${reason.count === 1 ? "update is" : "updates are"} available.`}
                       {reason.code === "custom_updates" && `${reason.count} custom ${reason.count === 1 ? "update is" : "updates are"} available.`}
+                      {reason.code === "cpu_capacity" && `CPU usage is ${reason.value}% (warning at ${reason.threshold}%).`}
+                      {reason.code === "ram_capacity" && `Memory usage is ${reason.value}% (warning at ${reason.threshold}%).`}
+                      {reason.code === "disk_capacity" && `Disk usage is ${reason.value}% (warning at ${reason.threshold}%).`}
+                      {reason.code === "storage_capacity" && `${reason.count} storage ${reason.count === 1 ? "mount is" : "mounts are"} above ${reason.threshold}%${reason.targets?.length ? `: ${reason.targets.join(", ")}` : "."}`}
                     </li>
                   ))}
                 </ul>
@@ -460,7 +464,10 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                 <dl className="console-properties">
                   <div className="console-property">
                       <dt>Management mode</dt>
-                    <dd>
+                    <dd
+                      className="!overflow-visible !whitespace-normal !break-words"
+                      title={managedProxmoxDeployment ? "Shipyard + Proxmox" : "Shipyard via SSH"}
+                    >
                       {managedProxmoxDeployment
                         ? "Shipyard + Proxmox"
                         : "Shipyard via SSH"}
@@ -484,7 +491,12 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                   ).map(([k, v]) => (
                     <div key={k} className="console-property">
                       <dt>{k}</dt>
-                      <dd className="font-medium tabular-nums">{v ?? "—"}</dd>
+                      <dd
+                        className="font-medium tabular-nums !overflow-visible !whitespace-normal !break-words"
+                        title={String(v ?? "—")}
+                      >
+                        {v ?? "—"}
+                      </dd>
                     </div>
                   ))}
                 </dl>

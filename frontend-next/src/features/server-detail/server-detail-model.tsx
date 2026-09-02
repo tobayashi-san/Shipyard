@@ -25,9 +25,12 @@ export interface ServerDetail {
 }
 
 export interface ServerAttentionReason {
-  code: "offline" | "active_alerts" | "reboot_required" | "os_updates" | "image_updates" | "custom_updates" | "failed_operations";
+  code: "offline" | "active_alerts" | "reboot_required" | "os_updates" | "image_updates" | "custom_updates" | "failed_operations" | "cpu_capacity" | "ram_capacity" | "disk_capacity" | "storage_capacity";
   severity: "critical" | "warning";
   count: number;
+  value?: number;
+  threshold?: number;
+  targets?: string[];
   lastOccurredAt?: string | null;
 }
 
@@ -35,6 +38,10 @@ export interface ServerAttention {
   requiresAttention: boolean;
   severity: "healthy" | "warning" | "critical";
   reasons: ServerAttentionReason[];
+  thresholds?: {
+    warning?: { cpu?: number; ram?: number; disk?: number; storage?: number };
+    critical?: number;
+  };
 }
 
 export interface ServerInfo {
@@ -198,7 +205,11 @@ export function SummaryField({
   return (
     <div className="console-object-info">
       <dt>{label}</dt>
-      <dd data-summary-tone={tone} className={mono ? "font-mono" : ""}>
+      <dd
+        data-summary-tone={tone}
+        title={String(value)}
+        className={`${mono ? "font-mono" : ""} !overflow-visible !whitespace-normal !break-words`}
+      >
         {value}
       </dd>
     </div>

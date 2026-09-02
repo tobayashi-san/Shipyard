@@ -296,7 +296,7 @@ export function NetworksPage() {
   const refresh = () =>
     void queryClient.invalidateQueries({ queryKey: ["ipam"] });
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-5">
       <PageHeader
         title={tr("title")}
         description={tr("description")}
@@ -340,7 +340,7 @@ export function NetworksPage() {
         </Card>
       ) : (
         <>
-          <Card>
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader className="gap-0 border-b bg-muted/15 p-0">
               <div className="console-toolbar gap-3 border-0">
                 <div>
@@ -439,7 +439,7 @@ export function NetworksPage() {
                 clearLabel={tr("reset")}
               />
             </CardHeader>
-            <CardContent className="p-0">
+            <CardContent className="min-w-0 p-0">
               {query.isPending ? (
                 <EmptyState compact title={tr("loadingPrefixes")} />
               ) : hierarchicalRows.length === 0 ? (
@@ -448,7 +448,7 @@ export function NetworksPage() {
                 </p>
               ) : (
                 <>
-                  <div className="table-scroll">
+                  <div className="hidden md:block">
                     <table
                       className="w-full min-w-[940px] text-sm"
                       data-density="compact"
@@ -492,6 +492,18 @@ export function NetworksPage() {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                  <div className="divide-y md:hidden">
+                    {hierarchicalRows.map(({ prefix, depth }) => (
+                      <PrefixMobileCard
+                        key={prefix.id}
+                        prefix={prefix}
+                        depth={depth}
+                        checked={selectedIds.has(prefix.id)}
+                        onToggle={() => toggle(prefix.id)}
+                        canSelect={canEdit}
+                      />
+                    ))}
                   </div>
                 </>
               )}
@@ -1085,7 +1097,7 @@ export function IpamSourcesDialog({
                   save.mutate();
                 }}
               >
-                <div className="flex items-center justify-between">
+                <div>
                   <div>
                     <h3 className="text-sm font-semibold">
                       {editingSource
@@ -1098,14 +1110,6 @@ export function IpamSourcesDialog({
                         : tr("credentialsHint")}
                     </p>
                   </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={resetForm}
-                  >
-                    {tr("cancel")}
-                  </Button>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label={tr("system")}>
@@ -1508,6 +1512,75 @@ function PrefixRow({
         </Link>
       </td>
     </tr>
+  );
+}
+
+function PrefixMobileCard({
+  prefix,
+  depth,
+  checked,
+  onToggle,
+  canSelect,
+}: {
+  prefix: Prefix;
+  depth: number;
+  checked: boolean;
+  onToggle: () => void;
+  canSelect: boolean;
+}) {
+  const networkLabel = [
+    prefix.vlan_id ? `VLAN ${prefix.vlan_id}` : null,
+    prefix.bridge || null,
+  ].filter(Boolean).join(" · ") || "—";
+
+  return (
+    <article
+      className="min-w-0 p-3"
+      data-selected={checked || undefined}
+      style={{ paddingLeft: `${12 + Math.min(depth, 4) * 12}px` }}
+    >
+      <div className="flex min-w-0 items-start gap-3">
+        {canSelect && (
+          <input
+            type="checkbox"
+            className="mt-1 shrink-0"
+            aria-label={tr("selectPrefix", { cidr: prefix.cidr })}
+            checked={checked}
+            onChange={onToggle}
+          />
+        )}
+        <Link
+          to="/networks/$id"
+          params={{ id: prefix.id }}
+          className="min-w-0 flex-1"
+        >
+          <div className="flex min-w-0 items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold text-foreground">
+                {prefix.name || prefix.cidr}
+              </div>
+              <div className="mt-0.5 break-all font-mono text-xs text-muted-foreground">
+                {prefix.cidr}
+              </div>
+            </div>
+            <Badge className="shrink-0" variant={statusVariant(prefix.status)}>
+              {statusLabel[prefix.status] || prefix.status}
+            </Badge>
+          </div>
+          <dl className="mt-2 grid min-w-0 gap-1.5 text-xs">
+            <div className="flex min-w-0 gap-2">
+              <dt className="shrink-0 text-muted-foreground">{tr("vlanBridge")}</dt>
+              <dd className="min-w-0 break-all font-mono text-foreground">{networkLabel}</dd>
+            </div>
+            <div className="flex min-w-0 gap-2">
+              <dt className="shrink-0 text-muted-foreground">{tr("descriptionLabel")}</dt>
+              <dd className="min-w-0 break-words text-foreground">{prefix.description || "—"}</dd>
+            </div>
+          </dl>
+        </Link>
+        <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+      </div>
+    </article>
   );
 }
 

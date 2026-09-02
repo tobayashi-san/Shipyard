@@ -125,7 +125,7 @@ export function ClusterPage({
             <Button asChild type="button" size="sm" variant="outline">
               <Link to="/operations">
                 <ClipboardList />
-                Tasks
+                All activity
               </Link>
             </Button>
             <Button

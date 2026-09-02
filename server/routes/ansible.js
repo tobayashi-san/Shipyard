@@ -139,7 +139,7 @@ function createAnsibleRouter({ broadcast } = {}) {
         (type, data) => {
           outputLines.push(data);
           db.scheduleHistory.appendOutput(schedHistId, data);
-          emit({ type: 'ansible_output', historyId, runId: schedHistId, environmentId, stream: type, data });
+          emit({ type: 'ansible_output', historyId, runId: schedHistId, environmentId, playbook, stream: type, data });
         },
         { environmentId, checkMode, forks: normalizedForks, runId: schedHistId }
       );
@@ -151,12 +151,12 @@ function createAnsibleRouter({ broadcast } = {}) {
       for (const s of allServers) {
         if (resolvedTargets.split(',').includes(s.name)) db.updatesCache.delete(s.id);
       }
-      emit({ type: 'ansible_complete', historyId, success: result.success, status, runId: schedHistId, environmentId });
+      emit({ type: 'ansible_complete', historyId, success: result.success, status, runId: schedHistId, environmentId, playbook });
     } catch (error) {
       ansibleRunner.clearRun(schedHistId);
       db.scheduleHistory.complete(schedHistId, 'failed', outputLines.join('') + (outputLines.length ? '\n' : '') + error.message);
       db.auditLog.write('ansible.run', `playbook=${playbook} targets=${normalizedTargets} error=${error.message}`, req.ip, false, req.user?.username);
-      emit({ type: 'ansible_error', historyId, runId: schedHistId, environmentId, error: error.message });
+      emit({ type: 'ansible_error', historyId, runId: schedHistId, environmentId, playbook, error: error.message });
       if (db.settings.get('notify_playbook_failed') !== '0') notify(`Playbook failed: ${playbook}`, error.message, false).catch(() => {});
     }
   });

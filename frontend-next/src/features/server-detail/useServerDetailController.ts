@@ -870,9 +870,12 @@ export function useServerDetailController() {
     ? Math.round(((info.disk_used_gb ?? 0) / info.disk_total_gb) * 100)
     : null;
   const cpuPct = info?.cpu_usage_pct ?? null;
-  // These visual thresholds are fixed, deliberately local health hints.
-  // Shipyard no longer exposes a monitoring/alerting subsystem per host.
-  const healthThresholds = { cpu: 90, ram: 85, disk: 85, storage: 85 };
+  const healthThresholds = {
+    cpu: server?.attention?.thresholds?.warning?.cpu ?? 90,
+    ram: server?.attention?.thresholds?.warning?.ram ?? 85,
+    disk: server?.attention?.thresholds?.warning?.disk ?? 85,
+    storage: server?.attention?.thresholds?.warning?.storage ?? 85,
+  };
   
   const updatesList = useMemo(() => {
     if (!rawUpdates) return [];

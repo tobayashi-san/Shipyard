@@ -635,7 +635,7 @@ export function ServersPage() {
       const group = groups.find((item) => item.id === groupId);
       showToast(
         groupId
-          ? `${selectedIds.size} Hosts nach „${group?.name || groupId}“ verschoben.`
+          ? `${selectedIds.size} managed ${selectedIds.size === 1 ? "host" : "hosts"} moved to “${group?.name || groupId}”.`
           : `${selectedIds.size} hosts removed from folders.`,
         "success",
       );
@@ -985,7 +985,7 @@ export function ServersPage() {
       // The green status badge already says "Online". Repeating it in the
       // adjacent metadata wastes scan space in the inventory table.
       if (s.status === "online") return "";
-      if (!s.last_seen) return "—";
+      if (!s.last_seen) return "";
       return formatRelativeTime(s.last_seen, t);
     },
     [t],
@@ -1966,7 +1966,7 @@ export function ServersPage() {
                                 {s.tags!.length > 2 && <Badge variant="outline" className="px-1.5 py-0 text-[10px]">+{s.tags!.length - 2}</Badge>}
                               </div>
                             )}
-                            <div className="grid grid-cols-3 gap-2 mt-2 text-xs text-muted-foreground">
+                            <div className={`grid gap-2 mt-2 text-xs text-muted-foreground ${fmtLastSeen(s) ? "grid-cols-3" : "grid-cols-2"}`}>
                               <div>
                                 <span className="block text-[10px] uppercase">
                                   {t("srv.colIp")}
@@ -1979,22 +1979,22 @@ export function ServersPage() {
                                 </span>
                                 {info?.os?.split(" ")[0] || "—"}
                               </div>
-                              <div>
+                              {fmtLastSeen(s) && <div>
                                 <span className="block text-[10px] uppercase">
                                   {t("srv.colLastSeen")}
                                 </span>
                                 {fmtLastSeen(s)}
-                              </div>
+                              </div>}
                             </div>
-                            <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                            {group && <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
                               <Folder
                                 className="h-3.5 w-3.5 shrink-0"
                                 style={{ color: group?.color || undefined }}
                               />
                               <span className="truncate">
-                                {group?.name || "No folder"}
+                                {group.name}
                               </span>
-                            </div>
+                            </div>}
                           </div>
                           {(hasCap(profile, "canEditServers") || hasCap(profile, "canDeleteServers")) && (
                             <OverflowMenu title={`Actions for ${s.name}`} width="w-44">

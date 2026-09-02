@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from '@tanstack/react-router';
+import { useQuery } from '@tanstack/react-query';
 import {
   Activity, CheckCircle2, CircleDashed, Clock, FileCode2, Hammer,
   Layers3, RefreshCw, Trash2, XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { api } from '@/lib/api';
 import { canAccessOperations, canViewActivity, hasCap, useProfile } from '@/lib/queries';
 import { useUi } from '@/lib/store';
 import { ws } from '@/lib/ws';
@@ -67,13 +69,13 @@ function kindIcon(kind: ActivityItem['kind']) {
 }
 
 function eventId(data: Record<string, unknown>) {
+  if (data.scheduleId) return `schedule:${data.scheduleId}`;
   if (data.runId) return `tofu:${data.runId}`;
   if (data.historyId) return `history:${data.historyId}`;
-  if (data.scheduleId) return `schedule:${data.scheduleId}`;
   return null;
 }
 
-function describeEvent(data: Record<string, unknown>, existing?: ActivityItem): Partial<ActivityItem> | null {
+function describeEvent(data: Record<string, unknown>, serverNames: Map<string, string>, existing?: ActivityItem): Partial<ActivityItem> | null {
   const type = text(data.type);
   if (!type) return null;
 
@@ -81,7 +83,7 @@ function describeEvent(data: Record<string, unknown>, existing?: ActivityItem): 
     return {
       kind: 'tofu',
       title: existing?.title || `OpenTofu ${text(data.action) || 'run'}`,
-      subtitle: data.vmName ? `VM ${text(data.vmName)}` : data.workspaceId ? `Legacy deployment ${text(data.workspaceId)}` : existing?.subtitle,
+      subtitle: data.vmName ? `VM ${text(data.vmName)}` : data.workspaceName ? `Deployment ${text(data.workspaceName)}` : existing?.subtitle || 'Infrastructure deployment',
     };
   }
 
@@ -89,7 +91,7 @@ function describeEvent(data: Record<string, unknown>, existing?: ActivityItem): 
     return {
       kind: 'playbook',
       title: existing?.title || 'Playbook run',
-      subtitle: data.historyId ? `Run ${text(data.historyId)}` : existing?.subtitle,
+      subtitle: data.playbook ? `Playbook ${text(data.playbook)}` : existing?.subtitle || 'Playbook execution',
     };
   }
 
@@ -97,7 +99,7 @@ function describeEvent(data: Record<string, unknown>, existing?: ActivityItem): 
     return {
       kind: 'update',
       title: existing?.title || 'Bulk update',
-      subtitle: data.historyId ? `Run ${text(data.historyId)}` : existing?.subtitle,
+      subtitle: existing?.subtitle || 'Multiple managed hosts',
     };
   }
 
@@ -105,7 +107,7 @@ function describeEvent(data: Record<string, unknown>, existing?: ActivityItem): 
     return {
       kind: 'schedule',
       title: existing?.title || 'Scheduled playbook',
-      subtitle: data.scheduleId ? `Schedule ${text(data.scheduleId)}` : existing?.subtitle,
+      subtitle: data.name ? text(data.name) : existing?.subtitle || 'Scheduled workflow',
     };
   }
 
@@ -113,7 +115,7 @@ function describeEvent(data: Record<string, unknown>, existing?: ActivityItem): 
     return {
       kind: data.historyId && String(data.historyId).includes('custom') ? 'task' : 'update',
       title: existing?.title || 'Server action',
-      subtitle: data.serverId ? `Host ${text(data.serverId)}` : existing?.subtitle,
+      subtitle: data.serverId ? `Host ${serverNames.get(text(data.serverId)) || 'Managed host'}` : existing?.subtitle,
     };
   }
 
@@ -131,8 +133,8 @@ function eventStatus(data: Record<string, unknown>, current: ActivityStatus): Ac
 function eventLine(data: Record<string, unknown>) {
   if (data.error) return text(data.error);
   if (data.data) return compactLine(data.data);
-  if (data.type === 'tofu_done') return data.success === false ? 'OpenTofu failed' : 'OpenTofu completed';
-  if (String(data.type || '').endsWith('_complete')) return data.success === false ? 'Completed with errors' : 'Completed';
+  if (data.type === 'tofu_done') return data.success === false ? '' : 'OpenTofu completed';
+  if (String(data.type || '').endsWith('_complete')) return data.success === false ? '' : 'Completed';
   return '';
 }
 
@@ -148,16 +150,27 @@ function EnvironmentActivityCenter({
   viewerKey,
   showOperationsLink,
   placement,
+  canLoadHostNames,
 }: {
   environmentId: string;
   viewerKey: string;
   showOperationsLink: boolean;
   placement: 'floating' | 'header';
+  canLoadHostNames: boolean;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<ActivityItem[]>(() => loadActivities(environmentId, viewerKey));
   const panelRef = useRef<HTMLDivElement>(null);
+  const serversQuery = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ['servers', environmentId],
+    queryFn: () => api.getServers(environmentId) as unknown as Promise<Array<{ id: string; name: string }>>,
+    enabled: canLoadHostNames,
+  });
+  const serverNames = useMemo(
+    () => new Map((serversQuery.data || []).map(server => [String(server.id), server.name])),
+    [serversQuery.data],
+  );
 
   useEffect(() => {
     ws.connect();
@@ -169,7 +182,7 @@ function EnvironmentActivityCenter({
       setItems(prev => {
         const idx = prev.findIndex(item => item.id === id);
         const existing = idx >= 0 ? prev[idx] : undefined;
-        const desc = describeEvent(data, existing);
+        const desc = describeEvent(data, serverNames, existing);
         if (!desc) return prev;
 
         const status = eventStatus(data, existing?.status || 'running');
@@ -191,7 +204,7 @@ function EnvironmentActivityCenter({
         return next.slice(0, 30);
       });
     });
-  }, [t]);
+  }, [serverNames, t]);
 
   // Keep the activity drawer useful after a page reload, but never retain an
   // unbounded amount of operational data in the browser or mix environments.
@@ -266,8 +279,15 @@ function EnvironmentActivityCenter({
                     {item.subtitle && (
                       <div className="truncate text-xs text-muted-foreground">{item.subtitle}</div>
                     )}
-                    {item.lastLine && (
-                      <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">{item.lastLine}</div>
+                    {(item.lastLine || item.status === 'failed') && (
+                      <div
+                        className="mt-1 truncate font-mono text-[11px] text-muted-foreground"
+                        title={item.status === 'failed' ? (item.lastLine || 'No failure detail was reported') : item.lastLine}
+                      >
+                        {item.status === 'failed'
+                          ? `Cause: ${item.lastLine && item.lastLine !== 'Completed with errors' ? item.lastLine : 'No detail reported; open Operations for the recorded log.'}`
+                          : item.lastLine}
+                      </div>
                     )}
                   </div>
                   <div className="whitespace-nowrap pt-0.5 text-[11px] text-muted-foreground">
@@ -315,5 +335,5 @@ export function ActivityCenter({ placement = 'floating' }: { placement?: 'floati
   ].map(capability => hasCap(profile, capability) ? '1' : '0').join('');
   const viewerKey = `${String(profile?.id ?? profile?.username ?? 'anonymous')}.${capabilityFingerprint}`;
   const instanceKey = `${viewerKey}.${environmentId}`;
-  return <EnvironmentActivityCenter key={instanceKey} environmentId={environmentId} viewerKey={viewerKey} showOperationsLink={canAccessOperations(profile)} placement={placement} />;
+  return <EnvironmentActivityCenter key={instanceKey} environmentId={environmentId} viewerKey={viewerKey} showOperationsLink={canAccessOperations(profile)} placement={placement} canLoadHostNames={hasCap(profile, 'canViewServers')} />;
 }

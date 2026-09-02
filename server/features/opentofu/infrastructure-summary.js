@@ -2,6 +2,7 @@
 
 const { createHash } = require('crypto');
 const { PROXMOX_IDENTIFIER_RE } = require('./proxmox-blueprints');
+const { normalizeProxmoxDiskUsage } = require('./core-utils');
 
 function createInfrastructureSummary({
   db,
@@ -83,6 +84,29 @@ function createInfrastructureSummary({
           };
         })
         .filter(node => node.name && PROXMOX_IDENTIFIER_RE.test(node.name));
+      // Datastores are part of the same platform snapshot as node and VM
+      // counts. Loading them before publishing the summary prevents a detail
+      // page from briefly claiming that a platform has zero storage while a
+      // second request is still resolving.
+      const storageResults = await Promise.allSettled(nodes.map(node =>
+        requestProxmoxApi(group.connection, `/nodes/${encodeURIComponent(node.name)}/storage`)));
+      const datastores = [];
+      storageResults.forEach((result, index) => {
+        if (result.status !== 'fulfilled' || !Array.isArray(result.value)) return;
+        const node = nodes[index];
+        const pools = result.value
+          .filter(item => item && item.storage && item.active !== 0 && item.active !== '0' && String(item.type || '').toLowerCase() === 'zfspool')
+          .map(item => ({
+            id: String(item.storage),
+            node_name: node.name,
+            type: String(item.type || 'zfspool'),
+            used: Number(item.used) || 0,
+            total: Number(item.total) || 0,
+            available: Number(item.avail) || 0,
+          }));
+        node.datastores = pools;
+        datastores.push(...pools);
+      });
       const sourceIds = group.connections.map(connection => connection.id).filter(Boolean);
       const adoptedByVm = new Map();
       if (sourceIds.length) {
@@ -107,6 +131,7 @@ function createInfrastructureSummary({
           const fleetServerId = sourceIds
             .map(sourceId => adoptedByVm.get(`${sourceId}:${nodeName}:${vmId}:${guestType}`))
             .find(Boolean) || null;
+          const { disk, maxdisk } = normalizeProxmoxDiskUsage(resource, guestType);
           return {
             name: String(resource?.name || `${guestType === 'lxc' ? 'CT' : 'VM'} ${resource?.vmid || '?'}`),
             guest_type: guestType,
@@ -116,8 +141,8 @@ function createInfrastructureSummary({
             maxcpu: Number(resource?.maxcpu) || 0,
             mem: Number(resource?.mem) || 0,
             maxmem: Number(resource?.maxmem) || 0,
-            disk: Number(resource?.disk) || 0,
-            maxdisk: Number(resource?.maxdisk) || 0,
+            disk,
+            maxdisk,
             fleet_server_id: fleetServerId,
           };
         })
@@ -129,6 +154,7 @@ function createInfrastructureSummary({
         connections: group.connections,
         nodes,
         vms,
+        datastores,
       };
     }));
     const clusters = [];
@@ -164,6 +190,14 @@ function createInfrastructureSummary({
           mem: node.mem || 0,
           maxmem: node.maxmem || 0,
           uptime: node.uptime || 0,
+          datastores: (Array.isArray(node.datastores) ? node.datastores : []).map(store => ({
+            id: store.id,
+            node_name: store.node_name,
+            type: store.type,
+            used: store.used || 0,
+            total: store.total || 0,
+            available: store.available || 0,
+          })),
           fleet_server_id: node.fleet_server_id || null,
         })),
         vms: (Array.isArray(cluster.vms) ? cluster.vms : []).map(vm => ({
@@ -175,9 +209,17 @@ function createInfrastructureSummary({
           maxcpu: vm.maxcpu || 0,
           mem: vm.mem || 0,
           maxmem: vm.maxmem || 0,
-          disk: vm.disk || 0,
+          disk: vm.disk ?? null,
           maxdisk: vm.maxdisk || 0,
           fleet_server_id: vm.fleet_server_id || null,
+        })),
+        datastores: (Array.isArray(cluster.datastores) ? cluster.datastores : []).map(store => ({
+          id: store.id,
+          node_name: store.node_name,
+          type: store.type,
+          used: store.used || 0,
+          total: store.total || 0,
+          available: store.available || 0,
         })),
       })),
     };

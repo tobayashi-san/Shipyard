@@ -7,10 +7,9 @@ const {
   getPermissions,
   filterServers,
 } = require('../utils/permissions');
-const { filterAuditRows } = require('../utils/audit-scope');
 
 const router = express.Router();
-const SOURCE_NAMES = new Set(['Host', 'Deployment', 'Workflow', 'Audit']);
+const SOURCE_NAMES = new Set(['Host', 'Deployment', 'Workflow']);
 const OPERATION_CAPABILITIES = [
   'canViewDeployments', 'canManageDeployments', 'canViewSchedules',
   'canViewAudit', 'canViewMaintenance', 'canViewServerHistory', 'canViewUpdates',
@@ -171,25 +170,6 @@ function permittedRows(req) {
     })));
   }
 
-  if (can(permissions, 'canViewAudit')) {
-    const auditRows = filterAuditRows(db.db.prepare(
-      'SELECT * FROM audit_log WHERE environment_id = ?',
-    ).all(environmentId), permissions, environmentId);
-    rows.push(...auditRows.map(row => {
-      const succeeded = row.success === true || row.success === 1;
-      const failed = row.success === false || row.success === 0;
-      return {
-        id: `audit-${row.id}`,
-        source: 'Audit',
-        name: row.action || 'Audit event',
-        target: row.detail || 'Shipyard console',
-        initiator: row.user || 'System',
-        status: failed ? 'failed' : succeeded ? 'successful' : 'recorded',
-        statusTone: failed ? 'danger' : succeeded ? 'success' : 'muted',
-        time: row.created_at,
-      };
-    }));
-  }
   return rows;
 }
 

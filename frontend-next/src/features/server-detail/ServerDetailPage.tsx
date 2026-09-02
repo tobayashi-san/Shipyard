@@ -350,7 +350,7 @@ export function ServerDetailPage() {
               to="/servers"
               className="transition-colors hover:text-foreground"
             >
-              Hosts
+              Managed Hosts
             </Link>
             <span aria-hidden="true">/</span>
             {server.group_name && (

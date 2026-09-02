@@ -113,7 +113,7 @@ export function DeploymentsPage() {
 
   return <div className="space-y-5">
     <PageHeader
-      title="Managed virtual machines"
+      title="Managed VMs"
       description="Each VM is managed independently with its own OpenTofu state, plans, and run history."
       actions={<>
         <Button type="button" variant="outline" onClick={refresh} disabled={vmsQuery.isFetching}><RefreshCw className={vmsQuery.isFetching ? "animate-spin" : undefined} />Refresh</Button>
@@ -133,10 +133,10 @@ export function DeploymentsPage() {
     </Card>}
 
     {vmsQuery.isLoading ? <div className="space-y-1 rounded-md border p-4">{[0, 1, 2, 3].map((item) => <div key={item} className="h-11 animate-pulse rounded bg-muted/40" />)}</div>
-      : vmsQuery.isError ? <Card><EmptyState icon={<TriangleAlert className="h-5 w-5" />} title="Virtual machines could not be loaded" description="No infrastructure has been changed." action={<Button variant="outline" onClick={() => void vmsQuery.refetch()}><RefreshCw />Try again</Button>} /></Card>
-      : vms.length === 0 ? <Card><EmptyState icon={<Server className="h-5 w-5" />} title="No managed virtual machines" description="Create a managed VM, or open Infrastructure inventory to inspect existing Proxmox virtual machines for adoption." action={canEdit ? <div className="flex flex-wrap justify-center gap-2"><Button onClick={() => setCreateOpen(true)}><Server />Create managed VM</Button>{inventoryClusterId && <Button asChild variant="outline"><Link to="/infrastructure/$clusterId" params={{ clusterId: inventoryClusterId }}>Open inventory</Link></Button>}</div> : undefined} /></Card>
+      : vmsQuery.isError ? <Card><EmptyState icon={<TriangleAlert className="h-5 w-5" />} title="Managed VMs could not be loaded" description="No infrastructure has been changed." action={<Button variant="outline" onClick={() => void vmsQuery.refetch()}><RefreshCw />Try again</Button>} /></Card>
+      : vms.length === 0 ? <Card><EmptyState icon={<Server className="h-5 w-5" />} title="No managed VMs" description="Create a managed VM, or open Infrastructure inventory to inspect existing Proxmox virtual machines for adoption." action={canEdit ? <div className="flex flex-wrap justify-center gap-2"><Button onClick={() => setCreateOpen(true)}><Server />Create managed VM</Button>{inventoryClusterId && <Button asChild variant="outline"><Link to="/infrastructure/$clusterId" params={{ clusterId: inventoryClusterId }}>Open inventory</Link></Button>}</div> : undefined} /></Card>
       : <Card>
-        <CardHeader className="border-b bg-muted/15 py-3"><CardTitle className="flex items-center gap-2 text-base"><Workflow className="h-4 w-4" />Managed virtual machines</CardTitle></CardHeader>
+        <CardHeader className="border-b bg-muted/15 py-3"><CardTitle className="flex items-center gap-2 text-base"><Workflow className="h-4 w-4" />Managed VMs</CardTitle></CardHeader>
         <CardContent className="p-0">
           <div className="table-scroll">
             <table data-density="compact" className="w-full min-w-[850px] text-sm">
@@ -180,7 +180,7 @@ export function DeploymentsPage() {
     <CreateDeploymentDialog environmentId={environmentId} open={createOpen} onOpenChange={setCreateOpen} />
     <Dialog open={connectionsOpen} onOpenChange={setConnectionsOpen}>
       <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-3xl overflow-y-auto p-0">
-        <DialogHeader className="border-b px-5 py-4"><DialogTitle>Platform connections</DialogTitle><DialogDescription>Manage the Proxmox connections used to create and operate virtual machines.</DialogDescription></DialogHeader>
+        <DialogHeader className="border-b px-5 py-4"><DialogTitle>Platform connections</DialogTitle><DialogDescription>Manage the Proxmox connections used to create and operate managed VMs.</DialogDescription></DialogHeader>
         <div className="p-4">{connectionsQuery.isError ? <QueryErrorState compact error={connectionsQuery.error} title="Platform connections could not be loaded" onRetry={() => void connectionsQuery.refetch()} /> : <ProxmoxConnectionsCard connections={connections} isAdmin={canManagePlatforms} canSyncIpam={canSyncIpam} onAdd={() => { setConnectionToEdit(null); setConnectionEditorOpen(true); }} onEdit={(connection) => { setConnectionToEdit(connection); setConnectionEditorOpen(true); }} onDelete={setConnectionToDelete} />}</div>
       </DialogContent>
     </Dialog>

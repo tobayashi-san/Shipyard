@@ -311,7 +311,7 @@ describe("UI refactor contract", () => {
     expect(servers).toContain('title="Host folders could not be loaded"');
     expect(servers).toContain('title="Playbooks could not be loaded"');
     expect(audit).toContain('title="Audit filters could not be loaded"');
-    expect(deployment).toContain('title="Managed virtual machine could not be loaded"');
+    expect(deployment).toContain('title="Managed VM could not be loaded"');
     expect(deployment).toContain('title="Current Proxmox state could not be loaded"');
     expect(deployment).toContain('title="Independent VM state could not be loaded"');
     expect(deployment).toContain('title="VM run history could not be loaded"');
@@ -323,5 +323,37 @@ describe("UI refactor contract", () => {
     expect(createHost).toContain('title="Environments could not be loaded"');
     expect(locale).toContain('"managedHostReferencesFailed"');
     expect(locale).toContain('"reservationValidationFailed"');
+  });
+
+  it("preserves the operational review fixes across narrow and long-form views", () => {
+    const networks = source("routes/networks.tsx");
+    const sidebar = source("components/layout/Sidebar.tsx");
+    const operations = source("routes/operations.tsx");
+    const router = source("router.tsx");
+    const playbooks = source("features/playbooks/PlaybooksPage.tsx");
+    const profile = source("routes/profile.tsx");
+    const users = source("routes/settings/tabs/users-roles.tsx");
+    const activity = source("components/ActivityCenter.tsx");
+
+    expect(networks).toContain('className="min-w-0 space-y-5"');
+    expect(networks).toContain('className="hidden md:block"');
+    expect(networks).toContain("function PrefixMobileCard");
+    expect(networks).toContain('tr("vlanBridge")');
+    expect(networks).toContain('tr("descriptionLabel")');
+    expect(sidebar.match(/<NavItem to="\/operations"/g)).toHaveLength(1);
+    expect(sidebar).toContain("shipyard.lastInfrastructureRoute");
+    expect(operations).not.toContain('| "Audit"');
+    expect(operations).not.toContain('<option value="Audit">');
+    expect(router).not.toContain("'Workflow' | 'Audit'");
+    expect(playbooks).toContain('to: "/settings/$tab", params: { tab: "git" }');
+    expect(playbooks).toContain("Git settings");
+    expect(profile.indexOf("profile.passwordSection")).toBeLessThan(profile.indexOf("Personal appearance"));
+    expect(profile).toContain("More themes");
+    expect(users).toContain("flex max-h-[90vh] max-w-4xl flex-col overflow-hidden p-0");
+    expect(users).toContain("shrink-0 border-t bg-card px-5 py-3");
+    expect(users).toContain("{users.length} users");
+    expect(activity).toContain("serverNames.get(text(data.serverId))");
+    expect(activity).not.toContain("`Host ${text(data.serverId)}`");
+    expect(activity).toContain("Cause:");
   });
 });

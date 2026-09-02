@@ -48,6 +48,7 @@ export function ProfilePage() {
   const isAdmin = profile?.role === 'admin';
   const themePreset = useUi((state) => state.themePreset);
   const setThemePreset = useUi((state) => state.setThemePreset);
+  const [showAllThemes, setShowAllThemes] = useState(false);
 
   // ─ Account form
   const [displayName, setDisplayName] = useState('');
@@ -221,55 +222,6 @@ export function ProfilePage() {
               {t('profile.saveChanges')}
             </button>
           </div>
-        </div>
-      </Section>
-
-      {/* ── Personal appearance ─────────────────────────────────────── */}
-      <Section icon={Paintbrush} title="Personal appearance">
-        <p className="mb-3 text-sm text-muted-foreground">This preference applies only to your browser. Global Shipyard branding remains in Administration.</p>
-        <div className="space-y-5">
-          {(['light', 'dark'] as const).map((mode) => (
-            <div key={mode}>
-              <div className="mb-2 flex items-center gap-3">
-                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{mode} themes</span>
-                <span className="h-px flex-1 bg-border" />
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                {THEME_PRESETS.filter((preset) => preset.mode === mode).map((preset) => (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    onClick={() => setThemePreset(preset.id)}
-                    aria-pressed={themePreset === preset.id}
-                    aria-label={`${preset.name} theme, ${preset.mode} mode`}
-                    className={cn(
-                      'rounded-sm border p-3 text-left transition-colors hover:border-primary/50',
-                      themePreset === preset.id ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'hover:bg-muted/30',
-                    )}
-                  >
-                    <span
-                      className="relative mb-2 flex h-9 overflow-hidden rounded-sm border"
-                      style={{ backgroundColor: preset.preview.canvas }}
-                    >
-                      <span
-                        className="w-1/4 shrink-0 border-r"
-                        style={{ backgroundColor: preset.preview.surface, borderRightColor: preset.preview.accent }}
-                      />
-                      <span className="flex flex-1 items-center px-2">
-                        <span
-                          className="h-4 w-full rounded-[2px] border"
-                          style={{ backgroundColor: preset.preview.card, borderColor: `${preset.preview.accent}66` }}
-                        />
-                      </span>
-                      <span className="absolute inset-x-0 bottom-0 h-0.5" style={{ backgroundColor: preset.preview.accent }} />
-                    </span>
-                    <span className="block text-sm font-medium">{preset.name}</span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">{preset.description}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
         </div>
       </Section>
 
@@ -469,6 +421,53 @@ export function ProfilePage() {
             )}
           </div>
         )}
+      </Section>
+
+      <Section icon={Paintbrush} title="Personal appearance">
+        <p className="mb-3 text-sm text-muted-foreground">This preference applies only to your browser. Global Shipyard branding remains in Administration.</p>
+        <div className="space-y-5">
+          {(showAllThemes ? (['light', 'dark'] as const) : (['recommended'] as const)).map((mode) => {
+            const presets = mode === 'recommended'
+              ? THEME_PRESETS.filter((preset) => ['cloud-light', 'paper-light', 'midnight-dark', 'graphite-dark'].includes(preset.id))
+              : THEME_PRESETS.filter((preset) => preset.mode === mode);
+            return (
+              <div key={mode}>
+                <div className="mb-2 flex items-center gap-3">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{mode} themes</span>
+                  <span className="h-px flex-1 bg-border" />
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  {presets.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => setThemePreset(preset.id)}
+                      aria-pressed={themePreset === preset.id}
+                      aria-label={`${preset.name} theme, ${preset.mode} mode`}
+                      className={cn(
+                        'rounded-sm border p-3 text-left transition-colors hover:border-primary/50',
+                        themePreset === preset.id ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'hover:bg-muted/30',
+                      )}
+                    >
+                      <span className="relative mb-2 flex h-9 overflow-hidden rounded-sm border" style={{ backgroundColor: preset.preview.canvas }}>
+                        <span className="w-1/4 shrink-0 border-r" style={{ backgroundColor: preset.preview.surface, borderRightColor: preset.preview.accent }} />
+                        <span className="flex flex-1 items-center px-2">
+                          <span className="h-4 w-full rounded-[2px] border" style={{ backgroundColor: preset.preview.card, borderColor: `${preset.preview.accent}66` }} />
+                        </span>
+                        <span className="absolute inset-x-0 bottom-0 h-0.5" style={{ backgroundColor: preset.preview.accent }} />
+                      </span>
+                      <span className="block text-sm font-medium">{preset.name}</span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">{preset.description}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+          <button type="button" className="text-sm font-medium text-primary hover:underline" onClick={() => setShowAllThemes((value) => !value)}>
+            {showAllThemes ? 'Show recommended themes' : 'More themes'}
+          </button>
+        </div>
       </Section>
     </div>
   );

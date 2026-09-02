@@ -118,9 +118,12 @@ function UsersPanel() {
       icon={<Users className="h-4 w-4" />}
       title={t('set.userManagement')}
       headerRight={
-        <Button size="sm" onClick={() => setCreating(true)}>
-          <UserPlus className="h-4 w-4" /> {t('set.addUser')}
-        </Button>
+        <div className="flex items-center gap-3">
+          {usersQ.isSuccess && <span className="text-xs text-muted-foreground">{users.length} users</span>}
+          <Button size="sm" onClick={() => setCreating(true)}>
+            <UserPlus className="h-4 w-4" /> {t('set.addUser')}
+          </Button>
+        </div>
       }
     >
       {usersLoading && (
@@ -860,14 +863,14 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
 
   return (
     <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[90vh] max-w-4xl flex-col overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-5 pt-5">
           <DialogTitle>
             {isEdit ? t('set.editRole', { name: role!.name }) : t('set.newRole')}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 pb-5">
           {/* Name */}
           <div>
             <Label>{t('set.roleName')}</Label>
@@ -1029,7 +1032,7 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t bg-card px-5 py-3">
           <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
           <Button onClick={() => save.mutate()} disabled={save.isPending}>
             {isEdit ? t('set.saveBtn') : t('set.createRole')}

@@ -14,6 +14,7 @@ const {
   hasValidDestroyConfirmation,
   hasValidDestroyVmConfirmation,
   normalizePostDeployPlaybooks,
+  normalizeProxmoxDiskUsage,
 } = require('./core-utils');
 const {
   createStreamingRedactor,
@@ -1150,6 +1151,7 @@ override.tf.json
           const vmId = Number(resource?.vmid) || null;
           const guestType = String(resource?.type || '').toLowerCase();
           const adopted = sourceIds.map(sourceId => adoptedByVm.get(`${sourceId}:${nodeName}:${vmId}:${guestType}`)).find(Boolean) || null;
+          const { disk, maxdisk } = normalizeProxmoxDiskUsage(resource, guestType);
           return {
             name: String(resource?.name || `${guestType === 'lxc' ? 'CT' : 'VM'} ${resource?.vmid || '?'}`),
             guest_type: guestType,
@@ -1160,8 +1162,8 @@ override.tf.json
             maxcpu: Number(resource?.maxcpu) || 0,
             mem: Number(resource?.mem) || 0,
             maxmem: Number(resource?.maxmem) || 0,
-            disk: Number(resource?.disk) || 0,
-            maxdisk: Number(resource?.maxdisk) || 0,
+            disk,
+            maxdisk,
             fleet_server_id: adopted?.serverId || null,
             // A cluster can combine equivalent platform connections. Keep the
             // exact source that adopted this VM so its detail view resolves
@@ -1589,7 +1591,7 @@ override.tf.json
     const eventVm = workspace.workspace_kind === 'isolated_vm' ? getProxmoxVms(workspace.id)[0] : null;
     const broadcastTofu = payload => broadcast({
       ...payload,
-      ...(eventVm ? { vmId: eventVm.id, vmName: eventVm.name } : { workspaceId: workspace.id }),
+      ...(eventVm ? { vmId: eventVm.id, vmName: eventVm.name } : { workspaceId: workspace.id, workspaceName: workspace.name }),
     });
 
     res.json({ runId, dbRunId, status: 'started' });

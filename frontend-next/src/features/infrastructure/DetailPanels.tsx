@@ -48,6 +48,7 @@ import {
   preferredDatastores,
   statusLabel,
   taskDate,
+  taskLabel,
   tone,
   uptime,
   guestKind,
@@ -433,8 +434,8 @@ export function NodeConfiguration({ node, vms }: { node: Node; vms: Vm[] }) {
             Network & bridges
           </CardTitle>
           <p className="mt-1 text-xs text-muted-foreground">
-            Proxmox bridges relevant to VM networks. Physical NICs remain
-            bewusst ausgeblendet.
+            Proxmox bridges relevant to VM networks. Physical NICs are
+            intentionally hidden.
           </p>
         </CardHeader>
         <CardContent className="p-0">
@@ -576,7 +577,7 @@ export function RecentObjectTasks({ tasks = [], loading = false, error, onRetry 
               >
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium">
-                    {task.action || "Action"}
+                    {taskLabel(task)}
                   </div>
                   <div className="mt-0.5 text-xs text-muted-foreground">
                     {taskDate(task.created_at)} · {task.user || "System"}
@@ -654,7 +655,7 @@ export function ObjectTasksCard({ tasks = [], loading = false, error, onRetry }:
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span className="truncate font-medium">
-                      {task.action || "Action"}
+                      {taskLabel(task)}
                     </span>
                     <StatusBadge
                       tone={
@@ -699,7 +700,7 @@ export function ObjectTasksCard({ tasks = [], loading = false, error, onRetry }:
                       <td className="whitespace-nowrap font-mono text-xs">
                         {taskDate(task.created_at)}
                       </td>
-                      <td className="font-medium">{task.action || "Action"}</td>
+                      <td className="font-medium">{taskLabel(task)}</td>
                       <td
                         className="max-w-[32rem] truncate text-muted-foreground"
                         title={task.detail}

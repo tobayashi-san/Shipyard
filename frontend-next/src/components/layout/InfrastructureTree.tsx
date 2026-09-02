@@ -1001,7 +1001,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
               )}
             >
               <FolderTree className="h-3.5 w-3.5 shrink-0" />{" "}
-              <span className="truncate">Hosts</span>{" "}
+              <span className="truncate">Standalone hosts</span>{" "}
               <span className="rounded bg-muted px-1.5 py-0.5 normal-case tracking-normal">
                 {managedHostsPending || managedHostsError ? "—" : servers.length}
               </span>

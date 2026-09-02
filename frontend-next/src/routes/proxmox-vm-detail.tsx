@@ -52,7 +52,7 @@ interface Vm {
   maxcpu: number;
   mem: number;
   maxmem: number;
-  disk: number;
+  disk: number | null;
   maxdisk: number;
   fleet_server_id?: string | null;
   fleet_connection_id?: string | null;
@@ -65,6 +65,7 @@ interface Cluster {
 }
 interface InfrastructureResponse {
   clusters?: Cluster[];
+  updated_at?: string;
 }
 interface Snapshot {
   name: string;
@@ -422,7 +423,7 @@ function VmObjectSummary({
         <div className="grid shrink-0 grid-cols-3 gap-4 border-t pt-3 text-xs lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0" aria-label="Live usage">
           <div><span className="block text-muted-foreground">CPU</span><strong className="font-mono">{vm.maxcpu ? `${Math.round((cpuUsed / vm.maxcpu) * 100)}%` : "—"}</strong></div>
           <div><span className="block text-muted-foreground">Memory</span><strong className="font-mono">{vm.maxmem ? `${Math.round((vm.mem / vm.maxmem) * 100)}%` : "—"}</strong></div>
-          <div><span className="block text-muted-foreground">Disk</span><strong className="font-mono">{vm.maxdisk ? `${Math.round((vm.disk / vm.maxdisk) * 100)}%` : "—"}</strong></div>
+          <div><span className="block text-muted-foreground">Disk</span><strong className="font-mono">{vm.disk === null ? "Not reported" : vm.maxdisk ? `${Math.round((vm.disk / vm.maxdisk) * 100)}%` : "—"}</strong></div>
         </div>
       </CardContent>
     </Card>
@@ -733,8 +734,9 @@ export function ProxmoxVmDetailPage() {
   const cluster = useMemo(() => {
     const full = (Array.isArray(inventory.data?.clusters) ? inventory.data!.clusters! : []).find((item) => item.id === clusterId);
     if (full) return full;
+    if (!inventory.isError) return undefined;
     return (Array.isArray(summaryInventory.data?.clusters) ? summaryInventory.data!.clusters! : []).find((item) => item.id === clusterId);
-  }, [clusterId, inventory.data, summaryInventory.data]);
+  }, [clusterId, inventory.data, inventory.isError, summaryInventory.data]);
   const vm = cluster?.vms.find(
     (item) => item.node_name === nodeName && item.vm_id === Number(vmId),
   );
@@ -972,7 +974,7 @@ export function ProxmoxVmDetailPage() {
               <Button asChild size="sm" variant="outline">
                 <Link to="/operations">
                   <ClipboardList />
-                  Tasks
+                  All activity
                 </Link>
               </Button>
             )}

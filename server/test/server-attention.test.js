@@ -36,7 +36,9 @@ test('attention does not expose inputs excluded by permissions', () => {
     history: [{ status: 'failed' }],
   });
 
-  assert.deepEqual(attention, { requiresAttention: false, severity: 'healthy', reasons: [] });
+  assert.equal(attention.requiresAttention, false);
+  assert.equal(attention.severity, 'healthy');
+  assert.deepEqual(attention.reasons, []);
 });
 
 test('offline and critical resource alerts produce critical attention', () => {
@@ -47,4 +49,26 @@ test('offline and critical resource alerts produce critical attention', () => {
 
   assert.equal(attention.severity, 'critical');
   assert.deepEqual(attention.reasons.map(reason => reason.code), ['offline', 'active_alerts']);
+});
+
+test('resource usage uses the same warning thresholds as the dashboard queue', () => {
+  const attention = buildServerAttention({
+    server: { status: 'online' },
+    info: {
+      cpu_usage_pct: 22,
+      ram_used_mb: 70,
+      ram_total_mb: 100,
+      disk_used_gb: 88,
+      disk_total_gb: 100,
+      storage_mount_metrics: [{ name: 'archive', usage_pct: 96 }],
+    },
+  });
+
+  assert.equal(attention.requiresAttention, true);
+  assert.equal(attention.severity, 'critical');
+  assert.deepEqual(attention.reasons.map(reason => [reason.code, reason.severity]), [
+    ['disk_capacity', 'warning'],
+    ['storage_capacity', 'critical'],
+  ]);
+  assert.equal(attention.thresholds.warning.disk, 85);
 });

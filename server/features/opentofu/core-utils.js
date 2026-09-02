@@ -56,6 +56,18 @@ function normalizePostDeployPlaybooks(value) {
   return unique;
 }
 
+// Proxmox uses `disk: 0` for QEMU guests when it has no usable guest usage
+// measurement. LXC disk usage is host-observable, so a real zero remains valid.
+function normalizeProxmoxDiskUsage(resource, guestType) {
+  const disk = Number(resource?.disk);
+  const maxdisk = Number(resource?.maxdisk) || 0;
+  const reported = resource?.disk != null
+    && resource.disk !== ''
+    && Number.isFinite(disk)
+    && !(guestType === 'qemu' && disk === 0 && maxdisk > 0);
+  return { disk: reported ? disk : null, maxdisk };
+}
+
 function uniqueStrings(...lists) {
   const seen = new Set();
   const out = [];
@@ -205,6 +217,7 @@ module.exports = {
   isUsableGuestIp,
   normalizeIp,
   normalizePostDeployPlaybooks,
+  normalizeProxmoxDiskUsage,
   parseJsonArray,
   sleep,
   uniqueStrings,

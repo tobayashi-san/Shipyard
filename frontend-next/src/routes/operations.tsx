@@ -57,7 +57,7 @@ interface Workspace {
 }
 interface OperationRow {
   id: string;
-  source: "Host" | "Deployment" | "Workflow" | "Audit";
+  source: "Host" | "Deployment" | "Workflow";
   name: string;
   target: string;
   initiator: string;
@@ -122,9 +122,7 @@ function operationSourceLabel(source: OperationRow["source"]) {
     ? "Host operation"
     : source === "Deployment"
     ? "Deployment"
-    : source === "Workflow"
-      ? "Playbook workflow"
-      : "Audit event";
+    : "Playbook workflow";
 }
 function operationStatusLabel(status: string) {
   const normalized = status.toLowerCase();
@@ -170,7 +168,7 @@ export function OperationsPage() {
   const [taskScope, setTaskScope] = useState<"all" | "active" | "failed">(
     routeSearch.scope || "all",
   );
-  const [sourceFilter, setSourceFilter] = useState<"all" | "Host" | "Deployment" | "Workflow" | "Audit">(routeSearch.source || "all");
+  const [sourceFilter, setSourceFilter] = useState<"all" | "Host" | "Deployment" | "Workflow">(routeSearch.source || "all");
   const [targetFilter, setTargetFilter] = useState(routeSearch.q || "");
   const [fromDate, setFromDate] = useState(routeSearch.from || "");
   const [toDate, setToDate] = useState(routeSearch.to || "");
@@ -441,7 +439,6 @@ export function OperationsPage() {
                       <option value="Host">Hosts</option>
                       <option value="Deployment">Deployments</option>
                       <option value="Workflow">Playbooks</option>
-                      {canViewAudit && <option value="Audit">Audit</option>}
                     </select>
                   </label>
                   <label className="space-y-1 text-xs text-muted-foreground">
@@ -1097,6 +1094,9 @@ function MaintenanceWindowDialog({
               />
             </div>
           </div>
+          <p className="text-xs tabular-nums text-muted-foreground" aria-live="polite">
+            Displayed in 24-hour format: {formatDateTime(startsAt, { hour12: false, timeZone: timezone })} – {formatDateTime(endsAt, { hour12: false, timeZone: timezone })} ({timezone})
+          </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="maintenance-resources">Affected resources</Label>

@@ -58,7 +58,7 @@ export interface Vm {
   maxcpu: number;
   mem: number;
   maxmem: number;
-  disk: number;
+  disk: number | null;
   maxdisk: number;
   fleet_server_id?: string | null;
 }
@@ -76,6 +76,9 @@ export interface Cluster {
 }
 export interface InfrastructureResponse {
   clusters?: Cluster[];
+  updated_at?: string;
+  cached?: boolean;
+  refreshing?: boolean;
 }
 export interface AuditTask {
   action?: string;
@@ -83,6 +86,17 @@ export interface AuditTask {
   user?: string;
   success?: 0 | 1 | boolean;
   created_at?: string;
+  grouped_count?: number;
+}
+
+export function taskLabel(task: AuditTask) {
+  const raw = String(task.action || "Action");
+  const normalized = raw === "ipam.proxmox_sync"
+    ? "IPAM sync"
+    : raw.replace(/[._-]+/g, " ").replace(/^\w/, (letter) => letter.toUpperCase());
+  return task.grouped_count && task.grouped_count > 1
+    ? `${normalized} ×${task.grouped_count}`
+    : normalized;
 }
 export interface Folder {
   id: string;
@@ -148,18 +162,41 @@ export function tasksForObject(
   cluster: Cluster,
   nodeName?: string,
 ) {
-  const needles = [
-    cluster.endpoint.replace(/^https?:\/\//, "").toLowerCase(),
-    ...(cluster.connections ?? []).map((connection) =>
-      connection.name.toLowerCase(),
-    ),
-    nodeName?.toLowerCase(),
-  ].filter((needle): needle is string => Boolean(needle));
-  return rows
+  const needles = nodeName
+    ? [nodeName.toLowerCase()]
+    : [
+        cluster.endpoint.replace(/^https?:\/\//, "").toLowerCase(),
+        ...(cluster.connections ?? []).map((connection) =>
+          connection.name.toLowerCase(),
+        ),
+      ].filter((needle): needle is string => Boolean(needle));
+  const matching = rows
     .filter((row) => {
       const text = `${row.action ?? ""} ${row.detail ?? ""}`.toLowerCase();
       return needles.some((needle) => text.includes(needle));
-    })
+    });
+
+  const grouped = new Map<string, AuditTask[]>();
+  const visible: AuditTask[] = [];
+  for (const row of matching) {
+    const periodic = /(?:^|[._\s-])(sync|synchronize|refresh|inventory|gather)(?:$|[._\s-])/i.test(String(row.action || ""));
+    const succeeded = row.success !== false && row.success !== 0;
+    if (!periodic || !succeeded) {
+      visible.push(row);
+      continue;
+    }
+    const key = `${row.action || "sync"}\u0000${row.user || "System"}`;
+    grouped.set(key, [...(grouped.get(key) || []), row]);
+  }
+  for (const entries of grouped.values()) {
+    visible.push(entries.length === 1 ? entries[0] : {
+      ...entries[0],
+      grouped_count: entries.length,
+      detail: `${entries.length} successful periodic runs. Latest: ${entries[0].detail || "No further details"}`,
+    });
+  }
+  return visible
+    .sort((left, right) => Date.parse(right.created_at || "") - Date.parse(left.created_at || ""))
     .slice(0, 50);
 }
 
@@ -215,11 +252,15 @@ export function CapacityCell({
   format = bytes,
   empty = "—",
 }: {
-  used: number;
+  used: number | null;
   total: number;
   format?: (value: number) => string;
   empty?: string;
 }) {
+  if (used === null || !Number.isFinite(used))
+    return (
+      <span className="text-xs text-muted-foreground">Not reported</span>
+    );
   if (!Number.isFinite(total) || total <= 0)
     return (
       <span className="font-mono text-xs text-muted-foreground">{empty}</span>
@@ -257,11 +298,15 @@ export function CompactUsage({
   format = bytes,
   empty = "—",
 }: {
-  used: number;
+  used: number | null;
   total: number;
   format?: (value: number) => string;
   empty?: string;
 }) {
+  if (used === null || !Number.isFinite(used))
+    return (
+      <span className="text-xs text-muted-foreground">Not reported</span>
+    );
   if (!Number.isFinite(total) || total <= 0)
     return (
       <span className="font-mono text-xs text-muted-foreground">{empty}</span>

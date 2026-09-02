@@ -148,7 +148,7 @@ export function PlaybooksPage() {
         description={t("pb.subtitle")}
         actions={
           <div className="flex flex-wrap items-center justify-end gap-2">
-            {isAdmin && <GitWidget onGoSettings={() => navigate({ to: "/settings" })} />}
+            {isAdmin && <GitWidget onGoSettings={() => navigate({ to: "/settings/$tab", params: { tab: "git" } })} />}
             {hasCap(profile, "canEditPlaybooks") && (
               <Button onClick={() => { playbookTabs.onValueChange("templates"); setCreateRequest((value) => value + 1); }}>
                 <Plus />{t("pb.new")}
@@ -221,8 +221,9 @@ function GitWidget({ onGoSettings }: { onGoSettings: () => void }) {
         <Button variant="outline" size="sm" onClick={() => void cfgQuery.refetch()}>
           Git status unavailable · Retry
         </Button>
-        <Button variant="outline" size="icon" onClick={onGoSettings} title={t("git.settings")}>
+        <Button variant="outline" size="sm" onClick={onGoSettings} title="Git settings">
           <Settings2 className="h-3.5 w-3.5" />
+          Git settings
         </Button>
       </div>
     );
@@ -258,12 +259,13 @@ function GitWidget({ onGoSettings }: { onGoSettings: () => void }) {
       </Button>
       <Button
         variant="outline"
-        size="icon"
-        className="h-7 w-7"
+        size="sm"
+        className="h-7"
         onClick={onGoSettings}
-        title={t("git.settings")}
+        title="Git settings"
       >
         <Settings2 className="h-3.5 w-3.5" />
+        Git settings
       </Button>
     </div>
   );

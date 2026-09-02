@@ -52,6 +52,7 @@ function installProxmoxMock() {
       callback(response);
       const data = parsed.pathname.endsWith('/cluster/resources') ? inventory
         : parsed.pathname.endsWith('/nodes') ? [{ node: 'pve001', status: 'online' }]
+        : parsed.pathname.endsWith('/nodes/pve001/storage') ? [{ storage: 'local-zfs', type: 'zfspool', active: 1, used: 219902325555, total: 1979120929996, avail: 1759218604441 }]
         : parsed.pathname.endsWith('/nodes/pve001/apt/update') && options.method === 'GET' ? [{
           Package: 'pve-manager', Title: 'Proxmox VE Manager', Description: 'The Proxmox VE management stack',
           Origin: 'Proxmox', OldVersion: '8.4.1', Version: '8.4.2', Priority: 'optional', Section: 'admin', Arch: 'amd64',
@@ -205,8 +206,8 @@ test('LXC guests use container API paths for configuration, snapshots, power and
 
 test('infrastructure inventory includes QEMU VMs and LXC containers with their guest type', async () => {
   inventory = [
-    { type: 'qemu', node: 'pve001', vmid: 101, name: 'app-01', status: 'running' },
-    { type: 'lxc', node: 'pve001', vmid: 202, name: 'web-ct', status: 'running' },
+    { type: 'qemu', node: 'pve001', vmid: 101, name: 'app-01', status: 'running', disk: 0, maxdisk: 32 * 1024 ** 3 },
+    { type: 'lxc', node: 'pve001', vmid: 202, name: 'web-ct', status: 'running', disk: 0, maxdisk: 8 * 1024 ** 3 },
   ];
   const response = await request(app)
     .get('/api/opentofu/infrastructure?environment_id=default')
@@ -214,11 +215,13 @@ test('infrastructure inventory includes QEMU VMs and LXC containers with their g
   assert.equal(response.status, 200, JSON.stringify(response.body));
   const guests = response.body.clusters[0].vms;
   assert.deepEqual(guests.map(guest => [guest.vm_id, guest.guest_type]), [[101, 'qemu'], [202, 'lxc']]);
+  assert.equal(guests[0].disk, null, 'an unreported QEMU disk must not be presented as measured 0%');
+  assert.equal(guests[1].disk, 0, 'host-observable LXC disk usage may be a measured zero');
 });
 
 test('infrastructure summary persists a fast object overview and serves it without detail calls', async () => {
   inventory = [
-    { type: 'qemu', node: 'pve001', vmid: 101, name: 'app-01', status: 'running', cpu: 0.5, maxmem: 4096 },
+    { type: 'qemu', node: 'pve001', vmid: 101, name: 'app-01', status: 'running', cpu: 0.5, maxmem: 4096, disk: 0, maxdisk: 32 * 1024 ** 3 },
     { type: 'lxc', node: 'pve001', vmid: 202, name: 'web-ct', status: 'stopped', mem: 1024 },
   ];
   calls.length = 0;
@@ -231,10 +234,14 @@ test('infrastructure summary persists a fast object overview and serves it witho
   assert.deepEqual(initial.body.clusters[0].vms.map(vm => vm.name), ['app-01', 'web-ct']);
   assert.equal('cpu' in initial.body.clusters[0].nodes[0], true);
   assert.equal(initial.body.clusters[0].vms[0].maxmem, 4096);
+  assert.equal(initial.body.clusters[0].vms[0].disk, null);
+  assert.equal(initial.body.clusters[0].datastores[0].id, 'local-zfs');
+  assert.equal(initial.body.clusters[0].datastores[0].total, 1979120929996);
   assert.deepEqual(calls.map(call => call.path).sort(), [
     '/api2/json/cluster/resources',
     '/api2/json/nodes',
-  ], 'summary refreshes must not load node, storage, network, package or VM details');
+    '/api2/json/nodes/pve001/storage',
+  ], 'summary refreshes load atomic storage totals without network, package or VM detail calls');
 
   calls.length = 0;
   const cached = await request(app)
@@ -257,6 +264,7 @@ test('infrastructure summary persists a fast object overview and serves it witho
   assert.deepEqual(calls.map(call => call.path).sort(), [
     '/api2/json/cluster/resources',
     '/api2/json/nodes',
+    '/api2/json/nodes/pve001/storage',
   ]);
 });
 

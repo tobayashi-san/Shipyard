@@ -16,6 +16,7 @@ import { useUi } from "@/lib/store";
 import { showToast } from "@/lib/toast";
 import { formatDate as fmtDate } from "./playbook-utils";
 import type { HistoryEntry, Schedule } from "./playbook-types";
+import { PlaybookTargetSummary } from "./components/PlaybookTargetSummary";
 
 export function HistoryTab() {
   const { t } = useTranslation();
@@ -146,7 +147,7 @@ export function HistoryTab() {
                         )}
                       </td>
                       <td className="px-3 font-mono text-xs">{h.playbook}</td>
-                      <td className="px-3 text-xs">{h.targets || "all"}</td>
+                      <td className="px-3 text-xs"><PlaybookTargetSummary targets={h.targets} /></td>
                       <td className="px-3 text-xs text-muted-foreground">
                         {fmtDate(h.started_at)}
                       </td>

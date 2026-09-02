@@ -40,7 +40,7 @@ interface ServersSearch {
 interface OperationsSearch {
   scope?: 'active' | 'failed';
   section?: 'tasks' | 'maintenance' | 'audit';
-  source?: 'Host' | 'Deployment' | 'Workflow' | 'Audit';
+  source?: 'Host' | 'Deployment' | 'Workflow';
   q?: string;
   from?: string;
   to?: string;
@@ -132,7 +132,7 @@ const operationsRoute = createRoute({
     const result: OperationsSearch = {};
     if (search.scope === 'active' || search.scope === 'failed') result.scope = search.scope;
     if (search.section === 'tasks' || search.section === 'maintenance' || search.section === 'audit') result.section = search.section;
-    if (search.source === 'Host' || search.source === 'Deployment' || search.source === 'Workflow' || search.source === 'Audit') result.source = search.source;
+    if (search.source === 'Host' || search.source === 'Deployment' || search.source === 'Workflow') result.source = search.source;
     if (typeof search.q === 'string' && search.q.trim()) result.q = search.q;
     if (typeof search.from === 'string') result.from = search.from;
     if (typeof search.to === 'string') result.to = search.to;

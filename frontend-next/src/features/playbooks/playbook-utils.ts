@@ -42,6 +42,23 @@ export function parsePlaybookTargets(targets: string) {
   return { mode: 'list' as const, excluded: [] as string[], included: raw.split(',').map(target => target.trim()).filter(Boolean) };
 }
 
+export function describePlaybookTargets(targets: string) {
+  const raw = String(targets || 'all').trim() || 'all';
+  const parsed = parsePlaybookTargets(raw);
+  if (parsed.mode === 'all') {
+    if (parsed.excluded.length === 0) return { label: 'All hosts', raw, hasDetails: false };
+    const excluded = parsed.excluded.length <= 2
+      ? parsed.excluded.join(', ')
+      : `${parsed.excluded.length} hosts`;
+    return { label: `All hosts except ${excluded}`, raw, hasDetails: true };
+  }
+  return {
+    label: `${parsed.included.length} ${parsed.included.length === 1 ? 'host' : 'hosts'}`,
+    raw,
+    hasDetails: parsed.included.length > 0,
+  };
+}
+
 export function cronToSelectors(cron: string) {
   if (cron === '0 */6 * * *') return { interval: 'every_6h', hour: 3, minute: 0, weekday: 1, monthday: 1 };
   if (cron === '0 */12 * * *') return { interval: 'every_12h', hour: 3, minute: 0, weekday: 1, monthday: 1 };

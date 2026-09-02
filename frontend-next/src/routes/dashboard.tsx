@@ -561,6 +561,7 @@ function AttentionReasonChips({ s }: { s: ServerInfo }) {
   const chips: React.ReactNode[] = [];
   const failedOperations = s.attention?.reasons.find(reason => reason.code === 'failed_operations')?.count ?? 0;
   const activeAlertCount = s.attention?.reasons.find(reason => reason.code === 'active_alerts')?.count ?? (s.alert_count ?? 0);
+  const resourceReasons = s.attention?.reasons.filter(reason => reason.code.endsWith('_capacity')) || [];
   if (s.status === 'offline') chips.push(<StatusBadge key="offline" tone="danger">{t('common.offline')}</StatusBadge>);
   if (activeAlertCount > 0) chips.push(<StatusBadge key="alerts" tone="danger"><Bell className="mr-1 h-3 w-3" />{t('dash.alertCount', { count: activeAlertCount })}</StatusBadge>);
   if (canViewUpdates && s.reboot_required) chips.push(<StatusBadge key="rb" tone="warning"><RotateCcw className="mr-1 h-3 w-3" />{t('dash.needsReboot')}</StatusBadge>);
@@ -568,6 +569,10 @@ function AttentionReasonChips({ s }: { s: ServerInfo }) {
   if (canViewUpdates && canViewDocker && (s.image_updates_count ?? 0) > 0) chips.push(<StatusBadge key="i" tone="warning"><Container className="mr-1 h-3 w-3" />{s.image_updates_count} {t('dash.colImageUpdates')}</StatusBadge>);
   if (canViewCustomUpdates && (s.custom_updates_count ?? 0) > 0) chips.push(<StatusBadge key="c" tone="warning"><Cog className="mr-1 h-3 w-3" />{s.custom_updates_count} {t('dash.colCustomUpdates')}</StatusBadge>);
   if (failedOperations > 0) chips.push(<StatusBadge key="failed" tone="danger"><Clock className="mr-1 h-3 w-3" />{failedOperations} {failedOperations === 1 ? 'failed operation' : 'failed operations'}</StatusBadge>);
+  resourceReasons.forEach(reason => {
+    const label = reason.code === 'cpu_capacity' ? 'CPU' : reason.code === 'ram_capacity' ? 'RAM' : reason.code === 'disk_capacity' ? 'Disk' : 'Storage';
+    chips.push(<StatusBadge key={reason.code} tone={reason.severity === 'critical' ? 'danger' : 'warning'}>{label} {reason.count > 1 ? `· ${reason.count} resources` : 'capacity'}</StatusBadge>);
+  });
   if (chips.length === 0) return null;
   return <>{chips}</>;
 }

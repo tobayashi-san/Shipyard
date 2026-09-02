@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Server,
   ServerCog,
+  TriangleAlert,
   X,
 } from "lucide-react";
 import { api, apiFetch } from "@/lib/api";
@@ -35,7 +36,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { hasCap, useProfile } from "@/lib/queries";
 import { useUi } from "@/lib/store";
-import { asArray } from "@/lib/utils";
+import { asArray, formatDateTime } from "@/lib/utils";
 import { showToast } from "@/lib/toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { QueryErrorState } from "@/components/ui/query-error-state";
@@ -93,7 +94,11 @@ export function InfrastructureDetailPage() {
   } | null>(null);
   const fullCluster = (Array.isArray(query.data?.clusters) ? query.data!.clusters! : []).find((item) => item.id === clusterId);
   const summaryCluster = (Array.isArray(summaryQuery.data?.clusters) ? summaryQuery.data!.clusters! : []).find((item) => item.id === clusterId);
-  const cluster = fullCluster || summaryCluster;
+  // A summary snapshot is a failure fallback, not an intermediate shape for
+  // the live detail request. Waiting for the complete live payload keeps
+  // nodes, VMs and datastores atomic on first render.
+  const usingCachedSnapshot = !fullCluster && query.isError && Boolean(summaryCluster);
+  const cluster = fullCluster || (query.isError ? summaryCluster : undefined);
   const node = cluster?.nodes.find((item) => item.name === nodeName);
   // Audit visibility is a distinct operator capability.  Restricting this
   // object-level task view to the literal admin role made the vSphere-like
@@ -188,6 +193,18 @@ export function InfrastructureDetailPage() {
   );
   return (
     <>
+      {usingCachedSnapshot && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-warning/30 bg-warning/5 px-3 py-2 text-sm text-warning">
+          <TriangleAlert className="h-4 w-4 shrink-0" />
+          <span>
+            Live platform data is unavailable. Showing the complete cached snapshot
+            {summaryQuery.data?.updated_at ? ` from ${formatDateTime(summaryQuery.data.updated_at)}` : ""}.
+          </span>
+          <Button className="ml-auto" size="sm" variant="outline" onClick={() => void query.refetch()}>
+            <RefreshCw /> Retry live data
+          </Button>
+        </div>
+      )}
       {page}
       {vmToImport && (
         <ImportProxmoxVmDialog

@@ -31,6 +31,7 @@ import {
   WEEKDAYS,
 } from "./playbook-utils";
 import type { Playbook, Schedule } from "./playbook-types";
+import { PlaybookTargetSummary } from "./components/PlaybookTargetSummary";
 
 export function useCronLabel() {
   const { t } = useTranslation();
@@ -292,7 +293,7 @@ export function SchedulesTab() {
                         </td>
                         <td className="px-3 font-mono text-xs">{s.playbook}</td>
                         <td className="px-3 text-xs text-muted-foreground">
-                          {s.targets || "all"}
+                          <PlaybookTargetSummary targets={s.targets} />
                         </td>
                         <td className="px-3 text-xs">
                           <span className="flex items-center gap-1">
