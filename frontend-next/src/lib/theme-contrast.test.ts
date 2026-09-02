@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { THEME_PRESETS } from "./store";
 
 const css = readFileSync(new URL("../index.css", import.meta.url), "utf8");
 
@@ -25,6 +26,9 @@ const darkBase = { ...lightBase, ...block(/\.dark\s*\{([\s\S]*?)\n\s*\}/) };
 const sharedLightStatus = block(
   /:root:not\(\.dark\)\[data-console-theme\]\s*\{([\s\S]*?)\n\s*\}/,
 );
+const sharedDarkStatus = block(
+  /:root\.dark\[data-console-theme\]\s*\{([\s\S]*?)\n\s*\}/,
+);
 
 const presets = [...css.matchAll(/:root(\.dark)?\[data-console-theme='([^']+)'\]\s*\{([\s\S]*?)\n\s*\}/g)].map(
   ([, dark, name, body]) => ({
@@ -32,7 +36,7 @@ const presets = [...css.matchAll(/:root(\.dark)?\[data-console-theme='([^']+)'\]
     tokens: {
       ...(dark ? darkBase : lightBase),
       ...tokensFrom(body),
-      ...(dark ? {} : sharedLightStatus),
+      ...(dark ? sharedDarkStatus : sharedLightStatus),
     },
   }),
 );
@@ -74,7 +78,9 @@ function contrast(a: string, b: string): number {
 
 describe("console theme contrast", () => {
   it("defines every expected theme preset", () => {
-    expect(presets.map((preset) => preset.name)).toHaveLength(16);
+    expect(presets.map((preset) => preset.name).sort()).toEqual(
+      THEME_PRESETS.map((preset) => preset.id).sort(),
+    );
   });
 
   for (const { name, tokens } of presets) {

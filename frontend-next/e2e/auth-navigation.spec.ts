@@ -241,24 +241,38 @@ test('console themes apply their coordinated light and dark modes immediately', 
   const themeChoices = page.locator('button[aria-label$=" mode"]');
   await expect(themeChoices).toHaveCount(4);
   await page.getByRole('button', { name: 'More themes' }).click();
-  await expect(themeChoices).toHaveCount(16);
+  await expect(themeChoices).toHaveCount(33);
 
-  await page.getByRole('button', { name: 'Paper theme, light mode' }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-console-theme', 'paper-light');
-  await expect(page.locator('html')).not.toHaveClass(/\bdark\b/);
-  await expect(page.getByRole('button', { name: 'Paper theme, light mode' })).toHaveAttribute('aria-pressed', 'true');
+  const requestedThemes = [
+    ['Tokyo Night', 'tokyo-night-dark', 'dark'],
+    ['Catppuccin', 'catppuccin-dark', 'dark'],
+    ['Dracula', 'dracula-dark', 'dark'],
+    ['Gruvbox', 'gruvbox-dark', 'dark'],
+    ['Nord', 'nord-dark', 'dark'],
+    ['One Dark', 'one-dark', 'dark'],
+    ['Kanagawa', 'kanagawa-dark', 'dark'],
+    ['Rose Pine', 'rose-pine-dark', 'dark'],
+    ['Everforest', 'everforest-light', 'light'],
+    ['Solarized', 'solarized-light', 'light'],
+    ['Ayu', 'ayu-dark', 'dark'],
+    ['Nightfox', 'nightfox-dark', 'dark'],
+    ['Oxocarbon', 'oxocarbon-dark', 'dark'],
+    ['Material Theme', 'material-dark', 'dark'],
+    ['PaperColor Light', 'papercolor-light', 'light'],
+    ['PaperColor Dark', 'papercolor-dark', 'dark'],
+    ['Palenight', 'palenight-dark', 'dark'],
+  ] as const;
 
-  await page.getByRole('button', { name: 'Graphite theme, dark mode' }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-console-theme', 'graphite-dark');
-  await expect(page.locator('html')).toHaveClass(/\bdark\b/);
-  await expect(page.getByRole('button', { name: 'Graphite theme, dark mode' })).toHaveAttribute('aria-pressed', 'true');
+  for (const [name, id, mode] of requestedThemes) {
+    const choice = page.getByRole('button', { name: `${name} theme, ${mode} mode` });
+    await choice.click();
+    await expect(page.locator('html')).toHaveAttribute('data-console-theme', id);
+    await expect(page.locator('html')).toHaveClass(mode === 'dark' ? /\bdark\b/ : /^(?!.*\bdark\b)/);
+    await expect(choice).toHaveAttribute('aria-pressed', 'true');
+  }
 
-  await page.getByRole('button', { name: 'Mint theme, light mode' }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-console-theme', 'mint-light');
-  await expect(page.locator('html')).not.toHaveClass(/\bdark\b/);
-
-  await page.getByRole('button', { name: 'Obsidian theme, dark mode' }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-console-theme', 'obsidian-dark');
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-console-theme', 'palenight-dark');
   await expect(page.locator('html')).toHaveClass(/\bdark\b/);
 });
 

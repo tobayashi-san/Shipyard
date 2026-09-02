@@ -431,7 +431,7 @@ export function ProfilePage() {
         <div className="space-y-5">
           {(showAllThemes ? (['light', 'dark'] as const) : (['recommended'] as const)).map((mode) => {
             const presets = mode === 'recommended'
-              ? THEME_PRESETS.filter((preset) => ['cloud-light', 'paper-light', 'midnight-dark', 'graphite-dark'].includes(preset.id))
+              ? THEME_PRESETS.filter((preset) => preset.recommended)
               : THEME_PRESETS.filter((preset) => preset.mode === mode);
             return (
               <div key={mode}>
@@ -460,6 +460,7 @@ export function ProfilePage() {
                         <span className="absolute inset-x-0 bottom-0 h-0.5" style={{ backgroundColor: preset.preview.accent }} />
                       </span>
                       <span className="block text-sm font-medium">{preset.name}</span>
+                      {preset.style && <span className="mt-1 inline-flex rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{preset.style}</span>}
                       <span className="mt-0.5 block text-xs text-muted-foreground">{preset.description}</span>
                     </button>
                   ))}
