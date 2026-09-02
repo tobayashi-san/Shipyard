@@ -233,6 +233,8 @@ test('console themes apply their coordinated light and dark modes immediately', 
   await page.goto('/profile');
 
   const themeChoices = page.locator('button[aria-label$=" mode"]');
+  await expect(themeChoices).toHaveCount(4);
+  await page.getByRole('button', { name: 'More themes' }).click();
   await expect(themeChoices).toHaveCount(16);
 
   await page.getByRole('button', { name: 'Paper theme, light mode' }).click();
@@ -350,15 +352,15 @@ test('dashboard and deployment failures are never presented as healthy empty sta
   await page.route('**/api/opentofu/legacy-workspaces?*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'legacy deployments unavailable' }) }));
   await page.route('**/api/opentofu/vm-templates?*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'templates unavailable' }) }));
   await page.goto('/deployments');
-  await expect(page.getByText('Virtual machines could not be loaded', { exact: true })).toBeVisible();
+  await expect(page.getByText('Managed VMs could not be loaded', { exact: true })).toBeVisible();
   await expect(page.getByText('Legacy VM deployments could not be checked', { exact: true })).toBeVisible();
   await expect(page.getByText('VM templates could not be loaded', { exact: true })).toBeVisible();
   await expect(page.getByText(/no managed virtual machines|no templates yet/i)).toHaveCount(0);
 
   await page.route('**/api/opentofu/vms/unavailable-vm', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'managed virtual machine unavailable' }) }));
   await page.goto('/deployments/unavailable-vm');
-  await expect(page.getByText('Managed virtual machine could not be loaded', { exact: true })).toBeVisible();
-  await expect(page.getByText('Virtual machine not found', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Managed VM could not be loaded', { exact: true })).toBeVisible();
+  await expect(page.getByText('Managed VM not found', { exact: true })).toHaveCount(0);
 });
 
 test('operational and infrastructure failures provide retry states instead of healthy empty states', async ({ page }) => {
@@ -587,7 +589,7 @@ test('a failed host task exposes its cause, duration, and full log', async ({ pa
     const cause = page.getByText(/Cause:/).first();
     await expect(cause).toBeVisible();
     await expect(cause).not.toHaveText(/Cause:\s*—$/);
-    await page.getByRole('button', { name: 'View log', exact: true }).first().click();
+    await page.getByRole('button', { name: 'Open log', exact: true }).first().click();
     const log = page.getByRole('dialog', { name: 'Task log' });
     await expect(log.locator('pre')).not.toHaveText('No log output was recorded.');
     await page.keyboard.press('Escape');
@@ -622,7 +624,7 @@ test('IPAM dialogs remain usable inside a mobile viewport', async ({ page }) => 
   await prefixDialog.getByLabel('Name').fill('E2E Mobile Prefix');
   await prefixDialog.getByLabel('IPv4 prefix').fill('10.198.0.0/24');
   await prefixDialog.getByRole('button', { name: 'Add prefix', exact: true }).click();
-  await page.getByRole('row').filter({ hasText: '10.198.0.0/24' }).getByRole('link').first().click();
+  await page.locator('article').filter({ hasText: '10.198.0.0/24' }).getByRole('link').click();
   await page.getByRole('button', { name: 'Reserve address' }).click();
   const reservationDialog = page.getByRole('dialog', { name: 'Reserve address space' });
   await expect(reservationDialog).toBeVisible();
