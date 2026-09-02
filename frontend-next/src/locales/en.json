@@ -1156,7 +1156,8 @@
     "resetHostKeyConfirmBody": "Remove the stored SSH host key for this host?",
     "resetHostKeyDone": "Host key reset completed: {{entries}}",
     "resetHostKeyNoEntries": "no matching entries",
-    "hasNotes": "has notes"
+    "hasNotes": "has notes",
+    "tags": "Tags"
   },
   "add": {
     "titleAdd": "Add host",
@@ -1683,7 +1684,7 @@
     "loadingChildren": "Loading child prefixes…",
     "noDirectChildren": "No direct child prefixes.",
     "directChildrenDescription": "Address spaces directly below this prefix.",
-    "reserveSpace": "Reserve address space",
+    "reserveSpace": "Reserve address",
     "reserveSpaceDescription": "Add a single address or reserve a contiguous range. Detail fields remain in the selected form.",
     "singleAddress": "Single address",
     "ipAddress": "IP address",

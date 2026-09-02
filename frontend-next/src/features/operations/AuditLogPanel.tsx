@@ -16,6 +16,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { QueryErrorState } from "@/components/ui/query-error-state";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { ActiveFilterChips } from "@/components/ui/filter-chips";
+import { DateTextInput } from "@/components/ui/date-input";
+import { normalizeAuditIp, parseAuditDetail } from "@/lib/audit-display";
 import { asArray, formatDateTime } from "@/lib/utils";
 import { SettingsSection } from "@/routes/settings/_row";
 import { useUi } from "@/lib/store";
@@ -210,6 +212,7 @@ export function AuditLogPanel() {
         <div className="grid gap-2 border-b border-border/70 bg-muted/10 p-3 sm:grid-cols-2 lg:grid-cols-5">
           <Field label={t("set.auditFilterAction")}>
             <SelectInput
+              ariaLabel={t("set.auditFilterAction")}
               value={filters.action}
               onChange={(v) => resetAndSet({ action: v })}
             >
@@ -223,6 +226,7 @@ export function AuditLogPanel() {
           </Field>
           <Field label={t("set.auditFilterUser")}>
             <SelectInput
+              ariaLabel={t("set.auditFilterUser")}
               value={filters.user}
               onChange={(v) => resetAndSet({ user: v })}
             >
@@ -236,6 +240,7 @@ export function AuditLogPanel() {
           </Field>
           <Field label={t("set.auditFilterStatus")}>
             <SelectInput
+              ariaLabel={t("set.auditFilterStatus")}
               value={filters.success}
               onChange={(v) =>
                 resetAndSet({ success: v as Filters["success"] })
@@ -247,19 +252,17 @@ export function AuditLogPanel() {
             </SelectInput>
           </Field>
           <Field label={t("set.auditFilterFrom")}>
-            <input
-              type="date"
+            <DateTextInput
+              ariaLabel={t("set.auditFilterFrom")}
               value={filters.from}
-              onChange={(e) => resetAndSet({ from: e.target.value })}
-              className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs"
+              onChange={(value) => resetAndSet({ from: value })}
             />
           </Field>
           <Field label={t("set.auditFilterTo")}>
-            <input
-              type="date"
+            <DateTextInput
+              ariaLabel={t("set.auditFilterTo")}
               value={filters.to}
-              onChange={(e) => resetAndSet({ to: e.target.value })}
-              className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs"
+              onChange={(value) => resetAndSet({ to: value })}
             />
           </Field>
         </div>
@@ -361,18 +364,11 @@ function AuditTableRow({ row }: { row: AuditRow }) {
     <tr>
       <td className="font-mono text-xs font-medium">{row.action || "—"}</td>
       <td className="max-w-[28rem]">
-        <span
-          className="block truncate text-muted-foreground"
-          title={row.detail}
-        >
-          {row.detail || "—"}
-        </span>
+        <AuditDetail detail={row.detail} />
       </td>
       <td>
         <div className="text-sm">{row.user || "System"}</div>
-        <div className="font-mono text-[11px] text-muted-foreground">
-          {row.ip || "—"}
-        </div>
+        <AuditIp ip={row.ip} />
       </td>
       <td>
         {link ? (
@@ -408,18 +404,17 @@ function AuditMobileRow({ row }: { row: AuditRow }) {
           <div className="truncate font-mono text-xs font-medium">
             {row.action || "—"}
           </div>
-          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-            {row.detail || "—"}
-          </p>
+          <div className="mt-1 text-xs text-muted-foreground">
+            <AuditDetail detail={row.detail} />
+          </div>
         </div>
         <StatusBadge tone={row.success ? "success" : "danger"} dot>
           {row.success ? "OK" : "Failed"}
         </StatusBadge>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span>
-          {row.user || "System"} · {row.ip || "—"}
-        </span>
+        <span>{row.user || "System"}</span>
+        <AuditIp ip={row.ip} />
         <span>{formatDateTime(row.created_at)}</span>
       </div>
       {link && (
@@ -454,18 +449,60 @@ function SelectInput({
   value,
   onChange,
   children,
+  ariaLabel,
 }: {
   value: string;
   onChange: (v: string) => void;
   children: React.ReactNode;
+  ariaLabel: string;
 }) {
   return (
     <select
       value={value}
+      aria-label={ariaLabel}
       onChange={(e) => onChange(e.target.value)}
       className="h-8 w-full min-w-0 rounded-md border border-input bg-background px-2 text-xs sm:w-auto sm:min-w-[110px]"
     >
       {children}
     </select>
+  );
+}
+
+function AuditIp({ ip }: { ip?: string }) {
+  const normalized = normalizeAuditIp(ip);
+  if (!ip) return <span className="font-mono text-[11px] text-muted-foreground">—</span>;
+  if (normalized === ip) {
+    return <span className="font-mono text-[11px] text-muted-foreground">{ip}</span>;
+  }
+  return (
+    <details className="text-[11px] text-muted-foreground">
+      <summary className="cursor-pointer font-mono text-foreground">{normalized}</summary>
+      <div className="mt-0.5">Raw IP: <code>{ip}</code></div>
+    </details>
+  );
+}
+
+function AuditDetail({ detail }: { detail?: string }) {
+  const parsed = parseAuditDetail(detail);
+  if (!parsed.raw) return <span>—</span>;
+  if (parsed.fields.length === 0) {
+    return <span className="block truncate" title={parsed.raw}>{parsed.raw}</span>;
+  }
+  return (
+    <div className="min-w-0 space-y-1.5">
+      {parsed.summary && <p className="text-xs text-foreground">{parsed.summary}</p>}
+      <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-[11px]">
+        {parsed.fields.map((field, index) => (
+          <div className="contents" key={`${field.key}-${index}`}>
+            <dt>{field.label}</dt>
+            <dd className="break-all font-mono text-foreground">{field.value}</dd>
+          </div>
+        ))}
+      </dl>
+      <details>
+        <summary className="cursor-pointer text-[11px] text-primary">Raw details</summary>
+        <code className="mt-1 block break-all text-[11px]">{parsed.raw}</code>
+      </details>
+    </div>
   );
 }

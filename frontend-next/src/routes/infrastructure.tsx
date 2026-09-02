@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/dialog";
 import { useUi } from "@/lib/store";
 import { hasCap, useProfile } from "@/lib/queries";
-import { formatDateTime } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
 import {
   ProxmoxConnectionDialog,
   type ProxmoxConnection,
@@ -514,11 +514,17 @@ export function ProxmoxConnectionsCard({
                         : "Token missing"}
                     </StatusBadge>
                   </div>
-                  <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                    <span>IPAM sync</span>
-                    <span className="text-right">
-                      {syncLabel(connection)}
-                      <span className="block">{lastSyncLabel(connection)}</span>
+                  <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <span>IPAM schedule</span>
+                    <span className="text-right">{syncLabel(connection)}</span>
+                    <span>Last sync</span>
+                    <span
+                      className={cn("text-right", connection.last_ipam_status === "failed" && "text-destructive")}
+                      title={connection.last_ipam_error || undefined}
+                    >
+                      {connection.last_ipam_status === "failed"
+                        ? "Synchronization failed"
+                        : lastSyncLabel(connection)}
                     </span>
                   </div>
                   {(isAdmin || canSyncIpam) && (
@@ -572,14 +578,15 @@ export function ProxmoxConnectionsCard({
             <div className="table-scroll hidden md:block">
               <table
                 data-density="compact"
-                className="w-full min-w-[660px] text-sm"
+                className="w-full min-w-[840px] text-sm"
               >
                 <thead>
                   <tr>
                     <th className="px-3">Platform</th>
                     <th className="px-3">Endpoint</th>
                     <th className="px-3">Access status</th>
-                    <th className="px-3">IPAM sync</th>
+                    <th className="w-48 px-3">IPAM schedule</th>
+                    <th className="w-56 px-3">Last sync</th>
                     <th className="w-32 px-3 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -614,19 +621,18 @@ export function ProxmoxConnectionsCard({
                         </StatusBadge>
                       </td>
                       <td className="px-3 text-xs text-muted-foreground">
-                        <div>{syncLabel(connection)}</div>
-                        <div
-                          className={
-                            connection.last_ipam_status === "failed"
-                              ? "text-destructive"
-                              : ""
-                          }
-                          title={connection.last_ipam_error || undefined}
-                        >
-                          {connection.last_ipam_status === "failed"
-                            ? "Last synchronization failed"
-                            : lastSyncLabel(connection)}
-                        </div>
+                        {syncLabel(connection)}
+                      </td>
+                      <td
+                        className={cn(
+                          "px-3 text-xs text-muted-foreground",
+                          connection.last_ipam_status === "failed" && "text-destructive",
+                        )}
+                        title={connection.last_ipam_error || undefined}
+                      >
+                        {connection.last_ipam_status === "failed"
+                          ? "Last synchronization failed"
+                          : lastSyncLabel(connection)}
                       </td>
                       <td className="px-3 text-right">
                         {isAdmin || canSyncIpam ? (

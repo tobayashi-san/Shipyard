@@ -219,8 +219,10 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
             </div>
           </div>
           <div className="relative border-b bg-background/70 px-3 py-2">
+            <label className="sr-only" htmlFor="playbook-search">Search playbooks</label>
             <Search className="pointer-events-none absolute left-5 top-4 h-4 w-4 text-muted-foreground" />
             <Input
+              id="playbook-search"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               placeholder={t("common.search")}

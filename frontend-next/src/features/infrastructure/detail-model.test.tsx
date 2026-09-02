@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { taskLabel, tasksForObject, type Cluster } from "./detail-model";
+import {
+  capacityToneForPercentage,
+  taskDate,
+  taskLabel,
+  tasksForObject,
+  type Cluster,
+} from "./detail-model";
 
 const cluster: Cluster = {
   id: "cluster-a",
@@ -29,5 +35,17 @@ describe("tasksForObject", () => {
 
     expect(tasks).toHaveLength(1);
     expect(tasks[0].detail).toContain("pve001");
+  });
+});
+
+describe("infrastructure status presentation", () => {
+  it("keeps sub-threshold capacity neutral and aligns warnings with health checks", () => {
+    expect(capacityToneForPercentage(82)).toBe("healthy");
+    expect(capacityToneForPercentage(85)).toBe("warning");
+    expect(capacityToneForPercentage(95)).toBe("critical");
+  });
+
+  it("uses the shared unambiguous date formatter for grouped tasks", () => {
+    expect(taskDate("2026-09-02T17:30:00.000Z")).toMatch(/^2 Sept? 2026, 19:30$/);
   });
 });

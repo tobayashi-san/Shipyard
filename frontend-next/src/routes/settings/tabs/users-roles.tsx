@@ -659,7 +659,7 @@ const OTHER_CAPS: CapDef[] = [
   { key: 'canViewInfrastructure', label: 'View virtual infrastructure and platforms' },
   { key: 'canViewNetworks', label: 'View networks and IPAM' },
   { key: 'canEditNetworks', label: 'Manage networks and IPAM' },
-  { key: 'canViewDeployments', label: 'Deployments ansehen' },
+  { key: 'canViewDeployments', label: 'View deployments' },
   { key: 'canEditDeployments', label: 'Edit deployment definitions' },
   { key: 'canPlanDeployments', label: 'Create deployment plans' },
   { key: 'canApplyDeployments', label: 'Apply deployment plans' },

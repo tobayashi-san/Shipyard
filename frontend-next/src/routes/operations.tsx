@@ -36,6 +36,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+  DateTextInput,
+  ZonedDateTimeTextInput,
+} from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { QueryErrorState } from "@/components/ui/query-error-state";
@@ -48,7 +52,7 @@ import {
 } from "@/lib/queries";
 import { useUi } from "@/lib/store";
 import { showToast } from "@/lib/toast";
-import { formatDateTime } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
 import { AuditLogPanel } from "@/features/operations/AuditLogPanel";
 
 interface Workspace {
@@ -60,6 +64,7 @@ interface OperationRow {
   source: "Host" | "Deployment" | "Workflow";
   name: string;
   target: string;
+  target_detail?: string;
   initiator: string;
   status: string;
   statusTone: StatusTone;
@@ -96,12 +101,6 @@ interface MaintenanceWindow {
 
 function readableTime(value?: string) {
   return formatDateTime(value);
-}
-function dateTimeInput(value?: string) {
-  const date = value ? new Date(value) : new Date();
-  date.setSeconds(0, 0);
-  const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 function maintenanceTone(state?: string): StatusTone {
   return state === "active"
@@ -173,6 +172,7 @@ export function OperationsPage() {
   const [fromDate, setFromDate] = useState(routeSearch.from || "");
   const [toDate, setToDate] = useState(routeSearch.to || "");
   const [operationsPage, setOperationsPage] = useState(routeSearch.page || 1);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const initialFailureFilterApplied = useRef(false);
   const [selectedOperationId, setSelectedOperationId] = useState<string | null>(
     null,
@@ -289,8 +289,10 @@ export function OperationsPage() {
   const failedOperationCount = operationCounts.failed;
   const operationsTotalPages = operationsQuery.data?.total_pages || 1;
   const safeOperationsPage = operationsQuery.data?.page || operationsPage;
+  const explicitlySelectedOperation =
+    operationRows.find((row) => row.id === selectedOperationId) || null;
   const selectedOperation =
-    operationRows.find((row) => row.id === selectedOperationId) ||
+    explicitlySelectedOperation ||
     operationRows[0] ||
     null;
   const activeSection = routeSearch.section || "tasks";
@@ -431,7 +433,24 @@ export function OperationsPage() {
                     </Button>
                   )}
                 </div>
-                <div className="grid gap-2 border-b bg-background/60 px-3 py-2.5 sm:grid-cols-2 xl:grid-cols-[12rem_minmax(14rem,1fr)_10rem_10rem_auto]">
+                <div className="flex items-center justify-between border-b bg-background/60 px-3 py-2 md:hidden">
+                  <span className="text-xs text-muted-foreground">
+                    {sourceFilter !== "all" || targetFilter || fromDate || toDate
+                      ? "Filters active"
+                      : "Filters collapsed"}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={filtersOpen ? "secondary" : "outline"}
+                    aria-expanded={filtersOpen}
+                    aria-controls="activity-filters"
+                    onClick={() => setFiltersOpen((open) => !open)}
+                  >
+                    Filters
+                  </Button>
+                </div>
+                <div id="activity-filters" className={`${filtersOpen ? "grid" : "hidden"} gap-2 border-b bg-background/60 px-3 py-2.5 sm:grid-cols-2 md:grid xl:grid-cols-[12rem_minmax(14rem,1fr)_10rem_10rem_auto]`}>
                   <label className="space-y-1 text-xs text-muted-foreground">
                     <span>Source</span>
                     <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value as typeof sourceFilter)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground">
@@ -445,8 +464,8 @@ export function OperationsPage() {
                     <span>Target, task, or initiator</span>
                     <span className="relative block"><Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4" /><Input value={targetFilter} onChange={(event) => setTargetFilter(event.target.value)} className="pl-8" placeholder="Filter operations…" /></span>
                   </label>
-                  <label className="space-y-1 text-xs text-muted-foreground"><span>From</span><input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground" /></label>
-                  <label className="space-y-1 text-xs text-muted-foreground"><span>To</span><input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground" /></label>
+                  <label className="space-y-1 text-xs text-muted-foreground"><span>From</span><DateTextInput value={fromDate} onChange={setFromDate} ariaLabel="Activity from date" /></label>
+                  <label className="space-y-1 text-xs text-muted-foreground"><span>To</span><DateTextInput value={toDate} onChange={setToDate} ariaLabel="Activity to date" /></label>
                   <div className="flex items-end"><Button type="button" size="sm" variant="ghost" disabled={sourceFilter === "all" && !targetFilter && !fromDate && !toDate} onClick={() => { setSourceFilter("all"); setTargetFilter(""); setFromDate(""); setToDate(""); }}>Reset</Button></div>
                 </div>
                 {operationRows.length ? (
@@ -458,11 +477,32 @@ export function OperationsPage() {
                         onSelect={setSelectedOperationId}
                       />
                       <OperationDetail
+                        className="hidden xl:block"
                         row={selectedOperation}
                         acknowledging={acknowledgeOperation.isPending}
                         onAcknowledge={(id) => acknowledgeOperation.mutate(id)}
                       />
                     </div>
+                    <Dialog
+                      open={Boolean(selectedOperationId && explicitlySelectedOperation)}
+                      onOpenChange={(open) => !open && setSelectedOperationId(null)}
+                    >
+                      <DialogContent className="p-0 xl:hidden">
+                        <DialogHeader className="border-b px-4 pb-3 pt-4 text-left">
+                          <DialogTitle>Task details</DialogTitle>
+                          <DialogDescription>
+                            Review the selected activity without leaving the list.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <OperationDetail
+                          className="border-0 p-4"
+                          row={explicitlySelectedOperation}
+                          acknowledging={acknowledgeOperation.isPending}
+                          onAcknowledge={(id) => acknowledgeOperation.mutate(id)}
+                          showHeading={false}
+                        />
+                      </DialogContent>
+                    </Dialog>
                     <TablePagination
                       page={safeOperationsPage}
                       pageSize={OPERATIONS_PAGE_SIZE}
@@ -1002,15 +1042,15 @@ function MaintenanceWindowDialog({
   const queryClient = useQueryClient();
   const initial = window && window !== "new" ? window : null;
   const [name, setName] = useState(initial?.name || "");
-  const [startsAt, setStartsAt] = useState(dateTimeInput(initial?.starts_at));
+  const [timezone, setTimezone] = useState(initial?.timezone || "Europe/Zurich");
+  const [startsAt, setStartsAt] = useState(
+    initial?.starts_at || new Date().toISOString(),
+  );
   const [endsAt, setEndsAt] = useState(
-    dateTimeInput(
-      initial?.ends_at || new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-    ),
+    initial?.ends_at || new Date(Date.now() + 60 * 60 * 1000).toISOString(),
   );
   const [description, setDescription] = useState(initial?.description || "");
   const [affectedResources, setAffectedResources] = useState(initial?.affected_resources || "");
-  const [timezone, setTimezone] = useState(initial?.timezone || "Europe/Zurich");
   const [owner, setOwner] = useState(initial?.owner || "");
   const hasValidRange = Boolean(
     startsAt &&
@@ -1026,8 +1066,8 @@ function MaintenanceWindowDialog({
           body: {
             environment_id: environmentId,
             name,
-            starts_at: new Date(startsAt).toISOString(),
-            ends_at: new Date(endsAt).toISOString(),
+            starts_at: startsAt,
+            ends_at: endsAt,
             description,
             affected_resources: affectedResources,
             timezone,
@@ -1075,27 +1115,27 @@ function MaintenanceWindowDialog({
           <div className="grid min-w-0 gap-4 sm:grid-cols-2">
             <div className="min-w-0 space-y-1.5">
               <Label htmlFor="maintenance-start">Start</Label>
-              <Input
+              <ZonedDateTimeTextInput
                 id="maintenance-start"
                 required
-                type="datetime-local"
                 value={startsAt}
-                onChange={(event) => setStartsAt(event.target.value)}
+                onChange={setStartsAt}
+                timeZone={timezone}
               />
             </div>
             <div className="min-w-0 space-y-1.5">
               <Label htmlFor="maintenance-end">End</Label>
-              <Input
+              <ZonedDateTimeTextInput
                 id="maintenance-end"
                 required
-                type="datetime-local"
                 value={endsAt}
-                onChange={(event) => setEndsAt(event.target.value)}
+                onChange={setEndsAt}
+                timeZone={timezone}
               />
             </div>
           </div>
           <p className="text-xs tabular-nums text-muted-foreground" aria-live="polite">
-            Displayed in 24-hour format: {formatDateTime(startsAt, { hour12: false, timeZone: timezone })} – {formatDateTime(endsAt, { hour12: false, timeZone: timezone })} ({timezone})
+            Enter DD/MM/YYYY, HH:mm · 24-hour time · {timezone}
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -1193,19 +1233,23 @@ function OperationDetail({
   row,
   acknowledging,
   onAcknowledge,
+  className,
+  showHeading = true,
 }: {
   row: OperationRow | null;
   acknowledging: boolean;
   onAcknowledge: (id: string) => void;
+  className?: string;
+  showHeading?: boolean;
 }) {
   if (!row) return null;
   return (
-    <aside className="border-t bg-muted/[0.12] p-4 xl:border-l xl:border-t-0">
-      <div className="flex items-center gap-2 text-sm font-semibold">
+    <aside className={cn("border-t bg-muted/[0.12] p-4 xl:border-l xl:border-t-0", className)}>
+      {showHeading && <div className="flex items-center gap-2 text-sm font-semibold">
         <Info className="h-4 w-4 text-brand" />
         Task details
-      </div>
-      <div className="mt-3 rounded-md border bg-card p-4">
+      </div>}
+      <div className={cn("rounded-md border bg-card p-4", showHeading && "mt-3")}>
         <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
           Selected task
         </p>
@@ -1231,12 +1275,9 @@ function OperationDetail({
         </div>
         <div className="console-property items-start">
           <span className="pt-0.5">Target</span>
-          <b
-            className="!overflow-visible !whitespace-normal !break-words text-right leading-relaxed"
-            title={row.target}
-          >
-            {row.target}
-          </b>
+          <div className="!overflow-visible !whitespace-normal !break-words text-right font-semibold leading-relaxed">
+            <OperationTarget row={row} align="right" />
+          </div>
         </div>
         <div className="console-property items-start">
           <span className="pt-0.5">Triggered by</span>
@@ -1303,28 +1344,34 @@ function OperationList({
     <>
       <div className="divide-y md:hidden">
         {rows.map((row) => (
-          <button
-            type="button"
-            key={row.id}
-            onClick={() => onSelect(row.id)}
-            className={`block w-full space-y-2 px-4 py-3 text-left ${selectedId === row.id ? "bg-primary/[0.07]" : "hover:bg-muted/45"}`}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="truncate font-medium">{row.name}</div>
-                <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {operationSourceLabel(row.source)} · {row.initiator}
+          <div key={row.id} className={selectedId === row.id ? "bg-primary/[0.07]" : "hover:bg-muted/45"}>
+            <button
+              type="button"
+              onClick={() => onSelect(row.id)}
+              className="block w-full space-y-2 px-4 py-3 text-left"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{row.name}</div>
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {operationSourceLabel(row.source)} · {row.initiator}
+                  </div>
                 </div>
+                <StatusBadge tone={operationDisplayTone(row)} dot>
+                  {operationDisplayLabel(row)}
+                </StatusBadge>
               </div>
-              <StatusBadge tone={operationDisplayTone(row)} dot>
-                {operationDisplayLabel(row)}
-              </StatusBadge>
-            </div>
-            <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-              <span className="truncate">{row.target}</span>
-              <span className="shrink-0">{readableTime(row.time)}</span>
-            </div>
-          </button>
+              <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                <span className="truncate">{row.target}</span>
+                <span className="shrink-0">{readableTime(row.time)}</span>
+              </div>
+            </button>
+            {row.target_detail && (
+              <div className="px-4 pb-3 text-xs">
+                <OperationTarget row={row} detailsOnly />
+              </div>
+            )}
+          </div>
         ))}
       </div>
       <div className="table-scroll hidden md:block">
@@ -1355,9 +1402,7 @@ function OperationList({
                   </div>
                 </td>
                 <td className="max-w-[18rem]">
-                  <div className="truncate text-muted-foreground">
-                    {row.target}
-                  </div>
+                  <OperationTarget row={row} />
                 </td>
                 <td>
                   <StatusBadge tone={operationDisplayTone(row)} dot>
@@ -1370,5 +1415,30 @@ function OperationList({
         </table>
       </div>
     </>
+  );
+}
+
+function OperationTarget({
+  row,
+  align = "left",
+  detailsOnly = false,
+}: {
+  row: OperationRow;
+  align?: "left" | "right";
+  detailsOnly?: boolean;
+}) {
+  if (!row.target_detail) return detailsOnly ? null : <span>{row.target}</span>;
+  return (
+    <details
+      className={cn("group min-w-0 font-normal", align === "right" && "text-right")}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <summary className="cursor-pointer list-none font-medium text-foreground marker:hidden">
+        {detailsOnly ? "Show target details" : row.target}
+      </summary>
+      <div className="mt-1 break-all text-[11px] text-muted-foreground">
+        Raw target: <code>{row.target_detail}</code>
+      </div>
+    </details>
   );
 }

@@ -99,6 +99,72 @@ test('operations filters and paginates the complete permitted history', async ()
   assert.equal(oldest.body.items[0].name, 'dataset-item-00');
 });
 
+test('workflow targets are condensed while preserving searchable raw details', async () => {
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    'X-Shipyard-Environment': 'default',
+  };
+  const targets = Array.from({ length: 14 }, (_, index) => `host-${index + 1}`).join(',');
+  const condensedId = db.scheduleHistory.create(
+    null,
+    'workflow-condensed',
+    'deploy.yml',
+    targets,
+    { environmentId: 'default', triggeredBy: 'operator' },
+  );
+  db.scheduleHistory.complete(condensedId, 'success', 'ok');
+  const excludedId = db.scheduleHistory.create(
+    null,
+    'workflow-excluded',
+    'deploy.yml',
+    'all:!pve001',
+    { environmentId: 'default', triggeredBy: 'operator' },
+  );
+  db.scheduleHistory.complete(excludedId, 'success', 'ok');
+
+  const condensed = await request(app)
+    .get('/api/operations?source=Workflow&q=host-14')
+    .set(headers);
+  assert.equal(condensed.status, 200);
+  assert.equal(condensed.body.items[0].target, '14 hosts');
+  assert.equal(condensed.body.items[0].target_detail, targets);
+
+  const excluded = await request(app)
+    .get('/api/operations?source=Workflow&q=workflow-excluded')
+    .set(headers);
+  assert.equal(excluded.status, 200);
+  assert.equal(excluded.body.items[0].target, 'All hosts except pve001');
+  assert.equal(excluded.body.items[0].target_detail, 'all:!pve001');
+});
+
+test('isolated deployment activity uses the visible VM name and VM route id', async () => {
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    'X-Shipyard-Environment': 'default',
+  };
+  db.db.prepare(`
+    INSERT INTO tofu_workspaces
+      (id, name, path, environment_id, workspace_kind)
+    VALUES (?, ?, ?, 'default', 'isolated_vm')
+  `).run('activity-workspace', 'vm-f6a0-internal', '/tmp/activity-workspace');
+  db.db.prepare(`
+    INSERT INTO tofu_proxmox_vms (id, workspace_id, name, config, is_isolated)
+    VALUES (?, ?, ?, '{}', 1)
+  `).run('activity-vm', 'activity-workspace', 'payments-db-01');
+  db.db.prepare(`
+    INSERT INTO tofu_runs (id, workspace_id, action, status, started_by, completed_at)
+    VALUES (?, ?, 'plan', 'success', 'operator', datetime('now'))
+  `).run('activity-run', 'activity-workspace');
+
+  const response = await request(app)
+    .get('/api/operations?source=Deployment&q=payments-db-01')
+    .set(headers);
+  assert.equal(response.status, 200);
+  assert.equal(response.body.items[0].target, 'payments-db-01');
+  assert.equal(response.body.items[0].target_detail, 'vm-f6a0-internal');
+  assert.deepEqual(response.body.items[0].params, { id: 'activity-vm' });
+});
+
 test('failed activity can be acknowledged without removing its history', async () => {
   const headers = {
     Authorization: `Bearer ${token}`,

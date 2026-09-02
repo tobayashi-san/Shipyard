@@ -356,4 +356,38 @@ describe("UI refactor contract", () => {
     expect(activity).not.toContain("`Host ${text(data.serverId)}`");
     expect(activity).toContain("Cause:");
   });
+
+  it("preserves the release-candidate accessibility and operations fixes", () => {
+    const operations = source("routes/operations.tsx");
+    const network = source("routes/network-detail.tsx");
+    const infrastructure = source("routes/infrastructure.tsx");
+    const history = source("features/server-detail/ServerOperationsTabs.tsx");
+    const templates = source("features/playbooks/PlaybookTemplates.tsx");
+    const profile = source("routes/profile.tsx");
+    const appearance = source("routes/settings/tabs/appearance.tsx");
+    const audit = source("features/operations/AuditLogPanel.tsx");
+    const locale = source("locales/en.json");
+
+    expect(operations).not.toContain('type="datetime-local"');
+    expect(operations).not.toContain('type="date"');
+    expect(operations).toContain('aria-controls="activity-filters"');
+    expect(operations).toContain('DialogTitle>Task details</DialogTitle>');
+    expect(operations).toContain("target_detail?: string");
+    expect(network).toContain('connectionRows.length === 0\n                      ? tr("noProxmoxConnection")');
+    expect(history).toContain('if (!item.output?.trim()) return "No error details were recorded."');
+    expect(history).not.toContain('h.output && <button');
+    expect(infrastructure).toContain('IPAM schedule</th>');
+    expect(infrastructure).toContain('Last sync</th>');
+    expect(templates).toContain('htmlFor="playbook-search"');
+    expect(templates).toContain('id="playbook-search"');
+    expect(profile).toContain('htmlFor="profile-display-name"');
+    expect(profile).toContain('htmlFor="profile-username"');
+    expect(profile).toContain('htmlFor="profile-email"');
+    expect(appearance).toContain('aria-labelledby="appearance-app-name-label"');
+    expect(appearance.match(/aria-labelledby="appearance-accent-color-label"/g)).toHaveLength(2);
+    expect(audit).toContain("normalizeAuditIp(ip)");
+    expect(audit).toContain("parseAuditDetail(detail)");
+    expect(locale).toContain('"reserveSpace": "Reserve address"');
+    expect(locale).toContain('"tags": "Tags"');
+  });
 });

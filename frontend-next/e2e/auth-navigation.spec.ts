@@ -215,6 +215,8 @@ test('mobile profile menu and maintenance form remain inside the viewport', asyn
   await page.keyboard.press('Escape');
 
   await page.goto('/operations');
+  await expect(page.getByRole('button', { name: 'Filters', exact: true })).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('#activity-filters')).toBeHidden();
   await page.getByLabel('Operations sections').getByRole('link', { name: 'Maintenance', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Add maintenance window', exact: true })).toHaveCount(1);
   await page.getByRole('button', { name: 'Add maintenance window', exact: true }).click();
@@ -226,6 +228,10 @@ test('mobile profile menu and maintenance form remain inside the viewport', asyn
   expect(dialogBox!.x + dialogBox!.width).toBeLessThanOrEqual(390);
   expect(dialogBox!.y).toBeGreaterThanOrEqual(0);
   expect(dialogBox!.y).toBeLessThan(844);
+  await expect(dialog.getByLabel('Start')).toHaveAttribute('type', 'text');
+  await expect(dialog.getByLabel('Start')).toHaveValue(/^\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}$/);
+  await expect(dialog.getByLabel('End')).toHaveValue(/^\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}$/);
+  await expect(dialog.getByText(/24-hour time · Europe\/Zurich/)).toBeVisible();
 });
 
 test('console themes apply their coordinated light and dark modes immediately', async ({ page }) => {
@@ -596,9 +602,11 @@ test('a failed host task exposes its cause, duration, and full log', async ({ pa
 
     await page.goto(`/operations?section=tasks&scope=failed&source=Host&q=${encodeURIComponent(host.name)}`);
     await expect(page.getByRole('button', { name: 'Failed 1', exact: true })).toBeVisible();
+    await page.locator('#operation-tasks').getByRole('button').filter({ hasText: host.name }).first().click();
+    const taskDetails = page.getByRole('dialog', { name: 'Task details' });
     await Promise.all([
       page.waitForResponse(response => response.url().includes('/api/operations/host-') && response.url().endsWith('/acknowledge') && response.request().method() === 'POST'),
-      page.getByRole('button', { name: 'Acknowledge failure', exact: true }).click(),
+      taskDetails.getByRole('button', { name: 'Acknowledge failure', exact: true }).click(),
     ]);
     await expect(page.getByRole('button', { name: 'Failed 0', exact: true })).toBeVisible();
     await expect(page.getByText('There are no entries for this view.', { exact: true })).toBeVisible();
@@ -626,7 +634,7 @@ test('IPAM dialogs remain usable inside a mobile viewport', async ({ page }) => 
   await prefixDialog.getByRole('button', { name: 'Add prefix', exact: true }).click();
   await page.locator('article').filter({ hasText: '10.198.0.0/24' }).getByRole('link').click();
   await page.getByRole('button', { name: 'Reserve address' }).click();
-  const reservationDialog = page.getByRole('dialog', { name: 'Reserve address space' });
+  const reservationDialog = page.getByRole('dialog', { name: 'Reserve address' });
   await expect(reservationDialog).toBeVisible();
   const reservationBox = await reservationDialog.boundingBox();
   expect(reservationBox).not.toBeNull();
@@ -842,7 +850,7 @@ test('IPAM sources can be configured and synced through the browser', async ({ p
 
     const addressTable = page.getByRole('table');
     await addressTable.getByRole('button', { name: 'Reserve first IP', exact: true }).first().click();
-    const reservationDialog = page.getByRole('dialog', { name: 'Reserve address space' });
+    const reservationDialog = page.getByRole('dialog', { name: 'Reserve address' });
     await expect(reservationDialog.getByLabel('IP address')).toHaveValue('10.199.0.1');
     await page.keyboard.press('Escape');
 

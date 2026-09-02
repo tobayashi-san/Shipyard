@@ -59,7 +59,7 @@ test('IPAM workflows remain usable across desktop and mobile layouts', async ({ 
   await page.goBack();
   await expect(page.getByRole('tab', { name: /address inventory/i })).toHaveAttribute('data-state', 'active');
   await page.getByRole('button', { name: 'Reserve address' }).click();
-  const reservation = page.getByRole('dialog', { name: 'Reserve address space' });
+  const reservation = page.getByRole('dialog', { name: 'Reserve address' });
   await reservation.getByLabel('IP address').fill('10.20.1.30');
   await reservation.getByLabel('Hostname').fill('app-erp');
   await reservation.getByLabel('MAC address').fill('02:00:00:00:01:30');

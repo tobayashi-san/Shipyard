@@ -29,6 +29,28 @@ function statusTone(status) {
   return 'muted';
 }
 
+function workflowTargetSummary(value) {
+  const raw = String(value || 'all').trim() || 'all';
+  if (raw === 'all') return { label: 'All hosts', detail: null };
+  const scoped = raw.split(':').map(target => target.trim()).filter(Boolean);
+  if (
+    scoped[0] === 'all'
+    && scoped.length > 1
+    && scoped.slice(1).every(target => target.startsWith('!') && target.length > 1)
+  ) {
+    const excluded = scoped.slice(1).map(target => target.slice(1));
+    return {
+      label: `All hosts except ${excluded.length <= 2 ? excluded.join(', ') : `${excluded.length} hosts`}`,
+      detail: raw,
+    };
+  }
+  const included = raw.split(',').map(target => target.trim()).filter(Boolean);
+  if (included.length > 1) {
+    return { label: `${included.length} hosts`, detail: raw };
+  }
+  return { label: included[0] || 'Defined hosts', detail: null };
+}
+
 function groupSuccessfulSyncRows(rows) {
   const grouped = new Map();
   const visible = [];
@@ -128,22 +150,28 @@ function permittedRows(req) {
   if (can(permissions, 'canViewDeployments') || can(permissions, 'canManageDeployments')) {
     const deploymentRows = db.db.prepare(`
       SELECT run.id, run.action, run.status, run.started_by, run.started_at,
-             run.completed_at, workspace.id AS workspace_id, workspace.name AS workspace_name
+             run.completed_at, workspace.id AS workspace_id, workspace.name AS workspace_name,
+             vm.id AS vm_id, vm.name AS vm_name
       FROM tofu_runs run
       JOIN tofu_workspaces workspace ON workspace.id = run.workspace_id
+      LEFT JOIN tofu_proxmox_vms vm
+        ON vm.workspace_id = workspace.id AND vm.is_isolated = 1
       WHERE workspace.environment_id = ?
     `).all(environmentId);
     rows.push(...deploymentRows.map(row => ({
       id: `deployment-${row.id}`,
       source: 'Deployment',
       name: row.action || 'OpenTofu run',
-      target: row.workspace_name,
+      target: row.vm_name || row.workspace_name,
+      target_detail: row.vm_name && row.vm_name !== row.workspace_name
+        ? row.workspace_name
+        : undefined,
       initiator: row.started_by || 'OpenTofu',
       status: row.status || 'unknown',
       statusTone: statusTone(row.status),
       time: row.completed_at || row.started_at,
       href: '/deployments/$id',
-      params: { id: row.workspace_id },
+      params: { id: row.vm_id || row.workspace_id },
     })));
   }
 
@@ -157,17 +185,21 @@ function permittedRows(req) {
         (permissions.servers === 'all' || canAccessTargets(permissions, row.targets, servers))
       ),
     );
-    rows.push(...workflowRows.map(row => ({
-      id: `workflow-${row.id}`,
-      source: 'Workflow',
-      name: row.schedule_name || row.playbook || 'Scheduled task',
-      target: row.targets || 'Defined hosts',
-      initiator: row.triggered_by || 'Scheduler',
-      status: row.status || 'unknown',
-      statusTone: statusTone(row.status),
-      time: row.completed_at || row.started_at,
-      href: '/playbooks',
-    })));
+    rows.push(...workflowRows.map(row => {
+      const target = workflowTargetSummary(row.targets);
+      return {
+        id: `workflow-${row.id}`,
+        source: 'Workflow',
+        name: row.schedule_name || row.playbook || 'Scheduled task',
+        target: target.label,
+        target_detail: target.detail || undefined,
+        initiator: row.triggered_by || 'Scheduler',
+        status: row.status || 'unknown',
+        statusTone: statusTone(row.status),
+        time: row.completed_at || row.started_at,
+        href: '/playbooks',
+      };
+    }));
   }
 
   return rows;
@@ -193,7 +225,7 @@ router.get('/', (req, res) => {
   const toTime = to ? new Date(`${to}T23:59:59.999`).getTime() : null;
   const commonFiltered = rows.filter(row => {
     if (source && row.source !== source) return false;
-    if (query && !`${row.target} ${row.name} ${row.initiator}`.toLowerCase().includes(query)) return false;
+    if (query && !`${row.target} ${row.target_detail || ''} ${row.name} ${row.initiator}`.toLowerCase().includes(query)) return false;
     const time = numericTime(row.time);
     if (fromTime !== null && (!Number.isFinite(time) || time < fromTime)) return false;
     if (toTime !== null && (!Number.isFinite(time) || time > toTime)) return false;

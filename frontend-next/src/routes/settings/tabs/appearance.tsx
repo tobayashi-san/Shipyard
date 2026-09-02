@@ -76,8 +76,9 @@ export function AppearanceTab() {
         title={t("set.whiteLabel")}
         description={t("set.brandingDesc")}
       >
-        <SettingsRow label={t("set.appName")} hint={t("set.appNameHint")}>
+        <SettingsRow label={t("set.appName")} labelId="appearance-app-name-label" hint={t("set.appNameHint")}>
           <Input
+            aria-labelledby="appearance-app-name-label"
             value={appName}
             onChange={(e) => setAppName(e.target.value)}
             placeholder="Shipyard"
@@ -87,15 +88,18 @@ export function AppearanceTab() {
 
         <SettingsRow
           label={t("set.accentColor")}
+          labelId="appearance-accent-color-label"
           hint={t("set.accentColorHint")}
         >
           <input
+            aria-labelledby="appearance-accent-color-label"
             type="color"
             value={color}
             onChange={(e) => setColor(e.target.value)}
             className="h-9 w-12 cursor-pointer rounded border border-input bg-background"
           />
           <Input
+            aria-labelledby="appearance-accent-color-label"
             value={color}
             onChange={(e) => {
               const v = e.target.value;

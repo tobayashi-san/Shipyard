@@ -141,7 +141,15 @@ export function uptime(seconds: number) {
       : "—";
 }
 export function taskDate(value?: string) {
-  return formatDateTime(value, { dateStyle: "short", timeStyle: "short" });
+  return formatDateTime(value);
+}
+
+export function capacityToneForPercentage(percentage: number) {
+  return percentage >= 95
+    ? "critical"
+    : percentage >= 85
+      ? "warning"
+      : "healthy";
 }
 
 // Inventory APIs may return directory, ISO and ZFS stores in arbitrary order.
@@ -226,8 +234,7 @@ export function CapacityLine({
     unit === "cores"
       ? `${Math.round(used)} / ${Math.round(total)} cores`
       : `${bytes(used)} / ${bytes(total)}`;
-  const capacityTone =
-    percentage >= 90 ? "critical" : percentage >= 75 ? "warning" : "healthy";
+  const capacityTone = capacityToneForPercentage(percentage);
   return (
     <div className="console-capacity-line">
       <div className="console-capacity-heading">
@@ -269,8 +276,7 @@ export function CapacityCell({
     100,
     Math.max(0, Math.round((used / total) * 100)),
   );
-  const capacityTone =
-    percentage >= 90 ? "critical" : percentage >= 75 ? "warning" : "healthy";
+  const capacityTone = capacityToneForPercentage(percentage);
   return (
     <div className="min-w-[10.5rem]">
       <div className="flex items-center justify-between gap-2 text-xs tabular-nums">

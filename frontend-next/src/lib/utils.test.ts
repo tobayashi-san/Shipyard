@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { asArray, DISPLAY_TIME_ZONE, formatDateTime } from './utils';
+import {
+  asArray,
+  DISPLAY_TIME_ZONE,
+  formatDateInput,
+  formatDateTime,
+  formatZonedDateTimeInput,
+  parseDateInput,
+  parseZonedDateTimeInput,
+} from './utils';
 
 describe('asArray', () => {
   it('preserves valid collections', () => {
@@ -33,5 +41,25 @@ describe('formatDateTime', () => {
   it('returns a dash for missing or invalid values', () => {
     expect(formatDateTime()).toBe('—');
     expect(formatDateTime('not-a-date')).toBe('—');
+  });
+});
+
+describe('deterministic date inputs', () => {
+  it('round-trips en-GB calendar dates', () => {
+    expect(formatDateInput('2026-09-02')).toBe('02/09/2026');
+    expect(parseDateInput('2/9/2026')).toBe('2026-09-02');
+    expect(parseDateInput('31/02/2026')).toBeNull();
+  });
+
+  it('round-trips 24-hour wall times in the selected timezone', () => {
+    const instant = parseZonedDateTimeInput('02/09/2026, 21:23', 'Europe/Zurich');
+    expect(instant).toBe('2026-09-02T19:23:00.000Z');
+    expect(formatZonedDateTimeInput(instant, 'Europe/Zurich')).toBe('02/09/2026, 21:23');
+    expect(formatZonedDateTimeInput(instant, 'UTC')).toBe('02/09/2026, 19:23');
+  });
+
+  it('rejects ambiguous browser-style and nonexistent wall times', () => {
+    expect(parseDateInput('09/02/2026, 07:30 PM')).toBeNull();
+    expect(parseZonedDateTimeInput('29/03/2026, 02:30', 'Europe/Zurich')).toBeNull();
   });
 });

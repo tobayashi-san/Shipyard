@@ -7,12 +7,13 @@ interface SettingsRowProps {
   align?: 'center' | 'start';
   noBorder?: boolean;
   className?: string;
+  labelId?: string;
 }
 
 /**
  * Two-column settings row: left = label + hint, right = control(s).
  */
-export function SettingsRow({ label, hint, children, align = 'center', noBorder, className }: SettingsRowProps) {
+export function SettingsRow({ label, hint, children, align = 'center', noBorder, className, labelId }: SettingsRowProps) {
   return (
     <div
       className={cn(
@@ -23,7 +24,7 @@ export function SettingsRow({ label, hint, children, align = 'center', noBorder,
       )}
     >
       <div className="flex min-w-0 flex-col gap-0.5 text-sm">
-        {label && <span className="font-medium text-foreground">{label}</span>}
+        {label && <span id={labelId} className="font-medium text-foreground">{label}</span>}
         {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
       </div>
       <div className="flex min-w-0 flex-wrap items-center gap-2">{children}</div>

@@ -183,8 +183,9 @@ export function ProfilePage() {
       <Section icon={User} title={t('profile.account')}>
         <div className="space-y-4">
           <div className="flex items-center gap-4">
-            <label className="w-24 flex-shrink-0 text-sm text-muted-foreground">{t('profile.displayName')}</label>
+            <label htmlFor="profile-display-name" className="w-24 flex-shrink-0 text-sm text-muted-foreground">{t('profile.displayName')}</label>
             <input
+              id="profile-display-name"
               className="flex-1 h-8 rounded-sm border border-input bg-background px-2.5 text-[13px] focus:outline-none focus:ring-2 focus:ring-ring"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
@@ -192,9 +193,10 @@ export function ProfilePage() {
             />
           </div>
           <div className="flex items-center gap-4">
-            <label className="w-24 flex-shrink-0 text-sm text-muted-foreground">{t('profile.username')}</label>
+            <label htmlFor="profile-username" className="w-24 flex-shrink-0 text-sm text-muted-foreground">{t('profile.username')}</label>
             <div className="flex flex-1 items-center gap-2">
               <input
+                id="profile-username"
                 className="flex-1 h-8 rounded-sm border border-input bg-background px-2.5 text-[13px] opacity-55 cursor-default"
                 value={username}
                 readOnly
@@ -204,8 +206,9 @@ export function ProfilePage() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <label className="w-24 flex-shrink-0 text-sm text-muted-foreground">{t('profile.email')}</label>
+            <label htmlFor="profile-email" className="w-24 flex-shrink-0 text-sm text-muted-foreground">{t('profile.email')}</label>
             <input
+              id="profile-email"
               className="flex-1 h-8 rounded-sm border border-input bg-background px-2.5 text-[13px] focus:outline-none focus:ring-2 focus:ring-ring"
               type="email"
               value={email}

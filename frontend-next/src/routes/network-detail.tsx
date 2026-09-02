@@ -571,11 +571,15 @@ export function NetworkDetailPage() {
                 setConnectionId(connectionRows[0]?.id || "");
                 setSyncOpen(true);
               }}
-              disabled={connectionRows.length === 0}
+              disabled={connections.isLoading || connectionRows.length === 0}
               title={
                 connections.isError
                   ? tr("proxmoxConnectionsFailed")
-                  : tr("noProxmoxConnection")
+                  : connections.isLoading
+                    ? "Loading Proxmox connections…"
+                    : connectionRows.length === 0
+                      ? tr("noProxmoxConnection")
+                      : tr("syncProxmoxDescription")
               }
             >
               <ServerCog />
