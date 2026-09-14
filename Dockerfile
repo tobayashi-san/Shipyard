@@ -1,7 +1,7 @@
 # ── Stage 1: Build frontend ───────────────────────────────────
 # Keep the Node release explicit so builds do not silently move to a different
 # runtime. Update this value through the normal dependency-update process.
-FROM node:24-alpine@sha256:50c8e8ca1d27439048670df5883f32d57cf81cff6233222c893fd0d9884cbd81 AS builder
+FROM node:26-alpine@sha256:ef24c5053d50fdc3e4e56eb4e7ddb7861874ab0fdc797046ba897581deb8e868 AS builder
 WORKDIR /app
 COPY frontend-next/package*.json ./frontend-next/
 RUN cd frontend-next && npm ci
@@ -10,7 +10,7 @@ RUN cd frontend-next && npm run build
 
 # ── Stage 2: Runtime ─────────────────────────────────────────
 # Use Debian for the runtime and native SQLite addon; both stages use Node 24.
-FROM node:24-bookworm-slim@sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553
+FROM node:26-bookworm-slim@sha256:cd9f682fa2885cd1056e830424764158570061c59736a1da836bc3d73df095ae
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ansible openssh-client openssl gosu curl unzip git build-essential util-linux \
