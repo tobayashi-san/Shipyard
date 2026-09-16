@@ -23,7 +23,8 @@ test('probe reads branches without persisting credentials and removes temporary 
   assert.equal(result.defaultBranch, 'main');
   assert.equal(db.settings.get('git_repo_url'), 'https://original.invalid/repo');
   assert.equal(seen.command, 'git');
-  assert.equal(seen.args[0], 'ls-remote');
+  assert.ok(seen.args.includes('ls-remote'));
+  assert.equal(seen.args[seen.args.indexOf('--')+1], 'https://example.invalid/repo');
   assert.ok(!JSON.stringify(seen.args).includes('private-token'));
   assert.ok(!fs.existsSync(seen.options.cwd));
   assert.equal(seen.options.timeout, 15000);
@@ -58,4 +59,10 @@ test('probe rejects incompatible SSH credentials before launching Git', async ()
  seen = null;
  await assert.rejects(testConnection({repoUrl:'https://example.invalid/repo',sshKey:'private-key'}), {status:400});
  assert.equal(seen,null);
+});
+
+test('probe rejects SSH option injection and encoded userinfo without running Git',async()=>{
+ for (const repoUrl of ['--upload-pack=evil','ssh://-oProxyCommand=evil@example.invalid/repo','ssh://%2doProxyCommand%3devil@example.invalid/repo','ssh://git@%2dexample.invalid/repo','ssh://git%ZZ@example.invalid/repo','ext::evil']) {
+  seen=null;await assert.rejects(testConnection({repoUrl}),{status:400});assert.equal(seen,null);
+ }
 });

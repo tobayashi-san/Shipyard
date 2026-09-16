@@ -32,7 +32,7 @@ async function testConnection({ repoUrl, authToken = '', sshKey = '', branch = '
     }
     let result;
     try {
-      result = await execFile('git', ['ls-remote', '--symref', repoUrl.trim(), 'HEAD', 'refs/heads/*'], { cwd: dir, env, timeout: 15000, maxBuffer: 1024 * 1024 });
+      result = await execFile('git', ['-c', 'protocol.ext.allow=never', '-c', 'protocol.file.allow=never', 'ls-remote', '--symref', '--', repoUrl.trim(), 'HEAD', 'refs/heads/*'], { cwd: dir, env, timeout: 15000, maxBuffer: 1024 * 1024 });
     } catch {
       throw Object.assign(new Error('Repository check failed. Verify the URL, read permission and network access. SSH also requires a trusted host key on the server.'), { status: 502 });
     }

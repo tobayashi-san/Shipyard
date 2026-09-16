@@ -26,7 +26,9 @@ test('incorrect current password prevents reset before any data changes',async()
  const result=await reset('servers',{password:'wrong'});assert.equal(result.status,403);assert.equal(result.body.field,'password');assert.ok(db.servers.getById(host.id));
 });
 
-test('enabled MFA is mandatory and a current code permits the confirmed reset',async()=>{
+test('enabled MFA is mandatory and a current code permits the confirmed reset',async(t)=>{
+ // Backup verification may cross a TOTP time boundary under parallel test load.
+ t.mock.timers.enable({apis:['Date'],now:Date.now()});
  const secret='JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
  db.db.prepare('UPDATE users SET totp_enabled=1,totp_secret=? WHERE id=?').run(require('../utils/crypto').encrypt(secret),user.id);
  for(const code of [undefined,'invalid']){
@@ -34,7 +36,7 @@ test('enabled MFA is mandatory and a current code permits the confirmed reset',a
  }
  const code=otplib.generateSync({secret});
  const backupApproval=await require('./fixtures/reset-approval')({app,database:db.db,action:'servers',password,code,headers:{Authorization:`Bearer ${token}`}});
- const result=await reset('servers',{password,code,backupApproval});assert.equal(result.status,200);assert.equal(db.servers.getById(host.id),undefined);
+ const result=await reset('servers',{password,code,backupApproval});assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(db.servers.getById(host.id),undefined);
  const audit=JSON.stringify(db.db.prepare("SELECT * FROM audit_log WHERE action='reset.servers'").all());assert.equal(audit.includes(password),false);assert.equal(audit.includes(secret),false);
  db.db.prepare('UPDATE users SET totp_enabled=0 WHERE id=?').run(user.id);
 });

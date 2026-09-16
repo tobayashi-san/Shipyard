@@ -149,6 +149,7 @@ function validateGitUrl(url) {
     return { ok: false, error: `Unsupported URL scheme: ${u.protocol}` };
   }
   if (!u.hostname) return { ok: false, error: 'URL missing hostname' };
+  if (u.protocol === 'ssh:' && (u.password || !/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test((u.username || 'git')) || u.hostname.includes('%'))) return { ok: false, error: 'Invalid SSH user or hostname' };
   if (u.hostname.startsWith('-')) return { ok: false, error: 'host must not start with "-"' };
   // Reject userinfo in https URLs to prevent token leaking via getStatus()/logs
   if ((u.protocol === 'https:' || u.protocol === 'http:') && (u.username || u.password)) {

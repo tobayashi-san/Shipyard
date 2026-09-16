@@ -586,10 +586,11 @@ async function performCustomTaskCheck(server, task) {
       };
       if (process.env.GITHUB_TOKEN)
         headers["Authorization"] = `Bearer ${process.env.GITHUB_TOKEN}`;
-      const res = await fetch(
-        `https://api.github.com/repos/${task.github_repo}/releases/latest`,
-        { headers, signal: AbortSignal.timeout(15000) },
-      );
+      const parts = String(task.github_repo).split('/');
+      if (parts.length !== 2 || parts.some(part => !/^[A-Za-z0-9_.-]+$/.test(part) || part === '.' || part === '..')) throw new Error('Invalid GitHub repository');
+      const releaseUrl = new URL('https://api.github.com');
+      releaseUrl.pathname = `/repos/${parts.map(encodeURIComponent).join('/')}/releases/latest`;
+      const res = await fetch(releaseUrl, { headers, redirect: 'error', signal: AbortSignal.timeout(15000) });
       if (res.ok) {
         const data = await res.json();
         if (typeof data.tag_name !== "string" || !data.tag_name.trim()) throw new Error("Release tag missing");

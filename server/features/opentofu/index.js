@@ -1,3 +1,4 @@
+const { workspacePath, confinedPath } = require('./workspace-paths');
 const { spawn, execFileSync } = require('child_process');
 const fs   = require('fs');
 const net  = require('net');
@@ -184,14 +185,11 @@ function register({ router, db, broadcast }) {
     .map(root => root.trim())
     .filter(Boolean)
     .map(root => path.resolve(root));
-  const ALLOWED_PATH_PREFIXES = ALLOWED_PATH_ROOTS.map(root => `${root}${path.sep}`);
   const INTERNAL_VM_ROOT = path.resolve(process.env.OPENTOFU_INTERNAL_VM_ROOT || path.join(ALLOWED_PATH_ROOTS[0] || '/workspaces', 'internal', 'vms'));
   const WORKSPACE_PATH_ERROR = `Path must be under configured OpenTofu workspace roots: ${ALLOWED_PATH_ROOTS.join(', ') || '/workspaces'}`;
 
   function isAllowedPath(p) {
-    if (typeof p !== 'string' || !p.trim()) return false;
-    const resolved = path.resolve(p);
-    return ALLOWED_PATH_PREFIXES.some(prefix => resolved.startsWith(prefix));
+    try { workspacePath(p, ALLOWED_PATH_ROOTS); return true; } catch { return false; }
   }
 
   const PROVIDER_CONFIGS = {
@@ -1200,46 +1198,6 @@ override.tf.json
     catch (e) { return e; }
   }
 
-  function isDirectoryEmpty(dirPath) {
-    try {
-      return fs.readdirSync(dirPath).length === 0;
-    } catch {
-      return false;
-    }
-  }
-
-  function moveWorkspaceDirectory(fromPath, toPath) {
-    const source = path.resolve(fromPath);
-    const target = path.resolve(toPath);
-    if (source === target) return false;
-    if (!fs.existsSync(source)) return false;
-
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-
-    if (fs.existsSync(target)) {
-      const stats = fs.statSync(target);
-      if (!stats.isDirectory()) {
-        throw new Error(`Target path exists and is not a directory: ${target}`);
-      }
-      if (!isDirectoryEmpty(target)) {
-        throw new Error(`Target path already exists and is not empty: ${target}`);
-      }
-      fs.cpSync(source, target, { recursive: true, force: false, errorOnExist: true });
-      fs.rmSync(source, { recursive: true, force: true });
-      return true;
-    }
-
-    try {
-      fs.renameSync(source, target);
-      return true;
-    } catch (e) {
-      if (e.code !== 'EXDEV') throw e;
-      fs.cpSync(source, target, { recursive: true, force: false, errorOnExist: true });
-      fs.rmSync(source, { recursive: true, force: true });
-      return true;
-    }
-  }
-
   function permissionError(e, wsPath) {
     return e.code === 'EACCES'
       ? `Workspace is not writable: ${wsPath}. Restart Shipyard so the container can repair mounted workspace ownership. If the error remains, verify that the mount is not read-only and does not use root-squash.`
@@ -1247,10 +1205,10 @@ override.tf.json
   }
 
   function safePath(wsPath, relPath) {
-    const resolved = path.resolve(wsPath, relPath);
-    if (!resolved.startsWith(path.resolve(wsPath) + path.sep) &&
-        resolved !== path.resolve(wsPath)) return null;
-    return resolved;
+    try {
+      const root = workspacePath(wsPath, ALLOWED_PATH_ROOTS);
+      return confinedPath(root, path.resolve(root, relPath), true);
+    } catch { return null; }
   }
 
   function isEditableTerraformPath(relPath) {

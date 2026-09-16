@@ -98,7 +98,11 @@ test('GitHub custom update task compares the latest release to the version read 
   const originalExec = sshManager.execCommand;
   const originalFetch = global.fetch;
   sshManager.execCommand = async () => ({ code: 0, stdout: 'v1.0.0\n' });
-  global.fetch = async () => ({ ok: true, json: async () => ({ tag_name: 'v1.1.0' }) });
+  global.fetch = async (url, options) => {
+    assert.equal(url.toString(), 'https://api.github.com/repos/owner/release-app/releases/latest');
+    assert.equal(options.redirect, 'error');
+    return { ok: true, json: async () => ({ tag_name: 'v1.1.0' }) };
+  };
   try {
     await scheduler.checkCustomTask(server, task);
   } finally {
@@ -166,4 +170,19 @@ test('editing check rules clears old results and rejects late results from the p
  assert.equal(changed.has_update,0);
  db.customUpdateTasks.setCheckFailure(task.id,renamed);
  assert.equal(db.customUpdateTasks.getById(task.id).last_check_error,null);
+});
+
+
+test('GitHub release checks reject malformed persisted repositories before network access', async () => {
+  const server = db.servers.create({ name: 'invalid-repo', hostname: 'invalid-repo', ip_address: '192.0.2.94' });
+  const originalFetch = global.fetch;
+  let calls = 0;
+  global.fetch = async () => { calls++; throw new Error('Unexpected network access'); };
+  try {
+    for (const repo of ['../owner', 'owner/..', 'https://example.test/repo', 'owner/repo?redirect=elsewhere', 'owner/repo#fragment', 'owner/%2e%2e']) {
+      const task = db.customUpdateTasks.create(server.id, { name: 'Invalid', type: 'github', github_repo: repo, check_command: 'version' });
+      await assert.rejects(scheduler.checkCustomTask(server, task), /GitHub release check failed/);
+    }
+    assert.equal(calls, 0);
+  } finally { global.fetch = originalFetch; }
 });

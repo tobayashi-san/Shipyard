@@ -38,7 +38,7 @@ test('impossible schedules are rejected before persistence or registration, incl
  const before=count(); const tasks=cron.getTasks().size;
  const payload={name:'Calendar validation',playbook:'never-run.yml',targets:'all',cronExpression:'0 3 30 2 *'};
  const create=await request(app).post('/schedules').send(payload);
- assert.equal(create.status,400); assert.match(create.body.error,/calendar combination/i);
+ assert.equal(create.status,400); assert.match(create.body.error,/valid cron expression/i);
  assert.equal(count(),before); assert.equal(cron.getTasks().size,tasks);
  const id=db.schedules.create('Original','never-run.yml','all','0 3 * * *');
  db.schedules.update(id,{enabled:0});

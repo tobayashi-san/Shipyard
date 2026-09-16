@@ -25,7 +25,7 @@ test('minute schedules stay chronological and impossible dates fail without task
  const runs=previewSchedule('* * * * *','UTC',new Date('2026-01-01T12:00:20Z')).runs;
  assert.deepEqual(runs,['2026-01-01T12:01:00.000Z','2026-01-01T12:02:00.000Z','2026-01-01T12:03:00.000Z']);
  const before=cron.getTasks().size;
- assert.throws(()=>previewSchedule('0 0 30 2 *','UTC',new Date('2026-01-01')),/13 years/);
+ assert.throws(()=>previewSchedule('0 0 30 2 *','UTC',new Date('2026-01-01')),/valid five-field cron expression/);
  assert.equal(cron.getTasks().size,before);
 });
 
@@ -34,6 +34,6 @@ test('execution validation accepts sparse leap days and existing six-field cron 
  const before=cron.getTasks().size;
  validateExecutableSchedule('0 0 29 2 *','Europe/Zurich',new Date('2026-01-01T00:00:00Z'));
  validateExecutableSchedule('30 0 3 * * *','Europe/Zurich',new Date('2026-01-01T00:00:00Z'));
- assert.throws(()=>validateExecutableSchedule('0 0 31 4 *','Europe/Zurich'),/calendar combination/);
+ assert.throws(()=>validateExecutableSchedule('0 0 31 4 *','Europe/Zurich'),/valid cron expression/);
  assert.equal(cron.getTasks().size,before);
 });

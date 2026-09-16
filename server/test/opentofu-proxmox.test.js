@@ -138,3 +138,14 @@ test('Destroy confirmation is bound to the exact deployment name', () => {
   assert.equal(_test.hasValidDestroyConfirmation('DESTROY staging', 'production'), false);
   assert.equal(_test.hasValidDestroyConfirmation('DESTROY production ', 'production'), false);
 });
+
+
+test('Proxmox resource paths cannot change the configured API origin', () => {
+  const { createProxmoxConnection, proxmoxApiUrl } = require('../features/opentofu/proxmox-client');
+  const connection = createProxmoxConnection('https://192.0.2.10:8006', 'test-token');
+  assert.equal(connection.insecure, false);
+  for (const resource of ['//other.example/nodes', 'https://other.example/nodes', '../nodes', '/nodes?next=https://other.example']) {
+    assert.equal(proxmoxApiUrl(connection, resource).origin, 'https://192.0.2.10:8006');
+  }
+  assert.throws(() => createProxmoxConnection('https://user:pass@host.test', 'token'), /embedded credentials/);
+});

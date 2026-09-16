@@ -7,6 +7,7 @@ const fs = require('fs');
 process.env.DB_PATH = path.join(os.tmpdir(), `lab_test_opentofu_${Date.now()}.db`);
 process.env.JWT_SECRET = 'test-jwt-secret-for-opentofu-core';
 process.env.NODE_ENV = 'test';
+process.env.OPENTOFU_WORKSPACE_ROOTS = os.tmpdir();
 
 const { test, after } = require('node:test');
 const assert = require('node:assert/strict');

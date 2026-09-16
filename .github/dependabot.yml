@@ -48,15 +48,26 @@ updates:
 
   - package-ecosystem: "npm"
     directory: "/frontend-next"
+    ignore:
+      # Keep API types aligned with the supported Node 24 runtime.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
     groups:
+      react-runtime-major:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+        update-types: ["major"]
       npm-frontend-minor-patch:
         patterns: ["*"]
         update-types: ["minor", "patch"]
 
   - package-ecosystem: "docker"
     directory: "/"
+    ignore:
+      # A runtime major upgrade must also update engines, native modules and CI.
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
     schedule:
       interval: "weekly"

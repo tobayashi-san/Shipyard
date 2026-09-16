@@ -3,6 +3,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { workspacePath, confinedPath } = require('./workspace-paths');
 
 // ── Tofu <-> Git workspace sync ────────────────────────────────────────────
 const GIT_WORKSPACE_DIR = path.resolve(path.join(__dirname, '..', '..', 'data', 'git-workspace'));
@@ -25,12 +26,13 @@ function tofuGitDir(workspaceName) {
   const root = path.resolve(GIT_WORKSPACE_DIR, TOFU_SUBDIR);
   const target = path.resolve(root, normalizedWorkspaceName(workspaceName));
   if (!target.startsWith(`${root}${path.sep}`)) throw new Error('Unsicherer Deployment-Name.');
-  return target;
+  return confinedPath(GIT_WORKSPACE_DIR, target);
 }
 
 // Patterns that are never synced to git regardless of workspace .gitignore
 const NEVER_SYNC = ['.tfvars', '.tfvars.json', '.auto.tfvars', '.tfstate', '.tfstate.backup'];
 function syncOneToGit(name, wsPath) {
+  wsPath = workspacePath(wsPath);
   if (!fs.existsSync(wsPath)) return;
   const destDir = tofuGitDir(name);
   fs.mkdirSync(destDir, { recursive: true });
@@ -39,21 +41,22 @@ function syncOneToGit(name, wsPath) {
       !LOCAL_ONLY_NAMES.has(f) &&
       (TOFU_GIT_FILES.has(f) || TOFU_EXTENSIONS.some(e => f.endsWith(e))) &&
       !NEVER_SYNC.some(e => f.endsWith(e)) &&
-      fs.statSync(path.join(wsPath, f)).isFile()
+      fs.statSync(confinedPath(wsPath, path.join(wsPath, f))).isFile()
     )
   );
-  for (const f of srcFiles) fs.copyFileSync(path.join(wsPath, f), path.join(destDir, f));
+  for (const f of srcFiles) fs.copyFileSync(confinedPath(wsPath, path.join(wsPath, f)), confinedPath(destDir, path.join(destDir, f)));
   // Remove from git dir what no longer exists locally
   const destFiles = fs.readdirSync(destDir).filter(f => TOFU_GIT_FILES.has(f) || TOFU_EXTENSIONS.some(e => f.endsWith(e)));
   for (const f of destFiles) if (!srcFiles.has(f)) fs.unlinkSync(path.join(destDir, f));
 }
 
 function syncOneFromGit(name, wsPath) {
+  wsPath = workspacePath(wsPath);
   const srcDir = tofuGitDir(name);
   if (!fs.existsSync(srcDir)) return;
   fs.mkdirSync(wsPath, { recursive: true });
   const files = fs.readdirSync(srcDir).filter(f => TOFU_GIT_FILES.has(f) || TOFU_EXTENSIONS.some(e => f.endsWith(e)));
-  for (const f of files) fs.copyFileSync(path.join(srcDir, f), path.join(wsPath, f));
+  for (const f of files) fs.copyFileSync(confinedPath(srcDir, path.join(srcDir, f)), confinedPath(wsPath, path.join(wsPath, f)));
 }
 
 function syncAllToGit(workspaces) {
@@ -71,8 +74,9 @@ function moveWorkspaceGitDirectory(previousName, nextName) {
   if (fs.existsSync(previous) && !fs.existsSync(next)) fs.renameSync(previous, next);
 }
 
-function ensureProviderLockIsTracked(workspacePath) {
-  const ignorePath = path.join(workspacePath, '.gitignore');
+function ensureProviderLockIsTracked(directory) {
+  const root = workspacePath(directory);
+  const ignorePath = confinedPath(root, path.join(root, '.gitignore'));
   if (!fs.existsSync(ignorePath)) return false;
   const current = fs.readFileSync(ignorePath, 'utf8');
   const next = current.replace(/^\s*\.terraform\.lock\.hcl\s*(?:\r?\n|$)/gm, '');
@@ -91,8 +95,9 @@ function isDirectoryEmpty(dirPath) {
 }
 
 function moveWorkspaceDirectory(fromPath, toPath) {
-  const source = path.resolve(fromPath);
-  const target = path.resolve(toPath);
+  const source = workspacePath(fromPath);
+  const target = workspacePath(toPath);
+  if (source.startsWith(target + path.sep) || target.startsWith(source + path.sep)) throw new Error('Workspace directories must not overlap.');
   if (source === target) return false;
   if (!fs.existsSync(source)) return false;
 
