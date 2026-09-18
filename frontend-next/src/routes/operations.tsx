@@ -364,7 +364,7 @@ export function OperationsPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Operations"
+        title="Jobs"
         description="Runs and scheduled changes."
         actions={
           <Button variant="outline" onClick={refresh} disabled={isRefreshing}>

@@ -444,12 +444,14 @@ export function SchedulesTab() {
 // ── Schedule Dialog ──────────────────────────────────────────────────────────
 
 export function ScheduleDialog({
+  initialDraft,
   editId,
   schedules,
   environmentId,
   onSaved,
   onDraftStateChange,
 }: {
+  initialDraft?: { playbook: string; targets: string; extra_vars?: Record<string, unknown>; check_mode?: boolean; forks?: number };
   editId: string | null;
   schedules: Schedule[];
   environmentId: string;
@@ -473,13 +475,13 @@ export function ScheduleDialog({
   const parsed = existing
     ? cronToSelectors(existing.cron_expression)
     : { interval: "daily", hour: 3, minute: 0, weekday: 1, monthday: 1 };
-  const parsedTargets = existing
-    ? parsePlaybookTargets(existing.targets ?? "")
+  const parsedTargets = existing || initialDraft
+    ? parsePlaybookTargets(existing?.targets ?? initialDraft?.targets ?? "")
     : { mode: "explicit" as const, included: [] as string[], excluded: [] as string[] };
 
   const [formEnvironment] = useState(environmentId);
-  const [name, setName] = useState(existing?.name ?? "");
-  const [playbook, setPlaybook] = useState(existing?.playbook ?? "");
+  const [name, setName] = useState(existing?.name ?? initialDraft?.playbook.replace(/\.ya?ml$/, "") ?? "");
+  const [playbook, setPlaybook] = useState(existing?.playbook ?? initialDraft?.playbook ?? "");
   const [allChecked, setAllChecked] = useState(parsedTargets.mode === "all");
   const [checked, setChecked] = useState<Set<string>>(() => {
     if (parsedTargets.mode === "all") return new Set(parsedTargets.excluded);
@@ -492,9 +494,9 @@ export function ScheduleDialog({
   const [monthday, setMonthday] = useState(parsed.monthday);
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [extraVars, setExtraVars] = useState(() => JSON.stringify(existing?.extra_vars || {}, null, 2));
-  const [checkMode, setCheckMode] = useState(Boolean(existing?.check_mode));
-  const [forks, setForks] = useState(existing?.forks || 5);
+  const [extraVars, setExtraVars] = useState(() => JSON.stringify(existing?.extra_vars || initialDraft?.extra_vars || {}, null, 2));
+  const [checkMode, setCheckMode] = useState(Boolean(existing?.check_mode ?? initialDraft?.check_mode));
+  const [forks, setForks] = useState(existing?.forks || initialDraft?.forks || 5);
   const [hostSearch, setHostSearch] = useState("");
   const [hostStatus, setHostStatus] = useState("");
   const [allConfirmed, setAllConfirmed] = useState(false);
@@ -834,6 +836,7 @@ export function ScheduleDialog({
             {previewCron !== effectiveCron || preview.isFetching ? <p>Calculating…</p> : preview.isError ? <p role="alert" className="text-destructive">{preview.error.message}</p> : preview.data && <><p>Scheduler timezone: {preview.data.timezone}</p><ol className="my-2 list-decimal pl-5">{preview.data.runs.map(run=><li key={run}>{new Intl.DateTimeFormat('en-GB', {timeZone:preview.data.timezone,dateStyle:'medium',timeStyle:'long'}).format(new Date(run))}</li>)}</ol><p className="text-muted-foreground">Calculated from the scheduler's current timezone. Paused schedules do not run. If a previous execution of this schedule is still active, the next occurrence is skipped, not queued. Failed runs are not automatically retried; the next regular occurrence follows the cron expression.</p></>}
             {formEnvironment === environmentId && previewCron === effectiveCron && !preview.isFetching && !preview.isError && preview.data && <ScheduleMaintenancePreview runs={preview.data.runs} targets={targetPreview.targets} hosts={srvList} environmentId={formEnvironment} />}
           </section>
+          <details className="rounded-md border p-3"><summary className="cursor-pointer text-sm font-medium">Variables and execution options</summary><div className="mt-3 space-y-3">
           <div className="space-y-1">
             <Label htmlFor="schedule-extra-vars">Extra variables <span className="font-normal text-muted-foreground">(optional JSON)</span></Label>
             <textarea id="schedule-extra-vars" className="min-h-20 w-full rounded-md border bg-background px-3 py-2 font-mono text-xs" value={extraVars} onChange={(event) => setExtraVars(event.target.value)} />
@@ -851,6 +854,7 @@ export function ScheduleDialog({
             </div>
           </div>
 
+          </div></details>
           </section>
         </div>
         <DialogFooter className="shrink-0 border-t px-5 py-3 sm:items-center">

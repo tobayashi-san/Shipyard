@@ -1,3 +1,6 @@
+import { VmFormDialog } from '@/features/deployments/VmFormDialog';
+import { useProfile, hasCap } from '@/lib/queries';
+import { OverflowMenu, OverflowItem } from '@/components/ui/overflow-menu';
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
@@ -64,6 +67,8 @@ import {
 } from "./detail-model";
 
 export function NodePage({
+  tabParameter = "tab",
+  section,
   cluster,
   node,
   onImportVm,
@@ -79,6 +84,8 @@ export function NodePage({
   auditError,
   onRetryAudit,
 }: {
+  tabParameter?: string;
+  section?: string;
   cluster: Cluster;
   node: Node;
   onImportVm: (vm: Vm) => void;
@@ -94,16 +101,19 @@ export function NodePage({
   auditError?: unknown;
   onRetryAudit?: () => void;
 }) {
+  const [createOpen, setCreateOpen] = useState(false);
+  const environmentId = useUi(state => state.environmentId);
+  const {data: profile} = useProfile();
   const vms = cluster.vms.filter((vm) => vm.node_name === node.name);
   const platformName = cluster.connections?.[0]?.name || "Proxmox";
   const availableTabs = useMemo(
     () => ["overview", "configuration", "vms", "datastores", "updates", ...(showAudit ? ["tasks"] : [])],
     [showAudit],
   );
-  const nodeTabs = useUrlTab("overview", availableTabs);
+  const nodeTabs = useUrlTab("overview", availableTabs, tabParameter);
   return (
     <div className="space-y-5">
-      <PageHeader
+      {!section && <PageHeader
         title={node.name}
         eyebrow="Compute Node"
         badge={
@@ -167,42 +177,28 @@ export function NodePage({
             </Button>
           </>
         }
-      />
-      <Tabs value={nodeTabs.value} onValueChange={nodeTabs.onValueChange} className="space-y-4">
-        <TabsList aria-label="Node sections" className="console-tabs">
+      />}
+      {!section && hasCap(profile, 'canEditDeployments') && cluster.connections?.[0]?.id && <Button onClick={() => setCreateOpen(true)}>Create VM</Button>}
+      <VmFormDialog environmentId={environmentId} connectionId={cluster.connections?.[0]?.id} initialVm={{node_name: node.name}} open={createOpen} onOpenChange={setCreateOpen} />
+      <Tabs value={section || nodeTabs.value} onValueChange={nodeTabs.onValueChange} className="space-y-4">
+        {!section && <div className="flex items-center justify-between gap-2"><TabsList aria-label="Node sections" className="console-tabs">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="configuration">
             <ServerCog className="h-4 w-4" />
-            Inventory
-          </TabsTrigger>
-          <TabsTrigger value="vms">
-            <Boxes className="h-4 w-4" />
-            Virtual machines{" "}
-            <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">
-              {vms.length}
-            </span>
-          </TabsTrigger>
-          <TabsTrigger value="datastores">
-            <HardDrive className="h-4 w-4" />
-            Datastores{" "}
-            <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">
-              {node.datastores?.length ?? 0}
-            </span>
-          </TabsTrigger>
-          <TabsTrigger value="updates">
-            <Download className="h-4 w-4" />
-            Updates{" "}
-            <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">
-              {node.update_count || 0}
-            </span>
+            Configuration
           </TabsTrigger>
           {showAudit && (
             <TabsTrigger value="tasks">
               <ClipboardList className="h-4 w-4" />
-              Tasks
+              Jobs
             </TabsTrigger>
           )}
         </TabsList>
+        <OverflowMenu title="More host sections">
+          <OverflowItem onClick={() => nodeTabs.onValueChange('vms')}>Virtual machines</OverflowItem>
+          <OverflowItem onClick={() => nodeTabs.onValueChange('updates')}>Updates</OverflowItem>
+          <OverflowItem onClick={() => nodeTabs.onValueChange('datastores')}>Advanced · Datastores</OverflowItem>
+        </OverflowMenu></div>}
         <TabsContent value="overview" className="mt-0">
           <NodeOverview
             cluster={cluster}

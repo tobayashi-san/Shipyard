@@ -20,19 +20,6 @@ export function SystemTab() {
   const { t } = useTranslation();
   return (
     <div className="space-y-4">
-      <SettingsSection icon={<Clock className="h-4 w-4" />} title="Runtime status" description="Observe scheduled collection separately from installed tools and configuration."><PollingRuntime /></SettingsSection>
-      <SettingsSection icon={<Terminal className="h-4 w-4" />} title={t('set.ansible')}>
-        <AnsibleStatus />
-      </SettingsSection>
-
-      <SettingsSection
-        icon={<Terminal className="h-4 w-4" />}
-        title={t('set.openTofu')}
-        description={t('set.openTofuHint')}
-      >
-        <OpenTofuStatus />
-      </SettingsSection>
-
       <SettingsSection
         icon={<Clock className="h-4 w-4" />}
         title={t('set.scheduler')}
@@ -48,7 +35,10 @@ export function SystemTab() {
 
 export function CollectionTab() {
   const { t } = useTranslation();
-  return <div className="space-y-4"><p className="text-sm text-muted-foreground">This installation · collection settings apply across environments.</p>
+  return <div className="space-y-4">
+      <SettingsSection title="Runtime status"><PollingRuntime /></SettingsSection>
+      <SettingsSection title="Ansible"><AnsibleStatus /></SettingsSection>
+      <SettingsSection title="OpenTofu"><OpenTofuStatus /></SettingsSection>
       <SettingsSection
         icon={<Clock className="h-4 w-4" />}
         title={t('set.polling')}

@@ -67,11 +67,11 @@ export function CommandPalette() {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (prefix) {
-        if (e.key === 's' && hasCap(profile, 'canViewServers')) navigate({ to: '/servers' });
+        if (e.key === 's' && hasCap(profile, 'canViewServers')) navigate({ to: '/infrastructure' });
         else if (e.key === 'd') navigate({ to: '/' });
         else if (e.key === 'p' && hasCap(profile, 'canViewPlaybooks')) navigate({ to: '/playbooks' });
         else if (e.key === 'n' && networksAvailable) navigate({ to: '/networks' });
-        else if (e.key === 'e' && openTofuAvailable) navigate({ to: '/deployments' });
+        else if (e.key === 'e' && openTofuAvailable) navigate({ to: '/infrastructure' });
         else if (e.key === 'i' && hasCap(profile, 'canViewInfrastructure')) navigate({ to: '/infrastructure' });
         else if (e.key === 'o' && canViewOperations) navigate({ to: '/operations' });
         else if (e.key === ',' && profile?.role === 'admin') navigate({ to: '/settings' });
@@ -178,11 +178,9 @@ export function CommandPalette() {
                 </Command.Empty>
 
                 <Command.Group heading={t('cmd.navigate')} className="text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
-                  <PaletteItem icon={<LayoutDashboard className="h-4 w-4" />} label={t('nav.dashboard')} shortcut="g d" onSelect={() => go('/')} />
-                  {hasCap(profile, 'canViewServers') && <PaletteItem icon={<Server className="h-4 w-4" />} label={t('nav.servers')} shortcut="g s" onSelect={() => go('/servers')} />}
-                  {openTofuAvailable && <PaletteItem icon={<Workflow className="h-4 w-4" />} label={t('nav.managedVirtualMachines')} shortcut="g e" onSelect={() => go('/deployments')} />}
+                  <PaletteItem icon={<LayoutDashboard className="h-4 w-4" />} label="Infrastructure" shortcut="g d" onSelect={() => go('/')} />
                   {networksAvailable && <PaletteItem icon={<Network className="h-4 w-4" />} label="Networks" shortcut="g n" onSelect={() => go('/networks')} />}
-                  {canViewOperations && <PaletteItem icon={<ClipboardList className="h-4 w-4" />} label="Operations" shortcut="g o" onSelect={() => go('/operations')} />}
+                  {canViewOperations && <PaletteItem icon={<ClipboardList className="h-4 w-4" />} label="Jobs" shortcut="g o" onSelect={() => go('/operations')} />}
                   {hasCap(profile, 'canViewPlaybooks') && <PaletteItem icon={<FileCode2 className="h-4 w-4" />} label={t('nav.playbooks')} shortcut="g p" onSelect={() => go('/playbooks')} />}
                   <PaletteItem icon={<User className="h-4 w-4" />} label={t('profile.settings')} onSelect={() => go('/profile')} />
                   {profile?.role === 'admin' && <PaletteItem icon={<Settings className="h-4 w-4" />} label={t('nav.settings')} shortcut="g ," onSelect={() => go('/settings')} />}
@@ -314,7 +312,7 @@ function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void
     {
       heading: t('cmd.shortcutsNav'),
       items: [
-        { keys: ['g', 'd'], label: t('nav.dashboard') },
+        { keys: ['g', 'd'], label: 'Infrastructure' },
         { keys: ['g', 's'], label: t('nav.servers') },
         { keys: ['g', 'p'], label: t('nav.playbooks') },
         { keys: ['g', ','], label: t('nav.settings') },

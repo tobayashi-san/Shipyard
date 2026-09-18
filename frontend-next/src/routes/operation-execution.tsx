@@ -48,7 +48,7 @@ export function OperationExecutionPage() {
   const filteredLog = filterExecutionLog(row?.output || '', logSearch, logHost);
   const visibleLog = filteredLog ? filteredLog.split('\n') : [];
   return <div className="space-y-4">
-    <Link to="/operations" className="text-sm text-primary hover:underline">{environmentId === selectedEnvironmentId ? 'Back to operations' : 'Back to current environment operations'}</Link>
+    <Link to="/operations" className="text-sm text-primary hover:underline">{environmentId === selectedEnvironmentId ? 'Back to jobs' : 'Back to current environment jobs'}</Link>
     <PageHeader title={row?.name || 'Execution details'} description={row ? `${row.source} · ${hostResults.length ? `${hostResults.length} hosts` : row.target}` : 'Inspect the selected execution and its recorded output.'} />
     <div className={environmentId !== selectedEnvironmentId ? "flex flex-wrap items-center gap-3 rounded-md border bg-card p-3 text-sm" : "flex flex-wrap items-center gap-3 text-sm text-muted-foreground"} role="status">
       <span>Execution environment: <strong>{environmentName}</strong></span>

@@ -59,54 +59,23 @@ describe("UI refactor contract", () => {
     expect(dialog).toContain("Post-deploy workflows");
   });
 
-  it("separates Operations and Infrastructure while keeping the tree infrastructure-only", () => {
+  it("keeps four fixed main destinations without duplicate inventory navigation", () => {
     const sidebar = source("components/layout/Sidebar.tsx");
-    const tree = source("components/layout/InfrastructureTree.tsx");
-    expect(sidebar).toContain('value: "operations"');
-    expect(sidebar).toContain('value: "infrastructure"');
-    expect(sidebar).toContain('workspace === "operations" ? (');
-    expect(sidebar).toContain("<InfrastructureTree onNavigate={onMobileClose} />");
-    expect(sidebar).toContain('workspace === "operations"');
-    expect(sidebar).toContain('"flex flex-col gap-1 overflow-hidden"');
-    expect(sidebar).toContain('data-testid="infrastructure-tree-scroll" className="min-h-0 flex-1 overflow-y-auto py-1"');
-    expect(sidebar.indexOf('label={t("nav.networksIpam")}')).toBeLessThan(
-      sidebar.indexOf('<InfrastructureTree onNavigate={onMobileClose} />'),
-    );
-    expect(sidebar).toContain('t("nav.managedHosts")');
-    expect(sidebar).toContain('t("nav.managedVirtualMachines")');
-    expect(sidebar).toContain('t("nav.networksIpam")');
-    expect(sidebar).not.toContain('t("nav.platforms")');
-    expect(sidebar).not.toContain('t("nav.nodes")');
-    expect(sidebar).not.toContain('t("nav.virtualMachinesContainers")');
-    expect(sidebar).not.toContain('t("nav.datastores")');
-    expect(sidebar).toContain('t("nav.administration")');
-    expect(sidebar).not.toContain('t("nav.profile")');
-    expect(sidebar).toContain('t("nav.help")');
-    expect(tree).toContain("const nodeOpen = searching || !collapsed.has(nodeKey)");
-    expect(tree).toContain("const open = searching || !collapsed.has");
-    expect(tree).toContain('to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId"');
-    expect(tree).toContain("!platformServerIds.has(server.id)");
-    expect(tree).toContain('to={vm.fleet_server_id ? "/servers/$id"');
-    expect(tree).not.toContain("{vm.fleet_server_id ? (");
-    expect(tree).toContain('aria-label={`Open VM ${vm.name || vmId}`}');
-    expect(tree).toContain('title="VM details"');
-    expect(tree).toContain("showInfrastructureVmIds");
-    expect(tree).toContain("{showVmIds && <span");
+    expect(sidebar).not.toContain('WorkspaceSwitcher');
+    expect(sidebar).not.toContain('navigationWorkspace');
+    for (const label of ['Infrastructure', 'Automations', 'Networks', 'Jobs']) expect(sidebar).toContain(`label="${label}"`);
+    expect(sidebar).not.toContain("<InfrastructureTree");
+    expect(sidebar).toContain('label="Settings"');
   });
 
-  it("uses the requested host tabs and places Files and Terminal under Access", () => {
+  it("uses three common host tabs while keeping secondary tools available", () => {
     const page = source("features/server-detail/ServerDetailPage.tsx");
-    expect(page).toContain('<TabsTrigger value="overview">');
-    expect(page).toContain('<TabsTrigger value="configuration">{t("det.tabSystem")}</TabsTrigger>');
-    expect(page).toContain('<TabsTrigger value="docker">{t("det.tabWorkloads")}</TabsTrigger>');
-    expect(page).toContain('<TabsTrigger value="updates">{t("det.tabUpdates")}</TabsTrigger>');
-    expect(page).toContain('<TabsTrigger value="history">{t("det.tabActivity")}</TabsTrigger>');
-    expect(page).toContain('<TabsTrigger value="notes">');
-    expect(page).toContain('<TabsTrigger value="access">{t("det.tabAccess")}</TabsTrigger>');
-    expect(page).toContain("<ServerFilesTab serverId={id} profile={profile} />");
-    expect(page).toContain("setTerminalOpen(true)");
-    expect(page).not.toContain('<TabsTrigger value="files">');
-    expect(page).not.toContain('<TabsTrigger value="terminal"');
+    expect(page.match(/<TabsTrigger value=/g)).toHaveLength(3);
+    expect(page).toContain('<TabsTrigger value="configuration">Configuration</TabsTrigger>');
+    expect(page).toContain('<TabsTrigger value="history">Jobs</TabsTrigger>');
+    expect(page).toContain('<OverflowMenu title="More host sections">');
+    expect(page).toContain('<ServerFilesTab serverId={id} profile={profile} />');
+    expect(page).toContain('setTerminalOpen(true)');
   });
 
   it("keeps host reachability in the page header instead of repeating it in the overview", () => {
@@ -128,7 +97,6 @@ describe("UI refactor contract", () => {
     expect(store).toContain("sidebarWidth: readSidebarWidth()");
     expect(store).toContain("infrastructureTreeCollapsed");
     expect(sidebar).toContain("onPointerDown={startResize}");
-    expect(sidebar).toContain("toggleInfrastructureTree");
     expect(sidebar).not.toContain("shipyard_recent_nav");
     expect(shell).toContain("setDensity(value)");
     expect(shell).toContain("lg:hidden\" onClick={openCommandPalette}");
@@ -222,8 +190,8 @@ describe("UI refactor contract", () => {
     expect(vm).toContain('title="VM management context could not be loaded"');
     expect(vm).toContain('title="Snapshots could not be loaded"');
     expect(vm).toContain('title="Guest audit activity could not be loaded"');
-    expect(vm).toContain('(vmTabs.value === "overview" || vmTabs.value === "snapshots")');
-    expect(vm).toContain('(vmTabs.value === "overview" || vmTabs.value === "tasks")');
+    expect(vm).toContain('(activeVmSection === "overview" || activeVmSection === "snapshots")');
+    expect(vm).toContain('(activeVmSection === "overview" || activeVmSection === "tasks")');
     expect(vm).not.toContain('Connections, declaration, and management for this virtual\n                  virtual machine.');
     const detailPanels = source("features/infrastructure/DetailPanels.tsx");
     const cluster = source("features/infrastructure/ClusterDetail.tsx");
@@ -317,7 +285,7 @@ describe("UI refactor contract", () => {
     expect(deployment).toContain("runStateUnavailable");
     expect(vmForm).toContain('title="VM templates could not be loaded"');
     expect(vmForm).toContain('title="Pre-deploy hosts could not be loaded"');
-    expect(infrastructure).toContain("inventoryQuery.isSuccess && hostsQuery.isSuccess");
+    expect(infrastructure).toContain("(inventoryQuery.isSuccess || !canAccessInfrastructure(profile))");
     expect(profile).toContain('title="Two-factor authentication status could not be loaded"');
     expect(createHost).toContain('title="Environments could not be loaded"');
     expect(locale).toContain('"managedHostReferencesFailed"');
@@ -340,14 +308,13 @@ describe("UI refactor contract", () => {
     expect(networks).toContain('tr("vlanBridge")');
     expect(networks).toContain('tr("descriptionLabel")');
     expect(sidebar.match(/<NavItem to="\/operations"/g)).toHaveLength(1);
-    expect(sidebar).toContain("shipyard.lastInfrastructureRoute");
-    expect(sidebar).toContain('path === "/servers"');
+    expect(sidebar).not.toContain("shipyard.lastInfrastructureRoute");
     expect(sidebar).not.toContain('path.startsWith("/servers")');
     expect(operations).not.toContain('| "Audit"');
     expect(operations).not.toContain('<option value="Audit">');
     expect(router).not.toContain("'Workflow' | 'Audit'");
-    expect(playbooks).toContain('to: "/settings/$tab", params: { tab: "git" }');
-    expect(playbooks).toContain("Git settings");
+    expect(playbooks).toContain('<OverflowMenu title="Advanced automation settings">');
+    expect(playbooks).toContain("<GitTab workspace />");
     expect(profile.indexOf("profile.passwordSection")).toBeLessThan(profile.indexOf("Personal appearance"));
     expect(profile).toContain("More themes");
     expect(users).toContain("flex max-h-[90vh] max-w-4xl flex-col overflow-hidden p-0");

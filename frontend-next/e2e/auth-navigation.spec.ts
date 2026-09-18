@@ -31,7 +31,7 @@ async function loginForIsolatedTest(page: Page) {
   await page.getByLabel(/username|benutzername/i).fill('e2e-admin');
   await page.getByLabel(/password|passwort/i).fill('E2e-password-2026!');
   await page.getByRole('button', { name: /sign in|anmelden/i }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/infrastructure$/);
 }
 
 async function openPlatformInventory(page: Page, name: string) {
@@ -63,7 +63,7 @@ test('onboarding is public only until the first admin exists', async ({ page }) 
 
     await page.evaluate((validToken) => localStorage.setItem('shipyard_token', validToken), token);
     await page.goto('/onboarding');
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/infrastructure$/);
     await page.evaluate(() => localStorage.removeItem('shipyard_token'));
   });
 });
@@ -92,12 +92,11 @@ test('initial setup, login and protected console navigation work end-to-end', as
     await page.getByRole('button', { name: /sign in|anmelden/i }).click();
   }
 
-  await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole('heading', { name: /operations overview|environment overview|betriebsübersicht|umgebungsübersicht|dashboard/i })).toBeVisible();
-  await expect(page.getByRole('region', { name: /current environment status/i })).toBeVisible();
+  await expect(page).toHaveURL(/\/infrastructure$/);
+  await expect(page.getByRole('heading', { name: /^Infrastructure$/ })).toBeVisible();
   if (performedSetup) {
-    await expect(page.getByRole('heading', { name: /no hosts yet/i })).toBeVisible();
-    await expect(page.getByRole('link', { name: /add host/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /No infrastructure connected yet/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /add host/i })).toBeVisible();
   }
 
   await page.goto('/servers');
@@ -107,7 +106,7 @@ test('initial setup, login and protected console navigation work end-to-end', as
   await expect(page.getByRole('heading', { name: /ip address management|ip-adressverwaltung/i })).toBeVisible();
 
   await page.goto('/operations');
-  await expect(page.getByRole('heading', { name: /operations|betrieb/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Jobs$/ })).toBeVisible();
   await page.getByLabel('Operations sections').getByRole('link', { name: 'Maintenance', exact: true }).click();
   await page.getByRole('button', { name: 'Add maintenance window', exact: true }).first().click();
   await expect(page.getByRole('dialog', { name: /schedule maintenance window/i })).toBeVisible();
@@ -126,13 +125,10 @@ test('initial setup, login and protected console navigation work end-to-end', as
   await expect(page.getByText('E2E-Proxmox-Wartung', { exact: true })).toHaveCount(0);
 
   await page.goto('/settings');
-  await expect(page.getByRole('heading', { name: /administration/i })).toBeVisible();
-  const settingsNavigation = page.getByRole('navigation', { name: 'Administration' });
-  await expect(settingsNavigation.getByRole('link', { name: 'Appearance' })).toBeVisible();
-  await expect(settingsNavigation.getByRole('link', { name: 'SSH' })).toBeVisible();
-  await expect(settingsNavigation.getByRole('link', { name: 'Playbook Git' })).toBeVisible();
-  await expect(settingsNavigation.getByRole('link', { name: 'System', exact: true })).toBeVisible();
-  await settingsNavigation.getByRole('link', { name: 'User Management' }).click();
+  await expect(page.getByRole('heading', { name: /^Settings$/ })).toBeVisible();
+  const settingsNavigation = page.getByRole('navigation', { name: 'Settings', exact: true });
+  await expect(settingsNavigation.getByRole('link')).toHaveText(['General', 'Access', 'Connections', 'Advanced']);
+  await settingsNavigation.getByRole('link', { name: 'Access', exact: true }).click();
   const userActions = page.getByRole('button', { name: 'Actions for e2e-admin' });
   await expect(userActions).toBeVisible();
   await userActions.focus();
@@ -152,37 +148,22 @@ test('initial setup, login and protected console navigation work end-to-end', as
   await expect(userActions).toBeFocused();
 });
 
-test('sidebar keeps an unknown Proxmox inventory in a loading state', async ({ page }) => {
+test('the infrastructure start page waits for inventory before showing an empty state', async ({ page }) => {
   await loginForIsolatedTest(page);
-  let releaseSummary!: () => void;
-  const summaryCanFinish = new Promise<void>((resolve) => { releaseSummary = resolve; });
-  await page.route('**/api/opentofu/infrastructure-summary?*', async (route) => {
-    await summaryCanFinish;
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ clusters: [], cached: false, refreshing: false, updated_at: new Date().toISOString() }),
-    });
+  let releaseInventory!: () => void;
+  const pending = new Promise<void>(resolve => {releaseInventory = resolve;});
+  await page.route('**/api/opentofu/infrastructure?*', async route => {
+    await pending;
+    await route.fulfill({json:{clusters:[]}});
   });
-
   await page.goto('/infrastructure');
-  const sidebar = page.locator('aside');
-  await expect(sidebar.getByRole('status').filter({ hasText: 'Infrastructure is loading' })).toBeVisible();
-  await expect(sidebar.getByText('Proxmox', { exact: true }).locator('..').getByText('0', { exact: true })).toHaveCount(0);
-  await expect(sidebar.getByText('Connect Proxmox', { exact: true })).toHaveCount(0);
-
-  releaseSummary();
-  await expect(sidebar.getByText('Connect Proxmox', { exact: true })).toBeVisible();
-  const ipamBox = await sidebar.getByRole('link', { name: 'IPAM', exact: true }).boundingBox();
-  const treeBox = await sidebar.getByTestId('infrastructure-tree-scroll').boundingBox();
-  expect(ipamBox).not.toBeNull();
-  expect(treeBox).not.toBeNull();
-  expect(ipamBox!.y).toBeLessThan(treeBox!.y);
-  expect(treeBox!.height).toBeGreaterThan(500);
-  await page.unroute('**/api/opentofu/infrastructure-summary?*');
+  await expect(page.getByRole('heading', {name:'Infrastructure', exact:true})).toBeVisible();
+  await expect(page.getByRole('heading', {name:'No infrastructure connected yet'})).toBeHidden();
+  releaseInventory();
+  await expect(page.getByRole('heading', {name:'No infrastructure connected yet'})).toBeVisible();
 });
 
-test('host details keep their originating workspace and desktop activity opens inline', async ({ page }) => {
+test('host details keep the fixed navigation and desktop activity opens inline', async ({ page }) => {
   await loginForIsolatedTest(page);
   const host = await page.evaluate(async () => {
     const token = localStorage.getItem('shipyard_token');
@@ -198,11 +179,11 @@ test('host details keep their originating workspace and desktop activity opens i
   try {
     await page.goto('/infrastructure');
     const sidebar = page.locator('aside');
-    await expect(sidebar.getByRole('button', { name: 'Infrastructure', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    await sidebar.getByRole('button').filter({ hasText: 'infrastructure-context-host' }).click();
+    await expect(sidebar.getByRole('link', { name: 'Infrastructure', exact: true })).toHaveAttribute('aria-current', 'page');
+    await page.locator('main').getByRole('link', { name: 'infrastructure-context-host', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/servers/${host.id}$`));
-    await expect(sidebar.getByRole('button', { name: 'Infrastructure', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    await expect(sidebar.getByRole('navigation', { name: 'Infrastructure', exact: true })).toBeVisible();
+    await expect(sidebar.getByRole('link', { name: 'Infrastructure', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(sidebar.getByRole('navigation', { name: 'Main navigation', exact: true })).toBeVisible();
 
     await page.route('**/api/operations?*', route => route.fulfill({
       status: 200,
@@ -432,7 +413,7 @@ test('dashboard and deployment failures are never presented as healthy empty sta
   await page.route('**/api/dashboard', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'dashboard unavailable' }) }));
   await page.route('**/api/opentofu/infrastructure?*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'infrastructure unavailable' }) }));
   await page.goto('/');
-  await expect(page.getByText('Dashboard data could not be loaded', { exact: true })).toBeVisible();
+  await expect(page.getByText('Infrastructure could not be loaded', { exact: true })).toBeVisible();
   await expect(page.getByText('Ready for operation', { exact: true })).toHaveCount(0);
   await expect(page.getByText('All desired states met', { exact: true })).toHaveCount(0);
   await page.unroute('**/api/dashboard');

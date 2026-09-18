@@ -132,7 +132,7 @@ describe("UI language consistency", () => {
     expect(violations).toEqual([]);
   });
 
-  it("keeps deployment and operations keyboard shortcuts distinct", () => {
+  it("keeps legacy inventory shortcuts separate from jobs", () => {
     const source = readFileSync(
       join(sourceRoot, "components/CommandPalette.tsx"),
       "utf8",
@@ -140,7 +140,8 @@ describe("UI language consistency", () => {
 
     expect(source).toContain("e.key === 'e' && openTofuAvailable");
     expect(source).toContain("e.key === 'o' && canViewOperations");
-    expect(source).toContain('shortcut="g e"');
+    expect(source).not.toContain('shortcut="g e"');
+    expect(source).toContain("navigate({ to: '/infrastructure' })");
     expect(source).toContain('shortcut="g o"');
   });
 });

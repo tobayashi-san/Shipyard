@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, Navigate, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
@@ -53,11 +53,13 @@ import {
 } from "@/features/infrastructure/detail-model";
 
 
-export function InfrastructureDetailPage() {
-  const { clusterId, nodeName } = useParams({ strict: false }) as {
+export function InfrastructureDetailPage({ embedded = false, clusterId: requestedCluster, nodeName: requestedNode, section }: {embedded?: boolean; clusterId?: string; nodeName?: string; section?: string} = {}) {
+  const params = useParams({ strict: false }) as {
     clusterId: string;
     nodeName?: string;
   };
+  const clusterId = requestedCluster || params.clusterId;
+  const nodeName = requestedNode || params.nodeName;
   const environmentId = useUi((state) => state.environmentId);
   const queryClient = useQueryClient();
   const { data: profile } = useProfile();
@@ -178,6 +180,8 @@ export function InfrastructureDetailPage() {
       ));
   const page = node ? (
     <NodePage
+      tabParameter={embedded ? "nodeTab" : "tab"}
+      section={section}
       cluster={cluster}
       node={node}
       onImportVm={importVm}
@@ -212,6 +216,10 @@ export function InfrastructureDetailPage() {
       onRetryAudit={() => void auditQuery.refetch()}
     />
   );
+  if (!embedded && node?.fleet_server_id && hasCap(profile, 'canViewServers')) {
+    const tab = new URLSearchParams(window.location.hash.slice(1)).get('tab');
+    return <Navigate to="/servers/$id" params={{id: String(node.fleet_server_id)}} hash={tab === "tasks" ? "tab=history" : ["datastores", "updates", "configuration"].includes(tab || "") ? `tab=node&nodeTab=${tab}` : "tab=overview"} replace />;
+  }
   return (
     <>
       {usingCachedSnapshot && (

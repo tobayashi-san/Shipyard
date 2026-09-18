@@ -15,7 +15,6 @@ export type ThemePreset =
   | 'palenight-dark';
 type TimeFormat = '24h' | '12h';
 export type UiDensity = 'comfortable' | 'compact';
-export type NavigationWorkspace = 'operations' | 'infrastructure';
 
 export interface ThemePresetDefinition {
   id: ThemePreset;
@@ -74,8 +73,6 @@ interface UiState {
   setSidebarWidth: (width: number) => void;
   infrastructureTreeCollapsed: boolean;
   toggleInfrastructureTree: () => void;
-  navigationWorkspace: NavigationWorkspace;
-  setNavigationWorkspace: (workspace: NavigationWorkspace) => void;
   showInfrastructureVmIds: boolean;
   setShowInfrastructureVmIds: (show: boolean) => void;
   density: UiDensity;
@@ -97,7 +94,6 @@ const THEME_PRESET_KEY = 'shipyard_theme_preset_next';
 const SIDEBAR_KEY = 'shipyard_sidebar_collapsed_next';
 const SIDEBAR_WIDTH_KEY = 'shipyard_sidebar_width_next';
 const TREE_COLLAPSED_KEY = 'shipyard_tree_collapsed_next';
-const NAVIGATION_WORKSPACE_KEY = 'shipyard_navigation_workspace';
 const TREE_VM_IDS_KEY = 'shipyard_tree_show_vm_ids';
 const DENSITY_KEY = 'shipyard_ui_density_next';
 const TIME_FORMAT_KEY = 'timeFormat';
@@ -151,16 +147,6 @@ function readDensity(): UiDensity {
   return 'comfortable';
 }
 
-function readNavigationWorkspace(): NavigationWorkspace {
-  try {
-    return localStorage.getItem(NAVIGATION_WORKSPACE_KEY) === 'infrastructure'
-      ? 'infrastructure'
-      : 'operations';
-  } catch {
-    return 'operations';
-  }
-}
-
 function applyDensity(density: UiDensity): void {
   if (typeof document !== 'undefined') document.documentElement.dataset.uiDensity = density;
 }
@@ -211,11 +197,6 @@ export const useUi = create<UiState>((set) => ({
     const next = !state.infrastructureTreeCollapsed;
     try { localStorage.setItem(TREE_COLLAPSED_KEY, next ? '1' : '0'); } catch { /* ignore */ }
     return { infrastructureTreeCollapsed: next };
-  }),
-  navigationWorkspace: readNavigationWorkspace(),
-  setNavigationWorkspace: (navigationWorkspace) => set(() => {
-    try { localStorage.setItem(NAVIGATION_WORKSPACE_KEY, navigationWorkspace); } catch { /* ignore */ }
-    return { navigationWorkspace };
   }),
   showInfrastructureVmIds: (() => { try { return localStorage.getItem(TREE_VM_IDS_KEY) !== '0'; } catch { return true; } })(),
   setShowInfrastructureVmIds: (show) => set(() => {

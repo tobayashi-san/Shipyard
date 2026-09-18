@@ -5,7 +5,6 @@ import { AppShell } from '@/components/layout/AppShell';
 import { InvitationPage } from '@/routes/invitation';
 import { LoginPage } from '@/routes/login';
 import { OnboardingPage } from '@/routes/onboarding';
-import { DashboardPage } from '@/routes/dashboard';
 import { getToken } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { canAccessDeployments, canAccessInfrastructure, canAccessNetworks, canAccessOperations, hasCap, useProfile, type Profile } from '@/lib/queries';
@@ -101,7 +100,7 @@ const protectedLayout = createRoute({
   ),
 });
 
-const dashboardRoute  = createRoute({ getParentRoute: () => protectedLayout, path: '/',             component: DashboardPage });
+const dashboardRoute  = createRoute({ getParentRoute: () => protectedLayout, path: '/',             component: () => <Navigate to="/infrastructure" replace /> });
 const serversRoute    = createRoute({
   getParentRoute: () => protectedLayout,
   path: '/servers',
@@ -128,7 +127,7 @@ const infrastructureRoute = createRoute({
     if (search.section === 'platforms' || search.section === 'nodes' || search.section === 'guests' || search.section === 'datastores') result.section = search.section;
     return result;
   },
-  component: () => <PermissionGate allow={canAccessInfrastructure}><LazyPage><InfrastructurePage /></LazyPage></PermissionGate>,
+  component: () => <LazyPage><InfrastructurePage /></LazyPage>,
 });
 const infrastructureDetailRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/infrastructure/$clusterId', component: () => <PermissionGate allow={canAccessInfrastructure}><LazyPage><InfrastructureDetailPage /></LazyPage></PermissionGate> });
 const infrastructureNodeRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/infrastructure/$clusterId/nodes/$nodeName', component: () => <PermissionGate allow={canAccessInfrastructure}><LazyPage><InfrastructureDetailPage /></LazyPage></PermissionGate> });

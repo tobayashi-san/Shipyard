@@ -1,10 +1,12 @@
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useUrlTab } from '@/lib/use-url-tab';
 import { isActiveRunStatus, runActionLabel, runStatusLabel, runDurationLabel, runIsolationLabel } from "@/features/deployments/run-status";
 import { driftResultLabel, parsePlanSummary as parseSummary, planSummaryLabel as summaryLabel, type PlanSummary } from "@/features/deployments/plan-summary";
 import { RunDetailsDialog } from '@/features/deployments/RunDetailsDialog';
 import { Timestamp } from '@/components/ui/timestamp';
 import { platformInventoryId } from '@/lib/platform-inventory-id';
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { Link, Navigate, useNavigate, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, CheckCircle2, History, Pencil, Play, RefreshCw, RotateCcw, Server, ShieldCheck, Trash2, TriangleAlert, Unlink } from "lucide-react";
 import { apiFetch } from "@/lib/api";
@@ -13,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { PageHeader } from "@/components/ui/page-header";
+import { PageHeader, type PageHeaderProps } from "@/components/ui/page-header";
 import { QueryErrorState } from "@/components/ui/query-error-state";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { VmFormDialog } from "@/features/deployments/VmFormDialog";
@@ -76,8 +78,19 @@ function formatDate(value?: string | null) {
   return formatDateTime(value);
 }
 
+function DefinitionHeader({embedded, ...props}: PageHeaderProps & {embedded: boolean}) {
+  if (!embedded) return <PageHeader {...props} />;
+  return <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-base font-semibold">{props.title}</h2><div className="flex flex-wrap gap-2">{props.actions}</div></div>;
+}
+
 export function DeploymentDetailPage() {
   const { id } = useParams({ strict: false }) as { id: string };
+  return <DeploymentDefinition id={id} />;
+}
+
+export function DeploymentDefinition({id, embedded = false, section}: {id: string; embedded?: boolean; section?: "overview" | "configuration" | "jobs"}) {
+  const definitionTabs = useUrlTab("overview", ["overview", "configuration", "jobs"], "definitionTab");
+  const activeSection = section || (embedded ? "configuration" : definitionTabs.value);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const profileQuery = useProfile();
@@ -165,22 +178,38 @@ export function DeploymentDetailPage() {
   const inventoryNode = live?.node_name || vm.node_name;
   const inventoryVmId = live?.vm_id || actual?.vm_id;
 
+  if (!embedded && live?.available && inventoryClusterId && inventoryNode && inventoryVmId && hasCap(profileQuery.data, 'canViewInfrastructure')) return <Navigate to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId" params={{clusterId: inventoryClusterId, nodeName: inventoryNode, vmId: String(inventoryVmId)}} hash="tab=configuration" replace />;
   return <div className="space-y-5">
     <RunDetailsDialog vmId={id} runId={selectedRunId} open={Boolean(selectedRunId)} onOpenChange={open => { if (!open) setSelectedRunId(null); }} />
-    <PageHeader title={vm.name} description={`Independent VM on ${vm.platform?.name || "Proxmox"}`} actions={<>
-      {live?.available && inventoryClusterId && inventoryNode && inventoryVmId && hasCap(profileQuery.data, "canViewInfrastructure") && <Button asChild variant="outline"><Link to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId" params={{clusterId:inventoryClusterId,nodeName:inventoryNode,vmId:String(inventoryVmId)}}>Open inventory VM</Link></Button>}
-      <Button asChild variant="outline"><Link to="/deployments"><ArrowLeft />All VM definitions</Link></Button>
+    {activeSection !== "jobs" && <DefinitionHeader embedded={embedded} title={embedded ? "Deployment definition" : vm.name} description={embedded ? undefined : vm.node_name} actions={<>
+      {!embedded && live?.available && inventoryClusterId && inventoryNode && inventoryVmId && hasCap(profileQuery.data, "canViewInfrastructure") && <Button asChild variant="outline"><Link to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId" params={{clusterId:inventoryClusterId,nodeName:inventoryNode,vmId:String(inventoryVmId)}}>Open inventory VM</Link></Button>}
+      {!embedded && <Button asChild variant="outline"><Link to="/infrastructure"><ArrowLeft />Infrastructure</Link></Button>}
       <Button variant="outline" onClick={refresh}><RefreshCw />Refresh</Button>
       <Button variant="outline" onClick={() => setEditOpen(true)} disabled={!canEdit || Boolean(activeRun) || runStateUnavailable}><Pencil />Edit</Button>
-    </>} />
+    </>} />}
+    {!embedded && <Tabs value={activeSection} onValueChange={definitionTabs.onValueChange}><TabsList className="console-tabs"><TabsTrigger value="overview">Overview</TabsTrigger><TabsTrigger value="configuration">Configuration</TabsTrigger><TabsTrigger value="jobs">Jobs</TabsTrigger></TabsList></Tabs>}
 
-    <section className="grid gap-4 lg:grid-cols-3">
+    {activeSection !== "jobs" && <section className="grid gap-4 lg:grid-cols-2">
       <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Server className="h-4 w-4" />Desired configuration</CardTitle></CardHeader><CardContent className="grid grid-cols-2 gap-3 text-sm">
         <Fact label="Node" value={vm.node_name} /><Fact label="VM ID" value={vm.vm_id || "Automatic"} /><Fact label="CPU" value={`${vm.cpu_cores} cores`} /><Fact label="Memory" value={`${vm.memory_mb} MB`} /><Fact label="Disk" value={`${vm.disk_size_gb} GB`} /><Fact label="Network" value={`${vm.bridge}${vm.vlan_id ? ` · VLAN ${vm.vlan_id}` : ""}`} /><Fact label="IPv4" value={vm.ipv4_address} />
       </CardContent></Card>
       <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><CheckCircle2 className="h-4 w-4" />Current Proxmox state</CardTitle></CardHeader><CardContent className="space-y-3 text-sm">
         {liveQuery.isError || actualQuery.isError ? <QueryErrorState compact error={liveQuery.error || actualQuery.error} title="Current Proxmox state could not be loaded" onRetry={() => void Promise.all([liveQuery.refetch(), actualQuery.refetch()])} /> : live?.available ? <><Fact label="Node / VM ID" value={`${live.node_name || vm.node_name} · ${live.vm_id || vm.vm_id || "—"}`} /><Fact label="CPU / memory" value={`${live.cpu_cores ?? "—"} cores · ${live.memory_mb ?? "—"} MB`} /><Fact label="Disk" value={live.disk_size_gb ? `${live.disk_size_gb} GB` : "Not reported"} /><Fact label="Network" value={`${live.bridge || "—"}${live.vlan_id ? ` · VLAN ${live.vlan_id}` : ""}`} /><Fact label="IP addresses" value={actual?.ip_addresses?.join(", ") || live.ipv4_address || "Not reported"} /><Fact label="Observed" value={formatDate(live.observed_at)} /></> : <p className="text-muted-foreground">{live?.reason || (liveQuery.isLoading ? "Loading live configuration…" : actualQuery.data?.actual?.reason || "No deployed resource found.")}</p>}
       </CardContent></Card>
+    </section>}
+
+    {activeSection === "configuration" && <>
+    <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Play className="h-4 w-4" />Plan and deploy</CardTitle></CardHeader><CardContent className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        <Button variant={approvedPlan ? "outline" : "default"} onClick={() => runMutation.mutate("plan")} disabled={!canPlan || Boolean(activeRun) || runStateUnavailable || runMutation.isPending}><Play />Plan changes</Button>
+        <Button onClick={() => setConfirmApply(true)} disabled={!canApply || !approvedPlan || Boolean(activeRun) || runStateUnavailable || runMutation.isPending}><CheckCircle2 />Apply reviewed plan</Button>
+        <Button variant="outline" onClick={() => runMutation.mutate("check-drift")} disabled={!canPlan || Boolean(activeRun) || runStateUnavailable || runMutation.isPending}><RefreshCw />Check drift</Button>
+      </div>
+      {activeRun && <p className="rounded-md border bg-muted/20 p-3 text-sm">{runActionLabel(activeRun.action)}: {runStatusLabel(activeRun.status)}. Editing and lifecycle actions are unavailable until this run finishes. <Button variant="link" size="sm" onClick={() => setSelectedRunId(activeRun.id)}>View active run</Button></p>}
+      {approvedPlan ? <div className="rounded-md border bg-muted/20 p-3 text-sm"><div className="flex items-center gap-2 font-medium"><ShieldCheck className="h-4 w-4 text-emerald-600" />Isolation check passed</div><p className="mt-1 text-muted-foreground">{summaryLabel(approvedPlan.plan_summary)}</p></div> : latestPlan?.plan_safe === 0 ? <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><div className="font-medium">Apply blocked by isolation check</div><p className="mt-1">{planValidationError(latestPlan) || "The plan affects resources outside this VM."}</p></div> : latestPlan?.plan_safe === 1 ? <p className="text-sm text-destructive">Apply blocked: the saved plan summary is missing or invalid. Review the run logs and create a new plan.</p> : <p className="text-sm text-muted-foreground">Create a plan. Review the result before applying changes.</p>}
+    </CardContent></Card>
+
+    <details className="space-y-4 rounded-md border p-4"><summary className="cursor-pointer font-medium">Advanced</summary>
       <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4" />Isolation & drift</CardTitle></CardHeader><CardContent className="space-y-3 text-sm">
         {stateQuery.isPending ? <p role="status" className="text-muted-foreground">Loading independent VM state…</p> : stateQuery.isError || stateQuery.data?.error ? <QueryErrorState compact error={stateQuery.error || new Error(stateQuery.data?.error)} title="Independent VM state could not be loaded" onRetry={() => void stateQuery.refetch()} /> : <><div><StatusBadge tone="success" dot>Independent state</StatusBadge><p className="mt-2 text-xs text-muted-foreground">Plans for this VM are rejected if they mutate any other resource address.</p></div>
         <Fact label="State resources" value={stateQuery.data?.resources?.length ?? "—"} />
@@ -188,17 +217,6 @@ export function DeploymentDetailPage() {
         {!liveQuery.isError && live?.available && differences.length > 0 && <ul className="list-disc space-y-1 pl-4 text-xs text-amber-700 dark:text-amber-300">{differences.map((difference) => <li key={difference}>{difference}</li>)}</ul>}
         <Fact label="Drift plan" value={runsQuery.isError ? "Run history unavailable" : runsQuery.isPending ? "Loading run history…" : driftResultLabel(runs)} /></>}
       </CardContent></Card>
-    </section>
-
-    <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Play className="h-4 w-4" />Plan and deploy</CardTitle></CardHeader><CardContent className="space-y-4">
-      <div className="flex flex-wrap gap-2">
-        <Button onClick={() => runMutation.mutate("plan")} disabled={!canPlan || Boolean(activeRun) || runStateUnavailable || runMutation.isPending}><Play />Plan changes</Button>
-        <Button onClick={() => setConfirmApply(true)} disabled={!canApply || !approvedPlan || Boolean(activeRun) || runStateUnavailable || runMutation.isPending}><CheckCircle2 />Apply reviewed plan</Button>
-        <Button variant="outline" onClick={() => runMutation.mutate("check-drift")} disabled={!canPlan || Boolean(activeRun) || runStateUnavailable || runMutation.isPending}><RefreshCw />Check drift</Button>
-      </div>
-      {activeRun && <p className="rounded-md border bg-muted/20 p-3 text-sm">{runActionLabel(activeRun.action)}: {runStatusLabel(activeRun.status)}. Editing and lifecycle actions are unavailable until this run finishes. <Button variant="link" size="sm" onClick={() => setSelectedRunId(activeRun.id)}>View active run</Button></p>}
-      {approvedPlan ? <div className="rounded-md border bg-muted/20 p-3 text-sm"><div className="flex items-center gap-2 font-medium"><ShieldCheck className="h-4 w-4 text-emerald-600" />Isolation check passed</div><p className="mt-1 text-muted-foreground">{summaryLabel(approvedPlan.plan_summary)}</p></div> : latestPlan?.plan_safe === 0 ? <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><div className="font-medium">Apply blocked by isolation check</div><p className="mt-1">{planValidationError(latestPlan) || "The plan affects resources outside this VM."}</p></div> : latestPlan?.plan_safe === 1 ? <p className="text-sm text-destructive">Apply blocked: the saved plan summary is missing or invalid. Review the run logs and create a new plan.</p> : <p className="text-sm text-muted-foreground">Create a plan. Apply is enabled only after the saved plan passes the single-VM resource-address check.</p>}
-    </CardContent></Card>
 
     <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><RotateCcw className="h-4 w-4" />OpenTofu state recovery</CardTitle></CardHeader><CardContent className="space-y-3 text-sm">
       {stateSafetyQuery.isError || stateBackupsQuery.isError ? <QueryErrorState compact error={stateSafetyQuery.error || stateBackupsQuery.error} title="State recovery information could not be loaded" onRetry={() => void Promise.all([stateSafetyQuery.refetch(), stateBackupsQuery.refetch()])} /> : <>
@@ -211,7 +229,9 @@ export function DeploymentDetailPage() {
       </>}
     </CardContent></Card>
 
-    <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><History className="h-4 w-4" />Run history</CardTitle></CardHeader><CardContent className="p-0">
+    </details>
+    </>}
+    {activeSection === "jobs" && <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><History className="h-4 w-4" />Run history</CardTitle></CardHeader><CardContent className="p-0">
       {historyQuery.isPending ? <div className="p-4 text-sm text-muted-foreground">Loading run history…</div> : historyQuery.isError ? <QueryErrorState compact error={historyQuery.error} title="VM run history could not be loaded" onRetry={() => void historyQuery.refetch()} /> : historyRuns.length === 0 ? <div className="p-4 text-sm text-muted-foreground">No runs yet.</div>  : <><div className="divide-y md:hidden">{historyRuns.map(run => <article key={run.id} className="space-y-3 p-4">
         <div className="flex items-center justify-between gap-3"><span className="font-medium">{runActionLabel(run.action)}</span><StatusBadge tone={statusTone(run.status)} dot>{runStatusLabel(run.status)}</StatusBadge></div>
         <dl className="space-y-2 text-xs"><div><dt className="text-muted-foreground">Started</dt><dd><Timestamp value={run.started_at} /></dd></div><div><dt className="text-muted-foreground">Completed</dt><dd><Timestamp value={run.completed_at} /></dd></div><div><dt className="text-muted-foreground">Duration</dt><dd>{runDurationLabel(run)}</dd></div>
@@ -222,8 +242,9 @@ export function DeploymentDetailPage() {
     </CardContent>{(historyRuns.length > 0 || historyPage > 1) && <div className="flex flex-wrap items-center justify-between gap-2 border-t p-3 text-xs text-muted-foreground">
       <span>Page {historyQuery.data?.pagination?.page || historyPage} of {historyQuery.data?.pagination?.total_pages || "—"} · {historyQuery.data?.pagination?.total ?? "—"} runs</span>
       <div className="flex gap-2"><Button variant="outline" size="sm" disabled={historyPage <= 1} onClick={() => setHistoryPosition({vmId:id,page:historyPage-1})}>Newer runs</Button><Button variant="outline" size="sm" disabled={historyQuery.isPending || historyQuery.isError || !historyQuery.data?.pagination?.has_next} onClick={() => setHistoryPosition({vmId:id,page:historyPage+1})}>Older runs</Button></div>
-    </div>}</Card>
+    </div>}</Card>}
 
+    {activeSection === "configuration" && <>
     <Card><CardHeader><CardTitle className="text-base">Deployment automation</CardTitle></CardHeader><CardContent className="space-y-4">
       <div><div className="text-sm font-medium">Before OpenTofu</div>{(vm.pre_deploy_playbooks || []).length === 0 ? <p className="mt-1 text-sm text-muted-foreground">No pre-deploy workflows configured.</p> : <div className="mt-2 space-y-2">{vm.pre_deploy_playbooks!.map((playbook, index) => <div key={playbook} className="rounded-md border p-3 text-sm"><div className="font-medium">{index + 1}. {playbook}</div><div className="mt-0.5 text-xs text-muted-foreground">Target host: {vm.pre_deploy_target_server_id}</div></div>)}</div>}</div>
       <div className="border-t pt-4"><div className="text-sm font-medium">After deployment</div>
@@ -231,11 +252,13 @@ export function DeploymentDetailPage() {
       </div>
     </CardContent></Card>
 
-    <Card className="border-destructive/30"><CardHeader><CardTitle className="text-base">Lifecycle</CardTitle></CardHeader><CardContent className="flex flex-wrap gap-2">
+    <details className="rounded-md border p-4"><summary className="cursor-pointer text-sm">More actions</summary><Card className="border-destructive/30"><CardHeader><CardTitle className="text-base">Lifecycle</CardTitle></CardHeader><CardContent className="flex flex-wrap gap-2">
       <Button variant="outline" onClick={() => setConfirmForget(true)} disabled={!canEdit || Boolean(activeRun) || runStateUnavailable}><Unlink />Stop managing</Button>
       <Button variant="destructive" onClick={() => setConfirmDestroy(true)} disabled={!canDestroy || Boolean(activeRun) || runStateUnavailable}><Trash2 />Destroy VM</Button>
     </CardContent></Card>
 
+    </details>
+    </>}
     <VmFormDialog vmId={vm.id} environmentId={vm.environment_id} connectionId={vm.connection_id} initialVm={vm} open={editOpen} onOpenChange={setEditOpen} />
     <ConfirmDialog open={confirmApply} onOpenChange={setConfirmApply} title="Apply reviewed VM plan?" description={approvedPlan ? `OpenTofu will apply only the saved, isolation-checked plan for ${vm.name}: ${summaryLabel(approvedPlan.plan_summary)}.` : "No safe reviewed plan is available."} confirmLabel="Apply plan" onConfirm={() => { setConfirmApply(false); runMutation.mutate("apply"); }} isPending={runMutation.isPending} />
     <ConfirmDialog open={confirmDestroy} onOpenChange={setConfirmDestroy} title="Destroy VM in Proxmox?" description="OpenTofu will destroy only this VM from its independent state. Other VMs cannot be part of this plan." confirmLabel="Destroy VM" variant="destructive" confirmTextValue={`DESTROY ${vm.name}`} confirmInputHelp={<>Enter <code className="font-mono">DESTROY {vm.name}</code>.</>} onConfirm={() => destroyMutation.mutate()} isPending={destroyMutation.isPending} />

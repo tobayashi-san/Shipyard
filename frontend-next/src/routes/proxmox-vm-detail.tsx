@@ -1,3 +1,4 @@
+import { DeploymentDefinition } from '@/routes/deployment-detail';
 import { guestOsLabel, bootOrderLabel } from '@/features/infrastructure/vm-display';
 import { guestMetricPercent, guestMetricExplanation } from '@/features/infrastructure/guest-metrics';
 import type { ReactNode } from 'react';
@@ -48,7 +49,7 @@ import { PageHeader, type PageHeaderProps } from "@/components/ui/page-header";
 import { QueryErrorState } from "@/components/ui/query-error-state";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { hasCap, useProfile } from "@/lib/queries";
+import { canAccessDeployments, hasCap, useProfile } from "@/lib/queries";
 import { useUi } from "@/lib/store";
 import { showToast } from "@/lib/toast";
 import { useUrlTab } from "@/lib/use-url-tab";
@@ -726,8 +727,8 @@ export function ProxmoxVmDetailPage() {
   return <VmDetailContent clusterId={clusterId} nodeName={nodeName} vmId={vmId} />;
 }
 
-export function VmDetailContent({ clusterId, nodeName, vmId, embedded = false }: {
-  clusterId: string; nodeName: string; vmId: string; embedded?: boolean;
+export function VmDetailContent({ clusterId, nodeName, vmId, embedded = false, section }: {
+  clusterId: string; nodeName: string; vmId: string; embedded?: boolean; section?: string;
 }) {
   const environmentId = useUi((state) => state.environmentId);
   const { data: profile } = useProfile();
@@ -744,6 +745,7 @@ export function VmDetailContent({ clusterId, nodeName, vmId, embedded = false }:
     [],
   );
   const vmTabs = useUrlTab("overview", availableTabs, embedded ? "vmTab" : "tab");
+  const activeVmSection = section || vmTabs.value;
   const inventory = useQuery({
     queryKey: ["opentofu", "infrastructure", environmentId],
     queryFn: () =>
@@ -781,18 +783,18 @@ export function VmDetailContent({ clusterId, nodeName, vmId, embedded = false }:
       ? `/opentofu/proxmox-connections/${encodeURIComponent(connectionId)}/vms/${encodeURIComponent(vm.node_name)}/${encodeURIComponent(String(vm.vm_id))}`
       : null;
   const auditScope = `${environmentId}:${apiRoot}`;
-  const auditOffset = vmTabs.value === "tasks" && auditPage.scope===auditScope ? auditPage.offset : 0;
+  const auditOffset = activeVmSection === "tasks" && auditPage.scope===auditScope ? auditPage.offset : 0;
   const setAuditOffset = (offset:number) => setAuditPage({scope:auditScope,offset});
   const snapshots = useQuery({
     queryKey: ["proxmox-vm-snapshots", environmentId, connectionId, nodeName, vmId],
     queryFn: () => apiFetch<SnapshotResponse>(`${apiRoot}/snapshots`, {environmentId}),
-    enabled: Boolean(apiRoot) && (vmTabs.value === "overview" || vmTabs.value === "snapshots"),
+    enabled: Boolean(apiRoot) && (activeVmSection === "overview" || activeVmSection === "snapshots"),
     staleTime: 10_000,
   });
   const context = useQuery({
     queryKey: ["proxmox-vm-context", environmentId, connectionId, nodeName, vmId],
     queryFn: () => apiFetch<VmContext>(`${apiRoot}/context`, {environmentId}),
-    enabled: Boolean(apiRoot) && vmTabs.value === "overview",
+    enabled: Boolean(apiRoot),
     staleTime: 10_000,
   });
   // The inventory already carries the authoritative adopted-host ID. Use it
@@ -811,7 +813,7 @@ export function VmDetailContent({ clusterId, nodeName, vmId, embedded = false }:
   const configuration = useQuery({
     queryKey: ["proxmox-vm-configuration", environmentId, connectionId, nodeName, vmId],
     queryFn: () => apiFetch<VmConfiguration>(`${apiRoot}/configuration`, {environmentId}),
-    enabled: Boolean(apiRoot) && (vmTabs.value === "overview" || vmTabs.value === "configuration"),
+    enabled: Boolean(apiRoot) && (activeVmSection === "overview" || activeVmSection === "configuration"),
     staleTime: 15_000,
   });
   const canEdit = hasCap(profile, "canEditServers");
@@ -825,7 +827,7 @@ export function VmDetailContent({ clusterId, nodeName, vmId, embedded = false }:
   const audit = useQuery({
     queryKey: ["audit-log", "proxmox-vm", environmentId, apiRoot, auditOffset],
     queryFn: () => apiFetch<{events:AuditEvent[];total:number}>(`${apiRoot}/audit?offset=${auditOffset}`, {environmentId}),
-    enabled: Boolean(apiRoot) && canViewAudit && (vmTabs.value === "overview" || vmTabs.value === "tasks"),
+    enabled: Boolean(apiRoot) && canViewAudit && (activeVmSection === "overview" || activeVmSection === "tasks"),
     staleTime: 15_000,
   });
   const vmEvents = audit.data?.events || [];
@@ -849,7 +851,7 @@ export function VmDetailContent({ clusterId, nodeName, vmId, embedded = false }:
   };
 
   if (!embedded && adoptedServer && linkedHost.isSuccess) {
-    return <Navigate to="/servers/$id" params={{id:String(adoptedServer.id)}} hash={`tab=vm&vmTab=${vmTabs.value}`} replace />;
+    return <Navigate to="/servers/$id" params={{id:String(adoptedServer.id)}} hash={vmTabs.value === "tasks" ? "tab=history" : vmTabs.value === "configuration" ? "tab=configuration" : vmTabs.value === "overview" ? "tab=overview" : `tab=vm&vmTab=${vmTabs.value}`} replace />;
   }
   const vmMissing = !cluster || !vm;
   if (vmMissing && (inventory.isLoading || summaryInventory.isLoading))
@@ -917,14 +919,6 @@ export function VmDetailContent({ clusterId, nodeName, vmId, embedded = false }:
             </Link>
             <span aria-hidden="true">/</span>
             <Link
-              to="/infrastructure/$clusterId"
-              params={{ clusterId }}
-              className="hover:text-foreground hover:underline"
-            >
-              {platformName}
-            </Link>
-            <span aria-hidden="true">/</span>
-            <Link
               to="/infrastructure/$clusterId/nodes/$nodeName"
               params={{ clusterId, nodeName: vm.node_name }}
               className="font-mono hover:text-foreground hover:underline"
@@ -933,6 +927,7 @@ export function VmDetailContent({ clusterId, nodeName, vmId, embedded = false }:
             </Link>
             <span aria-hidden="true">/</span>
             <span className="text-foreground">{vm.name}</span>
+            <span aria-hidden="true">/</span><span>{activeVmSection === "configuration" ? "Configuration" : activeVmSection === "tasks" ? "Jobs" : activeVmSection === "snapshots" ? "Snapshots" : "Overview"}</span>
           </>
         )}
         back={embedded ? undefined : (
@@ -1012,7 +1007,7 @@ export function VmDetailContent({ clusterId, nodeName, vmId, embedded = false }:
         title="Full inventory could not be refreshed; showing previously loaded or summary data"
         onRetry={() => void inventory.refetch()}
       />}
-      {!embedded && <VmObjectSummary
+      {!embedded && activeVmSection === "overview" && <VmObjectSummary
         managementState={context.isSuccess ? managementLabel(adoptedServer?.id, Boolean(context.data?.deployments?.length)) : context.isError ? "Management context unavailable" : "Loading management context…"}
         hostName={adoptedServer?.name}
         vm={vm}
@@ -1020,22 +1015,19 @@ export function VmDetailContent({ clusterId, nodeName, vmId, embedded = false }:
         configuration={configuration.data}
         loading={configuration.isLoading}
       />}
-      <Tabs value={vmTabs.value} onValueChange={vmTabs.onValueChange} className="space-y-4">
-        <TabsList aria-label={`${kind} sections`} className="console-tabs">
+      <Tabs value={section || vmTabs.value} onValueChange={vmTabs.onValueChange} className="space-y-4">
+        {!section && <div className="flex items-center justify-between gap-2"><TabsList aria-label={`${kind} sections`} className="console-tabs">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="configuration">
             <Server className="h-4 w-4" />
             Configuration
           </TabsTrigger>
-          <TabsTrigger value="snapshots">
-            <Camera className="h-4 w-4" />
-            Snapshots
-          </TabsTrigger>
           <TabsTrigger value="tasks">
               <ClipboardList className="h-4 w-4" />
-              Tasks
+              Jobs
           </TabsTrigger>
         </TabsList>
+        <OverflowMenu title="More VM sections"><OverflowItem onClick={() => vmTabs.onValueChange("snapshots")}>Snapshots</OverflowItem></OverflowMenu></div>}
         <TabsContent value="overview" className="mt-0 space-y-4">
           {embedded && <VmObjectSummary managementState="Managed host" vm={vm} cluster={cluster} configuration={configuration.data} loading={configuration.isLoading} />}
           {!embedded && <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,.55fr)]">
@@ -1154,15 +1146,17 @@ export function VmDetailContent({ clusterId, nodeName, vmId, embedded = false }:
             />
           )}
         </TabsContent>
-        <TabsContent value="configuration" className="mt-0">
-          <VmConfigurationOverview
+        <TabsContent value="configuration" className="mt-0 space-y-4">
+          {(canAccessDeployments(profile) ? context.data?.deployments || [] : []).filter(deployment => deployment.definition_id).map(deployment => <DeploymentDefinition key={deployment.definition_id} id={deployment.definition_id!} embedded />)}
+          {context.isError && <QueryErrorState error={context.error} title="VM definition context could not be loaded" onRetry={() => void context.refetch()} />}
+          {!(canAccessDeployments(profile) && context.data?.deployments?.some(deployment => deployment.definition_id)) && <VmConfigurationOverview
             configuration={configuration.data}
             guestType={vm.guest_type}
             loading={configuration.isLoading}
             error={configuration.error}
             onRetry={() => void configuration.refetch()}
             unavailable={!apiRoot}
-          />
+          />}
         </TabsContent>
         <TabsContent value="snapshots" className="mt-0">
           <Card>
@@ -1241,6 +1235,7 @@ export function VmDetailContent({ clusterId, nodeName, vmId, embedded = false }:
           </Card>
         </TabsContent>
           <TabsContent value="tasks" className="mt-0 space-y-4">
+            {(canAccessDeployments(profile) ? context.data?.deployments || [] : []).filter(deployment => deployment.definition_id).map(deployment => <DeploymentDefinition key={deployment.definition_id} id={deployment.definition_id!} embedded section="jobs" />)}
             {apiRoot && hasCap(profile,"canViewServers") ? <GuestTaskHistory apiRoot={apiRoot} environmentId={environmentId} /> : <Card><CardContent className="p-4 text-sm text-muted-foreground">{apiRoot ? "Viewing guest requests requires permission to view servers." : "Connect this guest to a Proxmox platform to track its requests."}</CardContent></Card>}
             {canViewAudit && (
             <Card>
