@@ -23,4 +23,24 @@ test('notification sections preserve drafts when collapsed and save explicitly',
 
 test('VM wizard and maintenance keep actions visible while their body scrolls',async({page})=>{await login(page);await page.route('**/api/opentofu/proxmox-connections?*',r=>r.fulfill({json:[{id:'design',name:'Design platform',endpoint:'https://design.example',environment_id:'default'}]}));await page.route('**/api/opentofu/proxmox-connections/design/vm-catalog*',r=>r.fulfill({json:{nodes:[{node:'pve-design'}],storages:[],bridges:[],isos:[],templates:[]}}));for(const width of [1440,390,320]){await page.setViewportSize({width,height:width===1440?900:844});await page.goto('/deployments');await page.getByRole('button',{name:'Create managed VM',exact:true}).first().click();await page.getByRole('button',{name:'Continue',exact:true}).click();if(width===1440)await page.getByRole('navigation',{name:'VM setup steps'}).getByRole('button').nth(2).click();else await page.getByRole('combobox',{name:'VM setup step'}).selectOption('2');const dialog=page.getByRole('dialog');await inViewport(page,dialog.getByRole('button',{name:'Continue',exact:true}));await dialog.locator('[data-dialog-body]').evaluate(el=>{el.scrollTop=el.scrollHeight;});await inViewport(page,dialog.getByRole('button',{name:'Continue',exact:true}));await inViewport(page,dialog.getByRole('heading',{name:'Add Proxmox VM',exact:true}));await shot(page,'vm-wizard-'+width);if(width<640){await page.getByRole('combobox',{name:'VM setup step'}).selectOption('4');await inViewport(page,dialog.getByRole('button',{name:'Save VM definition',exact:true}));expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);await shot(page,'vm-review-'+width);}await page.keyboard.press('Escape');await page.goto('/operations?section=maintenance');await page.getByRole('button',{name:'Add maintenance window',exact:true}).first().click();await inViewport(page,page.getByRole('dialog').getByRole('button',{name:'Schedule maintenance window',exact:true}));await page.getByRole('dialog').locator('[data-dialog-body]').evaluate(el=>{el.scrollTop=el.scrollHeight;});await inViewport(page,page.getByRole('dialog').getByRole('button',{name:'Cancel',exact:true}));await shot(page,'maintenance-'+width);await page.keyboard.press('Escape');}});
 
-test('quick run exposes its action immediately and schedules have a contextual header',async({page})=>{await login(page);await page.goto('/playbooks#tab=runs');await inViewport(page,page.getByRole('button',{name:'Run',exact:true}));await expect(page.getByText('Select a playbook and run it.',{exact:true})).toHaveCount(0);await shot(page,'quick-run-1440');await page.setViewportSize({width:390,height:844});await page.goto('/playbooks#tab=schedules');await expect(page.getByRole('button',{name:'New Playbook',exact:true})).toHaveCount(0);await inViewport(page,page.getByRole('button',{name:'New Schedule',exact:true}));await shot(page,'schedules-390');});
+test('quick run stays visible with a large host inventory and schedules have a contextual header', async ({page}) => {
+  await login(page);
+  const hosts = Array.from({length:40}, (_,i) => ({id:`layout-${i}`,name:`layout-host-${i}`,ip_address:`192.0.2.${i+1}`,status:'online'}));
+  await page.route('**/api/servers?*', route => route.fulfill({json:hosts}));
+  for (const height of [900, 768]) {
+    await page.setViewportSize({width:1440,height});
+    await page.goto('/playbooks#tab=runs');
+    await page.getByRole('textbox',{name:'Search hosts'}).fill('');
+    await expect(page.getByText('40 of 40 managed hosts', {exact:true})).toBeVisible();
+    await inViewport(page,page.getByRole('button',{name:'Run',exact:true}));
+    await expect(page.getByText('Select a playbook and run it.',{exact:true})).toHaveCount(0);
+    await shot(page,`quick-run-1440-${height}`);
+    await page.getByRole('textbox',{name:'Search hosts'}).fill('layout-host-39');
+    await expect(page.getByRole('checkbox',{name:/layout-host-39/})).toBeVisible();
+  }
+  await page.setViewportSize({width:390,height:844});
+  await page.goto('/playbooks#tab=schedules');
+  await expect(page.getByRole('button',{name:'New Playbook',exact:true})).toHaveCount(0);
+  await inViewport(page,page.getByRole('button',{name:'New Schedule',exact:true}));
+  await shot(page,'schedules-390');
+});

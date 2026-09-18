@@ -35,8 +35,8 @@ async function loginForIsolatedTest(page: Page) {
 }
 
 async function openPlatformInventory(page: Page, name: string) {
-  await page.goto('/deployments');
-  await page.getByRole('button', { name: 'Platform connections' }).click();
+  await page.goto('/infrastructure');
+  await page.getByRole('button', { name: 'Manage connections' }).click();
   const dialog = page.getByRole('dialog', { name: 'Platform connections' });
   await dialog.getByRole('link', { name, exact: true }).click();
 }
@@ -371,12 +371,10 @@ test('host management works without agent controls', async ({ page }) => {
     return String((await response.json()).id);
   });
   await page.goto(`/servers/${serverId}`);
-  await expect(page.getByRole('tab', { name: 'System', exact: true })).toBeVisible();
-  await expect(page.getByRole('tab', { name: 'Access', exact: true })).toBeVisible();
-  await expect(page.getByRole('tab', { name: 'Activity', exact: true })).toBeVisible();
-  await expect(page.getByRole('tab', { name: /notes/i })).toBeVisible();
-
-  await page.getByRole('tab', { name: 'Access', exact: true }).click();
+  await expect(page.getByRole('tablist', { name: 'Host sections' }).getByRole('tab')).toHaveText(['Overview', 'Configuration', 'Jobs']);
+  await page.getByRole('button', { name: 'More host sections' }).click();
+  await expect(page.getByRole('menuitem', { name: 'Notes', exact: true })).toBeVisible();
+  await page.getByRole('menuitem', { name: 'Advanced', exact: true }).click();
   await page.getByRole('button', { name: /open terminal/i }).click();
   const terminalDialog = page.getByRole('dialog', { name: /terminal/i });
   await expect(terminalDialog).toBeVisible();
@@ -545,13 +543,13 @@ test('playbook workflows expose safe secrets, explicit targets and one run flow'
   try {
     await page.goto('/playbooks');
     await expect(page.getByRole('tab', { name: 'Playbooks', exact: true })).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Runs', exact: true })).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Variables & Secrets', exact: true })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Run automation', exact: true })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Schedules', exact: true })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'History', exact: true })).toHaveCount(0);
     await expect(page.getByRole('tab', { name: 'Templates', exact: true })).toHaveCount(0);
 
-    await page.getByRole('tab', { name: 'Variables & Secrets', exact: true }).click();
+    await page.getByRole('button', { name: 'Advanced automation settings' }).click();
+    await page.getByRole('menuitem', { name: 'Variables & Secrets', exact: true }).click();
     await page.getByRole('button', { name: /add variable/i }).click();
     await page.getByLabel('Key', { exact: true }).fill(variableKey);
     await page.getByLabel('Value', { exact: true }).fill(secretValue);
@@ -583,6 +581,7 @@ test('playbook workflows expose safe secrets, explicit targets and one run flow'
     await dialog.getByRole('button', { name: 'Create', exact: true }).click();
     await expect(page.getByText(/confirm the all-(?:host|server) target/i)).toBeVisible();
     await dialog.getByLabel(/run on every host in this environment/i).check();
+    await dialog.locator('summary').filter({ hasText: 'Variables and execution options' }).click();
     await dialog.getByLabel(/extra variables/i).fill('{"release_channel":"stable"}');
     await dialog.getByRole('switch', { name: 'Dry run' }).click();
     await dialog.getByLabel('Parallel hosts').fill('1');
@@ -595,8 +594,8 @@ test('playbook workflows expose safe secrets, explicit targets and one run flow'
 
     await page.getByRole('tab', { name: 'Playbooks', exact: true }).click();
     await page.getByRole('button', { name: `Run ${filename}`, exact: true }).click();
-    await expect(page.getByRole('tab', { name: 'Runs', exact: true })).toHaveAttribute('data-state', 'active');
-    await expect(page.getByLabel('Playbook', { exact: true })).toHaveValue(filename);
+    await expect(page.getByRole('tab', { name: 'Run automation', exact: true })).toHaveAttribute('data-state', 'active');
+    await expect(page.getByLabel('1. Choose action', { exact: true })).toHaveValue(filename);
     await page.getByLabel('Filter hosts by group').selectOption({ label: groupName });
     await page.getByRole('button', { name: 'Select filtered', exact: true }).click();
     await expect(page.getByText(new RegExp(`Target preview.*1 host`))).toBeVisible();
@@ -656,7 +655,7 @@ test('a failed host task exposes its cause, duration, and full log', async ({ pa
 
   try {
     await page.goto(`/servers/${host.id}`);
-    await page.getByRole('tab', { name: 'Activity', exact: true }).click();
+    await page.getByRole('tab', { name: 'Jobs', exact: true }).click();
     await expect(page.getByText(/Duration: (?:\d+s|\d+m|—)/).first()).toBeVisible();
     const cause = page.getByText(/Cause:/).first();
     await expect(cause).toBeVisible();
@@ -801,7 +800,7 @@ test('a Shipyard host can be assigned to a folder through the resource list', as
   }, { groupId: folder.id });
 });
 
-test('the inventory tree moves a selected Shipyard host without drag and drop', async ({ page }) => {
+test('infrastructure opens host groups and moves a host without drag and drop', async ({ page }) => {
   await loginForIsolatedTest(page);
   const fixture = await page.evaluate(async () => {
     const token = localStorage.getItem('shipyard_token');
@@ -815,20 +814,20 @@ test('the inventory tree moves a selected Shipyard host without drag and drop', 
     return { folder, host };
   });
   await page.goto('/infrastructure');
-  const sidebar = page.locator('aside');
-  // A freshly created test host has no poll result yet, therefore its status
-  // is intentionally "Unbekannt". Select it by the stable action label,
-  // rather than asserting a transient online/offline label.
-  const selectHost = sidebar.getByLabel(/e2e-tree-host (select|auswählen)/i);
-  await expect(selectHost).toBeVisible();
-  await selectHost.click();
-  const move = sidebar.getByLabel(/move selected resources|ausgewählte ressourcen verschieben/i);
-  await expect(move).toBeVisible();
+  await expect(page.locator('main').getByRole('link', { name: 'e2e-tree-host', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Infrastructure actions' }).click();
+  await page.getByRole('menuitem', { name: 'Host groups and bulk actions' }).click();
+  await expect(page).toHaveURL(/\/servers$/);
+  const row = page.getByRole('row', { name: /e2e-tree-host/ });
+  await row.getByTitle('Move to folder').click();
   await Promise.all([
-    page.waitForResponse(response => response.url().includes('/api/servers/group/bulk') && response.request().method() === 'PUT'),
-    move.selectOption(fixture.folder.id),
+    page.waitForResponse(response => response.url().endsWith(`/servers/${fixture.host.id}/group`) && response.request().method() === 'PUT' && response.ok()),
+    page.getByRole('button', { name: 'E2E-Tree-Ordner', exact: true }).click(),
   ]);
-  await expect(sidebar.getByText(/^(1 host selected|1 host ausgewählt)$/i)).toHaveCount(0);
+  await page.getByTitle('Resource options').click();
+  await page.getByRole('menuitem', { name: /folder view/i }).click();
+  await expect(page.getByRole('row', { name: /e2e-tree-host/ }).getByText('E2E-Tree-Ordner', { exact: true })).toBeVisible();
+  await expect(page.getByRole('row', { name: /e2e-tree-host/ })).toBeVisible();
   await page.evaluate(async ({ folderId, hostId }) => {
     const token = localStorage.getItem('shipyard_token');
     await fetch(`/api/servers/${hostId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
@@ -1018,19 +1017,18 @@ test('an adopted VM and its host share one detail page and preserve VM tabs', as
       dialog.getByRole('button', { name: 'Adopt as host' }).click(),
     ]);
     await expect(page.getByText('VM adopted as a host.', { exact: true })).toBeVisible();
-    const inventoryTree = page.locator('aside');
-    await expect(inventoryTree.getByText('e2e-import-vm', { exact: true })).toHaveCount(1);
-    const inventoryVmLink = inventoryTree.getByRole('link').filter({ hasText: 'e2e-import-vm' });
-    await expect(inventoryVmLink).toHaveAttribute('href', /\/servers\//);
-    await expect(inventoryTree.getByRole('link', { name: 'Open VM e2e-import-vm' })).toHaveAttribute('href', /\/infrastructure\/.*\/vms\/207/);
-    const oldVmUrl = await inventoryTree.getByRole('link', {name:'Open VM e2e-import-vm'}).getAttribute('href');
+    await page.goto('/infrastructure');
+    await page.locator('main summary').filter({ hasText: 'virtual machine' }).click();
+    const inventoryVmLink = page.locator('main').getByRole('link', { name: 'e2e-import-vm', exact: true });
+    await expect(inventoryVmLink).toHaveCount(1);
+    const oldVmUrl = await inventoryVmLink.getAttribute('href');
     await inventoryVmLink.click();
-    await expect(page.getByRole('tab', {name:'System',exact:true})).toBeVisible();
-    await page.getByRole('tab', {name:'Virtual machine',exact:true}).click();
-    const vmTabs = page.getByRole('tablist', {name:'VM sections'});
+    await expect(page).toHaveURL(/\/servers\//);
+    const vmTabs = page.getByRole('tablist', {name:'Host sections'});
+    await expect(vmTabs.getByRole('tab')).toHaveText(['Overview', 'Configuration', 'Jobs']);
     await vmTabs.getByRole('tab', {name:'Configuration',exact:true}).click();
     await expect(page.getByText('Hardware & virtual machine', {exact:true})).toBeVisible();
-    await expect(page).toHaveURL(/\/servers\/[^#]+#tab=vm&vmTab=configuration$/);
+    await expect(page).toHaveURL(/\/servers\/[^#]+#tab=configuration$/);
     await page.reload();
     await expect(vmTabs.getByRole('tab',{name:'Configuration',exact:true})).toHaveAttribute('data-state','active');
     await expect(page.getByRole('heading', {level:1})).toHaveCount(1);
@@ -1040,12 +1038,12 @@ test('an adopted VM and its host share one detail page and preserve VM tabs', as
     expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     await page.screenshot({path:testInfo.outputPath('unified-host-vm-mobile.png')});
     await page.setViewportSize({width:1440,height:900});
-    await page.getByRole('tab', {name:'System',exact:true}).click();
+    await vmTabs.getByRole('tab', {name:'Overview',exact:true}).click();
     await page.goBack();
-    await expect(page.getByRole('tab',{name:'Virtual machine',exact:true})).toHaveAttribute('data-state','active');
+    await expect(vmTabs.getByRole('tab',{name:'Configuration',exact:true})).toHaveAttribute('data-state','active');
     await page.goto(`${oldVmUrl}#tab=tasks`);
-    await expect(page).toHaveURL(/\/servers\/[^#]+#tab=vm&vmTab=tasks$/);
-    await expect(vmTabs.getByRole('tab',{name:'Tasks',exact:true})).toHaveAttribute('data-state','active');
+    await expect(page).toHaveURL(/\/servers\/[^#]+#tab=history$/);
+    await expect(vmTabs.getByRole('tab',{name:'Jobs',exact:true})).toHaveAttribute('data-state','active');
     await page.goto('/servers');
     const row = page.getByRole('row', { name: /e2e-import-vm/i });
     await expect(row).toBeVisible();
@@ -1104,8 +1102,7 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
     await openPlatformInventory(page, 'E2E Hierarchy Platform');
     await expect(page.getByText('Operational status', { exact: true })).toBeVisible();
     await expect(page.getByText(/^(ready for operation|bereit für betrieb)$/i)).toBeVisible();
-    await expect(page.locator('aside').getByRole('link', { name: /E2E Hierarchy Platform/i })).toHaveAttribute('aria-current', 'page');
-    await expect(page.locator('aside').getByRole('link', { name: /hierarchy-node/i })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Infrastructure', exact: true })).toHaveAttribute('aria-current', 'page');
     await page.getByRole('tab', { name: /updates 1/i }).click();
     const platformUpdatesTable = page.locator('main table').filter({ hasText: 'hierarchy-node' });
     await expect(platformUpdatesTable).toBeVisible();
@@ -1126,10 +1123,9 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
     ]);
     fleetServerId = ((await createdFleetResponse.json()) as { id: string }).id;
     await expect(platformUpdatesTable.getByText('Ready through Shipyard', { exact: true })).toBeVisible();
-    const hierarchyTree = page.locator('aside');
-    await expect(hierarchyTree.getByText('hierarchy-node', { exact: true })).toHaveCount(1);
-    const managedNodeLink = hierarchyTree.getByRole('link').filter({ hasText: 'hierarchy-node' }).first();
-    await expect(managedNodeLink).toBeVisible();
+    await page.goto('/infrastructure');
+    const managedNodeLink = page.locator('main').getByRole('link', { name: 'hierarchy-node', exact: true });
+    await expect(managedNodeLink).toHaveCount(1);
     await managedNodeLink.click();
     await expect(page).toHaveURL(/\/servers\//);
     await expect(page.getByRole('heading', { name: 'hierarchy-node', exact: true })).toBeVisible();
@@ -1139,27 +1135,26 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
     await page.getByRole('tab', { name: /nodes 1/i }).click();
     await page.locator('main').getByRole('link', { name: 'hierarchy-node', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'hierarchy-node', exact: true })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/servers/${fleetServerId}#tab=overview$`));
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.locator('main summary').filter({ hasText: 'virtual machine' }).click();
+    await expect(page.locator('main').getByRole('link', { name: 'hierarchy-vm', exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.getByRole('tab', { name: 'Jobs', exact: true }).click();
+    await expect(page.getByRole('navigation', { name: 'Object audit pagination' })).toBeVisible();
+    await page.getByRole('button', { name: 'More host sections' }).click();
+    await page.getByRole('menuitem', { name: 'Advanced · Proxmox node', exact: true }).click();
     await expect(page.getByText('Primary datastore', { exact: true })).toBeVisible();
     await expect(page.getByText('local-zfs · hierarchy-node', { exact: true })).toBeVisible();
-    // Detail pages use the same object rows on narrow screens: no horizontal
-    // table is required just to inspect the first inventory entries.
-    await page.setViewportSize({ width: 390, height: 844 });
-    const mobilePreviewVm = page.locator('main a').filter({ hasText: 'hierarchy-vm' }).first();
-    await mobilePreviewVm.scrollIntoViewIfNeeded();
-    await expect(mobilePreviewVm).toBeVisible();
-    await expect(page.locator('main table').first()).toBeHidden();
-    await page.setViewportSize({ width: 1280, height: 900 });
-    await page.getByRole('tab', { name: 'Inventory', exact: true }).click();
-    await expect(page.getByRole('navigation', { name: 'Object audit pagination' })).toHaveCount(0);
-    await page.getByRole('tab', { name: /^Tasks/i }).click();
-    await expect(page.getByRole('navigation', { name: 'Object audit pagination' })).toBeVisible();
-    await page.getByRole('tab', { name: 'Inventory', exact: true }).click();
+    await page.getByRole('tablist', { name: 'Node sections' }).getByRole('tab', { name: 'Configuration', exact: true }).click();
     await expect(page.getByRole('navigation', { name: 'Object audit pagination' })).toHaveCount(0);
     await expect(page.getByText('E2E Xeon', { exact: true })).toBeVisible();
     await expect(page.getByText('pve-manager/8.4.1', { exact: true })).toBeVisible();
     await expect(page.getByRole('cell', { name: 'vmbr0', exact: true })).toBeVisible();
     await expect(page.locator('td', { hasText: '10.250.0.10/24' }).first()).toBeVisible();
-    await page.getByRole('tab', { name: /updates 1/i }).click();
+    await page.getByRole('button', { name: 'More host sections' }).last().click();
+    await page.getByRole('menuitem', { name: 'Updates', exact: true }).click();
     await expect(page.getByText('pve-manager', { exact: true })).toBeVisible();
     await expect(page.getByText('8.4.1', { exact: true })).toBeVisible();
     await expect(page.getByText('8.4.2', { exact: true })).toBeVisible();
@@ -1173,13 +1168,14 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
       page.waitForResponse(response => response.url().includes('/updates/refresh') && response.request().method() === 'POST' && response.status() === 202),
       page.getByRole('button', { name: 'Refresh catalog' }).click(),
     ]);
-    await page.getByRole('tab', { name: /virtual machines/i }).click();
-    await expect(page.getByRole('link', { name: 'hierarchy-vm', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'More host sections' }).last().click();
+    await page.getByRole('menuitem', { name: 'Virtual machines', exact: true }).click();
+    await expect(page.getByRole('table').getByRole('link', { name: 'hierarchy-vm', exact: true })).toBeVisible();
     const ctRow = page.getByRole('row', { name: /hierarchy-ct/i });
     await expect(ctRow).toBeVisible();
     await expect(ctRow).toContainText('CT');
     await expect(ctRow.getByRole('button', { name: 'Actions for hierarchy-ct' })).toBeVisible();
-    await page.getByRole('link', { name: 'hierarchy-vm', exact: true }).click();
+    await page.getByRole('table').getByRole('link', { name: 'hierarchy-vm', exact: true }).click();
     await expect(page).toHaveURL(/\/infrastructure\/.*\/nodes\/hierarchy-node\/vms\/208/);
     await expect(page.getByRole('heading', { name: 'hierarchy-vm', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'hierarchy-node', exact: true })).toBeVisible();
@@ -1232,7 +1228,7 @@ test('a Proxmox VM keeps configuration and tasks in distinct object tabs', async
     await page.getByRole('tab', { name: /configuration/i }).click();
     await expect(page.getByText('Hardware & virtual machine', { exact: true })).toBeVisible();
     await expect(page.getByText(/^(BIOS \/ machine|BIOS \/ Maschine)$/i)).toBeVisible();
-    await page.getByRole('tab', { name: /tasks/i }).click();
+    await page.getByRole('tab', { name: 'Jobs', exact: true }).click();
     await expect(page.getByText('No direct Proxmox actions have been recorded for this VM yet.')).toBeVisible();
   } finally {
     if (connectionId) await page.evaluate(async (id) => {
@@ -1284,6 +1280,8 @@ test('an isolated VM uses a platform source and guards Destroy with an exact phr
     await managedVmRow.getByText('pve-e2e', { exact: false }).click();
     await expect(page).toHaveURL(new RegExp(`/deployments/${vmId}$`));
     await expect(page.getByRole('heading', { name: vmName })).toBeVisible();
+    await page.getByRole('tab', { name: 'Configuration', exact: true }).click();
+    await page.locator('summary').filter({ hasText: /^More actions$/ }).click();
     await page.getByRole('button', { name: 'Destroy VM' }).click();
     const destroyDialog = page.getByRole('dialog', { name: 'Destroy VM in Proxmox?' });
     const destroyButton = destroyDialog.getByRole('button', { name: 'Destroy VM' });

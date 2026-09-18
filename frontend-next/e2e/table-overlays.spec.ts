@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('table menus overlay rows without moving the page', async ({ page }) => {
+test('table menus overlay rows without moving the page', async ({ page }, testInfo) => {
   await page.goto('/login');
   await page.evaluate(async () => {
     const body = JSON.stringify({ username: 'e2e-admin', password: 'E2e-password-2026!' });
@@ -32,23 +32,25 @@ test('table menus overlay rows without moving the page', async ({ page }) => {
     expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(844);
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
-    await page.screenshot({ path: `../test-results/table-overlay-${width}.png` });
+    await page.screenshot({ path: testInfo.outputPath(`table-overlay-${width}.png`) });
     await page.keyboard.press('Escape');
     await expect(trigger).toBeFocused();
     await main.evaluate(el => { el.scrollTop = el.scrollHeight; });
     expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(844);
     expect(await page.evaluate(() => window.scrollY)).toBe(0);
-    await page.screenshot({ path: `../test-results/table-scroll-${width}.png`, fullPage: true });
+    await page.screenshot({ path: testInfo.outputPath(`table-scroll-${width}.png`), fullPage: true });
   }
   await page.route('**/api/servers?*', route => route.fulfill({ json: [{ id: 'host-first', name: 'Managed host', ip_address: '192.0.2.1', environment_id: 'default' }] }));
   const inventory = { clusters: [{ id: 'platform', status: 'online', endpoint: 'https://example.invalid', connections: [{id:'platform',name:'Lab platform'}], nodes: [{name:'node',status:'online'}], vms: [{vm_id:101,name:'Platform VM',node_name:'node',status:'running',fleet_server_id:'host-first'}] }] };
   await page.route('**/api/opentofu/infrastructure?*', route => route.fulfill({ json: inventory }));
   await page.goto('/infrastructure');
-  const hostLink = page.locator('main').getByRole('link', {name:'Managed host',exact:true});
-  await expect(hostLink).toHaveAttribute('href','/servers/host-first');
-  await expect(page.locator('main').getByRole('link',{name:'VM details',exact:true})).toHaveAttribute('href','/infrastructure/platform/nodes/node/vms/101');
-  await expect(page.locator('#infrastructure-platform-panel')).not.toHaveAttribute('open');
-  await page.screenshot({path:'../test-results/host-first-mobile.png'});
+  const vmLink = page.locator('main').getByRole('link', {name:'Platform VM',exact:true});
+  await expect(vmLink).toBeHidden();
+  await page.locator('main summary').filter({hasText:'virtual machine'}).click();
+  await expect(vmLink).toBeVisible();
+  await expect(vmLink).toHaveAttribute('href','/infrastructure/platform/nodes/node/vms/101');
+  await expect(page.locator('main').getByRole('link',{name:'Managed host',exact:true})).toHaveCount(0);
+  await page.screenshot({path:testInfo.outputPath('host-first-mobile.png')});
   await page.goto('/settings/notifications');
   await page.locator('summary').filter({hasText:'Email (SMTP)'}).click();
   await page.getByRole('button',{name:'Help: SMTP transport',exact:true}).click();

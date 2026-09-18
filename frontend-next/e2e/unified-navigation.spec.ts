@@ -135,6 +135,7 @@ test('an adopted Proxmox node has one host page and retains advanced node functi
 });
 
 test('a host-only role can open the new home without requesting restricted platform data', async ({page}) => {
+  await page.route('**/api/servers?*', route => route.fulfill({json: []}));
   await login(page);
   await page.route('**/api/auth/profile', async route => {
     const response = await route.fetch();

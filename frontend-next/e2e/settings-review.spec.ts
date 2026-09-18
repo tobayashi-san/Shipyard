@@ -15,7 +15,7 @@ async function shot(page:Page,name:string){fs.mkdirSync(shots,{recursive:true});
 
 test('SSH manual setup stays collapsed and agent endpoints are retired',async({page})=>{
  await signIn(page);await page.goto('/settings/ssh');
- const manual=page.locator('details').filter({has:page.locator('summary').filter({hasText:'Advanced: manual SSH setup and recovery'})});
+ const manual=page.locator('details').filter({has:page.locator('summary').filter({hasText:'Advanced: manual SSH setup and recovery'})}).last();
  await expect(manual).not.toHaveAttribute('open','');
  await manual.locator('summary').first().click();await expect(manual).toHaveAttribute('open','');
  const status=await page.evaluate(async()=> (await fetch('/api/v1/agent/report',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status);
@@ -35,11 +35,11 @@ test('settings drafts, explicit SMTP modes, application data and personal naviga
 });
 
 test('settings structure retains direct routes and separates playbook Git work',async({page})=>{
- await signIn(page);await expect(page.getByRole('link',{name:'Collection'})).toBeVisible();await expect(page.getByRole('link',{name:'Danger Zone',exact:true})).toHaveCount(0);
+ await signIn(page);await expect(page.getByRole('navigation',{name:'Settings',exact:true}).getByRole('link')).toHaveText(['General','Access','Connections','Advanced']);await expect(page.getByRole('link',{name:'Danger Zone',exact:true})).toHaveCount(0);
  await page.goto('/settings/danger');await expect(page.getByRole('button',{name:'Reset hosts, schedules, accounts and user playbooks',exact:true})).toBeVisible();
  await page.route('**/api/opentofu/status',route=>route.fulfill({json:{installed:true,version:'1.12.6',binary:'/isolated/bin/tofu',installing:false}}));await page.route('**/api/opentofu/releases',route=>route.fulfill({json:{releases:['1.13.0','1.12.6','1.9.0']}}));
- await page.goto('/settings/system');await page.getByText('Advanced: version management',{exact:true}).click();await expect(page.getByRole('combobox',{name:'Available version',exact:true})).toBeVisible();await page.getByRole('combobox',{name:'Available version',exact:true}).selectOption('1.9.0');await expect(page.getByRole('button',{name:'Downgrade OpenTofu',exact:true})).toBeVisible();await page.getByRole('combobox',{name:'Available version',exact:true}).selectOption('1.12.6');await expect(page.getByRole('button',{name:'Reinstall OpenTofu',exact:true})).toBeVisible();await page.getByRole('combobox',{name:'Available version',exact:true}).selectOption('1.13.0');await expect(page.getByRole('button',{name:'Upgrade OpenTofu',exact:true})).toBeVisible();await shot(page,'system-desktop');
- await page.goto('/playbooks#tab=git');await expect(page.getByRole('tab',{name:'Git',exact:true})).toHaveAttribute('aria-selected','true');await expect(page.getByRole('link',{name:'Playbook Git settings',exact:true})).toBeVisible();
+ await page.goto('/settings/collection');await page.getByText('Advanced: version management',{exact:true}).click();await expect(page.getByRole('combobox',{name:'Available version',exact:true})).toBeVisible();await page.getByRole('combobox',{name:'Available version',exact:true}).selectOption('1.9.0');await expect(page.getByRole('button',{name:'Downgrade OpenTofu',exact:true})).toBeVisible();await page.getByRole('combobox',{name:'Available version',exact:true}).selectOption('1.12.6');await expect(page.getByRole('button',{name:'Reinstall OpenTofu',exact:true})).toBeVisible();await page.getByRole('combobox',{name:'Available version',exact:true}).selectOption('1.13.0');await expect(page.getByRole('button',{name:'Upgrade OpenTofu',exact:true})).toBeVisible();await shot(page,'system-desktop');
+ await page.goto('/playbooks#tab=git');await expect(page).toHaveURL(/#tab=git$/);await expect(page.getByRole('link',{name:'Playbook Git settings',exact:true})).toBeVisible();
  await page.goto('/settings');await expect(page.getByRole('link',{name:'Plugins',exact:true})).toHaveCount(0);
- for(const tab of ['appearance','ssh','users-roles','git','collection']){await page.goto(`/settings/${tab}`);await expect(page.getByRole('heading',{name:'Administration',exact:true})).toBeVisible();await shot(page,`${tab}-desktop`);}
+ for(const tab of ['appearance','ssh','users-roles','git','collection']){await page.goto(`/settings/${tab}`);await expect(page.getByRole('heading',{name:'Settings',exact:true})).toBeVisible();await shot(page,`${tab}-desktop`);}
 });

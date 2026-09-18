@@ -15,7 +15,7 @@ async function signIn(page: Page) {
     localStorage.setItem('shipyard_token', data.token);
   });
   await page.goto('/');
-  await expect(page.getByRole('heading', {name: 'Operations overview'})).toBeVisible();
+  await expect(page.getByRole('heading', {name: 'Infrastructure', exact: true})).toBeVisible();
 }
 async function capture(page: Page, name: string) {
   fs.mkdirSync(shots, {recursive:true});
@@ -23,7 +23,7 @@ async function capture(page: Page, name: string) {
   await page.screenshot({path:path.join(shots, `${name}.png`), fullPage:true, animations:'disabled'});
 }
 
-test('review status, desktop layout, data quality, search and recovery are understandable', async ({page}) => {
+test('infrastructure home, host layout, themes and recovery are understandable', async ({page}) => {
   await page.setViewportSize({width:1280,height:800});
   await signIn(page);
   const host = await page.evaluate(async () => {
@@ -33,23 +33,18 @@ test('review status, desktop layout, data quality, search and recovery are under
   });
   try {
     await page.goto('/');
-    const quality = page.getByRole('region',{name:'Check data quality'});
-    await expect(quality).toBeVisible();
-    await quality.getByRole('button',{name:'Inspect check details',exact:true}).click();
-    const qualityRow = quality.getByRole('row').filter({hasText:'hr01-edge-newt-admin01'}).filter({hasText:'OS packages'});
-    await expect(qualityRow.getByText('Not checked',{exact:true})).toBeVisible();
-    await expect(qualityRow.getByRole('link',{name:'Inspect updates'})).toHaveAttribute('href',new RegExp(`${host.id}#tab=updates$`));
-    const kpis=page.getByRole('region',{name:'Current environment status'});
-    const clipped = await kpis.locator('span').evaluateAll(nodes=>nodes.filter(node=>node.scrollWidth>node.clientWidth+1 && getComputedStyle(node).textOverflow==='ellipsis').map(node=>node.textContent));
-    expect(clipped).toEqual([]);
-    await capture(page,'dashboard-1280');
+    const hostEntry = page.locator('main').getByRole('link', {name:'hr01-edge-newt-admin01',exact:true});
+    await expect(hostEntry).toBeVisible();
+    await expect(hostEntry).toHaveAttribute('href', `/servers/${host.id}`);
+    await expect(page.locator('main')).toContainText('192.0.2.201');
+    await capture(page,'infrastructure-1280');
     await page.goto('/profile');
     await page.getByRole('button', {name: 'More themes'}).click();
     await page.getByRole('button', {name: 'Graphite theme, dark mode'}).click();
     await page.goto('/');
     await expect(page.locator('html')).toHaveAttribute('data-console-theme', 'graphite-dark');
-    await expect(quality).toBeVisible();
-    await capture(page,'dashboard-dark-1280');
+    await expect(hostEntry).toBeVisible();
+    await capture(page,'infrastructure-dark-1280');
     await page.goto('/profile');
     await page.getByRole('button', {name: 'More themes'}).click();
     await page.getByRole('button', {name: 'Cloud theme, light mode'}).click();
@@ -178,7 +173,8 @@ test('VM state and recovery points refresh when an apply finishes', async ({page
   else if(pathname.endsWith('/state-backups')) json={items:finished?[{name:'after-apply.tfstate.enc',created_at:'2026-09-15T20:00:00Z',size:100}]:[]};
   return route.fulfill({json});
  });
- await page.goto('/deployments/review-state');
+ await page.goto('/deployments/review-state#definitionTab=configuration');
+ await page.locator('summary').filter({hasText:/^Advanced$/}).click();
  await expect(page.getByText('No state file was found',{exact:true})).toBeVisible();
  finished=true;
  await expect(page.getByText('No state file was found',{exact:true})).toHaveCount(0,{timeout:10000});

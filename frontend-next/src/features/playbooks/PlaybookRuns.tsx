@@ -360,9 +360,6 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
       {/* Left: form */}
       <Card className="min-h-0">
         <CardContent className="space-y-4 p-4">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <Play className="h-4 w-4" /> {t("qr.title")}
-          </div>
           <div className="space-y-1">
             <Label htmlFor="quick-run-playbook">1. Choose action</Label>
             <select
@@ -422,7 +419,7 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
                 </Button>
               )}
             </div>
-            <div className="max-h-80 min-h-44 space-y-1 overflow-y-auto rounded-md border p-2">
+            <div className="max-h-48 min-h-24 space-y-1 overflow-y-auto sm:max-h-[clamp(6rem,calc(100dvh-44rem),12rem)] rounded-md border p-2">
               <label className="flex items-center gap-2 text-sm font-medium">
                 <input
                   type="checkbox"
