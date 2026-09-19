@@ -34,11 +34,13 @@ export function PlaybooksPage() {
   }[]>(() => [
     {
       value: "templates",
+      cap: "canViewPlaybooks",
       label: "Playbooks",
       icon: <FileText className="h-4 w-4" />,
     },
     {
       value: "runs",
+      cap: "canViewPlaybooks",
       label: "Run automation",
       icon: <Play className="h-4 w-4" />,
     },
@@ -58,7 +60,7 @@ export function PlaybooksPage() {
   ], [t,isAdmin]);
   const allowed = useMemo(() => tabs.filter((tb) => !tb.cap || hasCap(profile, tb.cap)), [profile, tabs]);
   const allowedValues = useMemo(() => allowed.map((item) => item.value), [allowed]);
-  const playbookTabs = useUrlTab(hasCap(profile, "canRunPlaybooks") || hasCap(profile, "canAddSchedules") ? "runs" : "templates", allowedValues);
+  const playbookTabs = useUrlTab(!hasCap(profile, "canViewPlaybooks") ? "schedules" : hasCap(profile, "canRunPlaybooks") || hasCap(profile, "canAddSchedules") ? "runs" : "templates", allowedValues);
 
   // Ensure tab is still allowed after profile changes
   useEffect(() => {
@@ -99,18 +101,18 @@ export function PlaybooksPage() {
         </div>
 
         {isAdmin && <TabsContent value="git"><GitTab workspace /></TabsContent>}
-        <TabsContent value="templates">
+        {hasCap(profile, "canViewPlaybooks") && <TabsContent value="templates">
           <TemplatesTab key={requestedFile || "library"} initialFile={requestedFile} createRequest={createContext === requestedFile ? createRequest : 0} onCreateRequestHandled={consumeCreateRequest} onRun={(filename) => { setRunPreset(filename); playbookTabs.onValueChange("runs"); }} />
-        </TabsContent>
-        <TabsContent value="runs">
+        </TabsContent>}
+        {hasCap(profile, "canViewPlaybooks") && <TabsContent value="runs">
           <RunsTab initialPlaybook={runPreset} />
-        </TabsContent>
-        <TabsContent value="vars">
+        </TabsContent>}
+        {hasCap(profile, "canViewVars") && <TabsContent value="vars">
           <VarsTab />
-        </TabsContent>
-        <TabsContent value="schedules">
+        </TabsContent>}
+        {hasCap(profile, "canViewSchedules") && <TabsContent value="schedules">
           <SchedulesTab />
-        </TabsContent>
+        </TabsContent>}
       </Tabs>
     </div>
   );

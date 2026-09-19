@@ -539,3 +539,18 @@ test('sync grouping uses the same Zurich calendar day as displayed date filters'
   assert.equal(filtered.status, 200);
   assert.deepEqual(filtered.body.items, [group]);
 });
+
+test('start page completed scope excludes active jobs and retains host permissions', async () => {
+  const ids=[];
+  try {
+    for (const [server,status] of [[visibleHost,'running'],[visibleHost,'queued'],[visibleHost,'success'],[visibleHost,'failed'],[hiddenHost,'success']]) {
+      const id=db.updateHistory.create(server.id,'start-completed-scope','operator');ids.push(id);
+      db.updateHistory.updateStatus(id,status,'result');
+    }
+    const result=await request(app).get('/api/operations?scope=completed&q=start-completed-scope&page_size=5').set({Authorization:`Bearer ${restrictedHistoryToken}`,'X-Shipyard-Environment':'default'});
+    assert.equal(result.status,200);
+    assert.equal(result.body.total,2);
+    assert.deepEqual(result.body.items.map(row=>row.status).sort(),['failed','success']);
+    assert.ok(result.body.items.every(row=>row.target===visibleHost.name));
+  } finally { for(const id of ids) db.db.prepare('DELETE FROM update_history WHERE id=?').run(id); }
+});

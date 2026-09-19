@@ -31,7 +31,7 @@ async function loginForIsolatedTest(page: Page) {
   await page.getByLabel(/username|benutzername/i).fill('e2e-admin');
   await page.getByLabel(/password|passwort/i).fill('E2e-password-2026!');
   await page.getByRole('button', { name: /sign in|anmelden/i }).click();
-  await expect(page).toHaveURL(/\/servers$/);
+  await expect(page).toHaveURL(/\/$/);
 }
 
 async function openPlatformInventory(page: Page, name: string) {
@@ -65,7 +65,7 @@ test('onboarding is public only until the first admin exists', async ({ page }) 
 
     await page.evaluate((validToken) => localStorage.setItem('shipyard_token', validToken), token);
     await page.goto('/onboarding');
-    await expect(page).toHaveURL(/\/servers$/);
+    await expect(page).toHaveURL(/\/$/);
     await page.evaluate(() => localStorage.removeItem('shipyard_token'));
   });
 });
@@ -94,11 +94,11 @@ test('initial setup, login and protected console navigation work end-to-end', as
     await page.getByRole('button', { name: /sign in|anmelden/i }).click();
   }
 
-  await expect(page).toHaveURL(/\/servers$/);
-  await expect(page.getByRole('heading', { name: /^Hosts$/ })).toBeVisible();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole('heading', { name: /^Start$/ })).toBeVisible();
   if (performedSetup) {
-    await expect(page.getByText('Add a host to get started.',{exact:true})).toBeVisible();
-    await expect(page.getByRole('button', { name: /add host/i })).toBeVisible();
+    await expect(page.getByText('Add your first host.',{exact:true})).toBeVisible();
+    await expect(page.getByRole('button', { name: /add host/i }).first()).toBeVisible();
   }
 
   await page.goto('/servers');
@@ -156,10 +156,10 @@ test('the host start page waits for hosts before showing an empty state', async 
   const pending = new Promise<void>(resolve => {release = resolve;});
   await page.route('**/api/servers?*', async route => { await pending; await route.fulfill({json:[]}); });
   await page.goto('/');
-  await expect(page.getByText('Loading hosts…',{exact:true})).toBeVisible();
-  await expect(page.getByText('Add a host to get started.',{exact:true})).toBeHidden();
+  await expect(page.getByText('Loading your overview…',{exact:true})).toBeVisible();
+  await expect(page.getByText('Add your first host.',{exact:true})).toBeHidden();
   release();
-  await expect(page.getByText('Add a host to get started.',{exact:true})).toBeVisible();
+  await expect(page.getByText('Add your first host.',{exact:true})).toBeVisible();
 });
 
 test('host details keep the fixed navigation and desktop activity opens inline', async ({ page }) => {
@@ -409,7 +409,7 @@ test('dashboard and deployment failures are never presented as healthy empty sta
   await page.route('**/api/dashboard', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'dashboard unavailable' }) }));
   await page.route('**/api/servers?*', route => route.fulfill({status:503,json:{error:'hosts unavailable'}}));
   await page.goto('/');
-  await expect(page.getByText('Data could not be loaded', { exact: true })).toBeVisible();
+  await expect(page.getByText('Hosts could not be loaded', { exact: true })).toBeVisible();
   await expect(page.getByText('Ready for operation', { exact: true })).toHaveCount(0);
   await expect(page.getByText('All desired states met', { exact: true })).toHaveCount(0);
   await page.unroute('**/api/dashboard');

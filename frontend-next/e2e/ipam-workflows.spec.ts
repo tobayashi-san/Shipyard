@@ -18,7 +18,7 @@ async function login(page: import('@playwright/test').Page) {
   await page.getByLabel(/username|benutzername/i).fill('e2e-admin');
   await page.getByLabel(/password|passwort/i).fill('E2e-password-2026!');
   await page.getByRole('button', { name: /sign in|anmelden/i }).click();
-  await expect(page).toHaveURL(/\/servers$/);
+  await expect(page).toHaveURL(/\/$/);
 }
 
 test('IPAM workflows remain usable across desktop and mobile layouts', async ({ page }) => {

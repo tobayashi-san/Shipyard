@@ -280,12 +280,14 @@ router.get('/', (req, res) => {
     active: commonFiltered.filter(row => ['running', 'queued', 'pending', 'cancelling'].includes(String(row.status).toLowerCase())).length,
     failed: commonFiltered.filter(isOpenFailure).length,
   };
-  const scope = ['active', 'failed'].includes(String(req.query.scope || ''))
+  const scope = ['active', 'failed', 'completed'].includes(String(req.query.scope || ''))
     ? String(req.query.scope)
     : 'all';
   const filtered = commonFiltered.filter(row =>
     scope === 'active'
       ? ['running', 'queued', 'pending', 'cancelling'].includes(String(row.status).toLowerCase())
+      : scope === 'completed'
+        ? !['running', 'queued', 'pending', 'cancelling'].includes(String(row.status).toLowerCase())
       : scope === 'failed'
         ? isOpenFailure(row)
         : true,

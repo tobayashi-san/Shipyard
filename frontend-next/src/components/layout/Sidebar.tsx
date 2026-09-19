@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Activity,
+  House,
   FileCode2,
   Rocket,
   GripVertical,
@@ -70,7 +71,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
   const { data: profile } = useProfile();
   const previousPath = useRef(path);
   const canViewServers = hasCap(profile, "canViewServers");
-  const canViewPlaybooks = hasCap(profile, "canViewPlaybooks");
+  const canViewPlaybooks = hasCap(profile, "canViewPlaybooks") || hasCap(profile, "canViewSchedules");
   const canManageConsole = profile?.role === "admin";
   const canViewDeployments = canAccessDeployments(profile);
   const canViewNetworks = canAccessNetworks(profile);
@@ -121,7 +122,8 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
       </div>
 
       <nav className="min-h-0 flex flex-1 flex-col gap-1 overflow-y-auto p-2" aria-label="Main navigation">
-        {canViewServers && <NavItem to="/servers" label="Hosts" icon={Server} active={path === "/" || path.startsWith("/servers")} collapsed={collapsed} onNavigate={onMobileClose} />}
+        <NavItem to="/" label="Start" icon={House} active={path === "/"} collapsed={collapsed} onNavigate={onMobileClose} />
+        {canViewServers && <NavItem to="/servers" label="Hosts" icon={Server} active={path.startsWith("/servers")} collapsed={collapsed} onNavigate={onMobileClose} />}
         {canViewDeployments && <NavItem to="/deployments" label="Deployments" icon={Rocket} active={path.startsWith("/deployments")} collapsed={collapsed} onNavigate={onMobileClose} />}
         {canViewPlaybooks && <NavItem to="/playbooks" label="Automations" icon={FileCode2} active={path === "/playbooks"} collapsed={collapsed} onNavigate={onMobileClose} />}
         {canViewNetworks && <NavItem to="/networks" label="Networks" icon={Network} active={path.startsWith("/networks")} collapsed={collapsed} onNavigate={onMobileClose} />}

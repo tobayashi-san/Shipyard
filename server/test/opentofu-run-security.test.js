@@ -314,3 +314,16 @@ test('a partial apply registers its identified VM and consumes the plan without 
   const reuse=await request(app).post('/api/opentofu/vms/partial-vm/apply').set(auth).send({plan_id:plan.id});
   assert.equal(reuse.status,409);
 });
+
+test('VM list retains a failed deployment when a newer plan succeeds', async () => {
+  const {app}=createApp();
+  const login=await request(app).post('/api/auth/login').send({username:'admin',password:'testpass12345'});
+  const auth={Authorization:`Bearer ${login.body.token}`};
+  const planned=await request(app).post('/api/opentofu/vms/partial-vm/plan').set(auth).send({});
+  await waitForRun(planned.body.dbRunId,'success');
+  const list=await request(app).get('/api/opentofu/vms?environment_id=default').set(auth);
+  assert.equal(list.status,200);
+  const vm=list.body.find(row=>row.id==='partial-vm');
+  assert.equal(vm.last_run.status,'success');
+  assert.equal(vm.deployment.status,'failed');
+});

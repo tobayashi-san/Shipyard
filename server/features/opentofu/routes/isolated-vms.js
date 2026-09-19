@@ -29,6 +29,7 @@ function publicVm(row, normalizeProxmoxVm) {
       started_at: row.last_run_started_at,
       completed_at: row.last_run_completed_at,
     } : null,
+    deployment: row.deployment_id ? { id: row.deployment_id, status: row.deployment_status, deployment_phase: row.deployment_phase } : null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -60,12 +61,16 @@ function registerIsolatedVmRoutes({
            last_run.id AS last_run_id, last_run.action AS last_run_action,
            last_run.deployment_phase AS last_run_deployment_phase, last_run.vm_provisioned AS last_run_vm_provisioned,
            last_run.status AS last_run_status, last_run.plan_summary AS last_run_plan_summary,
-           last_run.started_at AS last_run_started_at, last_run.completed_at AS last_run_completed_at
+           last_run.started_at AS last_run_started_at, last_run.completed_at AS last_run_completed_at,
+           deployment.id AS deployment_id, deployment.status AS deployment_status, deployment.deployment_phase
     FROM tofu_proxmox_vms vm
     JOIN tofu_workspaces workspace ON workspace.id = vm.workspace_id
     LEFT JOIN tofu_proxmox_connections source ON source.id = COALESCE(vm.connection_id, workspace.proxmox_connection_id)
     LEFT JOIN tofu_runs last_run ON last_run.id = (
       SELECT id FROM tofu_runs WHERE workspace_id = workspace.id ORDER BY started_at DESC, rowid DESC LIMIT 1
+    )
+    LEFT JOIN tofu_runs deployment ON deployment.id = (
+      SELECT id FROM tofu_runs WHERE workspace_id = workspace.id AND action IN ('apply', 'destroy') ORDER BY started_at DESC, rowid DESC LIMIT 1
     )
   `;
   const getVmRow = id => db.db.prepare(`${selectVm} WHERE vm.id = ? AND vm.is_isolated = 1`).get(id) || null;

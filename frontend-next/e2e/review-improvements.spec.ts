@@ -15,7 +15,7 @@ async function signIn(page: Page) {
     localStorage.setItem('shipyard_token', data.token);
   });
   await page.goto('/');
-  await expect(page.getByRole('heading', {name: 'Hosts', exact: true})).toBeVisible();
+  await expect(page.getByRole('heading', {name: 'Start', exact: true})).toBeVisible();
 }
 async function capture(page: Page, name: string) {
   fs.mkdirSync(shots, {recursive:true});
@@ -32,7 +32,7 @@ test('infrastructure home, host layout, themes and recovery are understandable',
     return response.json();
   });
   try {
-    await page.goto('/');
+    await page.goto('/servers');
     const hostEntry = page.locator('main').getByRole('link', {name:'hr01-edge-newt-admin01',exact:true});
     await expect(hostEntry).toBeVisible();
     await expect(hostEntry).toHaveAttribute('href', `/servers/${host.id}`);
@@ -41,7 +41,7 @@ test('infrastructure home, host layout, themes and recovery are understandable',
     await page.goto('/profile');
     await page.getByRole('button', {name: 'More themes'}).click();
     await page.getByRole('button', {name: 'Graphite theme, dark mode'}).click();
-    await page.goto('/');
+    await page.goto('/servers');
     await expect(page.locator('html')).toHaveAttribute('data-console-theme', 'graphite-dark');
     await expect(hostEntry).toBeVisible();
     await capture(page,'infrastructure-dark-1280');

@@ -99,16 +99,8 @@ const protectedLayout = createRoute({
   ),
 });
 
-function HomePage() {
-  const { data: profile, isPending } = useProfile();
-  if (isPending) return <div className="p-6 text-sm text-muted-foreground">Loading console…</div>;
-  const destination = hasCap(profile, 'canViewServers') ? '/servers'
-    : canAccessDeployments(profile) ? '/deployments'
-    : hasCap(profile, 'canViewPlaybooks') ? '/playbooks'
-    : canAccessNetworks(profile) ? '/networks'
-    : canAccessOperations(profile) ? '/operations' : '/profile';
-  return <Navigate to={destination} replace />;
-}
+const StartPage = lazy(() => import('@/routes/start').then(module => ({default:module.StartPage})));
+function HomePage() { return <LazyPage><StartPage /></LazyPage>; }
 
 const dashboardRoute  = createRoute({ getParentRoute: () => protectedLayout, path: '/',             component: HomePage });
 const serversRoute    = createRoute({
@@ -125,7 +117,7 @@ const serversRoute    = createRoute({
   component: () => <PermissionGate allow={profile => hasCap(profile, 'canViewServers')}><LazyPage><ServersPage /></LazyPage></PermissionGate>,
 });
 const serverDetail    = createRoute({ getParentRoute: () => protectedLayout, path: '/servers/$id',  component: () => <PermissionGate allow={profile => hasCap(profile, 'canViewServers')}><LazyPage><ServerDetailPage /></LazyPage></PermissionGate> });
-const playbooksRoute  = createRoute({ getParentRoute: () => protectedLayout, path: '/playbooks',    component: () => <PermissionGate allow={profile => hasCap(profile, 'canViewPlaybooks')}><LazyPage><PlaybooksPage /></LazyPage></PermissionGate> });
+const playbooksRoute  = createRoute({ getParentRoute: () => protectedLayout, path: '/playbooks',    component: () => <PermissionGate allow={profile => hasCap(profile, 'canViewPlaybooks') || hasCap(profile, 'canViewSchedules')}><LazyPage><PlaybooksPage /></LazyPage></PermissionGate> });
 const profileRoute    = createRoute({ getParentRoute: () => protectedLayout, path: '/profile',      component: () => <LazyPage><ProfilePage /></LazyPage> });
 const deploymentsRoute= createRoute({ getParentRoute: () => protectedLayout, path: '/deployments',  component: () => <PermissionGate allow={canAccessDeployments}><LazyPage><DeploymentsPage /></LazyPage></PermissionGate> });
 const deploymentDetailRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/deployments/$id', component: () => <PermissionGate allow={canAccessDeployments}><LazyPage><DeploymentDetailPage /></LazyPage></PermissionGate> });
@@ -137,7 +129,7 @@ const infrastructureRoute = createRoute({
     if (search.section === 'platforms' || search.section === 'nodes' || search.section === 'guests' || search.section === 'datastores') result.section = search.section;
     return result;
   },
-  component: HomePage,
+  component: () => <Navigate to="/servers" replace />,
 });
 const infrastructureDetailRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/infrastructure/$clusterId', component: () => <PermissionGate allow={canAccessInfrastructure}><LazyPage><InfrastructureDetailPage /></LazyPage></PermissionGate> });
 const infrastructureNodeRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/infrastructure/$clusterId/nodes/$nodeName', component: () => <PermissionGate allow={canAccessInfrastructure}><LazyPage><InfrastructureDetailPage /></LazyPage></PermissionGate> });

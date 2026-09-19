@@ -23,26 +23,26 @@ async function inventory(page: Page) {
   await page.route('**/api/opentofu/proxmox-connections/pve/vm-catalog*', route => route.fulfill({json:{nodes:[{name:'pve01'}], templates:[], datastores:[], bridges:[]}}));
 }
 
-test('hosts are the home page with five fixed destinations and no platform polling', async ({page}) => {
+test('start is the home page with six destinations and no platform polling', async ({page}) => {
   await login(page); await inventory(page);
   let platformRequests = 0;
   page.on('request', request => { if (/\/api\/opentofu\/infrastructure/.test(request.url())) platformRequests++; });
   await page.route('**/api/servers?*', route => route.fulfill({json:[{id:'host01',name:'app01',ip_address:'192.0.2.1',status:'online',last_seen:'2026-09-19 12:00:00'}]}));
   await page.goto('/');
-  await expect(page).toHaveURL(/\/servers$/);
-  await expect(page.locator('main').getByRole('heading',{name:'Hosts',exact:true})).toBeVisible();
-  await expect(page.locator('main').getByRole('columnheader')).toHaveText(['Name','Address','Connection','Last successful check','Group']);
-  await expect(page.locator('main').getByRole('link',{name:'app01',exact:true})).toBeVisible();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.locator('main').getByRole('heading',{name:'Start',exact:true})).toBeVisible();
+  await expect(page.locator('main').getByRole('columnheader')).toHaveCount(0);
   expect(platformRequests).toBe(0);
   for (const width of [1440,390]) {
     await page.setViewportSize({width,height:900});
     if (width < 1024) await page.getByRole('button',{name:'Open navigation',exact:true}).click();
     const nav = page.getByRole('navigation',{name:'Main navigation'});
-    for (const name of ['Hosts','Deployments','Automations','Networks','Jobs']) await expect(nav.getByRole('link',{name,exact:true})).toBeVisible();
+    for (const name of ['Start','Hosts','Deployments','Automations','Networks','Jobs']) await expect(nav.getByRole('link',{name,exact:true})).toBeVisible();
     if (width < 1024) await page.getByRole('button',{name:'Close navigation',exact:true}).last().click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     await page.screenshot({path:path.join(shots, `hosts-${width}.png`),fullPage:true,animations:'disabled'});
   }
+  await page.goto('/servers');
   await page.getByRole('button',{name:'Add host',exact:true}).click();
   await page.getByRole('button',{name:'Import from Proxmox',exact:true}).click();
   await expect(page.getByRole('dialog',{name:'Import from Proxmox'}).getByRole('button',{name:/vm-app01/})).toBeVisible();
@@ -152,9 +152,9 @@ test('a host-only role can open the new home without requesting restricted platf
   const restricted: string[] = [];
   page.on('request', request => {if (request.url().includes('/api/opentofu/')) restricted.push(request.url());});
   await page.goto('/');
-  await expect(page).toHaveURL(/\/servers$/);
-  await expect(page.getByRole('heading',{name:'Hosts',exact:true})).toBeVisible();
-  await expect(page.getByText('Add a host to get started.',{exact:true})).toBeVisible();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole('heading',{name:'Start',exact:true})).toBeVisible();
+  await expect(page.getByText('No hosts are available in your scope.',{exact:true})).toBeVisible();
   expect(restricted).toEqual([]);
 });
 

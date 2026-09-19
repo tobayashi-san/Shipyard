@@ -1,3 +1,4 @@
+import { useLocation } from '@tanstack/react-router';
 import { statusLabel } from '@/lib/history-labels';
 import { scheduleNameMismatch } from './schedule-name';
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -62,6 +63,8 @@ export function useCronLabel() {
 }
 
 export function SchedulesTab() {
+  const location = useLocation();
+  const highlightedSchedule = new URLSearchParams(location.hash.replace(/^#/, '')).get('schedule');
   const { t } = useTranslation();
   const { data: profile } = useProfile();
   const qc = useQueryClient();
@@ -157,6 +160,9 @@ export function SchedulesTab() {
     setDialogOpen(true);
   };
   const list = asArray<Schedule>(schedules);
+  useEffect(() => {
+    if (highlightedSchedule && schedules) document.getElementById(`schedule-${highlightedSchedule}`)?.scrollIntoView({block:'center'});
+  }, [highlightedSchedule, schedules]);
   const selected = list.filter((schedule) => selectedIds.has(schedule.id));
   const toggleSelected = (id: string) =>
     setSelectedIds((previous) => {
@@ -287,8 +293,10 @@ export function SchedulesTab() {
                     {list.map((s) => (
                       <tr
                         key={s.id}
+                        id={`schedule-${s.id}`}
+                        aria-current={highlightedSchedule === s.id ? "true" : undefined}
                         className={
-                          selectedIds.has(s.id) ? "bg-accent/45" : undefined
+                          selectedIds.has(s.id) || highlightedSchedule === s.id ? "bg-accent/45" : undefined
                         }
                       >
                         <td className="px-3">
