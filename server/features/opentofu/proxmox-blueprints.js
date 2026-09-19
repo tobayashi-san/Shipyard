@@ -120,7 +120,9 @@ function renderProxmoxVmHcl(vm) {
     `resource "proxmox_virtual_environment_vm" ${JSON.stringify(vm.name)} {`,
     `  name      = ${JSON.stringify(vm.name)}`,
     `  node_name = ${JSON.stringify(vm.node_name)}`,
+    '  lifecycle { prevent_destroy = true }',
   ];
+  if (vm.id) lines.push(`  description = ${JSON.stringify(`Shipyard VM ${vm.id}`)}`);
   if (vm.vm_id !== null && vm.vm_id !== undefined) lines.push(`  vm_id     = ${vm.vm_id}`);
   lines.push(
     `  started   = ${vm.started}`,

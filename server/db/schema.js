@@ -400,6 +400,10 @@ function applySchema(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_maintenance_windows_environment_time ON maintenance_windows(environment_id, starts_at, ends_at);
   `);
+  if (!db.prepare('PRAGMA table_info(ipam_subnets)').all().some(column => column.name === 'proxmox_connection_id')) {
+    db.exec("ALTER TABLE ipam_subnets ADD COLUMN proxmox_connection_id TEXT DEFAULT ''");
+  }
+
 
   for (const [column, definition] of [['resource_ids', "TEXT NOT NULL DEFAULT '[]'"], ['change_reference', "TEXT NOT NULL DEFAULT ''"], ['series_id', 'TEXT'], ['series_index', 'INTEGER'], ['series_count', 'INTEGER'], ['recurrence_frequency', 'TEXT'], ['cancelled_at', 'TEXT'], ['cancelled_by', 'TEXT'], ['cancellation_reason', 'TEXT']]) {
     if (!db.prepare('PRAGMA table_info(maintenance_windows)').all().some(row => row.name === column)) {

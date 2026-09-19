@@ -1,3 +1,4 @@
+const { verifyVmIdentity } = require('./vm-identity-safety');
 const { registerDeploymentResumeRoutes } = require('./routes/deployment-resume');
 const { completeDeployment } = require('./deployment-completion');
 const { workspacePath, confinedPath } = require('./workspace-paths');
@@ -20,6 +21,7 @@ const {
   normalizeProxmoxDiskUsage,
 } = require('./core-utils');
 const {
+  assertNonDestructivePlan,
   createStreamingRedactor,
   pruneWorkspaceRuns,
   redactTofuOutput,
@@ -782,33 +784,6 @@ override.tf.json
     }
   }
 
-  // The OpenTofu state owns the virtual machine lifecycle, while host
-  // entries remain independent inventory.  This finalizes a targeted destroy
-  // only after OpenTofu has successfully removed the VM from Proxmox.
-  function finalizeFleetProxmoxVmDestroy({ workspace, vm, logMeta = {} }) {
-    const remainingVms = getProxmoxVms(workspace.id).filter(item => item.id !== vm.id);
-    // Write the desired state first. If this fails, leave the database
-    // untouched so the operator can repair the workspace instead of silently
-    // recreating a VM on a later apply.
-    writeFleetProxmoxFiles(workspace, remainingVms);
-
-    const resourceKey = `resource:proxmox_virtual_environment_vm.${vm.name}`;
-    const finalize = db.db.transaction(() => {
-      db.db.prepare('DELETE FROM tofu_proxmox_vms WHERE id = ? AND workspace_id = ?').run(vm.id, workspace.id);
-      db.db.prepare('DELETE FROM tofu_proxmox_playbook_runs WHERE workspace_id = ? AND vm_id = ?').run(workspace.id, vm.id);
-      db.db.prepare('DELETE FROM tofu_managed_servers WHERE workspace_id = ? AND resource_key = ?').run(workspace.id, resourceKey);
-    });
-    finalize();
-    db.auditLog.write(
-      'tofu.proxmox_vm_destroy',
-      `workspace=${workspace.name} vm=${vm.name} definition_removed=true inventory_kept=true`,
-      logMeta.ip || null,
-      true,
-      logMeta.user || null
-    );
-    syncFleetWorkspace(workspace, `Destroy Shipyard Proxmox VM ${vm.name}`);
-  }
-
   async function loadProxmoxCatalog(workspace, requestedNode = '') {
     const connection = readProxmoxConnection(workspace.env_vars);
     const nodesResponse = await requestProxmoxApi(connection, '/nodes');
@@ -924,7 +899,8 @@ override.tf.json
     };
   }
 
-  async function finishHostDeployment({ workspace, binary, env, dbRunId, logMeta, emitMeta }) {
+  async function registerIdentifiedHost({ workspace, binary, env, dbRunId, logMeta, emitMeta }) {
+    await verifyVmIdentity({ workspace, vms: getProxmoxVms(workspace.id), state: await loadWorkspaceState({ binary, workspace, env }), checkConfiguration: false });
     db.db.prepare("UPDATE tofu_runs SET deployment_phase = 'register_host' WHERE id = ?").run(dbRunId);
     if (workspace.workspace_kind === 'isolated_vm') {
       const state = await loadWorkspaceState({ binary, workspace, env });
@@ -941,6 +917,11 @@ override.tf.json
         emitMeta('[Shipyard] Host registered. Waiting for its address and SSH connection.');
       }
     }
+  }
+
+  async function finishHostDeployment({ workspace, binary, env, dbRunId, logMeta, emitMeta }) {
+    await registerIdentifiedHost({ workspace, binary, env, dbRunId, logMeta, emitMeta });
+    await verifyVmIdentity({ workspace, vms: getProxmoxVms(workspace.id), state: await loadWorkspaceState({ binary, workspace, env }) });
     return completeDeployment({
       allowEmpty: getProxmoxVms(workspace.id).length === 0,
       phase: value => db.db.prepare('UPDATE tofu_runs SET deployment_phase = ? WHERE id = ?').run(value, dbRunId),
@@ -1293,7 +1274,7 @@ override.tf.json
   function deploymentCapability(req) {
     const pathname = req.path || '/';
     if (pathname === '/install') return 'canManageDeploymentPlatforms';
-    if (/^\/proxmox-connections\/[^/]+\/vm-catalog$/.test(pathname)) return 'canViewDeployments';
+    if (/^\/proxmox-connections\/[^/]+\/(?:vm-catalog|vm-id-check)$/.test(pathname)) return 'canViewDeployments';
     if (/^\/proxmox-connections(?:\/[^/]+)?$/.test(pathname) && req.method !== 'GET') return 'canManageDeploymentPlatforms';
     if (pathname === '/infrastructure' || pathname === '/infrastructure-summary') return 'canViewInfrastructure';
     if (/^\/proxmox-connections(?:\/|$)/.test(pathname)) return 'canViewInfrastructure';
@@ -1494,8 +1475,9 @@ override.tf.json
   // ── Routes: Execute ───────────────────────────────────────────────────────
 
   router.post('/workspaces/:id/run', (req, res) => {
-    const VALID_ACTIONS = ['init', 'validate', 'plan', 'drift', 'apply', 'destroy', 'destroy_vm'];
-    const { action, confirm_destroy: destroyConfirmation, vm_id: vmId, plan_id: planId } = req.body || {};
+    const VALID_ACTIONS = ['init', 'validate', 'plan', 'drift', 'apply'];
+    const { action, plan_id: planId } = req.body || {};
+    if (['destroy', 'destroy_vm'].includes(action)) return res.status(403).json({ error: 'VM deletion is disabled. Delete VMs manually in Proxmox.' });
     if (!VALID_ACTIONS.includes(action)) return res.status(400).json({ error: 'Invalid action' });
 
     const workspace = getWorkspace(req.params.id);
@@ -1543,26 +1525,6 @@ override.tf.json
       }
     }
 
-    if (action === 'destroy' && !hasValidDestroyConfirmation(destroyConfirmation, workspace.name)) {
-      return res.status(400).json({
-        error: `Destroy must be confirmed with "${destroyConfirmationPhrase(workspace.name)}".`,
-      });
-    }
-
-    let vmToDestroy = null;
-    if (action === 'destroy_vm') {
-      const row = db.db.prepare('SELECT id, name, config FROM tofu_proxmox_vms WHERE id = ? AND workspace_id = ?').get(String(vmId || ''), workspace.id);
-      if (!row) return res.status(404).json({ error: 'VM definition not found' });
-      try { vmToDestroy = { ...normalizeProxmoxVm(JSON.parse(row.config)), id: row.id }; }
-      catch { return res.status(400).json({ error: 'The stored VM definition is invalid.' }); }
-      const isolatedConfirmation = workspace.workspace_kind === 'isolated_vm' && destroyConfirmation === `DESTROY ${vmToDestroy.name}`;
-      if (!isolatedConfirmation && !hasValidDestroyVmConfirmation(destroyConfirmation, workspace.name, vmToDestroy.name)) {
-        return res.status(400).json({
-          error: `VM destroy must be confirmed with "${workspace.workspace_kind === 'isolated_vm' ? `DESTROY ${vmToDestroy.name}` : destroyVmConfirmationPhrase(workspace.name, vmToDestroy.name)}".`,
-        });
-      }
-    }
-
     const binary = findBinary();
     if (!binary) return res.status(500).json({ error: 'OpenTofu/Terraform binary not found in PATH' });
 
@@ -1576,20 +1538,18 @@ override.tf.json
     // Save run to DB
     try {
       db.db.prepare('INSERT INTO tofu_runs (id, workspace_id, action, plan_path, approved_plan_id, started_by) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(dbRunId, workspace.id, action === 'destroy_vm' ? 'destroy' : action, planPath, approvedPlan?.id || null, req.user?.username || null);
+        .run(dbRunId, workspace.id, action, planPath, approvedPlan?.id || null, req.user?.username || null);
     } catch (error) {
       if (/UNIQUE constraint failed/.test(error.message)) return res.status(409).json({ error: 'An OpenTofu operation is already running for this deployment.' });
       throw error;
     }
     pruneWorkspaceRuns(db, workspace.id);
 
-    const tofuAction = action === 'destroy_vm' ? 'destroy' : action === 'drift' ? 'plan' : action;
+    const tofuAction = action === 'drift' ? 'plan' : action;
     const args = [tofuAction, '-no-color'];
     if (tofuAction === 'plan') args.push('-input=false', '-detailed-exitcode', `-out=${planPath}`);
     if (action === 'drift') args.push('-refresh-only');
     if (tofuAction === 'apply') args.push('-auto-approve', '-input=false', approvedPlan.plan_path);
-    if (tofuAction === 'destroy') args.push('-auto-approve', '-input=false');
-    if (vmToDestroy) args.push(`-target=proxmox_virtual_environment_vm.${vmToDestroy.name}`);
 
     const env = { ...process.env, ...workspace.env_vars };
     const logMeta = { ip: req.ip, user: req.user?.username };
@@ -1646,7 +1606,7 @@ override.tf.json
       }
 
       const configHash = terraformConfigurationHash(workspace.path, workspace.env_vars);
-      if (['apply', 'destroy', 'destroy_vm'].includes(action)) {
+      if (action === 'apply') {
         try {
           ensureStateSafety(workspace);
           backupLocalState(workspace, `before-${action}`);
@@ -1685,9 +1645,19 @@ override.tf.json
       };
       if (action === 'apply') {
         try {
+          const planBytes = fs.readFileSync(approvedPlan.plan_path);
+          const actualPlan = JSON.parse(execFileSync(binary, ['show', '-json', approvedPlan.plan_path], { cwd: workspace.path, env, timeout: 30_000, maxBuffer: 32 * 1024 * 1024 }).toString());
+          assertNonDestructivePlan(actualPlan);
+          if (workspace.workspace_kind === 'isolated_vm') {
+            const validation = validateIsolatedVmPlan(actualPlan, getProxmoxVms(workspace.id)[0]);
+            if (!validation.safe) throw new Error(validation.error);
+          }
+          await verifyVmIdentity({ workspace, vms: getProxmoxVms(workspace.id), state: await loadWorkspaceState({ binary, workspace, env }), plan: actualPlan });
           db.db.prepare("UPDATE tofu_runs SET deployment_phase = 'pre_deploy' WHERE id = ?").run(dbRunId);
           const preDeploy = await runPreDeployPlaybooks({ workspace, logMeta, emitMeta });
           if (preDeploy.started) emitMeta(`[Shipyard] Pre-deploy complete: ${preDeploy.succeeded} succeeded.`);
+          await verifyVmIdentity({ workspace, vms: getProxmoxVms(workspace.id), state: await loadWorkspaceState({ binary, workspace, env }), plan: actualPlan });
+          if (!planBytes.equals(fs.readFileSync(approvedPlan.plan_path)) || terraformConfigurationHash(workspace.path, workspace.env_vars) !== configHash) throw new Error('The plan or configuration changed during pre-deploy. Create and review a new plan.');
         } catch (error) {
           const message = error.message || String(error);
           emitMeta(`[Shipyard] ${message}`);
@@ -1748,6 +1718,13 @@ override.tf.json
               throw new Error(`The plan could not be evaluated safely: ${error.message}`);
             }
           }
+          if (!success && action === 'apply' && workspace.workspace_kind === 'isolated_vm') {
+            try {
+              await registerIdentifiedHost({ workspace, binary, env, dbRunId, logMeta, emitMeta });
+              db.db.prepare('UPDATE tofu_runs SET vm_provisioned = 1 WHERE id = ?').run(dbRunId);
+              emitMeta('[Shipyard] Apply failed after creating the VM. Its host is registered; retry will verify the actual configuration before continuing.');
+            } catch (error) { emitMeta(`[Shipyard] Host registration withheld: ${error.message}`); }
+          }
           if (success && action === 'apply') {
             db.db.prepare('UPDATE tofu_runs SET vm_provisioned = 1 WHERE id = ?').run(dbRunId);
             // Consume the approved plan before host connection; retries must never apply it again.
@@ -1758,31 +1735,6 @@ override.tf.json
             const backup = backupLocalState(workspace, 'after-apply');
             if (backup) emitMeta(`[Shipyard] Encrypted state backup saved: ${backup}`);
             await finishHostDeployment({ workspace, binary, env, dbRunId, logMeta, emitMeta });
-          }
-
-          if (success && action === 'destroy') {
-            try {
-              const result = cleanupManagedServersForWorkspace({ db, workspace, logMeta });
-              emitMeta(`[Shipyard] Detached ${result.detached} host(s) from this deployment; the inventory entries were kept.`);
-            } catch (err) {
-              log.error({ err, workspace: workspace.name }, 'OpenTofu destroy cleanup failed');
-              emitMeta(`[Shipyard] Managed server cleanup failed: ${err.message}`);
-            }
-          }
-
-          if (success && action === 'destroy_vm') {
-            try {
-              finalizeFleetProxmoxVmDestroy({ workspace, vm: vmToDestroy, logMeta });
-              emitMeta(`[Shipyard] VM ${vmToDestroy.name} destroyed and removed from this deployment. Shipyard inventory entries were kept.`);
-            } catch (err) {
-              log.error({ err, workspace: workspace.name, vm: vmToDestroy.name }, 'OpenTofu VM destroy finalization failed');
-              emitMeta(`[Shipyard] VM destroy finished, but Shipyard cleanup failed: ${err.message}`);
-            }
-          }
-
-          if (success && ['destroy', 'destroy_vm'].includes(action)) {
-            const backup = backupLocalState(workspace, `after-${action}`);
-            if (backup) emitMeta(`[Shipyard] Encrypted state backup saved: ${backup}`);
           }
 
           if (success && action === 'init') syncFleetWorkspace(workspace, `Track provider lock for ${workspace.name}`);

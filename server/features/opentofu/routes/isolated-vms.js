@@ -83,6 +83,27 @@ function registerIsolatedVmRoutes({
     } catch (error) { res.status(502).json({ error: error.message || 'Proxmox catalog could not be loaded' }); }
   });
 
+  router.get(['/proxmox-connections/:connectionId/vm-id-check', '/vms/:vmId/vm-id-check'], async (req, res) => {
+    const vm = req.params.vmId ? getVmRow(req.params.vmId) : null;
+    const connectionId = vm?.connection_id || vm?.proxmox_connection_id || req.params.connectionId;
+    const source = db.db.prepare('SELECT * FROM tofu_proxmox_connections WHERE id = ?').get(connectionId);
+    const id = Number(req.query.id);
+    if (!source) return res.status(404).json({ error: 'Proxmox connection not found.' });
+    if (!Number.isInteger(id) || id < 100) return res.status(400).json({ error: 'Enter a valid VM ID of 100 or higher.' });
+    try {
+      const guests = await requestProxmoxApi(readSavedProxmoxConnection(source), '/cluster/resources?type=vm');
+      if (!Array.isArray(guests)) throw new Error('Proxmox returned no verifiable VM inventory.');
+      const matches = guests.filter(guest => Number(guest.vmid) === id);
+      let owned = false;
+      const definition = vm ? publicVm(vm, normalizeProxmoxVm) : null;
+      if (definition && matches.length === 1 && Number(definition.vm_id) === id && matches[0].node === definition.node_name && matches[0].name === definition.name && matches[0].type === 'qemu') {
+        const config = await requestProxmoxApi(readSavedProxmoxConnection(source), `/nodes/${encodeURIComponent(definition.node_name)}/qemu/${id}/config`);
+        owned = config?.description === `Shipyard VM ${vm.id}`;
+      }
+      res.json({ available: matches.length === 0, owned, occupied: matches.map(guest => ({ name: guest.name, node: guest.node, type: guest.type })) });
+    } catch (error) { res.status(502).json({ error: `VM ID could not be checked: ${error.message}` }); }
+  });
+
   router.get('/vms', (req, res) => {
     const environmentId = String(req.query.environment_id || '').trim();
     const rows = db.db.prepare(`${selectVm} WHERE vm.is_isolated = 1 AND workspace.environment_id = ? ORDER BY vm.name COLLATE NOCASE`).all(environmentId);

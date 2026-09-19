@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router';
 import { validateVmForm, VM_STEPS } from './vm-form-validation';
-import { VmIpamSelection } from './VmIpamSelection';
+import { VmIpamSelection, type Selection } from './VmIpamSelection';
 import { useEffect, useMemo, useState, useRef, useId, Children, createContext, useContext, cloneElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, Plus, RefreshCw, Server, X } from "lucide-react";
@@ -107,7 +107,7 @@ const initialForm: VmForm = {
   cpu_type: "host",
   memory_mb: "4096",
   agent_enabled: true,
-  bridge: "vmbr0",
+  bridge: "",
   vlan_id: "",
   ipv4_mode: "dhcp",
   ipv4_address: "",
@@ -206,6 +206,8 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
   const [templateId, setTemplateId] = useState("");
   const [templateName, setTemplateName] = useState("");
   const [selectedZone, setSelectedZone] = useState("");
+  const [networkSearch, setNetworkSearch] = useState("");
+  const [mappingMessage, setMappingMessage] = useState("");
   const isolated = Boolean(vmId || (!workspaceId && environmentId && connectionId));
   const catalogUrl = vmId
     ? `/opentofu/vms/${encodeURIComponent(vmId)}/catalog`
@@ -222,6 +224,14 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
     enabled: open && Boolean(vmId || workspaceId || connectionId),
     staleTime: 0,
     refetchOnMount: "always",
+  });
+  const [checkedId, setCheckedId] = useState(form.vm_id);
+  useEffect(() => { const timer = setTimeout(() => setCheckedId(form.vm_id), 350); return () => clearTimeout(timer); }, [form.vm_id]);
+  const idCheckQuery = useQuery({
+    queryKey: ['opentofu', 'vm-id-check', vmId || connectionId, checkedId, environmentId],
+    queryFn: () => apiFetch<{ available: boolean; owned?: boolean; occupied: { name: string; node: string }[] }>(`${vmId ? `/opentofu/vms/${encodeURIComponent(vmId)}` : `/opentofu/proxmox-connections/${encodeURIComponent(connectionId || '')}`}/vm-id-check?id=${encodeURIComponent(checkedId)}`, { environmentId }),
+    enabled: open && isolated && Number(checkedId) >= 100,
+    staleTime: 0,
   });
   const templatesQuery = useQuery({
     queryKey: ["opentofu", "vm-templates", environmentId || workspaceId],
@@ -263,10 +273,7 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
     const catalog = catalogQuery.data;
     if (!catalog || !open) return;
     setForm((current) => {
-      const nextBridge = current.bridge === "vmbr0"
-        ? selectItems(catalog, "bridges").find((item) => item.name === "vmbr0")?.name ||
-          selectItems(catalog, "bridges")[0]?.name || current.bridge
-        : current.bridge;
+      const nextBridge = current.bridge;
       const bridgeEntry = selectItems(catalog, "bridges").find((item) => item.name === nextBridge);
       return {
       ...current,
@@ -420,7 +427,7 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
   const catalog = catalogQuery.data;
   const bridgeItems = selectItems(catalog, "bridges");
   const visibleBridges = bridgeItems.filter(
-    (item) => item.source !== "sdn" || !selectedZone || item.zone === selectedZone,
+    (item) => item.name === form.bridge || item.source !== "sdn" || !selectedZone || item.zone === selectedZone,
   );
   const selectedBridge = bridgeItems.find((item) => item.name === form.bridge);
   const nodeNames = selectItems(catalog, "nodes")
@@ -435,7 +442,11 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
     validation.errors['SSH key variable'] = 'Save Shipyard’s public key under Settings → Connections before deploying.';
     validation.steps[2].push('SSH key variable');
   }
+  if (!selectedBridge || selectedBridge.available_on_node === false) { validation.errors['Bridge / SDN VNet'] = 'Select a bridge or VNet available on this node.'; validation.steps[2].push('Bridge / SDN VNet'); }
   if (!validNode) validation.errors['Proxmox node'] = 'Select a node from the current platform inventory.';
+  const existingId = Boolean(vmId && idCheckQuery.data?.owned && String(initialVm?.vm_id) === form.vm_id);
+  const idVerified = !isolated || (checkedId === form.vm_id && idCheckQuery.isSuccess && !idCheckQuery.isFetching && (idCheckQuery.data.available || existingId));
+  if (!idVerified) { validation.errors['Target VM ID'] = idCheckQuery.isError ? 'VM ID check failed. Check the Proxmox connection and retry.' : idCheckQuery.data?.available === false ? 'This VM ID is occupied. Choose a free ID.' : 'Checking VM ID availability…'; validation.steps[0].push('Target VM ID'); }
   const requiredValuesValid = Object.keys(validation.errors).length === 0;
   const formValid = !changedOnServer && catalogQuery.isSuccess && !catalogQuery.isFetching && validNode && validVmId && requiredValuesValid;
   const nextStep = () => {
@@ -444,6 +455,14 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
     if (validation.steps[step]?.length) return;
     setStep(current => Math.min(current + 1, 4));
     setShowErrors(false);
+  };
+  const applyIpamNetwork = (selection: Pick<Selection, 'bridge' | 'connectionId' | 'vlan'>) => {
+    const targetConnection = connectionId || String(initialVm?.connection_id || '');
+    const matching = bridgeItems.filter(item => item.name === selection.bridge && item.available_on_node !== false);
+    const mapped = selection.connectionId === targetConnection && Boolean(targetConnection) && matching.length === 1;
+    setMappingMessage(mapped ? 'Bridge selected from the IPAM network mapping.' : 'This IPAM network has no unique, available mapping for this platform and node. Select a bridge or VNet explicitly.');
+    setSelectedZone('');
+    setForm(current => ({...current, bridge: mapped ? selection.bridge : '', vlan_id: mapped && matching[0].source === 'sdn' ? '' : selection.vlan}));
   };
   const selectBridge = (value: string) => {
     const item = bridgeItems.find((bridge) => bridge.name === value);
@@ -581,6 +600,8 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
                   type="number"
                   min="100"
                 />
+                {isolated && <p role="status" className="text-xs text-muted-foreground">{!idVerified ? validation.errors['Target VM ID'] : idCheckQuery.data?.available ? 'VM ID is available. It will be checked again before deployment.' : 'VM ID is occupied. Ownership will be verified before any deployment.'}</p>}
+                {idCheckQuery.isError && <Button type="button" variant="outline" onClick={() => void idCheckQuery.refetch()}>Retry ID check</Button>}
               </Field>
               <Field label="Template">
                 <Select
@@ -680,7 +701,7 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
           </div>
           <div className="min-w-0 space-y-5">
           <fieldset hidden={step !== 2} disabled={step !== 2}>
-            {step === 2 && environmentId && <VmIpamSelection key={environmentId} environmentId={environmentId} onUse={selection => setForm(current => ({...current, ipv4_mode: 'static', ipv4_address: selection.address, ipv4_prefix: selection.prefix, ipv4_gateway: selection.gateway}))} />}
+            {step === 2 && environmentId && <VmIpamSelection key={environmentId} environmentId={environmentId} onNetwork={applyIpamNetwork} onUse={selection => { applyIpamNetwork(selection); setForm(current => ({...current, ipv4_mode: 'static', ipv4_address: selection.address, ipv4_prefix: selection.prefix, ipv4_gateway: selection.gateway})); }} />}
           <section className="space-y-3 border-t pt-5">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-semibold">Network & VM access</h3>
@@ -714,20 +735,15 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
                 </Field>
               )}
               <Field label="Bridge / SDN VNet">
-                <Input
-                  value={form.bridge}
-                  onChange={(event) => selectBridge(event.target.value)}
-                  list="proxmox-network-targets"
-                  placeholder="vmbr0 or a VNet created by pre-deploy"
-                />
-                <datalist id="proxmox-network-targets">
-                  {visibleBridges.filter((item) => item.available_on_node !== false).map((item) => (
-                    <option key={`${item.source}-${item.name}`} value={item.name || ""}>
-                      {item.source === "sdn" ? `SDN ${item.zone || ""}${item.alias ? ` / ${item.alias}` : ""}` : "Node bridge"}
-                    </option>
-                  ))}
-                </datalist>
-                <p className="text-xs text-muted-foreground">You can enter a custom bridge or VNet that a pre-deploy workflow creates later.</p>
+                <Input aria-label="Search bridges and VNets" value={networkSearch} onChange={event => setNetworkSearch(event.target.value)} placeholder="Search bridges and VNets" />
+                <select aria-label="Bridge / SDN VNet" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={form.bridge} onChange={event => { selectBridge(event.target.value); setMappingMessage(''); }}>
+                  <option value="">Select a bridge or VNet</option>
+                  {(['node', 'sdn'] as const).map(source => <optgroup key={source} label={source === 'node' ? 'Node bridges' : 'SDN VNets'}>
+                    {visibleBridges.filter(item => (item.source || 'node') === source && (item.name === form.bridge || `${item.name} ${item.alias || ''} ${item.zone || ''}`.toLowerCase().includes(networkSearch.toLowerCase()))).map(item => <option key={item.name} value={item.name} disabled={item.available_on_node === false}>{item.name}{item.alias ? ` · ${item.alias}` : ''}{item.zone ? ` · ${item.zone}` : ''}{item.available_on_node === false ? ' — unavailable on this node' : ''}</option>)}
+                  </optgroup>)}
+                </select>
+                {form.bridge && catalogQuery.isSuccess && (!selectedBridge || selectedBridge.available_on_node === false) && <p role="alert" className="text-xs text-destructive">The selected bridge or VNet is unavailable on this node. Select another network.</p>}
+                {mappingMessage && <p role="status" className="text-xs text-muted-foreground">{mappingMessage}</p>}
               </Field>
               <Field
                 label="VM VLAN-ID (optional)"

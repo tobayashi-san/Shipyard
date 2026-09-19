@@ -12,11 +12,12 @@ interface Prefix {
   next_free_address?: string | null;
   gateway?: string;
   bridge?: string;
+  proxmox_connection_id?: string;
   vlan_id?: number | null;
 }
-interface Selection {address: string; prefix: string; gateway: string}
+export interface Selection {address: string; prefix: string; gateway: string; bridge: string; connectionId: string; vlan: string}
 
-export function VmIpamSelection({environmentId, onUse}: {environmentId: string; onUse: (selection: Selection) => void}) {
+export function VmIpamSelection({environmentId, onUse, onNetwork}: {environmentId: string; onUse: (selection: Selection) => void; onNetwork?: (selection: Pick<Selection, "bridge" | "connectionId" | "vlan">) => void}) {
   const active = useRef(true);
   useEffect(() => {active.current = true; return () => {active.current = false;};}, []);
   const [selected, setSelected] = useState('');
@@ -35,15 +36,15 @@ export function VmIpamSelection({environmentId, onUse}: {environmentId: string; 
       if (!prefix.next_free_address) throw Error('This prefix has no available address. Select another prefix.');
       const length = prefix.cidr.split('/')[1];
       if (!length || !Number.isInteger(Number(length)) || Number(length) < 0 || Number(length) > 32) throw Error('The prefix has an unsupported address format.');
-      return {address: prefix.next_free_address, prefix: length, gateway: prefix.gateway || ''};
+      return {address: prefix.next_free_address, prefix: length, gateway: prefix.gateway || '', bridge: prefix.bridge || '', connectionId: prefix.proxmox_connection_id || '', vlan: String(prefix.vlan_id || '')};
     },
     onSuccess: selection => {if (active.current) {onUse(selection); setApplied(selection.address);}},
   });
   return <div className="col-span-full space-y-2 rounded-md border p-3 text-sm">
     <p className="font-medium">Choose an address from IPAM</p>
-    <p className="text-xs text-muted-foreground">Environment: {environmentId}. This copies the next available address into the VM configuration; it does not reserve it or apply the VM. Review the bridge and VLAN before saving.</p>
+    <p className="text-xs text-muted-foreground">Environment: {environmentId}. This copies the next available address into the VM configuration; it does not reserve it or apply the VM. The mapped bridge is selected automatically when available on the chosen platform and node.</p>
     {query.isError ? <p role="alert">IPAM prefixes could not be loaded. {query.error.message} <Button type="button" variant="outline" size="sm" onClick={() => void query.refetch()}>Retry</Button></p> : <>
-      <label className="block">IPAM prefix<select className="mt-1 h-9 w-full rounded-md border bg-background px-3" value={selected} disabled={query.isPending || useAddress.isPending} onChange={event => {setSelected(event.target.value); setApplied(''); useAddress.reset();}}>
+      <label className="block">IPAM prefix<select className="mt-1 h-9 w-full rounded-md border bg-background px-3" value={selected} disabled={query.isPending || useAddress.isPending} onChange={event => {setSelected(event.target.value); setApplied(''); useAddress.reset(); const prefix = prefixes.find(item => item.id === event.target.value); if (prefix) onNetwork?.({bridge:prefix.bridge || '',connectionId:prefix.proxmox_connection_id || '',vlan:String(prefix.vlan_id || '')});}}>
         <option value="">{query.isPending ? 'Loading prefixes…' : 'Select a prefix'}</option>
         {prefixes.map(prefix => <option key={prefix.id} value={prefix.id}>{prefix.name} · {prefix.cidr}</option>)}
       </select></label>

@@ -122,12 +122,20 @@ test('a host shows host facts and snapshots without VM hardware or inventory req
     page.on('request', request => { if (request.url().includes('/api/opentofu/infrastructure?')) inventoryRequests++; });
     await page.goto(`/servers/${host.id}`);
     await expect(page.getByRole('heading',{name:'pve01-canonical',exact:true})).toBeVisible();
-    await expect(page.getByRole('tablist',{name:'Host sections'}).getByRole('tab')).toHaveText(['Overview','Snapshots','Jobs']);
+    await expect(page.getByRole('tablist',{name:'Host sections'}).getByRole('tab')).toHaveText(['Overview','Snapshots','Jobs','Settings','Updates','Notes','Advanced']);
     await expect(page.getByText('Recent capacity',{exact:true})).toHaveCount(0);
     await expect(page.getByText('Virtual machines',{exact:true})).toHaveCount(0);
     await page.getByRole('tab',{name:'Snapshots',exact:true}).click();
     await expect(page.getByText('Snapshots are available for hosts linked to a Proxmox guest.')).toBeVisible();
     expect(inventoryRequests).toBe(0);
+    await page.setViewportSize({width:390,height:844});
+    const advanced = page.getByRole('tab',{name:'Advanced',exact:true});
+    await advanced.scrollIntoViewIfNeeded();
+    await advanced.click();
+    await expect(advanced).toHaveAttribute('data-state','active');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+    await page.screenshot({path:path.join(shots,'host-tabs-mobile.png'),fullPage:true,animations:'disabled'});
+
   } finally {
     await page.evaluate(async id => { await fetch(`/api/servers/${id}`,{method:'DELETE',headers:{Authorization:`Bearer ${localStorage.getItem('shipyard_token')}`}}); },host.id);
   }
@@ -181,4 +189,35 @@ test('deployment completion retries connection without another apply and opens t
   expect(resumeRequests).toBe(1);
   expect(applyRequests).toBe(0);
   await page.screenshot({path:path.join(shots,'deployment-ready.png'),fullPage:true,animations:'disabled'});
+});
+
+test('VM ID conflicts and automatic IPAM network selection', async ({page}) => {
+  await login(page); await inventory(page);
+  await page.route('**/api/opentofu/proxmox-connections/pve/vm-catalog*', route => route.fulfill({json:{ssh_public_key_configured:true,node:'pve01',nodes:[{name:'pve01'},{name:'pve02'}],next_vm_id:201,templates:[{name:'Ubuntu',vm_id:9000}],datastores:[{id:'local-lvm'}],bridges:[{name:'vmbr0',source:'node',available_on_node:true},{name:'apps',alias:'Applications',zone:'prod',source:'sdn',available_on_node:!route.request().url().includes('pve02')},{name:'other',source:'sdn',available_on_node:false}]}}));
+  await page.route('**/api/opentofu/proxmox-connections/pve/vm-id-check?*', route => route.fulfill({json:{available:new URL(route.request().url()).searchParams.get('id') !== '101',occupied:[]}}));
+  await page.route('**/api/ipam/subnets*', route => route.fulfill({json:[{id:'mapped',name:'Application network',cidr:'10.1.0.0/24',environment_id:'default',status:'active',bridge:'apps',proxmox_connection_id:'pve'},{id:'unmapped',name:'Unmapped network',cidr:'10.2.0.0/24',environment_id:'default',status:'active',bridge:'vmbr0'}]}));
+  await page.goto('/deployments');
+  await page.getByRole('button',{name:'Create VM',exact:true}).first().click();
+  await page.getByRole('button',{name:'Continue',exact:true}).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('spinbutton',{name:'Target VM ID'}).fill('101');
+  await expect(dialog.getByText('This VM ID is occupied. Choose a free ID.')).toBeVisible();
+  await dialog.getByRole('spinbutton',{name:'Target VM ID'}).fill('201');
+  await expect(dialog.getByText('VM ID is available. It will be checked again before deployment.')).toBeVisible();
+  await page.getByRole('navigation',{name:'VM setup steps'}).getByRole('button').nth(2).click();
+  await dialog.getByLabel('IPAM prefix').selectOption('mapped');
+  const bridge = dialog.getByRole('combobox',{name:'Bridge / SDN VNet',exact:true});
+  await expect(bridge).toHaveValue('apps');
+  await expect(dialog.locator('optgroup[label="SDN VNets"] option[value="other"]')).toBeDisabled();
+  await dialog.getByRole('textbox',{name:'Search bridges and VNets'}).fill('Applications');
+  await expect(dialog.locator('optgroup[label="SDN VNets"] option[value="apps"]')).toHaveCount(1);
+  await dialog.getByRole('textbox',{name:'Search bridges and VNets'}).fill('');
+  await page.screenshot({path:path.join(shots,'vm-network-mapping.png'),fullPage:true,animations:'disabled'});
+  await page.getByRole('navigation',{name:'VM setup steps'}).getByRole('button').nth(0).click();
+  await dialog.getByRole('combobox',{name:'Proxmox node',exact:true}).selectOption('pve02');
+  await page.getByRole('navigation',{name:'VM setup steps'}).getByRole('button').nth(2).click();
+  await expect(dialog.getByText('The selected bridge or VNet is unavailable on this node. Select another network.')).toBeVisible();
+  await dialog.getByLabel('IPAM prefix').selectOption('unmapped');
+  await expect(bridge).toHaveValue('');
+  await expect(dialog.getByText(/no unique, available mapping/)).toBeVisible();
 });

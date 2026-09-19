@@ -247,6 +247,7 @@ export function ServerDetailPage() {
   const linkedVm = managedDeployments.find(deployment => deployment.cluster_id && deployment.vm?.node_name && deployment.vm.vm_id != null);
   const availableTabs = useMemo(() => {
     const values = ["overview", "snapshots"];
+    if (hasCap(profile, "canEditServers")) values.push("settings");
     if (hasCap(profile, "canViewDocker") && server?.docker_enabled)
       values.push("docker");
     if (
@@ -350,7 +351,9 @@ export function ServerDetailPage() {
         }
         title={server.name}
         badge={
-          server.status === "online" ? (
+          server.deployment && server.deployment.deployment_phase !== 'ready' ? (
+            <StatusBadge tone={server.deployment.status === 'failed' ? 'danger' : 'muted'}>{!server.ip_address ? 'Waiting for IP' : server.deployment.status === 'failed' ? 'Connection or deployment failed' : server.deployment.deployment_phase === 'connect_host' ? 'Checking connection' : 'Finishing deployment'}</StatusBadge>
+          ) : server.status === "online" ? (
             <StatusBadge tone="success" dot>
               {t("common.online")}
             </StatusBadge>
@@ -363,6 +366,7 @@ export function ServerDetailPage() {
         description={[server.ip_address, server.hostname !== server.ip_address ? server.hostname : null].filter(Boolean).join(" · ") || "Host address not reported"}
         actions={
           <>
+            {server.deployment && <Button asChild variant="outline"><Link to="/deployments/$id" params={{id:server.deployment.id}}>Open deployment</Link></Button>}
             {hasCap(profile, "canEditServers") && <Button onClick={() => setEditOpen(true)}><Pencil />Edit host</Button>}
             {server.status !== "online" &&
               hasCap(profile, "canEditServers") && (
@@ -524,15 +528,18 @@ export function ServerDetailPage() {
             <TabsTrigger value="overview">{t("det.tabOverview")}</TabsTrigger>
             <TabsTrigger value="snapshots">Snapshots</TabsTrigger>
             {availableTabs.includes("history") && <TabsTrigger value="history">Jobs</TabsTrigger>}
+            {availableTabs.includes("settings") && <TabsTrigger value="settings">Settings</TabsTrigger>}
+            {availableTabs.includes("updates") && <TabsTrigger value="updates">Updates</TabsTrigger>}
+            {availableTabs.includes("notes") && <TabsTrigger value="notes">Notes</TabsTrigger>}
+            {availableTabs.includes("access") && <TabsTrigger value="access">Advanced</TabsTrigger>}
+            {availableTabs.includes("docker") && <TabsTrigger value="docker">Workloads</TabsTrigger>}
           </TabsList>
-          <OverflowMenu title="More host sections">
-            {availableTabs.filter(value => !['overview', 'snapshots', 'history', 'terminal'].includes(value)).map(value => <OverflowItem key={value} onClick={() => serverTabs.onValueChange(value)}>{({node: 'Advanced · Proxmox node', vm: 'Virtual machine', docker: 'Workloads', updates: 'Updates', notes: 'Notes', access: 'Advanced'} as Record<string, string>)[value] || value}</OverflowItem>)}
-          </OverflowMenu>
           </div>
 
         </div>
 
         <TabsContent value="snapshots">{controller.deploymentContextLoading ? <p role="status">Loading snapshot connection…</p> : controller.deploymentContextFailed ? <div role="alert"><p>Snapshot connection could not be loaded.</p><Button variant="outline" onClick={() => void controller.refetchDeploymentContext()}>Try again</Button></div> : <HostSnapshots mapping={linkedVm} />}</TabsContent>
+        <TabsContent value="settings"><Card><CardContent className="space-y-3 p-4"><p>Manage this host’s address, SSH credentials and options.</p><Button onClick={() => setEditOpen(true)}><Pencil />Edit host</Button></CardContent></Card></TabsContent>
         <ServerOverviewTabs controller={controller} />
         <ServerDockerTab controller={controller} />
         <ServerUpdatesTab controller={controller} />

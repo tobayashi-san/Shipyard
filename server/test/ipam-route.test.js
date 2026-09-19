@@ -1032,3 +1032,18 @@ test('source connection test records outcomes atomically and discards outdated r
     assert.deepEqual(db.db.prepare('SELECT * FROM ipam_sync_sources WHERE id=?').get(id),before);
   }finally{await new Promise(resolve=>controller.close(resolve));}
 });
+
+test('IPAM network mapping persists its platform and rejects a foreign environment', async () => {
+  db.db.prepare("INSERT INTO tofu_proxmox_connections (id,environment_id,name,endpoint,api_token) VALUES (?,?,?,'https://mapping.test','token')").run('mapping-local',environmentId,'Mapping platform');
+  db.db.prepare("INSERT INTO tofu_proxmox_connections (id,environment_id,name,endpoint,api_token) VALUES ('mapping-foreign','default','Foreign','https://foreign.test','token')").run();
+  const created = await auth(request(app).post('/api/ipam/subnets')).send({environment_id:environmentId,name:'Mapped prefix',cidr:'10.199.0.0/24',bridge:'apps',proxmox_connection_id:'mapping-local'});
+  assert.equal(created.status,201,JSON.stringify(created.body));
+  assert.equal(created.body.proxmox_connection_id,'mapping-local');
+  const invalid = await auth(request(app).put(`/api/ipam/subnets/${created.body.id}`)).send({proxmox_connection_id:'mapping-foreign'});
+  assert.equal(invalid.status,400);
+  const loaded = await auth(request(app).get(`/api/ipam/subnets/${created.body.id}`));
+  assert.equal(loaded.body.proxmox_connection_id,'mapping-local');
+  const cleared = await auth(request(app).put(`/api/ipam/subnets/${created.body.id}`)).send({proxmox_connection_id:''});
+  assert.equal(cleared.status,200);
+  assert.equal(cleared.body.proxmox_connection_id,'');
+});

@@ -227,7 +227,7 @@ async function reconcileManagedServers({ db, workspace, desiredServers, logMeta 
     let targetServer = mapping ? db.servers.getById(mapping.server_id) : null;
     let createdByFeature = mapping ? !!mapping.created_by_plugin : false;
 
-    if (!targetServer) {
+    if (!targetServer && workspace.workspace_kind !== 'isolated_vm') {
       targetServer = findReusableServer(existingServers, trackedServerIds, desiredServer);
       createdByFeature = false;
     }

@@ -370,10 +370,9 @@ test('host management works without agent controls', async ({ page }) => {
     return String((await response.json()).id);
   });
   await page.goto(`/servers/${serverId}`);
-  await expect(page.getByRole('tablist', { name: 'Host sections' }).getByRole('tab')).toHaveText(['Overview', 'Snapshots', 'Jobs']);
-  await page.getByRole('button', { name: 'More host sections' }).click();
-  await expect(page.getByRole('menuitem', { name: 'Notes', exact: true })).toBeVisible();
-  await page.getByRole('menuitem', { name: 'Advanced', exact: true }).click();
+  await expect(page.getByRole('tablist', { name: 'Host sections' }).getByRole('tab')).toHaveText(['Overview', 'Snapshots', 'Jobs', 'Settings', 'Updates', 'Notes', 'Advanced']);
+  await expect(page.getByRole('tab', { name: 'Notes', exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Advanced', exact: true }).click();
   await page.getByRole('button', { name: /open terminal/i }).click();
   const terminalDialog = page.getByRole('dialog', { name: /terminal/i });
   await expect(terminalDialog).toBeVisible();
@@ -1018,7 +1017,7 @@ test('Proxmox import creates a host with a dedicated snapshot tab', async ({ pag
     await page.getByRole('link',{name:'e2e-import-vm',exact:true}).click();
     await expect(page).toHaveURL(/\/servers\//);
     const vmTabs = page.getByRole('tablist',{name:'Host sections'});
-    await expect(vmTabs.getByRole('tab')).toHaveText(['Overview','Snapshots','Jobs']);
+    await expect(vmTabs.getByRole('tab')).toHaveText(['Overview','Snapshots','Jobs','Settings','Updates','Notes','Advanced']);
     await vmTabs.getByRole('tab',{name:'Snapshots',exact:true}).click();
     await expect(page.getByText('No snapshots yet.',{exact:true})).toBeVisible();
     await expect(page.getByRole('button',{name:'Create snapshot',exact:true})).toBeVisible();
@@ -1088,7 +1087,7 @@ test('a Proxmox VM keeps configuration and tasks in distinct object tabs', async
   }
 });
 
-test('an isolated VM uses a platform source and guards Destroy with an exact phrase', async ({ page }) => {
+test('an isolated VM uses a platform source and never exposes VM destruction', async ({ page }) => {
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await loginForIsolatedTest(page);
@@ -1131,20 +1130,13 @@ test('an isolated VM uses a platform source and guards Destroy with an exact phr
     await expect(page.getByRole('heading', { name: vmName })).toBeVisible();
     await page.getByRole('tab', { name: 'Configuration', exact: true }).click();
     await page.locator('summary').filter({ hasText: /^More actions$/ }).click();
-    await page.getByRole('button', { name: 'Destroy VM' }).click();
-    const destroyDialog = page.getByRole('dialog', { name: 'Destroy VM in Proxmox?' });
-    const destroyButton = destroyDialog.getByRole('button', { name: 'Destroy VM' });
-    const confirmInput = destroyDialog.getByLabel('Type to confirm');
-    const phrase = await confirmInput.getAttribute('placeholder');
-    expect(phrase).toBeTruthy();
-    await expect(destroyButton).toBeDisabled();
-    await confirmInput.fill(`${phrase} wrong`);
-    await expect(destroyButton).toBeDisabled();
-    await confirmInput.fill('');
-    await confirmInput.pressSequentially(phrase!);
-    await expect(confirmInput).toHaveValue(phrase!);
-    expect(await destroyButton.isEnabled(), `Destroy guard: input=${JSON.stringify(await confirmInput.inputValue())}, phrase=${JSON.stringify(phrase)}`).toBe(true);
-    await destroyDialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByRole('button', { name: 'Destroy VM' })).toHaveCount(0);
+    const rejected = await page.evaluate(async id => {
+      const response = await fetch(`/api/opentofu/vms/${id}/destroy`, {method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('shipyard_token')}`},body:JSON.stringify({confirmation:'DESTROY anything'})});
+      return {status:response.status,body:await response.json()};
+    }, vmId);
+    expect(rejected.status).toBe(403);
+    expect(rejected.body.error).toContain('manually in Proxmox');
   } finally {
     // Every Playwright run has its own temporary database. Do not let cleanup
     // call the OpenTofu runtime from the browser: it can wait on an external

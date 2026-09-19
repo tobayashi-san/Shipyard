@@ -943,3 +943,20 @@ test('node network inventory includes non-bridge interfaces without mixing them 
   assert.equal(node.network_interfaces[0].cidr6,null);
  }finally {networkInventory=[];}
 });
+
+test('VM ID availability checks all cluster guests and validates the identifier', async () => {
+  const previous = inventory;
+  inventory = [{vmid:101,node:'another-node',name:'existing-vm',type:'qemu'},{vmid:202,node:'pve001',name:'container',type:'lxc'}];
+  try {
+    const route = `/api/opentofu/proxmox-connections/${connectionId}/vm-id-check`;
+    for (const id of [101,202]) {
+      const occupied = await request(app).get(route).query({id}).set('Authorization',`Bearer ${token}`);
+      assert.equal(occupied.status,200,JSON.stringify(occupied.body));
+      assert.equal(occupied.body.available,false);
+    }
+    const free = await request(app).get(route).query({id:999}).set('Authorization',`Bearer ${token}`);
+    assert.equal(free.body.available,true);
+    const invalid = await request(app).get(route).query({id:'101garbage'}).set('Authorization',`Bearer ${token}`);
+    assert.equal(invalid.status,400);
+  } finally { inventory = previous; }
+});

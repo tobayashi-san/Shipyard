@@ -179,6 +179,15 @@ function serverOperatingState(server, perms) {
     const canViewDocker = can(perms, 'canViewDocker');
     const canViewCustomUpdates = can(perms, 'canViewCustomUpdates');
     const canViewHistory = can(perms, 'canViewServerHistory');
+    let deployment = null;
+    if (can(perms, 'canViewDeployments') && db.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='tofu_managed_servers'").get()) {
+      deployment = db.db.prepare(`SELECT vm.id, run.status, run.deployment_phase
+        FROM tofu_managed_servers mapping
+        JOIN tofu_proxmox_vms vm ON vm.workspace_id = mapping.workspace_id
+          AND mapping.resource_key = 'resource:proxmox_virtual_environment_vm.' || vm.name
+        LEFT JOIN tofu_runs run ON run.id = (SELECT id FROM tofu_runs WHERE workspace_id = vm.workspace_id AND action = 'apply' ORDER BY started_at DESC, rowid DESC LIMIT 1)
+        WHERE mapping.server_id = ? AND vm.is_isolated = 1 LIMIT 1`).get(server.id) || null;
+    }
     const info = db.serverInfo.get(server.id);
     const imageUpdatesMeta = canViewDocker && canViewUpdates
       ? db.dockerImageUpdatesCache.getWithMeta(server.id)
@@ -201,6 +210,7 @@ function serverOperatingState(server, perms) {
       includeHistory: canViewHistory,
     });
     return {
+      deployment,
       attention,
       ...(canViewUpdates ? {
         updates_count: updates === null ? null : updates.filter(update => !update.phased).length,

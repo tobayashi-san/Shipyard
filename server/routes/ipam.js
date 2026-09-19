@@ -1032,6 +1032,12 @@ router.get("/subnets/:id", guard("canViewNetworks"), (req, res) => {
   res.json(enrichSubnet(subnet, allSubnets));
 });
 
+function validatePrefixConnection(value, environmentId) {
+  const id = String(value || '').trim();
+  if (id && !db.db.prepare('SELECT 1 FROM tofu_proxmox_connections WHERE id = ? AND environment_id = ?').get(id, environmentId)) throw new Error('Select a Proxmox connection from this environment.');
+  return id;
+}
+
 router.post("/subnets", guard("canEditNetworks"), (req, res) => {
   try {
     const body = req.body || {};
@@ -1118,7 +1124,7 @@ router.post("/subnets", guard("canEditNetworks"), (req, res) => {
     db.db.transaction(() => {
       db.db
         .prepare(
-          "INSERT INTO ipam_subnets (id, environment_id, name, cidr, gateway, dhcp_start, dhcp_end, dns_servers, vlan_id, bridge, description, status, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO ipam_subnets (id, environment_id, name, cidr, gateway, dhcp_start, dhcp_end, dns_servers, vlan_id, bridge, description, status, role, proxmox_connection_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .run(
           id,
@@ -1138,6 +1144,7 @@ router.post("/subnets", guard("canEditNetworks"), (req, res) => {
             .slice(0, 500),
           status,
           role,
+          validatePrefixConnection(body.proxmox_connection_id, environmentId),
         );
       db.auditLog.write(
         "ipam.subnet_create",
@@ -1210,7 +1217,7 @@ router.put("/subnets/:id", guard("canEditNetworks"), (req, res) => {
       db.db.prepare(`
         UPDATE ipam_subnets
         SET name = ?, gateway = ?, dhcp_start = ?, dhcp_end = ?, dns_servers = ?, vlan_id = ?, bridge = ?,
-            description = ?, status = ?, role = ?
+            description = ?, status = ?, role = ?, proxmox_connection_id = ?
         WHERE id = ?
       `).run(
         name,
@@ -1223,6 +1230,7 @@ router.put("/subnets/:id", guard("canEditNetworks"), (req, res) => {
         String(body.description ?? subnet.description ?? "").trim().slice(0, 500),
         status,
         String(body.role ?? subnet.role ?? "").trim().slice(0, 60),
+        validatePrefixConnection(body.proxmox_connection_id ?? subnet.proxmox_connection_id, subnet.environment_id),
         subnet.id,
       );
       db.auditLog.write(

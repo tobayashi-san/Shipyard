@@ -6,6 +6,7 @@ import { ThresholdBar } from "./components/summary-cards";
 import { formatDateTime } from "@/lib/utils";
 
 export interface ServerDetail {
+  deployment?: { id: string; status: string; deployment_phase: string } | null;
   id: string;
   name: string;
   ip_address?: string;

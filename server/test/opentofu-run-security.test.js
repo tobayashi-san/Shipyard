@@ -17,16 +17,20 @@ if [ "$action" = "version" ]; then
 fi
 if [ "$action" = "show" ]; then
   if [ "$#" -ge 3 ]; then
-    if [ -f isolation-unsafe ]; then
+    if [ -f custom-plan.json ]; then cat custom-plan.json; exit 0; fi
+    if [ -f destructive-plan ]; then
+      echo '{"resource_changes":[{"address":"indirect.foreign","change":{"actions":["delete"]}}]}'
+    elif [ -f isolation-unsafe ]; then
       echo '{"resource_changes":[{"address":"proxmox_virtual_environment_vm.isolated-app","change":{"actions":["create"]}},{"address":"proxmox_virtual_environment_vm.foreign-app","change":{"actions":["update"]}}]}'
     elif [ -f isolation-safe ]; then
-      echo '{"resource_changes":[{"address":"proxmox_virtual_environment_vm.isolated-app","change":{"actions":["create"]}}]}'
+      echo '{"resource_changes":[{"address":"proxmox_virtual_environment_vm.isolated-app","change":{"actions":["create"],"after":{"vm_id":46001,"node_name":"pve001","description":"Shipyard VM isolated-vm"}}}]}'
     else
-      echo '{"resource_changes":[{"change":{"actions":["create"]}},{"change":{"actions":["update"]}},{"change":{"actions":["delete"]}}]}'
+      echo '{"resource_changes":[{"change":{"actions":["create"]}},{"change":{"actions":["update"]}}]}'
     fi
   else
+    if [ -f custom-state.json ] && [ -f apply-count ]; then cat custom-state.json; exit 0; fi
     if [ -f discovered-state.json ]; then cat discovered-state.json
-    elif [ -f isolation-safe ]; then echo '{"values":{"root_module":{"resources":[{"address":"proxmox_virtual_environment_vm.isolated-app","type":"proxmox_virtual_environment_vm","values":{"name":"isolated-app","vm_id":46001,"node_name":"pve001"}}]}}}'
+    elif [ -f isolation-safe ] && [ -f apply-count ]; then echo '{"values":{"root_module":{"resources":[{"address":"proxmox_virtual_environment_vm.isolated-app","type":"proxmox_virtual_environment_vm","values":{"name":"isolated-app","vm_id":46001,"node_name":"pve001","description":"Shipyard VM isolated-vm"}}]}}}'
     else echo '{"values":{}}'; fi
   fi
   exit 0
@@ -45,6 +49,7 @@ if [ "$action" = "apply" ]; then
   sleep 0.4
   echo '{"version":4,"resources":[]}' > terraform.tfstate
   echo 'apply-done'
+  if [ -f fail-apply ]; then exit 1; fi
   exit 0
 fi
 echo "completed-$action"
@@ -74,7 +79,7 @@ async function waitForRun(id, statuses) {
     if (row && wanted.has(row.status)) return row;
     await new Promise(resolve => setTimeout(resolve, 25));
   }
-  throw new Error(`Run ${id} did not reach ${[...wanted].join(', ')}`);
+  throw new Error(`Run ${id} did not reach ${[...wanted].join(', ')}: ${db.db.prepare("SELECT output FROM tofu_runs WHERE id = ?").get(id)?.output}`);
 }
 
 after(() => {
@@ -98,13 +103,17 @@ test('Apply is bound to one saved plan, persists output, and locks its workspace
   assert.equal(planStart.status, 200);
   const plan = await waitForRun(planStart.body.dbRunId, 'success');
   assert.ok(fs.existsSync(plan.plan_path));
-  assert.deepEqual(JSON.parse(plan.plan_summary), { create: 1, update: 1, delete: 1, replace: 0, no_op: 0, read: 0 });
+  assert.deepEqual(JSON.parse(plan.plan_summary), { create: 1, update: 1, delete: 0, replace: 0, no_op: 0, read: 0 });
 
   const applyStart = await request(app).post('/api/opentofu/workspaces/secure-run/run').set(auth).send({ action: 'apply', plan_id: plan.id });
   assert.equal(applyStart.status, 200);
   const concurrent = await request(app).post('/api/opentofu/workspaces/secure-run/run').set(auth).send({ action: 'plan' });
   assert.equal(concurrent.status, 409);
-  await new Promise(resolve => setTimeout(resolve, 100));
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const row = db.db.prepare('SELECT output FROM tofu_runs WHERE id = ?').get(applyStart.body.dbRunId);
+    if (row?.output.includes('apply-begin')) break;
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
   const live = await request(app).get(`/api/opentofu/workspaces/secure-run/runs/${applyStart.body.dbRunId}`).set(auth);
   assert.equal(live.status, 200);
   assert.match(live.body.output, /apply-begin/);
@@ -164,6 +173,24 @@ test('isolated VM Apply accepts only its reviewed plan and resumes automatic wor
   db.db.prepare(`INSERT INTO tofu_proxmox_vms (id, workspace_id, name, config, is_isolated)
     VALUES ('isolated-vm', 'isolated-workspace', 'isolated-app', ?, 1)`).run(JSON.stringify({ name: 'isolated-app', node_name: 'pve001', vm_id: 46001, disk_datastore: 'local-lvm', bridge: 'vmbr0', pre_deploy_playbooks:['prepare.yml'], pre_deploy_target_server_id:preHost.id, post_deploy_playbooks:['configure.yml'] }));
 
+  const env = { TF_VAR_proxmox_endpoint: 'https://pve.test:8006', TF_VAR_proxmox_api_token: 'user@pve!token=secret' };
+  db.db.prepare('UPDATE tofu_workspaces SET env_vars = ? WHERE id = ?').run(JSON.stringify(env), 'isolated-workspace');
+  const { EventEmitter } = require('events');
+  t.mock.method(require('https'), 'request', (url, options, callback) => {
+    const stream = new EventEmitter();
+    stream.setTimeout = () => stream;
+    stream.end = () => queueMicrotask(() => {
+      const response = new EventEmitter(); response.statusCode = 200; response.setEncoding = () => {};
+      callback(response);
+      const deployed = fs.existsSync(path.join(workspacePath, 'apply-count'));
+      const data = String(url).includes('/cluster/resources') ? (deployed ? [{vmid:46001,node:'pve001',name:'isolated-app',type:'qemu',status:'running'}] : [])
+        : String(url).includes('/agent/') ? (fs.existsSync(path.join(workspacePath, 'discovered-state.json')) ? [{name:'eth0','ip-addresses':[{'ip-address':'192.0.2.41','ip-address-type':'ipv4'}]}] : [])
+        : String(url).endsWith('/config') ? {description:'Shipyard VM isolated-vm',cores:2,memory:4096,net0:'bridge=vmbr0',ciuser:'ubuntu',scsi0:'local-lvm:vm-46001-disk-0,size=40G'} : [];
+      response.emit('data', JSON.stringify({data})); response.emit('end');
+    });
+    return stream;
+  });
+
   const safeStart = await request(app).post('/api/opentofu/vms/isolated-vm/plan').set(auth).send({});
   assert.equal(safeStart.status, 200);
   const safePlan = await waitForRun(safeStart.body.dbRunId, 'success');
@@ -181,7 +208,7 @@ test('isolated VM Apply accepts only its reviewed plan and resumes automatic wor
   assert.deepEqual(playbookCalls, [{playbook:'prepare.yml',target:'pre-deploy-host'}]);
   const reusePlan = await request(app).post('/api/opentofu/vms/isolated-vm/apply').set(auth).send({ plan_id: safePlan.id });
   assert.equal(reusePlan.status, 409);
-  fs.writeFileSync(path.join(workspacePath, 'discovered-state.json'), JSON.stringify({ values: { root_module: { resources: [{ address: 'proxmox_virtual_environment_vm.isolated-app', type: 'proxmox_virtual_environment_vm', values: { name: 'isolated-app', vm_id: 46001, node_name: 'pve001', ipv4_addresses: [['192.0.2.41']] } }] } } }));
+  fs.writeFileSync(path.join(workspacePath, 'discovered-state.json'), JSON.stringify({ values: { root_module: { resources: [{ address: 'proxmox_virtual_environment_vm.isolated-app', type: 'proxmox_virtual_environment_vm', values: { name: 'isolated-app', vm_id: 46001, node_name: 'pve001', description: 'Shipyard VM isolated-vm', ipv4_addresses: [['192.0.2.41']] } }] } } }));
   const ssh = require('../services/ssh-manager');
   const originalTest = ssh.testConnection;
   ssh.testConnection = async () => true;
@@ -228,4 +255,62 @@ test('isolated VM Apply accepts only its reviewed plan and resumes automatic wor
   const blockedApply = await request(app).post('/api/opentofu/vms/isolated-vm/apply').set(auth).send({ plan_id: unsafePlan.id });
   assert.equal(blockedApply.status, 409);
   assert.match(blockedApply.body.error, /foreign-app/);
+});
+
+test('destroy is denied and a saved plan changed to deletion never reaches apply', async () => {
+  const { app } = createApp();
+  const login = await request(app).post('/api/auth/login').send({ username: 'admin', password: 'testpass12345' });
+  const auth = { Authorization: `Bearer ${login.body.token}` };
+  for (const action of ['destroy', 'destroy_vm']) {
+    const denied = await request(app).post('/api/opentofu/workspaces/secure-run/run').set(auth).send({action,confirm_destroy:'DESTROY secure-run'});
+    assert.equal(denied.status, 403);
+    assert.match(denied.body.error, /manually in Proxmox/);
+  }
+  const workspacePath = db.db.prepare("SELECT path FROM tofu_workspaces WHERE id='secure-run'").get().path;
+  const started = await request(app).post('/api/opentofu/workspaces/secure-run/run').set(auth).send({action:'plan'});
+  const plan = await waitForRun(started.body.dbRunId, 'success');
+  const before = fs.readFileSync(path.join(workspacePath, 'apply-count'), 'utf8');
+  fs.writeFileSync(path.join(workspacePath, 'destructive-plan'), 'delete');
+  try {
+    const apply = await request(app).post('/api/opentofu/workspaces/secure-run/run').set(auth).send({action:'apply',plan_id:plan.id});
+    assert.equal(apply.status, 200);
+    const failed = await waitForRun(apply.body.dbRunId, 'failed');
+    assert.match(failed.output, /Deleting or replacing/);
+    assert.equal(fs.readFileSync(path.join(workspacePath, 'apply-count'), 'utf8'), before);
+  } finally { fs.unlinkSync(path.join(workspacePath, 'destructive-plan')); }
+});
+
+test('a partial apply registers its identified VM and consumes the plan without running post-deploy', async t => {
+  const { app } = createApp();
+  const login = await request(app).post('/api/auth/login').send({ username: 'admin', password: 'testpass12345' });
+  const auth = { Authorization: `Bearer ${login.body.token}` };
+  const workspacePath = path.join(workspaceRoot, 'partial-app');
+  fs.mkdirSync(workspacePath);
+  const values = {vm_id:47001,node_name:'pve001',name:'partial-app',description:'Shipyard VM partial-vm'};
+  fs.writeFileSync(path.join(workspacePath,'custom-plan.json'),JSON.stringify({resource_changes:[{address:'proxmox_virtual_environment_vm.partial-app',change:{actions:['create'],after:values}}]}));
+  fs.writeFileSync(path.join(workspacePath,'custom-state.json'),JSON.stringify({values:{root_module:{resources:[{address:'proxmox_virtual_environment_vm.partial-app',type:'proxmox_virtual_environment_vm',values}]}}}));
+  fs.writeFileSync(path.join(workspacePath,'fail-apply'),'fail after creation');
+  const env = {TF_VAR_proxmox_endpoint:'https://partial.test',TF_VAR_proxmox_api_token:'user@pve!token=secret'};
+  db.db.prepare("INSERT INTO tofu_workspaces (id,name,path,env_vars,environment_id,workspace_kind) VALUES ('partial-workspace','partial-workspace',?,?,'default','isolated_vm')").run(workspacePath,JSON.stringify(env));
+  db.db.prepare("INSERT INTO tofu_proxmox_vms (id,workspace_id,name,config,is_isolated) VALUES ('partial-vm','partial-workspace','partial-app',?,1)").run(JSON.stringify({...values,bridge:'vmbr0',disk_datastore:'local-lvm'}));
+  const {EventEmitter} = require('events');
+  t.mock.method(require('https'),'request',(url,_options,callback)=>{
+    const stream = new EventEmitter(); stream.setTimeout=()=>stream;
+    stream.end=()=>queueMicrotask(()=>{
+      const response=new EventEmitter(); response.statusCode=200; response.setEncoding=()=>{}; callback(response);
+      const data=String(url).includes('/cluster/resources') ? (fs.existsSync(path.join(workspacePath,'apply-count')) ? [{vmid:47001,node:'pve001',name:'partial-app',type:'qemu'}] : []) : {description:values.description};
+      response.emit('data',JSON.stringify({data})); response.emit('end');
+    }); return stream;
+  });
+  const planned=await request(app).post('/api/opentofu/vms/partial-vm/plan').set(auth).send({});
+  const plan=await waitForRun(planned.body.dbRunId,'success');
+  const applied=await request(app).post('/api/opentofu/vms/partial-vm/apply').set(auth).send({plan_id:plan.id});
+  const failed=await waitForRun(applied.body.dbRunId,'failed');
+  assert.equal(failed.vm_provisioned,1,failed.output);
+  const mapping=db.db.prepare("SELECT server_id FROM tofu_managed_servers WHERE workspace_id='partial-workspace'").get();
+  assert.ok(mapping);
+  assert.equal(db.servers.getById(mapping.server_id).ip_address,'');
+  assert.match(failed.output,/Apply failed after creating the VM/);
+  const reuse=await request(app).post('/api/opentofu/vms/partial-vm/apply').set(auth).send({plan_id:plan.id});
+  assert.equal(reuse.status,409);
 });

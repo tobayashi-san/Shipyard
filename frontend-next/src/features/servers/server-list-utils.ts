@@ -1,6 +1,7 @@
 import { parseApiDate } from '@/lib/utils';
 
 export interface ServerRow {
+  deployment?: { id: string; status: string; deployment_phase: string } | null;
   id: string;
   name: string;
   ip_address?: string;

@@ -66,6 +66,22 @@ function summarizePlanJson(value) {
   return counts;
 }
 
+/** Reject destructive actions from the actual saved plan, including replacements.
+ * @param {any} value
+ */
+function assertNonDestructivePlan(value) {
+  if (!value || typeof value !== 'object' || !Array.isArray(value.resource_changes)) {
+    throw new Error('The saved plan cannot be verified. Create and review a new plan.');
+  }
+  for (const resource of value.resource_changes) {
+    const actions = resource?.change?.actions;
+    if (!Array.isArray(actions) || actions.some(action => !['no-op', 'read', 'create', 'update'].includes(action))) {
+      throw new Error(`Deleting or replacing resources is blocked: ${resource?.address || 'unknown resource'}. Delete VMs manually in Proxmox.`);
+    }
+    if (resource?.change?.importing) throw new Error('Adopting existing resources during deployment is blocked.');
+  }
+}
+
 /**
  * Proves that an isolated VM plan can only affect its single managed resource.
  * Provider reads and no-op entries are harmless; every mutating resource
@@ -76,6 +92,9 @@ function summarizePlanJson(value) {
  */
 function validateIsolatedVmPlan(value, vm) {
   const expectedAddress = `proxmox_virtual_environment_vm.${vm.name}`;
+  try { assertNonDestructivePlan(value); } catch (error) {
+    return { safe: false, initial: false, expected_address: expectedAddress, changed_addresses: [], error: error.message };
+  }
   const changes = (Array.isArray(value?.resource_changes) ? value.resource_changes : [])
     .map(change => ({
       address: String(change?.address || ''),
@@ -141,6 +160,7 @@ function createStreamingRedactor(env, emit) {
 }
 
 module.exports = {
+  assertNonDestructivePlan,
   createStreamingRedactor,
   pruneWorkspaceRuns,
   redactTofuOutput,

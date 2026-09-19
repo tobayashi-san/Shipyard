@@ -1,3 +1,4 @@
+import { PrefixConnectionSelect } from '@/features/deployments/PrefixConnectionSelect';
 import { prefixInputErrors } from "@/lib/ipam-form-validation";
 import { cloneElement, isValidElement, useDeferredValue, useEffect, useId, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
@@ -52,6 +53,7 @@ interface Prefix {
   dhcp_address_count?: number;
   vlan_id?: number | null;
   bridge?: string;
+  proxmox_connection_id?: string;
   description?: string;
   status: string;
   role?: string;
@@ -1634,6 +1636,7 @@ function CreatePrefixDialog({
   const [dns, setDns] = useState("");
   const [vlan, setVlan] = useState("");
   const [bridge, setBridge] = useState("");
+  const [connectionId, setConnectionId] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState("active");
   const [role, setRole] = useState("");
@@ -1651,6 +1654,7 @@ function CreatePrefixDialog({
           dhcp_end: dhcpEnd,
           vlan_id: vlan.trim(),
           bridge,
+          proxmox_connection_id: connectionId,
           description,
           status,
           role,
@@ -1768,6 +1772,7 @@ function CreatePrefixDialog({
                   placeholder="2010"
                 />
               </Field>
+              <PrefixConnectionSelect environmentId={environmentId} value={connectionId} onChange={setConnectionId} />
               <Field label={tr("bridge")}>
                 <Input
                   value={bridge}

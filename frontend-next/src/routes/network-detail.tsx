@@ -1,3 +1,4 @@
+import { PrefixConnectionSelect } from '@/features/deployments/PrefixConnectionSelect';
 import { prefixInputErrors } from "@/lib/ipam-form-validation";
 import {
   cloneElement,
@@ -70,6 +71,7 @@ interface Prefix {
   dns_servers?: string[];
   vlan_id?: number | null;
   bridge?: string;
+  proxmox_connection_id?: string;
   description?: string;
   status: string;
   role?: string;
@@ -2641,6 +2643,7 @@ function prefixFormValue(prefix: Prefix) {
     dns: (prefix.dns_servers || []).join(", "),
     vlan: prefix.vlan_id == null ? "" : String(prefix.vlan_id),
     bridge: prefix.bridge || "",
+    proxmox_connection_id: prefix.proxmox_connection_id || "",
     description: prefix.description || "",
     status: prefix.status,
     role: prefix.role || "",
@@ -2690,6 +2693,7 @@ function EditPrefixDialog({
               dns_servers: value.dns.split(",").map((item) => item.trim()).filter(Boolean),
               vlan_id: value.vlan.trim() ? Number(value.vlan.trim()) : null,
               bridge: value.bridge,
+              proxmox_connection_id: value.proxmox_connection_id,
               description: value.description,
               status: value.status,
               role: value.role,
@@ -2714,6 +2718,7 @@ function EditPrefixDialog({
           <p className="sm:col-span-2 rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">{tr("dhcpRangeHint")}</p>
           <Field label={tr("dnsServers")}><Input value={value.dns} onChange={(event) => change("dns", event.target.value)} placeholder="10.20.10.10, 10.20.10.11" /></Field>
           <Field label={tr("vlanId")}><Input inputMode="numeric" value={value.vlan} onChange={(event) => change("vlan", event.target.value)} /></Field>
+          <PrefixConnectionSelect environmentId={prefix.environment_id} value={value.proxmox_connection_id} onChange={next => change("proxmox_connection_id", next)} />
           <Field label={tr("bridge")}><Input value={value.bridge} onChange={(event) => change("bridge", event.target.value)} /></Field>
           <div className="sm:col-span-2"><Field label={tr("descriptionLabel")}><Input value={value.description} onChange={(event) => change("description", event.target.value)} /></Field></div>
           </fieldset>

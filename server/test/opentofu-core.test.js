@@ -116,12 +116,13 @@ test('isolated VM plans allow only the owned Proxmox resource address', () => {
   assert.match(foreign.error, /database-01/);
 });
 
-test('isolated plan does not mistake an existing-VM replacement for an initial create', () => {
+test('isolated plan blocks an existing-VM replacement', () => {
   const result = validateIsolatedVmPlan({ resource_changes: [{
     address: 'proxmox_virtual_environment_vm.app-01',
     change: { actions: ['delete', 'create'] },
   }] }, { name: 'app-01' });
-  assert.equal(result.safe, true);
+  assert.equal(result.safe, false);
+  assert.match(result.error, /Deleting or replacing/);
   assert.equal(result.initial, false);
 });
 
@@ -567,4 +568,27 @@ test('explicit outputs for a blueprint keep the canonical resource key for post-
   assert.equal(result.servers.length,1);
   assert.equal(result.servers[0].resource_key,'resource:proxmox_virtual_environment_vm.web');
   assert.equal(result.servers[0].ssh_port,2222);
+});
+
+test('all saved plans reject deletion, replacement, import and unknown actions', () => {
+  const { assertNonDestructivePlan } = require('../features/opentofu/run-safety');
+  for (const actions of [['delete'], ['delete', 'create'], ['create', 'delete'], ['forget'], ['unknown']]) {
+    assert.throws(() => assertNonDestructivePlan({ resource_changes: [{ address: 'some.indirect_resource', change: { actions } }] }), /blocked/);
+  }
+  assert.throws(() => assertNonDestructivePlan({}), /cannot be verified/);
+  assert.throws(() => assertNonDestructivePlan({ resource_changes: [{ change: { actions: ['no-op'], importing: { id: 'existing' } } }] }), /Adopting/);
+  assert.doesNotThrow(() => assertNonDestructivePlan({ resource_changes: [{ change: { actions: ['update'] } }] }));
+});
+
+test('isolated deployments never adopt a manual host with a matching name or IP', async () => {
+  const manual = db.servers.create({name:'manual-identity',hostname:'manual-identity',ip_address:'192.0.2.199',ssh_user:'root'});
+  const workspace = {id:'isolated-host-identity',name:'isolated-host-identity',workspace_kind:'isolated_vm'};
+  const desiredServers = [{resource_key:'resource:proxmox_virtual_environment_vm.manual-identity',name:'manual-identity',hostname:'manual-identity',ip_address:'',ssh_user:'ubuntu'}];
+  await reconcileManagedServers({db,workspace,desiredServers});
+  const first = db.db.prepare('SELECT server_id FROM tofu_managed_servers WHERE workspace_id=?').get(workspace.id);
+  assert.notEqual(first.server_id,manual.id);
+  desiredServers[0].ip_address='192.0.2.199';
+  await reconcileManagedServers({db,workspace,desiredServers});
+  assert.equal(db.db.prepare('SELECT server_id FROM tofu_managed_servers WHERE workspace_id=?').get(workspace.id).server_id,first.server_id);
+  assert.equal(db.servers.getById(manual.id).ssh_user,'root');
 });

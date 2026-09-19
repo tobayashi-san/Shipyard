@@ -101,14 +101,13 @@ export function DeploymentDefinition({id, embedded = false, section}: {id: strin
   const profileQuery = useProfile();
   const canEdit = hasCap(profileQuery.data, "canEditDeployments");
   const canPlan = hasCap(profileQuery.data, "canPlanDeployments");
+  const canRestoreState = hasCap(profileQuery.data, "canDestroyDeployments");
   const canApply = hasCap(profileQuery.data, "canApplyDeployments");
-  const canDestroy = hasCap(profileQuery.data, "canDestroyDeployments");
   const [historyPosition, setHistoryPosition] = useState({ vmId: id, page: 1 });
   const historyPage = historyPosition.vmId === id ? historyPosition.page : 1;
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [confirmApply, setConfirmApply] = useState(false);
-  const [confirmDestroy, setConfirmDestroy] = useState(false);
   const [confirmForget, setConfirmForget] = useState(false);
   const [confirmRestore, setConfirmRestore] = useState(false);
   const [selectedBackup, setSelectedBackup] = useState("");
@@ -161,11 +160,6 @@ export function DeploymentDefinition({id, embedded = false, section}: {id: strin
   const runMutation = useMutation({
     mutationFn: (action: "plan" | "apply" | "check-drift" | "resume") => apiFetch(`/opentofu/vms/${encodeURIComponent(id)}/${action}`, { method: "POST", body: action === "apply" ? { plan_id: approvedPlan?.id } : {} }),
     onSuccess: (_result, action) => { showToast(`${action === "check-drift" ? "Drift check" : action === "resume" ? "Deployment completion" : action === "apply" ? "Deployment" : "Plan"} started.`, "success"); refresh(); },
-    onError: (error: Error) => showToast(error.message, "error"),
-  });
-  const destroyMutation = useMutation({
-    mutationFn: () => apiFetch(`/opentofu/vms/${encodeURIComponent(id)}/destroy`, { method: "POST", body: { confirmation: `DESTROY ${vm?.name}` } }),
-    onSuccess: () => { setConfirmDestroy(false); showToast("VM destroy started.", "success"); refresh(); },
     onError: (error: Error) => showToast(error.message, "error"),
   });
   const forgetMutation = useMutation({
@@ -238,7 +232,7 @@ export function DeploymentDefinition({id, embedded = false, section}: {id: strin
         <div className="flex flex-wrap gap-2"><StatusBadge tone={stateSafetyQuery.data?.mode === 'encrypted-backup' ? 'success' : stateSafetyQuery.data?.mode === 'remote' ? 'info' : 'muted'}>{stateSafetyQuery.data?.mode === 'remote' ? `Remote ${stateSafetyQuery.data.backend || ''} backend` : stateSafetyQuery.data?.mode === 'encrypted-backup' ? 'Encrypted local backups' : stateSafetyQuery.isPending ? 'Loading recovery status…' : 'Recovery status unavailable'}</StatusBadge>{stateSafetyQuery.data?.mode === 'remote' && <span className="text-xs text-muted-foreground">Restore state through the configured backend.</span>}</div>
         <details><summary className="cursor-pointer py-2 font-medium">Recovery options</summary>
       <p className="text-muted-foreground">Encrypted state backups protect Shipyard's management state. Restoring one does not roll back the VM in Proxmox; create a new plan afterwards and review the difference before applying.</p>
-        {stateSafetyQuery.data?.mode === 'encrypted-backup' && <div className="flex flex-wrap items-end gap-2"><label className="min-w-0 w-full flex-1"><span className="mb-1 block text-xs font-medium">Recovery point</span><select className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={selectedBackup} onChange={event => setSelectedBackup(event.target.value)}><option value="">Select an encrypted backup</option>{(stateBackupsQuery.data?.items || []).map(backup => <option key={backup.name} value={backup.name}>{formatDate(backup.created_at)} · {(backup.size / 1024).toFixed(1)} KiB</option>)}</select></label><Button variant="outline" disabled={!canDestroy || !selectedBackup || Boolean(activeRun) || runStateUnavailable} onClick={() => setConfirmRestore(true)}><RotateCcw />Restore state</Button></div>}
+        {stateSafetyQuery.data?.mode === 'encrypted-backup' && <div className="flex flex-wrap items-end gap-2"><label className="min-w-0 w-full flex-1"><span className="mb-1 block text-xs font-medium">Recovery point</span><select className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={selectedBackup} onChange={event => setSelectedBackup(event.target.value)}><option value="">Select an encrypted backup</option>{(stateBackupsQuery.data?.items || []).map(backup => <option key={backup.name} value={backup.name}>{formatDate(backup.created_at)} · {(backup.size / 1024).toFixed(1)} KiB</option>)}</select></label><Button variant="outline" disabled={!canRestoreState || !selectedBackup || Boolean(activeRun) || runStateUnavailable} onClick={() => setConfirmRestore(true)}><RotateCcw />Restore state</Button></div>}
         {stateSafetyQuery.data?.mode === 'encrypted-backup' && !stateBackupsQuery.isPending && (stateBackupsQuery.data?.items || []).length === 0 && <p className="text-xs text-muted-foreground">No state backup exists yet. Shipyard creates one before a state-changing apply when local state is present.</p>}
         </details>
       </>}
@@ -269,14 +263,12 @@ export function DeploymentDefinition({id, embedded = false, section}: {id: strin
 
     <details className="rounded-md border p-4"><summary className="cursor-pointer text-sm">More actions</summary><Card className="border-destructive/30"><CardHeader><CardTitle className="text-base">Lifecycle</CardTitle></CardHeader><CardContent className="flex flex-wrap gap-2">
       <Button variant="outline" onClick={() => setConfirmForget(true)} disabled={!canEdit || Boolean(activeRun) || runStateUnavailable}><Unlink />Stop managing</Button>
-      <Button variant="destructive" onClick={() => setConfirmDestroy(true)} disabled={!canDestroy || Boolean(activeRun) || runStateUnavailable}><Trash2 />Destroy VM</Button>
     </CardContent></Card>
 
     </details>
     </>}
     <VmFormDialog vmId={vm.id} environmentId={vm.environment_id} connectionId={vm.connection_id} initialVm={vm} open={editOpen} onOpenChange={setEditOpen} />
     <ConfirmDialog open={confirmApply} onOpenChange={setConfirmApply} title="Deploy VM?" description={approvedPlan ? `OpenTofu will apply only the saved, isolation-checked plan for ${vm.name}: ${summaryLabel(approvedPlan.plan_summary)}.` : "No safe reviewed plan is available."} confirmLabel="Deploy" onConfirm={() => { setConfirmApply(false); runMutation.mutate("apply"); }} isPending={runMutation.isPending} />
-    <ConfirmDialog open={confirmDestroy} onOpenChange={setConfirmDestroy} title="Destroy VM in Proxmox?" description="OpenTofu will destroy only this VM from its independent state. Other VMs cannot be part of this plan." confirmLabel="Destroy VM" variant="destructive" confirmTextValue={`DESTROY ${vm.name}`} confirmInputHelp={<>Enter <code className="font-mono">DESTROY {vm.name}</code>.</>} onConfirm={() => destroyMutation.mutate()} isPending={destroyMutation.isPending} />
     <ConfirmDialog open={confirmForget} onOpenChange={setConfirmForget} title="Stop managing this VM?" description="Shipyard removes the VM from OpenTofu state and management. The existing VM remains unchanged in Proxmox." confirmLabel="Stop managing" variant="warning" confirmTextValue={`FORGET ${vm.name}`} confirmInputHelp={<>Enter <code className="font-mono">FORGET {vm.name}</code>.</>} onConfirm={() => forgetMutation.mutate()} isPending={forgetMutation.isPending} />
     <ConfirmDialog open={confirmRestore} onOpenChange={setConfirmRestore} title="Restore OpenTofu state?" description="This replaces Shipyard's current management state with the selected encrypted backup. It does not change the VM in Proxmox. Create and review a new plan immediately afterwards." confirmLabel="Restore state" variant="warning" confirmTextValue={`RESTORE STATE ${vm.name}`} confirmInputHelp={<>Enter <code className="font-mono">RESTORE STATE {vm.name}</code>.</>} onConfirm={() => restoreStateMutation.mutate()} isPending={restoreStateMutation.isPending} />
   </div>;

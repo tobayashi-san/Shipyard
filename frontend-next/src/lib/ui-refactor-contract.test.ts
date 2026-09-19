@@ -68,12 +68,13 @@ describe("UI refactor contract", () => {
     expect(sidebar).toContain('label="Settings"');
   });
 
-  it("uses three common host tabs while keeping secondary tools available", () => {
+  it("shows host tools directly in the tab bar", () => {
     const page = source("features/server-detail/ServerDetailPage.tsx");
-    expect(page.match(/<TabsTrigger value=/g)).toHaveLength(3);
+    expect(page.match(/<TabsTrigger value=/g)).toHaveLength(8);
     expect(page).toContain('<TabsTrigger value="snapshots">Snapshots</TabsTrigger>');
     expect(page).toContain('<TabsTrigger value="history">Jobs</TabsTrigger>');
-    expect(page).toContain('<OverflowMenu title="More host sections">');
+    expect(page).not.toContain('<OverflowMenu title="More host sections">');
+    for (const tab of ['settings', 'updates', 'notes', 'access']) expect(page).toContain(`<TabsTrigger value="${tab}">`);
     expect(page).toContain('<ServerFilesTab serverId={id} profile={profile} />');
     expect(page).toContain('setTerminalOpen(true)');
   });
