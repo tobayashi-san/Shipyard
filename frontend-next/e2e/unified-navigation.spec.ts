@@ -23,30 +23,30 @@ async function inventory(page: Page) {
   await page.route('**/api/opentofu/proxmox-connections/pve/vm-catalog*', route => route.fulfill({json:{nodes:[{name:'pve01'}], templates:[], datastores:[], bridges:[]}}));
 }
 
-test('fixed navigation, host hierarchy and contextual creation work on desktop and mobile', async ({page}) => {
-  await login(page); await inventory(page); await page.goto('/');
-  await expect(page).toHaveURL(/\/infrastructure$/);
-  const main = page.locator('main');
-  await expect(main.getByRole('heading', {name:'Infrastructure', exact:true})).toBeVisible();
-  await expect(main.getByRole('link', {name:'vm-app01',exact:true})).toBeHidden();
-  await main.locator('summary').filter({hasText:'1 virtual machine'}).click();
-  await expect(main.getByRole('link',{name:'vm-app01',exact:true})).toBeVisible();
-  await main.getByRole('button',{name:'Create VM',exact:true}).click();
-  const dialog = page.getByRole('dialog');
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole('combobox', {name:/node/i}).first()).toHaveValue('pve01');
-  await page.keyboard.press('Escape');
+test('hosts are the home page with five fixed destinations and no platform polling', async ({page}) => {
+  await login(page); await inventory(page);
+  let platformRequests = 0;
+  page.on('request', request => { if (/\/api\/opentofu\/infrastructure/.test(request.url())) platformRequests++; });
+  await page.route('**/api/servers?*', route => route.fulfill({json:[{id:'host01',name:'app01',ip_address:'192.0.2.1',status:'online',last_seen:'2026-09-19 12:00:00'}]}));
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/servers$/);
+  await expect(page.locator('main').getByRole('heading',{name:'Hosts',exact:true})).toBeVisible();
+  await expect(page.locator('main').getByRole('columnheader')).toHaveText(['Name','Address','Connection','Last successful check','Group']);
+  await expect(page.locator('main').getByRole('link',{name:'app01',exact:true})).toBeVisible();
+  expect(platformRequests).toBe(0);
   for (const width of [1440,390]) {
     await page.setViewportSize({width,height:900});
     if (width < 1024) await page.getByRole('button',{name:'Open navigation',exact:true}).click();
     const nav = page.getByRole('navigation',{name:'Main navigation'});
-    for (const name of ['Infrastructure','Automations','Networks','Jobs']) await expect(nav.getByRole('link',{name,exact:true})).toBeVisible();
-    await expect(page.getByRole('button',{name:'Operations',exact:true})).toHaveCount(0);
+    for (const name of ['Hosts','Deployments','Automations','Networks','Jobs']) await expect(nav.getByRole('link',{name,exact:true})).toBeVisible();
     if (width < 1024) await page.getByRole('button',{name:'Close navigation',exact:true}).last().click();
-    await expect(page.getByRole('combobox',{name:'Environment',exact:true})).toBeVisible({visible:width < 1024});
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-    await page.screenshot({path:path.join(shots, `unified-infrastructure-${width}.png`),fullPage:true,animations:'disabled'});
+    await page.screenshot({path:path.join(shots, `hosts-${width}.png`),fullPage:true,animations:'disabled'});
   }
+  await page.getByRole('button',{name:'Add host',exact:true}).click();
+  await page.getByRole('button',{name:'Import from Proxmox',exact:true}).click();
+  await expect(page.getByRole('dialog',{name:'Import from Proxmox'}).getByRole('button',{name:/vm-app01/})).toBeVisible();
+  expect(platformRequests).toBeGreaterThan(0);
 });
 
 test('settings have four groups and preserve legacy entry points', async ({page}) => {
@@ -85,7 +85,7 @@ test('automation selections transfer to scheduling without executing a playbook'
 });
 
 
-test('VM configuration deep links include the deployment definition and jobs', async ({page}) => {
+test('deployment details stay separate from host details and expose a draft action', async ({page}) => {
   await login(page); await inventory(page);
   await page.route('**/api/opentofu/proxmox-connections/pve/vms/pve01/101/context', route => route.fulfill({json:{deployments:[{definition_id:'definition01',workspace_id:'workspace01',workspace_name:'Application',vm_name:'vm-app01'}]}}));
   await page.route('**/api/opentofu/proxmox-connections/pve/vms/pve01/101/configuration', route => route.fulfill({json:{hardware:{cores:2,memory_mb:4096},networks:[],disks:[]}}));
@@ -96,18 +96,17 @@ test('VM configuration deep links include the deployment definition and jobs', a
     const suffix = new URL(route.request().url()).pathname.split('/').pop();
     return route.fulfill({json:suffix === 'runs' ? {items:[{id:'run01',action:'plan',status:'success'}]} : suffix === 'live' ? {available:true,node_name:'pve01',vm_id:101,cpu_cores:2,memory_mb:4096} : {}});
   });
-  await page.goto('/infrastructure/https%3A%2F%2Fpve.example/nodes/pve01/vms/101#tab=configuration');
-  await expect(page.locator('main').getByRole('heading',{name:'Deployment definition',exact:true})).toBeVisible();
-  await expect(page.locator('main').getByRole('tab')).toHaveText(['Overview','Configuration','Jobs']);
+  await page.goto('/deployments/definition01');
+  await expect(page).toHaveURL(/\/deployments\/definition01$/);
+  await expect(page.locator('main').getByRole('heading',{name:'vm-app01',exact:true})).toBeVisible();
+  await expect(page.getByText('Draft — not deployed',{exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Create plan',exact:true})).toBeVisible();
   await page.locator('main').getByRole('tab',{name:'Jobs',exact:true}).click();
   await expect(page.locator('main').getByRole('button',{name:'View logs',exact:true})).toBeVisible();
-  await page.goto('/deployments/definition01');
-  await expect(page).toHaveURL(/infrastructure.*101#tab=configuration/);
-  await expect(page.locator('main').getByRole('heading',{name:'Deployment definition',exact:true})).toBeVisible();
   await page.screenshot({path:path.join(shots, 'unified-vm-configuration.png'),fullPage:true,animations:'disabled'});
 });
 
-test('an adopted Proxmox node has one host page and retains advanced node functions', async ({page}) => {
+test('a host shows host facts and snapshots without VM hardware or inventory requests', async ({page}) => {
   await login(page);
   const host = await page.evaluate(async () => {
     const response = await fetch('/api/servers', {method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('shipyard_token')}`},body:JSON.stringify({name:'pve01-canonical',hostname:'pve.example',ip_address:'192.0.2.20'})});
@@ -119,16 +118,16 @@ test('an adopted Proxmox node has one host page and retains advanced node functi
     const adopted = {...cluster,nodes:[{...cluster.nodes[0],fleet_server_id:host.id}]};
     await page.route('**/api/opentofu/infrastructure?*', route => route.fulfill({json:{clusters:[adopted]}}));
     await page.route('**/api/opentofu/proxmox-connections/pve/audit?*', route => route.fulfill({json:{events:[],total:0,offset:0,limit:20}}));
-    await page.goto('/infrastructure/https%3A%2F%2Fpve.example/nodes/pve01');
-    await expect(page).toHaveURL(new RegExp(`/servers/${host.id}#tab=overview$`));
+    let inventoryRequests = 0;
+    page.on('request', request => { if (request.url().includes('/api/opentofu/infrastructure?')) inventoryRequests++; });
+    await page.goto(`/servers/${host.id}`);
     await expect(page.getByRole('heading',{name:'pve01-canonical',exact:true})).toBeVisible();
-    await expect(page.locator('main').getByRole('tab')).toHaveText(['Overview','Configuration','Jobs']);
-    await page.getByRole('button',{name:'More host sections',exact:true}).click();
-    await page.getByRole('menuitem',{name:'Advanced · Proxmox node',exact:true}).click();
-    await page.getByRole('tablist',{name:'Node sections',exact:true}).getByRole('tab',{name:'Configuration',exact:true}).click();
-    await expect(page).toHaveURL(/#tab=node&nodeTab=configuration$/);
-    await page.reload();
-    await expect(page.getByRole('tablist',{name:'Node sections',exact:true}).getByRole('tab',{name:'Configuration',exact:true})).toHaveAttribute('data-state','active');
+    await expect(page.getByRole('tablist',{name:'Host sections'}).getByRole('tab')).toHaveText(['Overview','Snapshots','Jobs']);
+    await expect(page.getByText('Recent capacity',{exact:true})).toHaveCount(0);
+    await expect(page.getByText('Virtual machines',{exact:true})).toHaveCount(0);
+    await page.getByRole('tab',{name:'Snapshots',exact:true}).click();
+    await expect(page.getByText('Snapshots are available for hosts linked to a Proxmox guest.')).toBeVisible();
+    expect(inventoryRequests).toBe(0);
   } finally {
     await page.evaluate(async id => { await fetch(`/api/servers/${id}`,{method:'DELETE',headers:{Authorization:`Bearer ${localStorage.getItem('shipyard_token')}`}}); },host.id);
   }
@@ -145,19 +144,41 @@ test('a host-only role can open the new home without requesting restricted platf
   const restricted: string[] = [];
   page.on('request', request => {if (request.url().includes('/api/opentofu/')) restricted.push(request.url());});
   await page.goto('/');
-  await expect(page).toHaveURL(/\/infrastructure$/);
-  await expect(page.getByRole('heading',{name:'Infrastructure',exact:true})).toBeVisible();
-  await expect(page.getByRole('heading',{name:'No infrastructure connected yet'})).toBeVisible();
+  await expect(page).toHaveURL(/\/servers$/);
+  await expect(page.getByRole('heading',{name:'Hosts',exact:true})).toBeVisible();
+  await expect(page.getByText('Add a host to get started.',{exact:true})).toBeVisible();
   expect(restricted).toEqual([]);
 });
 
-test('saved VM definitions appear beneath their host before deployment', async ({page}) => {
+test('drafts appear in Deployments and never in the host list', async ({page}) => {
   await login(page); await inventory(page);
   await page.route('**/api/opentofu/vms?*', route => route.fulfill({json:[{id:'draft01',name:'vm-draft01',node_name:'pve01',platform:{endpoint:'https://pve.example'}}]}));
-  await page.goto('/infrastructure');
-  await page.locator('main summary').filter({hasText:'2 virtual machines'}).click();
-  const draft = page.locator('main').getByRole('link',{name:'vm-draft01 Defined',exact:true});
-  await expect(draft).toBeVisible();
-  await expect(draft).toHaveAttribute('href','/deployments/draft01');
-  await expect(page.getByText('VM definitions without host inventory',{exact:true})).toBeHidden();
+  await page.goto('/servers');
+  await expect(page.getByText('vm-draft01',{exact:true})).toHaveCount(0);
+  await page.goto('/deployments');
+  await expect(page.getByRole('row',{name:'Open vm-draft01',exact:true})).toContainText('Draft');
+});
+
+test('deployment completion retries connection without another apply and opens the ready host', async ({page}) => {
+  await login(page);
+  let resumed = false;
+  let applyRequests = 0;
+  let resumeRequests = 0;
+  await page.route('**/api/opentofu/vms/retry-vm**', route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/apply')) applyRequests++;
+    if (path.endsWith('/resume')) { resumed = true; resumeRequests++; return route.fulfill({json:{status:'started',dbRunId:'retry-run'}}); }
+    const deployment = {id:'retry-run',action:'apply',status:resumed?'success':'failed',deployment_phase:resumed?'ready':'connect_host',vm_provisioned:1};
+    const json = path.endsWith('/runs') ? {items:[deployment]} : path.endsWith('/retry-vm') ? {id:'retry-vm',name:'app-retry',host_id:'ready-host',environment_id:'default',connection_id:'pve',node_name:'pve01',vm_id:123,started:true,cpu_cores:2,memory_mb:4096,disk_size_gb:40,bridge:'vmbr0',ipv4_address:'dhcp',deployment} : path.endsWith('/live') ? {available:true,node_name:'pve01',vm_id:123,cpu_cores:2,memory_mb:4096,disk_size_gb:40,bridge:'vmbr0',ipv4_address:'192.0.2.123'} : {};
+    return route.fulfill({json});
+  });
+  await page.goto('/deployments/retry-vm');
+  await expect(page.getByText('VM created · host connection incomplete',{exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'View failure log',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Retry deployment completion',exact:true}).click();
+  await expect(page.getByRole('link',{name:'Open host',exact:true})).toHaveAttribute('href','/servers/ready-host');
+  await expect(page.getByText('Ready',{exact:true})).toBeVisible();
+  expect(resumeRequests).toBe(1);
+  expect(applyRequests).toBe(0);
+  await page.screenshot({path:path.join(shots,'deployment-ready.png'),fullPage:true,animations:'disabled'});
 });

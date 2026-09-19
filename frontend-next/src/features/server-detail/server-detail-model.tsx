@@ -75,78 +75,6 @@ export interface StorageMount {
   mounted?: boolean;
 }
 
-export interface ServerInfoHistoryPoint {
-  collected_at: string;
-  source: "agent" | "ssh";
-  cpu_usage_pct?: number | null;
-  ram_used_mb?: number | null;
-  ram_total_mb?: number | null;
-  disk_used_gb?: number | null;
-  disk_total_gb?: number | null;
-}
-
-function metricPercent(
-  point: ServerInfoHistoryPoint,
-  metric: "cpu" | "ram" | "disk",
-): number | null {
-  if (metric === "cpu") return point.cpu_usage_pct ?? null;
-  const used = metric === "ram" ? point.ram_used_mb : point.disk_used_gb;
-  const total = metric === "ram" ? point.ram_total_mb : point.disk_total_gb;
-  return used != null && total ? Math.round((used / total) * 100) : null;
-}
-
-export function HostMetricTrends({
-  points,
-  warningAt,
-  hour12,
-}: {
-  points: ServerInfoHistoryPoint[];
-  warningAt: { cpu: number; ram: number; disk: number };
-  hour12: boolean;
-}) {
-  const recent = points.slice(-24);
-  if (recent.length < 2) {
-    return <p className="text-xs text-muted-foreground">Trends appear after two host measurements.</p>;
-  }
-  const metrics = [
-    ["cpu", "CPU", warningAt.cpu],
-    ["ram", "Memory", warningAt.ram],
-    ["disk", "Disk", warningAt.disk],
-  ] as const;
-  return (
-    <div className="grid gap-3 sm:grid-cols-3" aria-label="Recent host capacity trends">
-      {metrics.map(([key, label, threshold]) => {
-        const values = recent.map((point) => metricPercent(point, key));
-        const valid = values.filter((value): value is number => value !== null);
-        const latest = [...values].reverse().find((value) => value !== null);
-        const polyline = values.map((value, index) => {
-          const x = values.length === 1 ? 0 : (index / (values.length - 1)) * 100;
-          return `${x},${100 - Math.max(0, Math.min(100, value ?? 0))}`;
-        }).join(" ");
-        return (
-          <div key={key} className="rounded-md border bg-background/60 p-2.5">
-            <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-              <span className="font-medium">{label}</span>
-              <span className="font-mono tabular-nums">{latest == null ? "No data" : `${latest}%`}</span>
-            </div>
-            {valid.length >= 2 ? (
-              <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-10 w-full" role="img" aria-label={`${label} recent trend, latest ${latest}%`}>
-                <line x1="0" x2="100" y1={100 - threshold} y2={100 - threshold} className="stroke-amber-500/50" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
-                <polyline points={polyline} fill="none" className="stroke-primary" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-              </svg>
-            ) : (
-              <div className="flex h-10 items-center text-xs text-muted-foreground">No comparable values</div>
-            )}
-          </div>
-        );
-      })}
-      <p className="text-[11px] text-muted-foreground sm:col-span-3">
-        {recent.length} measurements · {formatDate(recent[0].collected_at, hour12)} to {formatDate(recent.at(-1)?.collected_at, hour12)} · latest source {recent.at(-1)?.source === "agent" ? "Shipyard Agent" : "SSH"}
-      </p>
-    </div>
-  );
-}
-
 export interface ZfsPool {
   name: string;
   health: string;
@@ -212,6 +140,7 @@ export interface ManagedDeployment {
     node_name?: string;
     vm_id?: number | string | null;
     post_deploy_playbooks?: string[];
+    guest_type?: "qemu" | "lxc";
   } | null;
 }
 

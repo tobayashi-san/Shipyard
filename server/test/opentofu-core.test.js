@@ -532,3 +532,39 @@ test('stopped Proxmox guests do not wait for DHCP or authorize empty inventory c
   assert.equal(result.authoritative,false);
   assert.deepEqual(result.servers,[]);
 });
+
+test('guest discovery hydrates a new VM before the state contains an IP', async () => {
+  const state = { values: { root_module: { resources: [{ address: 'proxmox_virtual_environment_vm.newhost', type: 'proxmox_virtual_environment_vm', values: { name: 'newhost', vm_id: 321, node_name: 'pve01', started: true } }] } } };
+  const vms = [{ name: 'newhost', username: 'ubuntu', ipv4_address: 'dhcp' }];
+  let attempts = 0;
+  const result = await waitForManagedServers({ workspaceName: 'new-deployment', loadState: async () => state, maxWaitMs: 1000, retryMs: 1, sleepFn: async () => {}, hydrateServers: async ({ state, servers }) => {
+    attempts++;
+    const enriched = applyFleetProxmoxBlueprintMetadata({ state, servers, vms, guestIps: attempts > 1 ? new Map([['resource:proxmox_virtual_environment_vm.newhost', '192.168.90.31']]) : new Map() });
+    return { servers: enriched.servers, pending: enriched.pendingDhcpResourceKeys.length > 0 };
+  } });
+  assert.equal(attempts, 2);
+  assert.equal(result.authoritative, true);
+  assert.equal(result.timedOut, false);
+  assert.equal(result.servers[0].ip_address, '192.168.90.31');
+  assert.equal(result.servers[0].ssh_user, 'ubuntu');
+});
+
+test('host registration never reuses an identically addressed host from another environment', async () => {
+  const foreign = db.servers.create({ name: 'environment-boundary', hostname: 'environment-boundary', ip_address: '10.98.12.33', environment_id: 'default' });
+  const environment = { id: 'deployment-boundary' };
+  db.db.prepare('INSERT INTO environments (id, name) VALUES (?, ?)').run(environment.id, 'Deployment boundary');
+  const workspace = { id: 'environment-boundary-workspace', name: 'environment-boundary', environment_id: environment.id };
+  await reconcileManagedServers({ db, workspace, desiredServers: [{ resource_key: 'resource:vm.boundary', name: 'environment-boundary', hostname: 'environment-boundary', ip_address: '10.98.12.33' }] });
+  const mapping = db.db.prepare('SELECT server_id FROM tofu_managed_servers WHERE workspace_id = ?').get(workspace.id);
+  assert.notEqual(mapping.server_id, foreign.id);
+  assert.equal(db.servers.getById(mapping.server_id).environment_id, environment.id);
+  assert.equal(db.servers.getById(foreign.id).environment_id, 'default');
+});
+
+test('explicit outputs for a blueprint keep the canonical resource key for post-deploy', () => {
+  const state = {values:{root_module:{resources:[{address:'proxmox_virtual_environment_vm.web',type:'proxmox_virtual_environment_vm',values:{name:'web',ipv4_addresses:[['192.0.2.42']]}}]}}};
+  const result = applyFleetProxmoxBlueprintMetadata({state,vms:[{name:'web',username:'debian',ssh_port:2222,ipv4_address:'192.0.2.42'}],servers:[{resource_key:'output:shipyard_servers:web',name:'web',ip_address:'192.0.2.42'}]});
+  assert.equal(result.servers.length,1);
+  assert.equal(result.servers[0].resource_key,'resource:proxmox_virtual_environment_vm.web');
+  assert.equal(result.servers[0].ssh_port,2222);
+});

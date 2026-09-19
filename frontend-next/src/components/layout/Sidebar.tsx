@@ -1,6 +1,5 @@
 import {
   canAccessDeployments,
-  canAccessInfrastructure,
   canAccessNetworks,
   canAccessOperations,
   hasCap,
@@ -13,6 +12,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Activity,
   FileCode2,
+  Rocket,
   GripVertical,
   HelpCircle,
   Network,
@@ -73,7 +73,6 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
   const canViewPlaybooks = hasCap(profile, "canViewPlaybooks");
   const canManageConsole = profile?.role === "admin";
   const canViewDeployments = canAccessDeployments(profile);
-  const canViewInfrastructure = canAccessInfrastructure(profile);
   const canViewNetworks = canAccessNetworks(profile);
   const canViewOperations = canAccessOperations(profile);
 
@@ -122,7 +121,8 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
       </div>
 
       <nav className="min-h-0 flex flex-1 flex-col gap-1 overflow-y-auto p-2" aria-label="Main navigation">
-        {(canViewInfrastructure || canViewServers || canViewDeployments) && <NavItem to="/infrastructure" label="Infrastructure" icon={Server} active={path === "/" || /^\/(infrastructure|servers|deployments)(\/|$)/.test(path)} collapsed={collapsed} onNavigate={onMobileClose} />}
+        {canViewServers && <NavItem to="/servers" label="Hosts" icon={Server} active={path === "/" || path.startsWith("/servers")} collapsed={collapsed} onNavigate={onMobileClose} />}
+        {canViewDeployments && <NavItem to="/deployments" label="Deployments" icon={Rocket} active={path.startsWith("/deployments")} collapsed={collapsed} onNavigate={onMobileClose} />}
         {canViewPlaybooks && <NavItem to="/playbooks" label="Automations" icon={FileCode2} active={path === "/playbooks"} collapsed={collapsed} onNavigate={onMobileClose} />}
         {canViewNetworks && <NavItem to="/networks" label="Networks" icon={Network} active={path.startsWith("/networks")} collapsed={collapsed} onNavigate={onMobileClose} />}
         {canViewOperations && <NavItem to="/operations" search={{ section: "tasks" }} label="Jobs" icon={Activity} active={path.startsWith("/operations")} collapsed={collapsed} onNavigate={onMobileClose} />}

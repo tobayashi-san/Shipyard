@@ -11,7 +11,7 @@
   },
   "files": [
     "features/opentofu/core-utils.js",
-    "features/opentofu/storage-history.js",
+    "features/opentofu/storage-inventory.js",
     "features/opentofu/proxmox-client.js",
     "features/opentofu/run-safety.js",
     "features/opentofu/terraform-outputs.js",

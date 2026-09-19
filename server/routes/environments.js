@@ -123,12 +123,6 @@ router.delete('/:id', (req, res) => {
       moveEnvironmentRows('proxmox_guest_audit', id);
       moveEnvironmentRows('proxmox_object_audit', id);
       moveEnvironmentRows('proxmox_guest_tasks', id);
-      if (hasTable('proxmox_storage_history')) {
-        db.db.prepare(`INSERT INTO proxmox_storage_history SELECT 'default',endpoint,node_name,storage_id,bucket,sampled_at,used,total FROM proxmox_storage_history WHERE environment_id=?
-          ON CONFLICT(environment_id,endpoint,node_name,storage_id,bucket) DO UPDATE SET sampled_at=excluded.sampled_at,used=excluded.used,total=excluded.total
-          WHERE excluded.sampled_at > proxmox_storage_history.sampled_at`).run(id);
-        db.db.prepare('DELETE FROM proxmox_storage_history WHERE environment_id=?').run(id);
-      }
       moveEnvironmentRows('operation_acknowledgements', id);
       moveEnvironmentRows('ansible_vars', id);
       moveEnvironmentRows('variable_change_events', id);

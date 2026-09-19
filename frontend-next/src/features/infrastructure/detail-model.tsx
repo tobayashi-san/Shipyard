@@ -6,8 +6,6 @@ import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { formatDateTime } from "@/lib/utils";
 
 export interface Datastore {
-  capacity_history_hourly?: Array<{sampled_at: number; used: number; total: number; observations: number}>;
-  capacity_history?: Array<{sampled_at: number; used: number; total: number}>;
   content?: string[] | null;
   shared?: boolean | null;
   active?: boolean | null;
@@ -122,6 +120,7 @@ export interface Cluster {
   datastores?: Datastore[];
 }
 export interface InfrastructureResponse {
+  warnings?: string[];
   clusters?: Cluster[];
   updated_at?: string;
   cached?: boolean;

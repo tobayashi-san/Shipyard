@@ -15,7 +15,7 @@ async function signIn(page: Page) {
     localStorage.setItem('shipyard_token', data.token);
   });
   await page.goto('/');
-  await expect(page.getByRole('heading', {name: 'Infrastructure', exact: true})).toBeVisible();
+  await expect(page.getByRole('heading', {name: 'Hosts', exact: true})).toBeVisible();
 }
 async function capture(page: Page, name: string) {
   fs.mkdirSync(shots, {recursive:true});
@@ -109,10 +109,10 @@ test('search ranks literal names, limits groups and highlights their matches',as
 test('connection credentials and disabled TLS have separate status and edit action',async({page})=>{
  await signIn(page);
  await page.route('**/api/opentofu/proxmox-connections?*',route=>route.fulfill({json:[{id:'review',name:'Review platform',endpoint:'https://192.0.2.99:8006',api_token_configured:true,insecure:true,auto_sync:false}]}));
- await page.goto('/deployments');
- await page.getByRole('button',{name:'Platform connections'}).click();
+ await page.goto('/settings/connections');
+ await page.getByRole('button',{name:'Manage connections'}).click();
  const dialog=page.getByRole('dialog',{name:'Platform connections'});
- await expect(dialog.getByRole('table').getByText('Token stored',{exact:true})).toBeVisible();
+ await expect(dialog.getByText('Token stored',{exact:true})).toBeVisible();
  const warning=dialog.getByRole('button',{name:'Certificate verification off'});
  await expect(warning).toBeVisible();
  await expect(warning).toHaveClass(/text-warning/);

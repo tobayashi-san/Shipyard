@@ -17,7 +17,6 @@ const ProfilePage = lazy(() => import('@/routes/profile').then(module => ({ defa
 const DeploymentsPage = lazy(() => import('@/routes/deployments').then(module => ({ default: module.DeploymentsPage })));
 const DeploymentDetailPage = lazy(() => import('@/routes/deployment-detail').then(module => ({ default: module.DeploymentDetailPage })));
 const InfrastructureDetailPage = lazy(() => import('@/routes/infrastructure-detail').then(module => ({ default: module.InfrastructureDetailPage })));
-const InfrastructurePage = lazy(() => import('@/routes/infrastructure').then(module => ({ default: module.InfrastructurePage })));
 const ProxmoxVmDetailPage = lazy(() => import('@/routes/proxmox-vm-detail').then(module => ({ default: module.ProxmoxVmDetailPage })));
 const OperationExecutionPage = lazy(() => import('@/routes/operation-execution').then(module => ({ default: module.OperationExecutionPage })));
 const OperationsPage = lazy(() => import('@/routes/operations').then(module => ({ default: module.OperationsPage })));
@@ -100,7 +99,18 @@ const protectedLayout = createRoute({
   ),
 });
 
-const dashboardRoute  = createRoute({ getParentRoute: () => protectedLayout, path: '/',             component: () => <Navigate to="/infrastructure" replace /> });
+function HomePage() {
+  const { data: profile, isPending } = useProfile();
+  if (isPending) return <div className="p-6 text-sm text-muted-foreground">Loading console…</div>;
+  const destination = hasCap(profile, 'canViewServers') ? '/servers'
+    : canAccessDeployments(profile) ? '/deployments'
+    : hasCap(profile, 'canViewPlaybooks') ? '/playbooks'
+    : canAccessNetworks(profile) ? '/networks'
+    : canAccessOperations(profile) ? '/operations' : '/profile';
+  return <Navigate to={destination} replace />;
+}
+
+const dashboardRoute  = createRoute({ getParentRoute: () => protectedLayout, path: '/',             component: HomePage });
 const serversRoute    = createRoute({
   getParentRoute: () => protectedLayout,
   path: '/servers',
@@ -127,7 +137,7 @@ const infrastructureRoute = createRoute({
     if (search.section === 'platforms' || search.section === 'nodes' || search.section === 'guests' || search.section === 'datastores') result.section = search.section;
     return result;
   },
-  component: () => <LazyPage><InfrastructurePage /></LazyPage>,
+  component: HomePage,
 });
 const infrastructureDetailRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/infrastructure/$clusterId', component: () => <PermissionGate allow={canAccessInfrastructure}><LazyPage><InfrastructureDetailPage /></LazyPage></PermissionGate> });
 const infrastructureNodeRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/infrastructure/$clusterId/nodes/$nodeName', component: () => <PermissionGate allow={canAccessInfrastructure}><LazyPage><InfrastructureDetailPage /></LazyPage></PermissionGate> });

@@ -127,9 +127,6 @@ test('deleting an environment consolidates every scoped resource without breakin
   db.db.prepare('INSERT INTO maintenance_windows (id, environment_id, name, starts_at, ends_at) VALUES (?, ?, ?, ?, ?)')
     .run(db.uuidv4(), environmentId, 'Preserved window', '2030-01-01T00:00:00.000Z', '2030-01-01T01:00:00.000Z');
 
-  const history = db.db.prepare('INSERT INTO proxmox_storage_history VALUES (?,?,?,?,?,?,?,?)');
-  history.run(environmentId,'https://proxmox.invalid','pve001','local',1,100,10,100);
-  history.run('default','https://proxmox.invalid','pve001','local',1,200,20,100);
   const auditId = db.auditLog.write('infrastructure.vm_power', 'action=start', null, true, 'fixture', environmentId);
   db.db.prepare('INSERT INTO proxmox_guest_audit VALUES (?, ?, ?, ?, ?)').run(auditId, connectionId, environmentId, 'pve001', 101);
   db.db.prepare('INSERT INTO proxmox_object_audit VALUES (?, ?, ?, ?)').run(auditId, connectionId, environmentId, 'pve001');
@@ -152,7 +149,6 @@ test('deleting an environment consolidates every scoped resource without breakin
   assert.equal(task.environment_id, 'default');
   assert.equal(task.status, 'running');
   assert.equal(task.connection_id, connectionId);
-  assert.equal(db.db.prepare("SELECT used FROM proxmox_storage_history WHERE environment_id='default' AND storage_id='local'").get().used,20);
 
   assert.equal(db.db.prepare('SELECT environment_id FROM server_groups WHERE id = ?').get(group.id).environment_id, 'default');
 
@@ -160,7 +156,7 @@ test('deleting an environment consolidates every scoped resource without breakin
     'ssh_key_assignments', 'schedules', 'schedule_history', 'ansible_vars', 'variable_change_events', 'ipam_subnets',
     'ipam_sync_sources', 'ipam_sync_conflicts', 'ipam_proxmox_sync_conflicts',
     'maintenance_windows', 'tofu_workspaces', 'tofu_proxmox_connections',
-    'proxmox_guest_audit', 'proxmox_object_audit', 'proxmox_guest_tasks', 'proxmox_storage_history',
+    'proxmox_guest_audit', 'proxmox_object_audit', 'proxmox_guest_tasks',
   ]) {
     assert.equal(db.db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE environment_id = ?`).get(environmentId).count, 0, table);
   }

@@ -111,7 +111,6 @@ import {
   formatDate,
   formatUptime,
   HostStorageInventory,
-  HostMetricTrends,
   RecentHostTasks,
   SummaryField,
 } from "./server-detail-model";
@@ -227,7 +226,6 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
     latencyMs,
     setLatencyMs,
     latencyCheckedAt,
-    infoHistory,
     HIST_PAGE_SIZE,
     histPage,
     setHistPage,
@@ -391,10 +389,7 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                     pct={diskPct}
                     warningAt={healthThresholds.disk}
                   />
-                  <div className="border-t pt-3">
-                    <div className="mb-2 text-xs font-medium">Recent capacity</div>
-                    <HostMetricTrends points={infoHistory} warningAt={healthThresholds} hour12={hour12} />
-                  </div>
+
                 </div>
               </div>
             </div>
@@ -423,13 +418,6 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
           )}
 
           <RecentHostTasks history={histItems} hour12={hour12} />
-        </TabsContent>
-
-        {/* ════ CONFIGURATION ════
-            Static access, provisioning and storage facts deliberately live
-            outside the operational overview. This keeps the first tab useful
-            during an incident and mirrors the VM / Node object structure. */}
-        <TabsContent value="configuration" className="space-y-4">
           <div className="grid items-start gap-4 lg:grid-cols-2">
             {/* The summary above is the live hardware view.  Keep this pane
                 deliberately to static operating-system and access facts so
@@ -556,108 +544,7 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader className="border-b px-4 py-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Workflow className="h-4 w-4" />
-                  Management & provisioning
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                {!canViewManagementRelationships ? (
-                  <p className="p-4 text-sm text-muted-foreground">Your role cannot view management relationships.</p>
-                ) : deploymentContextFailed ? (
-                  <div role="alert" className="p-4 text-sm"><p>Management relationships could not be loaded.</p><Button size="sm" variant="outline" onClick={() => void refetchDeploymentContext()}>Retry</Button></div>
-                ) : deploymentContextLoading ? (
-                  <p role="status" className="p-4 text-sm text-muted-foreground">Loading management relationships…</p>
-                ) : managedDeployments.length === 0 ? (
-                  <div className="px-4 py-5 text-sm text-muted-foreground">
-                    This host is not linked to a platform VM or declarative
-                    deployment.
-                  </div>
-                ) : (
-                  <div className="divide-y">
-                    {managedDeployments.map((deployment) => {
-                      const hasVmRoute = Boolean(
-                        deployment.connection_id &&
-                          deployment.cluster_id &&
-                          deployment.vm?.node_name &&
-                          deployment.vm?.vm_id != null,
-                      );
-                      const source =
-                        deployment.kind === "inventory"
-                          ? "Adopted Proxmox VM"
-                          : "OpenTofu deployment";
-                      return (
-                        <div
-                          key={`${deployment.workspace_id || "inventory"}:${deployment.resource_key}`}
-                          className="px-4 py-3"
-                        >
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                                {source}
-                              </div>
-                              <div className="mt-1 font-medium">
-                                {deployment.kind === "inventory"
-                                  ? `Proxmox · ${deployment.workspace_name}`
-                                  : deployment.workspace_name}
-                              </div>
-                              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs text-muted-foreground">
-                                {deployment.vm && <span>VM name: {deployment.vm.name || "Not available; open inventory"}</span>}
-                                {deployment.vm?.node_name && (
-                                  <span>
-                                    {t("det.node")}: {deployment.vm.node_name}
-                                  </span>
-                                )}
-                                {deployment.vm?.vm_id != null && (
-                                  <span>VM-ID: {deployment.vm.vm_id}</span>
-                                )}
-                                {deployment.vm?.post_deploy_playbooks
-                                  ?.length ? (
-                                  <span>
-                                    {t("det.postDeploySteps", {
-                                      count:
-                                        deployment.vm.post_deploy_playbooks
-                                          .length,
-                                    })}
-                                  </span>
-                                ) : null}
-                              </div>
-                            </div>
-                            {hasVmRoute ? (
-                              <Button variant="outline" size="sm" asChild>
-                                <Link
-                                  to="/servers/$id"
-                                  params={{ id: String(server.id) }}
-                                  hash="tab=vm"
-                                >
-                                  Virtual machine
-                                </Link>
-                              </Button>
-                            ) : (
-                              <Button variant="outline" size="sm" asChild>
-                                <Link
-                                  to={
-                                    deployment.kind === "inventory"
-                                      ? "/infrastructure"
-                                      : "/deployments"
-                                  }
-                                >
-                                  {deployment.kind === "inventory"
-                                    ? "Open infrastructure"
-                                    : t("det.openDeployment")}
-                                </Link>
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+
           </div>
 
           {/* VMware-style detail pane: capacity is intentionally shown once

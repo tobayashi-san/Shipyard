@@ -83,6 +83,7 @@ function normalizeProxmoxVm(input = {}) {
     ipv4_gateway: ipv4Address === 'dhcp' ? '' : gateway,
     dns_servers: dnsServers,
     username: proxmoxString(input.username, 'ubuntu', { field: 'VM username', pattern: /^[a-z_][a-z0-9_-]{0,31}$/, max: 32 }),
+    ssh_port: proxmoxInt(input.ssh_port, 22, { min: 1, max: 65535, field: 'SSH port' }),
     ssh_public_key_variable: sshPublicKeyVariable,
     pre_deploy_target_server_id: preDeployTargetServerId,
     pre_deploy_playbooks: preDeployPlaybooks,
@@ -236,7 +237,15 @@ function applyFleetProxmoxBlueprintMetadata({ servers, state, vms, guestIps = ne
   ]));
   const pendingDhcpResourceKeys = [];
 
-  const enriched = (Array.isArray(servers) ? servers : []).map(server => {
+  const enriched = (Array.isArray(servers) ? servers : []).map(candidate => {
+    let server = candidate;
+    if (!vmByResourceKey.has(candidate.resource_key)) {
+      const matches = [...vmByResourceKey].filter(([key, vm]) => resourcesByKey.has(key) && (
+        candidate.name === vm.name || candidate.hostname === vm.name ||
+        collectUsableIps(resourcesByKey.get(key)?.values?.ipv4_addresses || []).includes(candidate.ip_address)
+      ));
+      if (matches.length === 1) server = { ...candidate, resource_key: matches[0][0] };
+    }
     const vm = vmByResourceKey.get(server.resource_key);
     if (!vm) return server;
 
@@ -247,6 +256,7 @@ function applyFleetProxmoxBlueprintMetadata({ servers, state, vms, guestIps = ne
       // The Cloud-Init account is the account Shipyard must use afterwards. Never
       // fall back to the generic provider default for form-created VMs.
       ssh_user: vm.username || server.ssh_user,
+      ssh_port: vm.ssh_port || server.ssh_port || 22,
       hostname: vm.name || server.hostname,
     };
     if (guestIp) next.ip_address = guestIp;
@@ -259,6 +269,13 @@ function applyFleetProxmoxBlueprintMetadata({ servers, state, vms, guestIps = ne
     return next;
   });
 
+  // Guest-agent discovery must also work when the provider state has no IP yet.
+  for (const [resourceKey, vm] of vmByResourceKey) {
+    if (!resourcesByKey.has(resourceKey) || enriched.some(server => server.resource_key === resourceKey)) continue;
+    const ip = normalizeIp(guestIps.get(resourceKey)) || (vm.ipv4_address !== 'dhcp' ? normalizeIp(vm.ipv4_address) : null);
+    if (ip) enriched.push({ resource_key: resourceKey, name: vm.name, hostname: vm.name, ip_address: ip, ssh_user: vm.username || 'root', ssh_port: vm.ssh_port || 22, tags: [], services: [] });
+    else pendingDhcpResourceKeys.push(resourceKey);
+  }
   return { servers: enriched, pendingDhcpResourceKeys };
 }
 
@@ -373,6 +390,7 @@ function buildProxmoxNetworkCatalog(networkResponse, zonesResponse, vnetsRespons
 
 module.exports = {
   PROXMOX_IDENTIFIER_RE,
+  normalizeResourceKey,
   applyFleetProxmoxBlueprintMetadata,
   buildProxmoxProviderFiles,
   buildProxmoxNetworkCatalog,

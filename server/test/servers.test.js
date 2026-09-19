@@ -328,34 +328,17 @@ test('GET /api/servers/:id/info returns configured storage mount metrics', async
     assert.equal(res.body._source, 'ssh');
     assert.match(res.body.updated_at, /^\d{4}-\d{2}-\d{2}/);
 
-    const history = await request(app)
-      .get(`/api/servers/${serverId}/info/history?limit=1`)
-      .set('Authorization', `Bearer ${token}`);
-    assert.equal(history.status, 200);
-    assert.equal(history.body.length, 1);
-    assert.equal(history.body[0].source, 'ssh');
-    assert.equal(history.body[0].cpu_usage_pct, 12);
-    assert.equal(history.body[0].ram_used_mb, 1024);
-    assert.equal(history.body[0].disk_used_gb, 48);
   } finally {
     systemInfo.getSystemInfo = original;
   }
 });
 
-test('server info history is capped and keeps measurement source', async () => {
+test('host checks keep current facts without recording capacity time series', () => {
   for (let index = 0; index < 55; index++) {
-    db.serverInfo.upsert(serverId, {
-      cpu_usage_pct: index,
-      ram_used_mb: 1000 + index,
-      ram_total_mb: 4096,
-      disk_used_gb: 40 + index,
-      disk_total_gb: 200,
-    }, index % 2 ? 'agent' : 'ssh');
+    db.serverInfo.upsert(serverId, {cpu_usage_pct:index,ram_used_mb:1000+index,ram_total_mb:4096,disk_used_gb:40+index,disk_total_gb:200});
   }
-  const history = db.serverInfo.getHistory(serverId, 100);
-  assert.equal(history.length, 48);
-  assert.equal(history.at(-1).cpu_usage_pct, 54);
-  assert.equal(history.at(-1).source, 'ssh');
+  assert.equal(db.serverInfo.get(serverId).cpu_usage_pct,54);
+  assert.equal(db.db.prepare("SELECT name FROM sqlite_master WHERE name='server_info_history'").get(),undefined);
 });
 
 test('POST /api/servers/:id/reset-host-key removes stale known_hosts entries', async () => {

@@ -330,7 +330,7 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
         kind: 'inventory',
         cluster_id: clusterId,
         connection_id: connectionId,
-        vm: { name: inventoryGuestName(db.settings.get(`tofu.infrastructure.summary.${encodeURIComponent(adopted.environment_id)}`), adopted), node_name: adopted.node_name, vm_id: adopted.vm_id, post_deploy_playbooks: [] },
+        vm: { name: inventoryGuestName(db.settings.get(`tofu.infrastructure.summary.${encodeURIComponent(adopted.environment_id)}`), adopted), node_name: adopted.node_name, vm_id: adopted.vm_id, guest_type: adopted.guest_type, post_deploy_playbooks: [] },
       });
     }
     res.json({ resources });

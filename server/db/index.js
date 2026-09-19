@@ -146,28 +146,7 @@ const infoQueries = {
       zfs_pools = excluded.zfs_pools,
       updated_at = datetime('now')
   `),
-  insertHistory: db.prepare(`
-    INSERT INTO server_info_history
-      (server_id, source, cpu_usage_pct, ram_used_mb, ram_total_mb, disk_used_gb, disk_total_gb)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `),
-  pruneHistory: db.prepare(`
-    DELETE FROM server_info_history
-    WHERE server_id = ? AND id NOT IN (
-      SELECT id FROM server_info_history
-      WHERE server_id = ?
-      ORDER BY collected_at DESC, id DESC
-      LIMIT 48
-    )
-  `),
-  getHistory: db.prepare(`
-    SELECT collected_at, source, cpu_usage_pct, ram_used_mb, ram_total_mb,
-           disk_used_gb, disk_total_gb
-    FROM server_info_history
-    WHERE server_id = ?
-    ORDER BY collected_at DESC, id DESC
-    LIMIT ?
-  `),
+
 };
 
 // Update History
@@ -330,7 +309,7 @@ module.exports = {
         zfs_pools: parseJsonArray(row.zfs_pools),
       };
     },
-    upsert: (serverId, info, source = 'ssh') => {
+    upsert: (serverId, info) => {
       const save = db.transaction(() => {
         infoQueries.upsert.run(
         serverId,
@@ -349,21 +328,11 @@ module.exports = {
         info.cpu_usage_pct ?? null,
           JSON.stringify(info.zfs_pools || [])
         );
-        infoQueries.insertHistory.run(
-          serverId,
-          source === 'agent' ? 'agent' : 'ssh',
-          info.cpu_usage_pct ?? null,
-          info.ram_used_mb ?? null,
-          info.ram_total_mb ?? null,
-          info.disk_used_gb ?? null,
-          info.disk_total_gb ?? null
-        );
-        infoQueries.pruneHistory.run(serverId, serverId);
+
       });
       save();
     },
-    getHistory: (serverId, limit = 24) =>
-      infoQueries.getHistory.all(serverId, Math.max(1, Math.min(48, Number(limit) || 24))).reverse(),
+
   },
   updateHistory: {
     getByServer: (serverId) => historyQueries.getByServer.all(serverId),

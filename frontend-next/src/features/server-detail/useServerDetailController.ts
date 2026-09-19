@@ -26,7 +26,6 @@ import type {
   ManagedDeploymentResponse,
   ServerDetail,
   ServerInfo,
-  ServerInfoHistoryPoint,
 } from "./server-detail-model";
 import { parseArrayValue } from "./server-detail-model";
 
@@ -160,12 +159,6 @@ export function useServerDetailController() {
     queryKey: ["server", id, "info"],
     queryFn: () => api.getServerInfo(id) as unknown as Promise<ServerInfo>,
     enabled: !!server,
-  });
-  const { data: infoHistory = [] } = useQuery<ServerInfoHistoryPoint[]>({
-    queryKey: ["server", id, "info-history"],
-    queryFn: () => api.getServerInfoHistory(id, 24) as unknown as Promise<ServerInfoHistoryPoint[]>,
-    enabled: Boolean(id && serverKnown),
-    refetchInterval: 60_000,
   });
   const { data: ipamReservationData } = useQuery<IpamReservation[]>({
     queryKey: ["server", id, "ipam-reservations"],
@@ -993,7 +986,6 @@ export function useServerDetailController() {
     latencyMs,
     setLatencyMs,
     latencyCheckedAt,
-    infoHistory,
     HIST_PAGE_SIZE,
     histPage,
     setHistPage,

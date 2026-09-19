@@ -10,7 +10,7 @@ const { ensureManagedServersTable, removeOrphanedServerMappings } = require('./m
  */
 function setupOpenTofuDatabase(database) {
   const db = { db: database };
-  require('./storage-history').setupStorageHistory(database);
+  database.exec('DROP TABLE IF EXISTS proxmox_storage_history');
   // ── DB setup ──────────────────────────────────────────────────────────────
   db.db.prepare(`
     CREATE TABLE IF NOT EXISTS tofu_workspaces (
@@ -93,6 +93,8 @@ function setupOpenTofuDatabase(database) {
     )
   `).run();
   try { db.db.prepare('ALTER TABLE tofu_runs ADD COLUMN plan_path TEXT').run(); } catch {}
+  try { db.db.prepare('ALTER TABLE tofu_runs ADD COLUMN deployment_phase TEXT').run(); } catch {}
+  try { db.db.prepare('ALTER TABLE tofu_runs ADD COLUMN vm_provisioned INTEGER NOT NULL DEFAULT 0').run(); } catch {}
   try { db.db.prepare('ALTER TABLE tofu_runs ADD COLUMN config_hash TEXT').run(); } catch {}
   try { db.db.prepare('ALTER TABLE tofu_runs ADD COLUMN plan_summary TEXT').run(); } catch {}
   try { db.db.prepare('ALTER TABLE tofu_runs ADD COLUMN approved_plan_id TEXT').run(); } catch {}

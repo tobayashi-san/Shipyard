@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const { can, filterServers, getPermissions } = require('../../../utils/permissions');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { randomUUID } = require('crypto');
@@ -22,6 +23,8 @@ function publicVm(row, normalizeProxmoxVm) {
       id: row.last_run_id,
       action: row.last_run_action,
       status: row.last_run_status,
+      deployment_phase: row.last_run_deployment_phase,
+      vm_provisioned: row.last_run_vm_provisioned,
       plan_summary: row.last_run_plan_summary,
       started_at: row.last_run_started_at,
       completed_at: row.last_run_completed_at,
@@ -55,6 +58,7 @@ function registerIsolatedVmRoutes({
            workspace.path AS workspace_path, workspace.name AS workspace_name, workspace.workspace_kind,
            source.name AS connection_name, source.endpoint AS connection_endpoint,
            last_run.id AS last_run_id, last_run.action AS last_run_action,
+           last_run.deployment_phase AS last_run_deployment_phase, last_run.vm_provisioned AS last_run_vm_provisioned,
            last_run.status AS last_run_status, last_run.plan_summary AS last_run_plan_summary,
            last_run.started_at AS last_run_started_at, last_run.completed_at AS last_run_completed_at
     FROM tofu_proxmox_vms vm
@@ -71,11 +75,11 @@ function registerIsolatedVmRoutes({
     if (!source) return res.status(404).json({ error: 'Proxmox platform not found' });
     try {
       const connection = readSavedProxmoxConnection(source);
-      res.json(await loadProxmoxCatalog({ env_vars: {
+      res.json({ ssh_public_key_configured: Boolean(source.ssh_public_key), ...await loadProxmoxCatalog({ env_vars: {
         TF_VAR_proxmox_endpoint: connection.base.toString(),
         TF_VAR_proxmox_api_token: connection.apiToken,
         TF_VAR_proxmox_insecure: connection.insecure ? 'true' : 'false',
-      } }, req.query.node));
+      } }, req.query.node) });
     } catch (error) { res.status(502).json({ error: error.message || 'Proxmox catalog could not be loaded' }); }
   });
 
@@ -139,7 +143,11 @@ function registerIsolatedVmRoutes({
     const row = getVmRow(req.params.vmId);
     if (!row) return res.status(404).json({ error: 'VM not found' });
     const vm = publicVm(row, normalizeProxmoxVm);
-    res.json({ ...vm, post_deploy: getPostDeployOverview(row.workspace_id) });
+    const mapping = db.db.prepare('SELECT server_id FROM tofu_managed_servers WHERE workspace_id = ? LIMIT 1').get(row.workspace_id);
+    const permissions = getPermissions(req.user);
+    const hostId = mapping && can(permissions, 'canViewServers') && filterServers(db.servers.getAll(), permissions).some(host => host.id === mapping.server_id) ? mapping.server_id : null;
+    const deployment = db.db.prepare("SELECT id, action, status, deployment_phase, vm_provisioned FROM tofu_runs WHERE workspace_id = ? AND action IN ('apply', 'destroy') ORDER BY started_at DESC, rowid DESC LIMIT 1").get(row.workspace_id) || null;
+    res.json({ ...vm, host_id: hostId, deployment, post_deploy: getPostDeployOverview(row.workspace_id) });
   });
 
   router.get('/vms/:vmId/live', async (req, res) => {
@@ -201,7 +209,7 @@ function registerIsolatedVmRoutes({
       vm = normalizeProxmoxVm(req.body || {});
       validatePostDeployPlaybookAccess([...(vm.pre_deploy_playbooks || []), ...(vm.post_deploy_playbooks || [])], req);
     } catch (error) { return res.status(400).json({ error: error.message }); }
-    if (vm.name !== row.name && db.db.prepare("SELECT 1 FROM tofu_runs WHERE workspace_id = ? AND action = 'apply' AND status = 'success'").get(row.workspace_id)) {
+    if (vm.name !== row.name && db.db.prepare("SELECT 1 FROM tofu_runs WHERE workspace_id = ? AND action = 'apply' AND (status = 'success' OR vm_provisioned = 1)").get(row.workspace_id)) {
       return res.status(409).json({ error: 'A deployed VM cannot be renamed because its OpenTofu resource address is already in state.' });
     }
     if (vm.vm_id !== null && db.db.prepare('SELECT 1 FROM tofu_proxmox_vms WHERE connection_id = ? AND vm_numeric_id = ? AND id <> ?').get(row.connection_id, vm.vm_id, row.id)) {
@@ -268,6 +276,7 @@ function registerIsolatedVmRoutes({
   };
   router.post('/vms/:vmId/plan', rewrite('/run', 'plan'));
   router.post('/vms/:vmId/apply', rewrite('/run', 'apply'));
+  router.post('/vms/:vmId/resume', rewrite('/resume'));
   router.post('/vms/:vmId/check-drift', rewrite('/run', 'drift'));
   router.post('/vms/:vmId/destroy', (req, _res, next) => {
     req.body = { ...(req.body || {}), confirm_destroy: req.body?.confirmation, vm_id: req.params.vmId, action: 'destroy_vm' };

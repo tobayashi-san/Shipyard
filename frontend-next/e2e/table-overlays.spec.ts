@@ -46,10 +46,8 @@ test('table menus overlay rows without moving the page', async ({ page }, testIn
   await page.goto('/infrastructure');
   const vmLink = page.locator('main').getByRole('link', {name:'Platform VM',exact:true});
   await expect(vmLink).toBeHidden();
-  await page.locator('main summary').filter({hasText:'virtual machine'}).click();
-  await expect(vmLink).toBeVisible();
-  await expect(vmLink).toHaveAttribute('href','/infrastructure/platform/nodes/node/vms/101');
-  await expect(page.locator('main').getByRole('link',{name:'Managed host',exact:true})).toHaveCount(0);
+  await expect(page.locator('main').getByRole('link',{name:'Managed host',exact:true})).toBeVisible();
+  await expect(page.locator('main').getByRole('link',{name:'Managed host',exact:true})).toHaveAttribute('href','/servers/host-first');
   await page.screenshot({path:testInfo.outputPath('host-first-mobile.png')});
   await page.goto('/settings/notifications');
   await page.locator('summary').filter({hasText:'Email (SMTP)'}).click();

@@ -25,7 +25,9 @@ if [ "$action" = "show" ]; then
       echo '{"resource_changes":[{"change":{"actions":["create"]}},{"change":{"actions":["update"]}},{"change":{"actions":["delete"]}}]}'
     fi
   else
-    echo '{"values":{}}'
+    if [ -f discovered-state.json ]; then cat discovered-state.json
+    elif [ -f isolation-safe ]; then echo '{"values":{"root_module":{"resources":[{"address":"proxmox_virtual_environment_vm.isolated-app","type":"proxmox_virtual_environment_vm","values":{"name":"isolated-app","vm_id":46001,"node_name":"pve001"}}]}}}'
+    else echo '{"values":{}}'; fi
   fi
   exit 0
 fi
@@ -38,6 +40,7 @@ if [ "$action" = "plan" ]; then
   exit 2
 fi
 if [ "$action" = "apply" ]; then
+  echo 'apply' >> apply-count
   echo 'apply-begin'
   sleep 0.4
   echo '{"version":4,"resources":[]}' > terraform.tfstate
@@ -143,10 +146,15 @@ test('startup recovery marks orphaned running rows as interrupted', () => {
   assert.ok(recovered.completed_at);
 });
 
-test('isolated VM Apply accepts only a plan for its single resource address', async () => {
+test('isolated VM Apply accepts only its reviewed plan and resumes automatic workflows without recreating the VM', async t => {
   const { app } = createApp();
   const login = await request(app).post('/api/auth/login').send({ username: 'admin', password: 'testpass12345' });
   const auth = { Authorization: `Bearer ${login.body.token}` };
+  const preHost = db.servers.create({name:'pre-deploy-host',hostname:'pre-deploy-host',ip_address:'192.0.2.40'});
+  const playbookCalls = [];
+  const runner = require('../services/ansible-runner');
+  t.mock.method(runner, 'getAvailablePlaybooks', () => ['prepare.yml', 'configure.yml'].map(filename => ({filename})));
+  t.mock.method(runner, 'runPlaybook', async (playbook, target) => { playbookCalls.push({playbook,target}); return {success:true,stdout:'completed',stderr:''}; });
   const workspacePath = path.join(workspaceRoot, 'isolated-app');
   fs.mkdirSync(workspacePath, { recursive: true });
   fs.writeFileSync(path.join(workspacePath, 'isolation-safe'), 'safe');
@@ -154,7 +162,7 @@ test('isolated VM Apply accepts only a plan for its single resource address', as
   db.db.prepare(`INSERT INTO tofu_workspaces (id, name, path, description, env_vars, environment_id, workspace_kind)
     VALUES ('isolated-workspace', 'vm-isolated-app', ?, '', '{}', 'default', 'isolated_vm')`).run(workspacePath);
   db.db.prepare(`INSERT INTO tofu_proxmox_vms (id, workspace_id, name, config, is_isolated)
-    VALUES ('isolated-vm', 'isolated-workspace', 'isolated-app', ?, 1)`).run(JSON.stringify({ name: 'isolated-app', node_name: 'pve001', vm_id: 46001, disk_datastore: 'local-lvm', bridge: 'vmbr0' }));
+    VALUES ('isolated-vm', 'isolated-workspace', 'isolated-app', ?, 1)`).run(JSON.stringify({ name: 'isolated-app', node_name: 'pve001', vm_id: 46001, disk_datastore: 'local-lvm', bridge: 'vmbr0', pre_deploy_playbooks:['prepare.yml'], pre_deploy_target_server_id:preHost.id, post_deploy_playbooks:['configure.yml'] }));
 
   const safeStart = await request(app).post('/api/opentofu/vms/isolated-vm/plan').set(auth).send({});
   assert.equal(safeStart.status, 200);
@@ -164,7 +172,32 @@ test('isolated VM Apply accepts only a plan for its single resource address', as
 
   const applyStart = await request(app).post('/api/opentofu/vms/isolated-vm/apply').set(auth).send({ plan_id: safePlan.id });
   assert.equal(applyStart.status, 200);
-  const applied = await waitForRun(applyStart.body.dbRunId, 'success');
+  const incomplete = await waitForRun(applyStart.body.dbRunId, 'failed');
+  assert.equal(incomplete.vm_provisioned, 1);
+  assert.equal(incomplete.deployment_phase, 'register_host');
+  const pendingHost = db.db.prepare('SELECT server_id FROM tofu_managed_servers WHERE workspace_id = ?').get('isolated-workspace');
+  assert.ok(pendingHost);
+  assert.equal(db.servers.getById(pendingHost.server_id).ip_address, '');
+  assert.deepEqual(playbookCalls, [{playbook:'prepare.yml',target:'pre-deploy-host'}]);
+  const reusePlan = await request(app).post('/api/opentofu/vms/isolated-vm/apply').set(auth).send({ plan_id: safePlan.id });
+  assert.equal(reusePlan.status, 409);
+  fs.writeFileSync(path.join(workspacePath, 'discovered-state.json'), JSON.stringify({ values: { root_module: { resources: [{ address: 'proxmox_virtual_environment_vm.isolated-app', type: 'proxmox_virtual_environment_vm', values: { name: 'isolated-app', vm_id: 46001, node_name: 'pve001', ipv4_addresses: [['192.0.2.41']] } }] } } }));
+  const ssh = require('../services/ssh-manager');
+  const originalTest = ssh.testConnection;
+  ssh.testConnection = async () => true;
+  let applied;
+  try {
+    const resumed = await request(app).post('/api/opentofu/vms/isolated-vm/resume').set(auth).send({});
+    assert.equal(resumed.status, 200, JSON.stringify(resumed.body));
+    applied = await waitForRun(applyStart.body.dbRunId, 'success');
+  } finally { ssh.testConnection = originalTest; }
+  assert.equal(applied.deployment_phase, 'ready');
+  assert.equal(db.db.prepare('SELECT server_id FROM tofu_managed_servers WHERE workspace_id = ?').get('isolated-workspace').server_id, pendingHost.server_id);
+  assert.equal(db.servers.getById(pendingHost.server_id).status, 'online');
+  assert.deepEqual(playbookCalls, [{playbook:'prepare.yml',target:'pre-deploy-host'}, {playbook:'configure.yml',target:'isolated-app'}]);
+  assert.equal(fs.readFileSync(path.join(workspacePath, 'apply-count'), 'utf8').trim(), 'apply');
+  assert.ok(db.db.prepare('SELECT server_id FROM tofu_managed_servers WHERE workspace_id = ?').get('isolated-workspace'));
+
   assert.equal(applied.approved_plan_id, safePlan.id);
   const driftStart = await request(app).post('/api/opentofu/vms/isolated-vm/check-drift').set(auth).send({});
   assert.equal(driftStart.status, 200);

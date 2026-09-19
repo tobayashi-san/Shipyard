@@ -423,13 +423,13 @@ test('Proxmox IPAM synchronization without a prefix processes every environment 
   assert.ok(connection.last_ipam_synced_at);
 });
 
-test('scheduler synchronizes due Proxmox connections and respects automatic sync being disabled', async () => {
+test('scheduler never polls Proxmox inventory, including previously enabled connections', async () => {
   db.db.prepare("UPDATE tofu_proxmox_connections SET auto_sync_ipam = 1, sync_interval_min = 5, last_ipam_synced_at = NULL, last_ipam_status = '' WHERE id = ?")
     .run(connectionId);
   await scheduler.pollIpamSources();
   assert.equal(
     db.db.prepare('SELECT last_ipam_status FROM tofu_proxmox_connections WHERE id = ?').get(connectionId).last_ipam_status,
-    'success',
+    '',
   );
 
   db.db.prepare("UPDATE tofu_proxmox_connections SET auto_sync_ipam = 0, last_ipam_synced_at = NULL, last_ipam_status = 'disabled' WHERE id = ?")

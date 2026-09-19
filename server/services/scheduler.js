@@ -14,9 +14,6 @@ const gitSync = require("./git-sync");
 const { resolveTargets } = require("../utils/validate");
 const resourceAlerts = require("./resource-alerts");
 const { syncIpamSource } = require("../routes/ipam");
-const {
-  syncProxmoxIpam,
-} = require("../features/opentofu/proxmox-ipam-sync");
 
 // In-memory map: scheduleId -> cron task
 const jobs = new Map();
@@ -122,63 +119,20 @@ async function pollIpamSources() {
       const last = Date.parse(source.last_synced_at || "");
       return !Number.isFinite(last) || now - last >= interval;
     });
-    const proxmoxTableExists = Boolean(
-      db.db
-        .prepare(
-          `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tofu_proxmox_connections'`,
-        )
-        .get(),
+    const sourceResults = await Promise.allSettled(
+      due.map(source => collectionQueue.run('ipam', {id:`ipam-source-${source.id}`}, () => syncIpamSource(source, {actor:'scheduler'}))),
     );
-    const proxmoxConnections = proxmoxTableExists
-      ? db.db
-          .prepare(
-            `SELECT id, sync_interval_min, last_ipam_synced_at
-               FROM tofu_proxmox_connections
-              WHERE COALESCE(auto_sync_ipam, 1) = 1`,
-          )
-          .all()
-      : [];
-    const dueProxmox = proxmoxConnections.filter((connection) => {
-      const interval =
-        Math.min(
-          1440,
-          Math.max(
-            5,
-            Number.parseInt(connection.sync_interval_min, 10) || 15,
-          ),
-        ) *
-        60 *
-        1000;
-      const last = Date.parse(connection.last_ipam_synced_at || "");
-      return !Number.isFinite(last) || now - last >= interval;
-    });
-    const [sourceResults, proxmoxResults] = await Promise.all([
-      Promise.allSettled(
-        due.map((source) => collectionQueue.run("ipam", {id:`ipam-source-${source.id}`}, () => syncIpamSource(source, { actor: "scheduler" }))),
-      ),
-      Promise.allSettled(
-        dueProxmox.map((connection) =>
-          collectionQueue.run("ipam", {id:`ipam-proxmox-${connection.id}`}, () => syncProxmoxIpam(connection.id, { actor: "scheduler" })),
-        ),
-      ),
-    ]);
     const sourceFailed = sourceResults.filter(
       (result) => result.status === "rejected",
     ).length;
-    const proxmoxFailed = proxmoxResults.filter(
-      (result) => result.status === "rejected",
-    ).length;
-    observation.errors += sourceFailed + proxmoxFailed;
-    if (due.length || dueProxmox.length) {
+    observation.errors += sourceFailed;
+    if (due.length) {
       broadcast({ type: "cache_updated", scope: "ipam" });
       log.info(
         {
           sourcesConfigured: sources.length,
           sourcesSynced: due.length - sourceFailed,
           sourcesFailed: sourceFailed,
-          proxmoxConfigured: proxmoxConnections.length,
-          proxmoxSynced: dueProxmox.length - proxmoxFailed,
-          proxmoxFailed,
         },
         "IPAM sources refreshed",
       );

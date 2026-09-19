@@ -19,12 +19,6 @@ const {
 } = require('./core-utils');
 
 const execFileAsync = promisify(execFileCallback);
-let sshManager;
-function getSshManager() {
-  if (!sshManager) sshManager = require('../../services/ssh-manager');
-  return sshManager;
-}
-
 const SERVER_TYPE_HINTS = ['server', 'instance', 'vm', 'machine', 'droplet', 'compute', 'node', 'guest'];
 const DIRECT_NAME_KEYS = ['shipyard_name', 'name', 'vm_name', 'hostname', 'host'];
 const DIRECT_SSH_USER_KEYS = ['shipyard_ssh_user', 'ssh_user', 'default_user', 'admin_user', 'username'];
@@ -178,6 +172,7 @@ function extractManagedServersFromState(state, workspaceName) {
 
 function buildServerPayload(existingServer, desiredServer, workspace) {
   return {
+    environment_id: workspace.environment_id || 'default',
     name: desiredServer.name,
     hostname: desiredServer.hostname || desiredServer.name,
     ip_address: desiredServer.ip_address,
@@ -194,7 +189,7 @@ function buildServerPayload(existingServer, desiredServer, workspace) {
 
 function findReusableServer(allServers, trackedServerIds, desiredServer) {
   const exactIp = allServers.find(server =>
-    server.ip_address === desiredServer.ip_address && !trackedServerIds.has(server.id)
+    desiredServer.ip_address && server.ip_address === desiredServer.ip_address && !trackedServerIds.has(server.id)
   );
   if (exactIp) return exactIp;
 
@@ -211,7 +206,7 @@ async function reconcileManagedServers({ db, workspace, desiredServers, logMeta 
   const trackedMappings = db.db.prepare('SELECT * FROM tofu_managed_servers').all();
   const trackedServerIds = new Set(trackedMappings.map(mapping => mapping.server_id));
 
-  const existingServers = db.servers.getAll();
+  const existingServers = db.servers.getAll().filter(server => (server.environment_id || 'default') === (workspace.environment_id || 'default'));
   const desiredKeys = new Set(desiredServers.map(server => server.resource_key));
   const upsertMapping = db.db.prepare(`
     INSERT INTO tofu_managed_servers (id, workspace_id, resource_key, server_id, created_by_plugin)
@@ -252,23 +247,6 @@ async function reconcileManagedServers({ db, workspace, desiredServers, logMeta 
 
     upsertMapping.run(randomUUID(), workspace.id, desiredServer.resource_key, targetServer.id, createdByFeature ? 1 : 0);
     trackedServerIds.add(targetServer.id);
-  }
-
-  // Auto-reset stale SSH host keys for all synced IPs so re-deployed VMs
-  // on the same IP don't cause host key verification failures.
-  const syncedIps = desiredServers.map(s => s.ip_address).filter(Boolean);
-  if (syncedIps.length > 0) {
-    try {
-      const ssh = getSshManager();
-      if (ssh) {
-        const result = ssh.removeKnownHostEntries(syncedIps);
-        if (result.removed.length > 0) {
-          log.info({ removed: result.removed }, 'Auto-cleared stale SSH host keys after apply');
-        }
-      }
-    } catch (err) {
-      log.warn({ err }, 'Failed to auto-clear SSH host keys');
-    }
   }
 
   for (const mapping of mappings) {
@@ -390,9 +368,9 @@ async function waitForManagedServers({
     }
 
     let pending = false;
-    if (lastSync.servers.length > 0 && typeof hydrateServers === 'function') {
+    if (typeof hydrateServers === 'function' && !(lastSync.source === 'outputs' && !lastSync.authoritative)) {
       const hydrated = await hydrateServers({ state, servers: lastSync.servers });
-      if (hydrated?.servers) lastSync = { ...lastSync, servers: hydrated.servers };
+      if (hydrated?.servers) lastSync = { ...lastSync, servers: hydrated.servers, authoritative: lastSync.authoritative || (lastSync.source === 'state' && hydrated.servers.length > 0) };
       pending = hydrated?.pending === true;
     }
 

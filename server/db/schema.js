@@ -69,21 +69,8 @@ function applySchema(db) {
       FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
     );
 
-    CREATE TABLE IF NOT EXISTS server_info_history (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      server_id TEXT NOT NULL,
-      collected_at TEXT DEFAULT (datetime('now')),
-      source TEXT NOT NULL DEFAULT 'ssh',
-      cpu_usage_pct REAL,
-      ram_used_mb INTEGER,
-      ram_total_mb INTEGER,
-      disk_used_gb REAL,
-      disk_total_gb REAL,
-      FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_server_info_history_server_time
-      ON server_info_history(server_id, collected_at DESC, id DESC);
+    -- Retired capacity trends: retain current host facts, remove time series.
+    DROP TABLE IF EXISTS server_info_history;
 
     CREATE TABLE IF NOT EXISTS update_history (
       id TEXT PRIMARY KEY,

@@ -1,3 +1,5 @@
+const { registerDeploymentResumeRoutes } = require('./routes/deployment-resume');
+const { completeDeployment } = require('./deployment-completion');
 const { workspacePath, confinedPath } = require('./workspace-paths');
 const { spawn, execFileSync } = require('child_process');
 const fs   = require('fs');
@@ -41,6 +43,7 @@ const {
   extractProxmoxGuestIpv4s,
   extractProxmoxGuestNetworkRecords,
   getProxmoxStateResources,
+  normalizeResourceKey,
   normalizeProxmoxVm,
   normalizeProxmoxVmTemplate,
   renderProxmoxVmHcl,
@@ -67,7 +70,7 @@ const {
   syncOneToGit,
 } = require('./workspace-files');
 const { setupOpenTofuDatabase } = require('./schema');
-const { collectStorageResults } = require('./storage-history');
+const { collectStorageResults } = require('./storage-inventory');
 const { createInfrastructureSummary } = require('./infrastructure-summary');
 const { registerFileRoutes } = require('./routes/files');
 const { registerStateRoutes } = require('./routes/state');
@@ -613,7 +616,7 @@ override.tf.json
         saveResult.run(workspace.id, job.vm.id, job.playbook, 'failed', output, 'failed');
         emitMeta(`${output}\n`);
         result.failed++;
-        continue;
+        return result;
       }
       result.started++;
       const historyId = db.updateHistory.create(target.id, `ansible:${job.playbook}`, logMeta.user || null);
@@ -628,7 +631,7 @@ override.tf.json
         saveResult.run(workspace.id, job.vm.id, job.playbook, 'failed', output, 'failed');
         emitMeta(`${output}\n`);
         result.failed++;
-        continue;
+        return result;
       }
 
       emitMeta(`[Shipyard] Starte Post-Deploy-Playbook "${job.playbook}" auf ${target.name}.\n`);
@@ -662,6 +665,7 @@ override.tf.json
         result.failed++;
         emitMeta(`[Shipyard] Post-deploy playbook "${job.playbook}" could not be started: ${output}\n`);
       }
+      if (result.failed) return result;
     }
     return result;
   }
@@ -873,11 +877,8 @@ override.tf.json
 
   async function resolveFleetProxmoxServers({ workspace, state, servers }) {
     const vms = getProxmoxVms(workspace.id);
-    const matchingVms = vms.filter(vm =>
-      Array.isArray(servers) && servers.some(server =>
-        server.resource_key === `resource:proxmox_virtual_environment_vm.${vm.name}`
-      )
-    );
+    const resourceKeys = new Set(getProxmoxStateResources(state).map(normalizeResourceKey));
+    const matchingVms = vms.filter(vm => resourceKeys.has(`resource:proxmox_virtual_environment_vm.${vm.name}`));
     if (!matchingVms.length) return { servers, pending: false };
 
     let connection;
@@ -910,9 +911,6 @@ override.tf.json
       if (ip) guestIps.set(resourceKey, ip);
       return { resourceKey, queried: true };
     }));
-    const queriedKeys = new Set(settled
-      .filter(result => result.status === 'fulfilled' && result.value.queried)
-      .map(result => result.value.resourceKey));
     const failed = settled.filter(result => result.status === 'rejected');
     if (failed.length) {
       log.warn({ workspace: workspace.name, count: failed.length }, 'Could not read one or more Proxmox guest IP addresses');
@@ -921,10 +919,57 @@ override.tf.json
     const enriched = applyFleetProxmoxBlueprintMetadata({ servers, state, vms, guestIps });
     return {
       servers: enriched.servers,
-      // Only wait if the guest agent has responded successfully. If the agent
-      // is missing/unreachable, keep the state value and never delay apply.
-      pending: enriched.pendingDhcpResourceKeys.some(key => queriedKeys.has(key)),
+      // An unavailable guest agent is still pending while the VM boots.
+      pending: enriched.pendingDhcpResourceKeys.length > 0,
     };
+  }
+
+  async function finishHostDeployment({ workspace, binary, env, dbRunId, logMeta, emitMeta }) {
+    db.db.prepare("UPDATE tofu_runs SET deployment_phase = 'register_host' WHERE id = ?").run(dbRunId);
+    if (workspace.workspace_kind === 'isolated_vm') {
+      const state = await loadWorkspaceState({ binary, workspace, env });
+      const resources = new Map(getProxmoxStateResources(state).map(resource => [normalizeResourceKey(resource), resource]));
+      const vm = getProxmoxVms(workspace.id)[0];
+      const resourceKey = vm && `resource:proxmox_virtual_environment_vm.${vm.name}`;
+      if (vm && resources.has(resourceKey)) {
+        const mapping = db.db.prepare('SELECT server_id FROM tofu_managed_servers WHERE workspace_id = ? AND resource_key = ?').get(workspace.id, resourceKey);
+        const existing = mapping ? db.servers.getById(mapping.server_id) : null;
+        await reconcileManagedServers({ db, workspace, logMeta, desiredServers: [{
+          resource_key: resourceKey, name: vm.name, hostname: vm.name,
+          ip_address: existing?.ip_address || '', ssh_user: vm.username, ssh_port: vm.ssh_port || 22,
+        }] });
+        emitMeta('[Shipyard] Host registered. Waiting for its address and SSH connection.');
+      }
+    }
+    return completeDeployment({
+      allowEmpty: getProxmoxVms(workspace.id).length === 0,
+      phase: value => db.db.prepare('UPDATE tofu_runs SET deployment_phase = ? WHERE id = ?').run(value, dbRunId),
+      log: message => emitMeta(`[Shipyard] ${message}`),
+      discover: () => waitForManagedServers({
+        loadState: () => loadWorkspaceState({ binary, workspace, env }),
+        workspaceName: workspace.name,
+        hydrateServers: ({ state, servers }) => resolveFleetProxmoxServers({ workspace, state, servers }),
+      }),
+      register: async sync => {
+        await reconcileManagedServers({ db, workspace, desiredServers: sync.servers, logMeta });
+        // Persist provider-assigned IDs for snapshots and future deployment runs.
+        for (const resource of getProxmoxStateResources(sync.state)) {
+          const vm = getProxmoxVms(workspace.id).find(vm => normalizeResourceKey(resource) === `resource:proxmox_virtual_environment_vm.${vm.name}`);
+          const assigned = Number(resource.values?.vm_id);
+          if (vm && Number.isInteger(assigned) && assigned > 0 && vm.vm_id !== assigned) {
+            db.db.prepare('UPDATE tofu_proxmox_vms SET config = ?, vm_numeric_id = ? WHERE id = ?').run(JSON.stringify({ ...vm, vm_id: assigned }), assigned, vm.id);
+          }
+        }
+        const mappings = db.db.prepare('SELECT resource_key, server_id FROM tofu_managed_servers WHERE workspace_id = ?').all(workspace.id);
+        return sync.servers.map(server => db.servers.getById(mappings.find(mapping => mapping.resource_key === server.resource_key)?.server_id)).filter(Boolean);
+      },
+      connect: async host => {
+        const connected = await require('../../services/ssh-manager').testConnection(host);
+        db.servers.updateStatus(host.id, connected ? 'online' : 'offline');
+        return connected;
+      },
+      postDeploy: syncedServers => runPostDeployPlaybooks({ workspace, syncedServers, logMeta, emitMeta }),
+    });
   }
 
   function getWorkspaceRows(environmentId = null) {
@@ -1057,7 +1102,7 @@ override.tf.json
         // so read-only API tokens still provide the rest of the platform.
         Promise.allSettled(nodes.map(node => requestProxmoxApi(group.connection, `/nodes/${encodeURIComponent(node.name)}/apt/update`))),
       ]);
-      const datastores = collectStorageResults(db.db, group.environmentId, group.key, nodes, storageResults);
+      const datastores = collectStorageResults(nodes, storageResults);
       statusResults.forEach((result, index) => {
         if (result.status !== 'fulfilled' || !result.value || typeof result.value !== 'object') return;
         const node = nodes[index];
@@ -1256,6 +1301,7 @@ override.tf.json
     if (/^\/managed-servers\//.test(pathname)) return 'canViewServers';
     if (/\/promote-proxmox-connection$/.test(pathname)) return 'canManageDeploymentPlatforms';
     if (/\/proxmox-connection$/.test(pathname) && req.method !== 'GET') return 'canManageDeploymentPlatforms';
+    if (/\/resume$/.test(pathname)) return 'canApplyDeployments';
     if (/\/post-deploy\/retry$/.test(pathname)) return 'canApplyDeployments';
     if (/^\/vms\/[^/]+\/apply$/.test(pathname)) return 'canApplyDeployments';
     if (/^\/vms\/[^/]+\/destroy$/.test(pathname)) return 'canDestroyDeployments';
@@ -1421,7 +1467,7 @@ override.tf.json
     const page = Math.min(requestedPage, totalPages);
     const offset = (page - 1) * pageSize;
     const runs = db.db.prepare(
-      'SELECT id, workspace_id, action, status, plan_summary, plan_safe, plan_validation, approved_plan_id, started_by, started_at, completed_at FROM tofu_runs WHERE workspace_id = ? ORDER BY started_at DESC LIMIT ? OFFSET ?'
+      'SELECT id, workspace_id, action, status, deployment_phase, vm_provisioned, plan_summary, plan_safe, plan_validation, approved_plan_id, started_by, started_at, completed_at FROM tofu_runs WHERE workspace_id = ? ORDER BY started_at DESC LIMIT ? OFFSET ?'
     ).all(req.params.id, pageSize, offset);
     res.json({
       items: runs,
@@ -1437,11 +1483,13 @@ override.tf.json
   });
 
   router.get('/workspaces/:id/runs/:runId', (req, res) => {
-    const run = db.db.prepare('SELECT id, workspace_id, action, status, output, plan_summary, plan_safe, plan_validation, approved_plan_id, started_by, started_at, completed_at FROM tofu_runs WHERE id = ? AND workspace_id = ?')
+    const run = db.db.prepare('SELECT id, workspace_id, action, status, output, deployment_phase, vm_provisioned, plan_summary, plan_safe, plan_validation, approved_plan_id, started_by, started_at, completed_at FROM tofu_runs WHERE id = ? AND workspace_id = ?')
       .get(req.params.runId, req.params.id);
     if (!run) return res.status(404).json({ error: 'Run not found' });
     res.json(run);
   });
+
+  registerDeploymentResumeRoutes({router, db, getWorkspace, getProxmoxVms, validatePostDeployPlaybookAccess, findBinary, redactTofuOutput, finishHostDeployment});
 
   // ── Routes: Execute ───────────────────────────────────────────────────────
 
@@ -1474,13 +1522,18 @@ override.tf.json
       if (latestPlan?.id !== approvedPlan.id) return res.status(409).json({ error: 'Only the latest successful plan can be applied.' });
       const plannedAt = new Date(`${approvedPlan.completed_at || approvedPlan.started_at}Z`).getTime();
       if (!Number.isFinite(plannedAt) || Date.now() - plannedAt > TOFU_PLAN_MAX_AGE_MS) return res.status(409).json({ error: 'The plan has expired. Create and review a new plan.' });
-      const consumed = db.db.prepare("SELECT id FROM tofu_runs WHERE approved_plan_id = ? AND action = 'apply' AND status IN ('running', 'cancelling', 'success')").get(approvedPlan.id);
+      const consumed = db.db.prepare("SELECT id FROM tofu_runs WHERE approved_plan_id = ? AND action = 'apply' AND (status IN ('running', 'cancelling', 'success') OR vm_provisioned = 1)").get(approvedPlan.id);
       if (consumed) return res.status(409).json({ error: 'This plan has already been applied. Create a new plan.' });
       try {
         const deploymentVms = getProxmoxVms(workspace.id);
         validatePostDeployPlaybookAccess(deploymentVms.flatMap(vm => [...(vm.pre_deploy_playbooks || []), ...(vm.post_deploy_playbooks || [])]), req);
         const accessibleServerIds = new Set(filterServers(db.servers.getAll(), getPermissions(req.user)).map(server => String(server.id)));
         for (const vm of deploymentVms) {
+          if (workspace.workspace_kind === 'isolated_vm') {
+            if (!vm.started) return res.status(400).json({ error: 'Start the VM in its configuration before deploying so Shipyard can connect.' });
+            if (vm.ipv4_address === 'dhcp' && !vm.agent_enabled) return res.status(400).json({ error: 'Enable the guest agent to discover the DHCP address before deploying.' });
+            if (vm.ssh_public_key_variable && !workspace.env_vars[`TF_VAR_${vm.ssh_public_key_variable}`]) return res.status(400).json({ error: 'No SSH public key is configured. Save the Shipyard public key under Settings → Connections before deploying.' });
+          }
           if ((vm.pre_deploy_playbooks || []).length && !accessibleServerIds.has(String(vm.pre_deploy_target_server_id || ''))) {
             return res.status(403).json({ error: `The pre-deploy target for ${vm.name} is not accessible.` });
           }
@@ -1632,6 +1685,7 @@ override.tf.json
       };
       if (action === 'apply') {
         try {
+          db.db.prepare("UPDATE tofu_runs SET deployment_phase = 'pre_deploy' WHERE id = ?").run(dbRunId);
           const preDeploy = await runPreDeployPlaybooks({ workspace, logMeta, emitMeta });
           if (preDeploy.started) emitMeta(`[Shipyard] Pre-deploy complete: ${preDeploy.succeeded} succeeded.`);
         } catch (error) {
@@ -1643,6 +1697,7 @@ override.tf.json
         }
       }
 
+      if (action === 'apply') db.db.prepare("UPDATE tofu_runs SET deployment_phase = 'deploy' WHERE id = ?").run(dbRunId);
       const proc = spawn(binary, args, { cwd: workspace.path, env, detached: process.platform !== 'win32' });
       _running.set(runId, { proc, dbRunId, workspaceId: workspace.id, cancelled: false });
       const emitProcessOutput = (stream, s) => {
@@ -1694,40 +1749,15 @@ override.tf.json
             }
           }
           if (success && action === 'apply') {
-            try {
-              const sync = await waitForManagedServers({
-                loadState: () => loadWorkspaceState({ binary, workspace, env }),
-                workspaceName: workspace.name,
-                hydrateServers: ({ state, servers }) => resolveFleetProxmoxServers({ workspace, state, servers }),
-              });
-              if (sync.source === 'outputs' && !sync.authoritative && sync.servers.length === 0) {
-                emitMeta('[Shipyard] Output "shipyard_server(s)" is present but invalid. Skipping server sync to avoid deleting existing entries.');
-              } else if (!sync.authoritative && sync.servers.length === 0) {
-                const waited = Math.round(sync.waitedMs / 1000);
-                emitMeta(`[Shipyard] No manageable servers found in state after waiting ${waited}s. Define output "shipyard_servers" for explicit sync.`);
-              } else {
-                const result = await reconcileManagedServers({
-                  db,
-                  workspace,
-                  desiredServers: sync.servers,
-                  logMeta,
-                });
-                const waitedSuffix = sync.attempts > 1 ? ` after waiting ${Math.round(sync.waitedMs / 1000)}s for DHCP/state updates` : '';
-                emitMeta(`[Shipyard] Server sync complete: ${result.created} created, ${result.updated} updated, ${result.detached} detached from this deployment.${waitedSuffix}`);
-                const postDeploy = await runPostDeployPlaybooks({
-                  workspace,
-                  syncedServers: sync.servers,
-                  logMeta,
-                  emitMeta,
-                });
-                if (postDeploy.started) {
-                  emitMeta(`[Shipyard] Post-deploy complete: ${postDeploy.succeeded} succeeded, ${postDeploy.failed} failed.`);
-                }
-              }
-            } catch (err) {
-              log.error({ err, workspace: workspace.name }, 'OpenTofu apply server sync failed');
-              emitMeta(`[Shipyard] Server sync failed: ${err.message}`);
+            db.db.prepare('UPDATE tofu_runs SET vm_provisioned = 1 WHERE id = ?').run(dbRunId);
+            // Consume the approved plan before host connection; retries must never apply it again.
+            if (approvedPlan?.plan_path) {
+              try { fs.unlinkSync(approvedPlan.plan_path); } catch {}
+              db.db.prepare('UPDATE tofu_runs SET plan_path = NULL WHERE id = ?').run(approvedPlan.id);
             }
+            const backup = backupLocalState(workspace, 'after-apply');
+            if (backup) emitMeta(`[Shipyard] Encrypted state backup saved: ${backup}`);
+            await finishHostDeployment({ workspace, binary, env, dbRunId, logMeta, emitMeta });
           }
 
           if (success && action === 'destroy') {
@@ -1750,15 +1780,11 @@ override.tf.json
             }
           }
 
-          if (success && ['apply', 'destroy', 'destroy_vm'].includes(action)) {
+          if (success && ['destroy', 'destroy_vm'].includes(action)) {
             const backup = backupLocalState(workspace, `after-${action}`);
             if (backup) emitMeta(`[Shipyard] Encrypted state backup saved: ${backup}`);
           }
 
-          if (success && action === 'apply' && approvedPlan?.plan_path) {
-            try { fs.unlinkSync(approvedPlan.plan_path); } catch {}
-            db.db.prepare('UPDATE tofu_runs SET plan_path = NULL WHERE id = ?').run(approvedPlan.id);
-          }
           if (success && action === 'init') syncFleetWorkspace(workspace, `Track provider lock for ${workspace.name}`);
 
           const status = cancelled ? 'cancelled' : success ? 'success' : 'failed';

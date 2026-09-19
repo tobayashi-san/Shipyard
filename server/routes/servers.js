@@ -813,11 +813,6 @@ router.put('/:id/alert-settings', guardServerAccess, guard('canEditServers'), (r
   }
 });
 
-// GET /api/servers/:id/info/history - Recent bounded capacity observations
-router.get('/:id/info/history', guardServerAccess, guard('canViewServers'), (req, res) => {
-  res.json(db.serverInfo.getHistory(req.params.id, req.query.limit));
-});
-
 // GET /api/servers/:id/info - Get system info (stale-while-revalidate)
 router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, res) => {
   const server = req.server;

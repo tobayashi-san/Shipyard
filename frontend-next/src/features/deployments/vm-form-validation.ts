@@ -29,11 +29,14 @@ export function validateVmForm(form: Values, preDeploy: string[], target: string
     if (String(form.ipv4_gateway).trim() && !ipv4(String(form.ipv4_gateway).trim())) errors['Gateway (optional)'] = 'Enter a valid IPv4 gateway or leave it empty.';
   }
   if (!String(form.username).trim()) errors['VM user'] = 'Enter the login account to configure in this VM.';
+  if (form.ssh_port !== undefined) integer('ssh_port', 'SSH port', 1, 65535);
+  if (form.started === false) errors['Start VM'] = 'Start the VM so Shipyard can connect and run post-deploy playbooks.';
+  if (form.ipv4_mode === 'dhcp' && form.agent_enabled === false) errors['Guest agent'] = 'Enable the guest agent to discover the DHCP address.';
   if (preDeploy.length && !target) errors['Execution host'] = 'Select the host that runs the pre-deploy workflows.';
   const groups = [
     ['VM name', 'Proxmox node', 'Target VM ID', 'Template'],
     ['Datastore', 'Disk size (GiB)', 'CPU cores', 'Memory (MiB)', 'Disk interface', 'CPU type', 'Clone attempts'],
-    ['Bridge / SDN VNet', 'VM VLAN-ID (optional)', 'IPv4 address', 'Prefix', 'Gateway (optional)', 'VM user'],
+    ['Bridge / SDN VNet', 'VM VLAN-ID (optional)', 'IPv4 address', 'Prefix', 'Gateway (optional)', 'VM user', 'SSH port', 'Start VM', 'Guest agent'],
     ['Execution host'],
   ];
   return { errors, steps: groups.map(labels => labels.filter(label => errors[label])) };

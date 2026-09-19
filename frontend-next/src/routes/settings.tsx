@@ -1,3 +1,4 @@
+import { ManageConnections } from '@/features/infrastructure/ManageConnections';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/ui/page-header';
@@ -114,7 +115,7 @@ function AdminSettingsPage() {
           <SettingsDisclosure title="SSH credentials" open={params.tab === 'ssh'}><SshTab /></SettingsDisclosure>
         </>}
         {activeId === 'connections' && <>
-          <Button asChild variant="outline"><Link to="/infrastructure" search={{section: 'platforms'}}>Manage connections</Link></Button>
+          <ManageConnections />
           <SettingsDisclosure title="Playbook Git" open={params.tab === 'git'}><GitTab /></SettingsDisclosure>
           <SettingsDisclosure title="Notifications" open={params.tab === 'notifications'}><NotificationsTab /></SettingsDisclosure>
         </>}

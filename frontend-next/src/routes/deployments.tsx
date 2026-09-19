@@ -1,4 +1,3 @@
-import { ConfirmDeleteConnection } from '@/features/infrastructure/ConfirmDeleteConnection';
 import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -16,15 +15,14 @@ import { useUi } from "@/lib/store";
 import { hasCap, useProfile } from "@/lib/queries";
 import { showToast } from "@/lib/toast";
 import { formatDateTime } from "@/lib/utils";
-import { PlatformConnectionsDialog } from '@/features/infrastructure/PlatformConnectionsDialog';
-import { ProxmoxConnectionDialog, type ProxmoxConnection } from "@/features/infrastructure/ProxmoxConnectionDialog";
-import { ProxmoxConnectionsCard } from "@/routes/infrastructure";
 
 interface Run {
   id: string;
   action?: string;
   status?: string;
   plan_summary?: string | null;
+  deployment_phase?: string | null;
+  vm_provisioned?: number;
   started_at?: string;
   completed_at?: string;
 }
@@ -51,7 +49,8 @@ function vmStatus(vm: ManagedVm) {
       if ((summary.create || 0) + (summary.update || 0) + (summary.delete || 0) + (summary.replace || 0) > 0) return { label: "Drift", tone: "warning" as StatusTone };
     } catch { /* keep the normal status */ }
   }
-  return { label: vm.started ? "Managed" : "Stopped", tone: (vm.started ? "success" : "muted") as StatusTone };
+  if (run.action === "plan") return { label: "Review plan", tone: "info" as StatusTone };
+  return { label: run.deployment_phase === "ready" ? "Ready" : "Check deployment", tone: (run.deployment_phase === "ready" ? "success" : "muted") as StatusTone };
 }
 function formatDate(value?: string) {
   return formatDateTime(value);
@@ -72,13 +71,7 @@ export function DeploymentsPage() {
   const queryClient = useQueryClient();
   const profileQuery = useProfile();
   const canEdit = hasCap(profileQuery.data, "canEditDeployments");
-  const canManagePlatforms = hasCap(profileQuery.data, "canManageDeploymentPlatforms");
-  const canSyncIpam = hasCap(profileQuery.data, "canEditServers");
   const [createOpen, setCreateOpen] = useState(false);
-  const [connectionsOpen, setConnectionsOpen] = useState(false);
-  const [connectionEditorOpen, setConnectionEditorOpen] = useState(false);
-  const [connectionToEdit, setConnectionToEdit] = useState<ProxmoxConnection | null>(null);
-  const [connectionToDelete, setConnectionToDelete] = useState<ProxmoxConnection | null>(null);
   const [legacyToMigrate, setLegacyToMigrate] = useState<LegacyWorkspace | null>(null);
   const vmsQuery = useQuery({
     queryKey: ["opentofu", "vms", environmentId],
@@ -98,13 +91,6 @@ export function DeploymentsPage() {
     staleTime: 15_000,
   });
   const templates = Array.isArray(templatesQuery.data?.templates) ? templatesQuery.data!.templates! : [];
-  const connectionsQuery = useQuery({
-    queryKey: ["opentofu", "proxmox-connections", environmentId],
-    queryFn: () => apiFetch<ProxmoxConnection[]>(`/opentofu/proxmox-connections?environment_id=${encodeURIComponent(environmentId)}`),
-    staleTime: 15_000,
-  });
-  const connections = Array.isArray(connectionsQuery.data) ? connectionsQuery.data : [];
-  const inventoryClusterId = clusterIdFromEndpoint(connections[0]?.endpoint);
   const migrateMutation = useMutation({
     mutationFn: (workspace: LegacyWorkspace) => apiFetch(`/opentofu/legacy-workspaces/${encodeURIComponent(workspace.id)}/migrate-vms`, { method: "POST", body: { confirmation: `MIGRATE ${workspace.name}` } }),
     onSuccess: () => { setLegacyToMigrate(null); showToast("VM states were isolated successfully.", "success"); refresh(); },
@@ -114,12 +100,11 @@ export function DeploymentsPage() {
 
   return <div className="space-y-5">
     <PageHeader
-      title="VM definitions"
-      description="Create and deploy VMs."
+      title="Deployments"
       actions={<>
         <Button type="button" variant="outline" onClick={refresh} disabled={vmsQuery.isFetching}><RefreshCw className={vmsQuery.isFetching ? "animate-spin" : undefined} />Refresh</Button>
-        {(canManagePlatforms || connections.length > 0) && <Button type="button" variant="outline" onClick={() => setConnectionsOpen(true)}><Settings2 />Platform connections</Button>}
-        <Button type="button" onClick={() => setCreateOpen(true)} disabled={!canEdit}><Server />Create managed VM</Button>
+        {profileQuery.data?.role === "admin" && <Button asChild variant="outline"><Link to="/settings/$tab" params={{tab:"connections"}}>Manage connections</Link></Button>}
+        <Button type="button" onClick={() => setCreateOpen(true)} disabled={!canEdit}><Server />Create VM</Button>
       </>}
     />
 
@@ -135,7 +120,7 @@ export function DeploymentsPage() {
 
     {vmsQuery.isLoading ? <div className="space-y-1 rounded-md border p-4">{[0, 1, 2, 3].map((item) => <div key={item} className="h-11 animate-pulse rounded bg-muted/40" />)}</div>
       : vmsQuery.isError ? <Card><EmptyState icon={<TriangleAlert className="h-5 w-5" />} title="VM definitions could not be loaded" description="No infrastructure has been changed." action={<Button variant="outline" onClick={() => void vmsQuery.refetch()}><RefreshCw />Try again</Button>} /></Card>
-      : vms.length === 0 ? <Card><EmptyState icon={<Server className="h-5 w-5" />} title="No VM definitions" description="This list contains declaratively managed VM definitions. Existing Proxmox VMs and hosts remain in Infrastructure inventory; adopting a host does not create a VM definition." action={canEdit ? <div className="flex flex-wrap justify-center gap-2"><Button onClick={() => setCreateOpen(true)}><Server />Create managed VM</Button>{inventoryClusterId && <Button asChild variant="outline"><Link to="/infrastructure/$clusterId" params={{ clusterId: inventoryClusterId }}>Open inventory</Link></Button>}</div> : undefined} /></Card>
+      : vms.length === 0 ? <Card><EmptyState icon={<Server className="h-5 w-5" />} title="No deployments yet" description="Create a VM draft to start a deployment." action={canEdit ? <Button onClick={() => setCreateOpen(true)}>Create VM</Button> : undefined} /></Card>
       : <Card>
         <CardHeader className="border-b bg-muted/15 py-3"><CardTitle className="flex items-center gap-2 text-base"><Workflow className="h-4 w-4" />VM definitions</CardTitle></CardHeader>
         <CardContent className="p-0">
@@ -160,7 +145,7 @@ export function DeploymentsPage() {
                     openVm();
                   }}
                 >
-                  <td className="px-3"><span className="font-medium">{vm.name}</span><div className="text-xs text-muted-foreground">Independent state</div></td>
+                  <td className="px-3"><span className="font-medium">{vm.name}</span></td>
                   <td className="px-3"><StatusBadge tone={status.tone} dot>{status.label}</StatusBadge></td>
                   <td className="px-3"><div className="font-medium">{vm.platform?.name || "—"}</div><div className="max-w-[14rem] truncate text-xs text-muted-foreground">{vm.platform?.endpoint?.replace(/^https?:\/\//, "") || "Platform unavailable"}</div></td>
                   <td className="px-3"><span className="font-mono text-xs">{vm.node_name || "—"} · {vm.vm_id || "auto"}</span></td>
@@ -178,12 +163,7 @@ export function DeploymentsPage() {
         ? <EmptyState icon={<TriangleAlert className="h-5 w-5" />} title="VM templates could not be loaded" description="No template data is being shown." action={<Button variant="outline" onClick={() => void templatesQuery.refetch()}><RefreshCw />Try again</Button>} />
         : templates.length === 0 ? <p className="text-sm text-muted-foreground">No templates yet. Save the current values as a template while creating or editing a VM.</p> : <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{templates.map((template) => <div key={template.id} className="rounded-md border p-3"><div className="font-medium">{template.name}</div><div className="mt-1 text-xs text-muted-foreground">{template.config?.cpu_cores || "—"} CPU · {template.config?.memory_mb || "—"} MB · {template.config?.disk_size_gb || "—"} GB</div></div>)}</div>}</CardContent>
     </Card>
-    <CreateDeploymentDialog onConfigurePlatforms={() => setConnectionsOpen(true)} environmentId={environmentId} open={createOpen} onOpenChange={setCreateOpen} />
-    <PlatformConnectionsDialog open={connectionsOpen && !connectionEditorOpen && !connectionToDelete} onOpenChange={setConnectionsOpen}>
-      {connectionsQuery.isError ? <QueryErrorState compact error={connectionsQuery.error} title="Platform connections could not be loaded" onRetry={() => void connectionsQuery.refetch()} /> : <ProxmoxConnectionsCard connections={connections} isAdmin={canManagePlatforms} canSyncIpam={canSyncIpam} onAdd={() => { setConnectionToEdit(null); setConnectionEditorOpen(true); }} onEdit={(connection) => { setConnectionToEdit(connection); setConnectionEditorOpen(true); }} onDelete={setConnectionToDelete} />}
-    </PlatformConnectionsDialog>
-    <ProxmoxConnectionDialog environmentId={environmentId} connection={connectionToEdit} open={connectionEditorOpen} onOpenChange={setConnectionEditorOpen} />
-    <ConfirmDeleteConnection connection={connectionToDelete} onOpenChange={(next) => !next && setConnectionToDelete(null)} onDeleted={() => { setConnectionToDelete(null); refresh(); }} />
+    <CreateDeploymentDialog onConfigurePlatforms={() => void navigate({to:'/settings/$tab',params:{tab:'connections'}})} environmentId={environmentId} open={createOpen} onOpenChange={setCreateOpen} />
     <ConfirmDialog open={Boolean(legacyToMigrate)} onOpenChange={(next) => !next && setLegacyToMigrate(null)} title="Split legacy state by VM?" description="Shipyard locks the legacy deployment, backs up its local state, moves each VM resource to an independent state, and validates that no VM would be created or destroyed. Remote backends are rejected and require a backend-specific migration." confirmLabel="Migrate VM states" variant="warning" confirmTextValue={legacyToMigrate ? `MIGRATE ${legacyToMigrate.name}` : undefined} confirmInputHelp={legacyToMigrate ? <>Enter <code className="font-mono">MIGRATE {legacyToMigrate.name}</code>.</> : undefined} onConfirm={() => legacyToMigrate && migrateMutation.mutate(legacyToMigrate)} isPending={migrateMutation.isPending} />
   </div>;
 }

@@ -27,7 +27,6 @@ export const serversApi = {
   exportServers: (format: 'json' | 'csv') => apiDownload(`/servers/export?format=${format}`, `servers.${format}`),
   importServers: (servers: AnyObj[]) => apiFetch('/servers/import', { method: 'POST', body: { servers } }),
   getServerInfo: (id: Id, force = false) => apiFetch<AnyObj>(`/servers/${id}/info${force ? '?force=1' : ''}`),
-  getServerInfoHistory: (id: Id, limit = 24) => apiFetchArray<AnyObj>(`/servers/${id}/info/history?limit=${limit}`),
   getServerServices: (id: Id) => apiFetch<AnyObj>(`/servers/${id}/services`),
   getServerUpdates: (id: Id, force = false) => apiFetch<AnyObj>(`/servers/${id}/updates${force ? '?force=1' : ''}`),
   getServerHistory: (id: Id) => apiFetchArray<AnyObj>(`/servers/${id}/history`),

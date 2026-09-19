@@ -1,3 +1,4 @@
+import { useNavigate } from '@tanstack/react-router';
 import { validateVmForm, VM_STEPS } from './vm-form-validation';
 import { VmIpamSelection } from './VmIpamSelection';
 import { useEffect, useMemo, useState, useRef, useId, Children, createContext, useContext, cloneElement, isValidElement, type ReactElement, type ReactNode } from "react";
@@ -36,6 +37,7 @@ interface CatalogItem {
   available_on_node?: boolean;
 }
 interface Catalog {
+  ssh_public_key_configured?: boolean;
   node?: string;
   next_vm_id?: string | number;
   nodes?: CatalogItem[];
@@ -86,6 +88,7 @@ interface VmForm {
   ipv4_gateway: string;
   dns_servers: string;
   username: string;
+  ssh_port: string;
   ssh_public_key_variable: string;
   started: boolean;
 }
@@ -112,6 +115,7 @@ const initialForm: VmForm = {
   ipv4_gateway: "",
   dns_servers: "",
   username: "",
+  ssh_port: "22",
   ssh_public_key_variable: "ssh_public_key",
   started: true,
 };
@@ -158,6 +162,7 @@ function formFromVm(input?: Record<string, unknown> | null) {
       ? input.dns_servers.map(String).join(", ")
       : String(input.dns_servers || ""),
     username: stringValue("username"),
+    ssh_port: String(input.ssh_port || 22),
     ssh_public_key_variable: String(input.ssh_public_key_variable || ""),
     agent_enabled:
       input.agent_enabled == null
@@ -191,6 +196,7 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
   const [baseline] = useState(() => baselineFor(initialVm));
   const changedOnServer = baselineFor(initialVm) !== baseline;
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [showErrors, setShowErrors] = useState(false);
   const [form, setForm] = useState<VmForm>(() => formFromVm(initialVm));
@@ -302,7 +308,7 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
   });
   const saveMutation = useMutation({
     mutationFn: () =>
-      apiFetch(
+      apiFetch<{id: string}>(
         isolated
           ? `/opentofu/vms${vmId ? `/${encodeURIComponent(vmId)}` : ""}`
           : `/opentofu/workspaces/${encodeURIComponent(workspaceId || "")}/proxmox-vms${initialVm?.id ? `/${encodeURIComponent(String(initialVm.id))}` : ""}`,
@@ -312,19 +318,20 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
           body: { ...payload(), environment_id: environmentId, connection_id: connectionId, template_id: templateId || undefined },
         },
       ),
-    onSuccess: () => {
+    onSuccess: result => {
       void queryClient.invalidateQueries({queryKey: ["opentofu"]});
       if (!active.current) return;
       showToast(
         vmId || initialVm?.id
           ? "VM configuration updated. Review a plan before applying it."
-          : "VM created as an isolated OpenTofu deployment.",
+          : "Draft saved — not deployed. Create a plan to continue.",
         "success",
       );
       void queryClient.invalidateQueries({
         queryKey: ["opentofu"],
       });
       onOpenChange(false);
+      if (isolated && !vmId && !initialVm?.id && result?.id) void navigate({ to: '/deployments/$id', params: { id: result.id } });
     },
     onError: (error: Error) => showToast(error.message, "error"),
   });
@@ -424,6 +431,10 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
   );
   const validVmId = Number.isInteger(Number(form.vm_id)) && Number(form.vm_id) >= 100;
   const validation = validateVmForm({ ...form }, preDeploy, preDeployTarget);
+  if (form.ssh_public_key_variable && catalogQuery.data?.ssh_public_key_configured === false) {
+    validation.errors['SSH key variable'] = 'Save Shipyard’s public key under Settings → Connections before deploying.';
+    validation.steps[2].push('SSH key variable');
+  }
   if (!validNode) validation.errors['Proxmox node'] = 'Select a node from the current platform inventory.';
   const requiredValuesValid = Object.keys(validation.errors).length === 0;
   const formValid = !changedOnServer && catalogQuery.isSuccess && !catalogQuery.isFetching && validNode && validVmId && requiredValuesValid;
@@ -801,6 +812,7 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
                   inputMode="decimal"
                 />
               </Field>
+              <Field label="SSH port" hint="The port configured in the guest template."><Input type="number" min={1} max={65535} required value={form.ssh_port} onChange={event => update('ssh_port', event.target.value)} /></Field>
               <Field label="VM user" hint="Choose the account for this guest OS, for example debian or ubuntu. Saved VM templates can supply this value.">
                 <Input
                   required
@@ -821,7 +833,7 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
               <div className="mt-3 max-w-md">
                 <Field
                   label="SSH key variable"
-                  hint="Leave empty to avoid setting a key through Cloud-Init."
+                  hint="Uses the public key saved under Settings → Connections. Leave empty only if the template already accepts Shipyard’s SSH key."
                 >
                   <Input
                     value={form.ssh_public_key_variable}

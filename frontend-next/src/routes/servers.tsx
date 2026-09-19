@@ -1,2 +1,1 @@
-// Route adapter: implementation lives with the server-management feature.
-export { ServersPage } from '@/features/servers/ServersPage';
+export { HostsPage as ServersPage } from '@/features/servers/HostsPage';

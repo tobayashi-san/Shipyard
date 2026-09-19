@@ -59,11 +59,11 @@ describe("UI refactor contract", () => {
     expect(dialog).toContain("Post-deploy workflows");
   });
 
-  it("keeps four fixed main destinations without duplicate inventory navigation", () => {
+  it("keeps five fixed main destinations without duplicate inventory navigation", () => {
     const sidebar = source("components/layout/Sidebar.tsx");
     expect(sidebar).not.toContain('WorkspaceSwitcher');
     expect(sidebar).not.toContain('navigationWorkspace');
-    for (const label of ['Infrastructure', 'Automations', 'Networks', 'Jobs']) expect(sidebar).toContain(`label="${label}"`);
+    for (const label of ['Hosts', 'Deployments', 'Automations', 'Networks', 'Jobs']) expect(sidebar).toContain(`label="${label}"`);
     expect(sidebar).not.toContain("<InfrastructureTree");
     expect(sidebar).toContain('label="Settings"');
   });
@@ -71,7 +71,7 @@ describe("UI refactor contract", () => {
   it("uses three common host tabs while keeping secondary tools available", () => {
     const page = source("features/server-detail/ServerDetailPage.tsx");
     expect(page.match(/<TabsTrigger value=/g)).toHaveLength(3);
-    expect(page).toContain('<TabsTrigger value="configuration">Configuration</TabsTrigger>');
+    expect(page).toContain('<TabsTrigger value="snapshots">Snapshots</TabsTrigger>');
     expect(page).toContain('<TabsTrigger value="history">Jobs</TabsTrigger>');
     expect(page).toContain('<OverflowMenu title="More host sections">');
     expect(page).toContain('<ServerFilesTab serverId={id} profile={profile} />');
@@ -309,7 +309,7 @@ describe("UI refactor contract", () => {
     expect(networks).toContain('tr("descriptionLabel")');
     expect(sidebar.match(/<NavItem to="\/operations"/g)).toHaveLength(1);
     expect(sidebar).not.toContain("shipyard.lastInfrastructureRoute");
-    expect(sidebar).not.toContain('path.startsWith("/servers")');
+    expect(sidebar).toContain('path.startsWith("/servers")');
     expect(operations).not.toContain('| "Audit"');
     expect(operations).not.toContain('<option value="Audit">');
     expect(router).not.toContain("'Workflow' | 'Audit'");

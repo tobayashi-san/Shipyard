@@ -1,7 +1,4 @@
-import { InfrastructureDetailPage } from '@/routes/infrastructure-detail';
-import { VmFormDialog } from '@/features/deployments/VmFormDialog';
-import type { InfrastructureResponse } from '@/features/infrastructure/detail-model';
-import { VmDetailContent } from '@/routes/proxmox-vm-detail';
+import { HostSnapshots } from './HostSnapshots';
 import { ComposeTemplateButton } from './components/ComposeTemplateButton';
 import { OsUpdateImpact } from './components/OsUpdateImpact';
 import { CustomUpdateDialog } from './components/CustomUpdateDialog';
@@ -247,16 +244,9 @@ export function ServerDetailPage() {
     stacks,
   } = controller;
 
-  const [createVmOpen, setCreateVmOpen] = useState(false);
-  const inventoryEnvironment = useUi(state => state.environmentId);
-  const physicalInventory = useQuery({queryKey: ['opentofu', 'infrastructure', inventoryEnvironment], queryFn: () => apiFetch<InfrastructureResponse>(`/opentofu/infrastructure?environment_id=${encodeURIComponent(inventoryEnvironment)}`), enabled: hasCap(profile, 'canViewInfrastructure'), staleTime: 30_000});
-  const physicalCluster = physicalInventory.data?.clusters?.find(cluster => cluster.nodes.some(node => node.fleet_server_id === id));
-  const physicalNode = physicalCluster?.nodes.find(node => node.fleet_server_id === id);
   const linkedVm = managedDeployments.find(deployment => deployment.cluster_id && deployment.vm?.node_name && deployment.vm.vm_id != null);
   const availableTabs = useMemo(() => {
-    const values = ["overview", "configuration"];
-    if (physicalNode) values.push("node");
-    if (linkedVm) values.push("vm");
+    const values = ["overview", "snapshots"];
     if (hasCap(profile, "canViewDocker") && server?.docker_enabled)
       values.push("docker");
     if (
@@ -269,12 +259,12 @@ export function ServerDetailPage() {
       hasCap(profile, "canDeleteCustomUpdates")
     )
       values.push("updates");
-    if (hasCap(profile, "canViewServerHistory") || (physicalNode && hasCap(profile, "canViewAudit"))) values.push("history");
+    if (hasCap(profile, "canViewServerHistory")) values.push("history");
     if (hasCap(profile, "canViewNotes")) values.push("notes");
     if (hasCap(profile, "canViewFiles") || hasCap(profile, "canUseTerminal"))
       values.push("access");
     return values;
-  }, [profile, server?.docker_enabled, linkedVm, physicalNode]);
+  }, [profile, server?.docker_enabled]);
   const serverTabs = useUrlTab("overview", availableTabs);
 
   // ── Loading / not found ─────────────────────────────────────
@@ -331,7 +321,7 @@ export function ServerDetailPage() {
                     | "/playbooks"
                     | "/settings"
                     | "/profile"
-                    | null) ?? "/infrastructure",
+                    | null) ?? "/servers",
               })
             }
           >
@@ -341,10 +331,10 @@ export function ServerDetailPage() {
         breadcrumbs={
           <>
             <Link
-              to="/infrastructure"
+              to="/servers"
               className="transition-colors hover:text-foreground"
             >
-              Infrastructure
+              Hosts
             </Link>
             <span aria-hidden="true">/</span>
             {server.group_name && (
@@ -373,7 +363,7 @@ export function ServerDetailPage() {
         description={[server.ip_address, server.hostname !== server.ip_address ? server.hostname : null].filter(Boolean).join(" · ") || "Host address not reported"}
         actions={
           <>
-            {serverTabs.value === "configuration" && hasCap(profile, "canEditServers") && <Button onClick={() => setEditOpen(true)}><Pencil />Edit configuration</Button>}
+            {hasCap(profile, "canEditServers") && <Button onClick={() => setEditOpen(true)}><Pencil />Edit host</Button>}
             {server.status !== "online" &&
               hasCap(profile, "canEditServers") && (
                 <Button
@@ -519,12 +509,6 @@ export function ServerDetailPage() {
         }
       />
 
-      {physicalCluster && physicalNode && <Card><CardContent className="p-4">
-        <div className="mb-3 flex items-center justify-between"><span className="font-medium">Virtual machines</span>{hasCap(profile, 'canEditDeployments') && physicalCluster.connections?.[0]?.id && <Button onClick={() => setCreateVmOpen(true)}>Create VM</Button>}</div>
-        <details><summary className="cursor-pointer text-sm text-muted-foreground">{physicalCluster.vms.filter(vm => vm.node_name === physicalNode.name).length} virtual machines</summary><div className="mt-2 divide-y">{physicalCluster.vms.filter(vm => vm.node_name === physicalNode.name).map(vm => <Link key={vm.vm_id} to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId" params={{clusterId:physicalCluster.id, nodeName:physicalNode.name, vmId:String(vm.vm_id)}} className="block py-2 text-sm hover:underline">{vm.name || `VM ${vm.vm_id}`}</Link>)}</div></details>
-        <VmFormDialog environmentId={inventoryEnvironment} connectionId={physicalCluster.connections?.[0]?.id} initialVm={{node_name:physicalNode.name}} open={createVmOpen} onOpenChange={setCreateVmOpen} />
-      </CardContent></Card>}
-
       {/* ── Tabs ─────────────────────────────────────────────── */}
       <Tabs
         value={serverTabs.value}
@@ -538,22 +522,17 @@ export function ServerDetailPage() {
           <div className="min-w-0 overflow-x-auto">
           <TabsList aria-label="Host sections" className="console-tabs min-w-max border-b-0">
             <TabsTrigger value="overview">{t("det.tabOverview")}</TabsTrigger>
-            <TabsTrigger value="configuration">Configuration</TabsTrigger>
+            <TabsTrigger value="snapshots">Snapshots</TabsTrigger>
             {availableTabs.includes("history") && <TabsTrigger value="history">Jobs</TabsTrigger>}
           </TabsList>
           <OverflowMenu title="More host sections">
-            {availableTabs.filter(value => !['overview', 'configuration', 'history', 'terminal'].includes(value)).map(value => <OverflowItem key={value} onClick={() => serverTabs.onValueChange(value)}>{({node: 'Advanced · Proxmox node', vm: 'Virtual machine', docker: 'Workloads', updates: 'Updates', notes: 'Notes', access: 'Advanced'} as Record<string, string>)[value] || value}</OverflowItem>)}
+            {availableTabs.filter(value => !['overview', 'snapshots', 'history', 'terminal'].includes(value)).map(value => <OverflowItem key={value} onClick={() => serverTabs.onValueChange(value)}>{({node: 'Advanced · Proxmox node', vm: 'Virtual machine', docker: 'Workloads', updates: 'Updates', notes: 'Notes', access: 'Advanced'} as Record<string, string>)[value] || value}</OverflowItem>)}
           </OverflowMenu>
           </div>
 
         </div>
 
-        {physicalCluster && physicalNode && <TabsContent value="node"><InfrastructureDetailPage embedded clusterId={physicalCluster.id} nodeName={physicalNode.name} /></TabsContent>}
-        {linkedVm && <TabsContent value="vm" className="space-y-4">
-          <VmDetailContent key={`${linkedVm.cluster_id}:${linkedVm.vm!.node_name}:${linkedVm.vm!.vm_id}`} embedded clusterId={linkedVm.cluster_id!} nodeName={linkedVm.vm!.node_name!} vmId={String(linkedVm.vm!.vm_id)} />
-        </TabsContent>}
-        {linkedVm && ['overview', 'configuration', 'history'].includes(serverTabs.value) && <VmDetailContent key={`${linkedVm.cluster_id}:${linkedVm.vm!.node_name}:${linkedVm.vm!.vm_id}:${serverTabs.value}`} embedded section={serverTabs.value === 'history' ? 'tasks' : serverTabs.value} clusterId={linkedVm.cluster_id!} nodeName={linkedVm.vm!.node_name!} vmId={String(linkedVm.vm!.vm_id)} />}
-        {physicalCluster && physicalNode && serverTabs.value === 'history' && hasCap(profile, 'canViewAudit') && <InfrastructureDetailPage embedded section="tasks" clusterId={physicalCluster.id} nodeName={physicalNode.name} />}
+        <TabsContent value="snapshots">{controller.deploymentContextLoading ? <p role="status">Loading snapshot connection…</p> : controller.deploymentContextFailed ? <div role="alert"><p>Snapshot connection could not be loaded.</p><Button variant="outline" onClick={() => void controller.refetchDeploymentContext()}>Try again</Button></div> : <HostSnapshots mapping={linkedVm} />}</TabsContent>
         <ServerOverviewTabs controller={controller} />
         <ServerDockerTab controller={controller} />
         <ServerUpdatesTab controller={controller} />

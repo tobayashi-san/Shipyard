@@ -92,8 +92,8 @@ function ConnectionForm({environmentId, connection: requestedConnection, onOpenC
             ssh_public_key: sshKey,
             ca_certificate: caCertificate,
             insecure,
-            auto_sync_ipam: autoSyncIpam,
-            sync_interval_min: autoSyncIpam ? Number(syncIntervalMin) : undefined,
+            auto_sync_ipam: false,
+
           },
         },
       );
@@ -254,44 +254,6 @@ function ConnectionForm({environmentId, connection: requestedConnection, onOpenC
             <p className="text-xs text-muted-foreground">
               Passed on as the default for new VM definitions on this platform.
             </p>
-          </div>
-          <div className="space-y-3 rounded-md border p-3">
-            <label className="flex items-start gap-2 text-sm">
-              <input
-                type="checkbox"
-                {...fieldProps('auto_sync_ipam')}
-                checked={autoSyncIpam}
-                onChange={(event) => setAutoSyncIpam(event.target.checked)}
-                className="mt-0.5"
-              />
-              <span>
-                <span className="font-medium">Automatically synchronize IPAM</span>
-                <span className="mt-0.5 block text-xs text-muted-foreground">
-                  Discover Proxmox VM and container addresses in every matching
-                  network. Manual synchronization remains available.
-                </span>
-              </span>
-            </label>
-            {fieldError('auto_sync_ipam')}
-            <div className="space-y-1.5 pl-5">
-              <Label htmlFor="platform-sync-interval">Interval in minutes</Label>
-              <Input
-                id="platform-sync-interval"
-              {...fieldProps('sync_interval_min')}
-                type="number"
-                min={5}
-                max={1440}
-                step={1}
-                required={autoSyncIpam}
-                disabled={!autoSyncIpam}
-                value={syncIntervalMin}
-                onChange={(event) => setSyncIntervalMin(event.target.value)}
-              />
-            {fieldError('sync_interval_min')}
-              <p className="text-xs text-muted-foreground">
-                Between 5 minutes and 24 hours.
-              </p>
-            </div>
           </div>
           <label className="flex items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 p-3 text-sm">
             <input

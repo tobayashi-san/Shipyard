@@ -1,4 +1,3 @@
-import {StorageUsageHistory} from './StorageUsageHistory';
 import {datastoreCapacityState, datastoreStatus, datastoreContent, filterDatastores, interfaceAddress} from './detail-model';
 import {guestAuditPresentation} from '@/lib/audit-display';
 import { useEffect, useMemo, useState } from "react";
@@ -742,7 +741,6 @@ export function DatastoresCard({
 }) {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
-  const [historyRange, setHistoryRange] = useState<'recent' | 'week'>('recent');
   const visibleStores = filterDatastores(stores, search, status);
   const emptyMessage = stores.length && !visibleStores.length ? "No datastores match these filters." : sources.some(source => source.datastores_status !== "available") ? "Storage inventory is incomplete. Check the collection status above." : emptyText;
   return (
@@ -753,7 +751,6 @@ export function DatastoresCard({
           Datastores
         </CardTitle>
         <p className="text-xs text-muted-foreground">Source: Proxmox · Stores may share underlying capacity.</p>
-        <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">Storage history and collection details</summary><p className="mt-2">Includes inactive stores and directory, LVM and ZFS backends. Successful refreshes are sampled in five-minute buckets; observations older than seven days are removed on refresh. Gaps mean no sample. Recent observations and seven-day hourly means are available.</p></details>
         {sources.map(source => <p key={source.name} className="text-xs text-muted-foreground">
           <span className="font-medium">{source.name}</span>{' · '}
           {source.datastores_status === 'available' ? 'Storage inventory loaded' : source.datastores_status === 'unavailable' ? 'Storage inventory unavailable — refresh and check Proxmox connectivity and API storage permissions.' : 'Storage collection status not recorded — refresh inventory.'}
@@ -767,10 +764,7 @@ export function DatastoresCard({
             <option value="all">All statuses</option>
             {['Active', 'Inactive', 'Disabled', 'Status not reported'].map(value => <option key={value} value={value}>{value}</option>)}
           </select>
-          <select aria-label="Storage history range" value={historyRange} onChange={event => setHistoryRange(event.target.value === 'week' ? 'week' : 'recent')} className="h-9 rounded-md border bg-background px-2 text-sm">
-            <option value="recent">Last 48 observations</option>
-            <option value="week">7 days · hourly means</option>
-          </select>
+
           {(search || status !== 'all') && <Button variant="ghost" size="sm" onClick={() => {setSearch('');setStatus('all');}}>Clear filters</Button>}
           <span className="text-xs text-muted-foreground" aria-live="polite">{visibleStores.length} of {stores.length} datastores</span>
         </div>
@@ -792,7 +786,6 @@ export function DatastoresCard({
                 </div>
                 <p className="text-xs text-muted-foreground">{datastoreStatus(store)} · {store.shared === true ? "Shared across nodes" : store.shared === false ? "Node-local" : "Sharing not reported"}</p>
                 <p className="text-xs text-muted-foreground">{datastoreContent(store)}</p>
-                <StorageUsageHistory store={store} range={historyRange}/>
                 <CapacityCell used={datastoreCapacityState(store) === "unknown" ? null : store.used} total={store.total} />
               </div>
             ))
@@ -818,7 +811,6 @@ export function DatastoresCard({
                 <th>Free</th>
                 <th>Capacity</th>
                 <th>Usage</th>
-                <th>Observed history</th>
               </tr>
             </thead>
             <tbody>
@@ -846,13 +838,12 @@ export function DatastoresCard({
                         ? `${Math.round((store.used / store.total) * 100)} %`
                         : "—"}
                     </td>
-                    <td><StorageUsageHistory store={store} range={historyRange}/></td>
                   </tr>
                 ))
               ) : (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={9}
                     className="py-7 text-center text-muted-foreground"
                   >
                     {emptyMessage}

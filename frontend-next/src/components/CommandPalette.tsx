@@ -112,15 +112,9 @@ export function CommandPalette() {
     staleTime: 15_000,
   });
   const ipamResults = ipamQuery.data?.pages.flatMap(page => page.items || []) || [];
-  const infrastructureQuery = useQuery({
-    queryKey: ['opentofu', 'infrastructure', environmentId, 'summary'],
-    queryFn: () => apiFetch<{ clusters?: Parameters<typeof infrastructureSearchItems>[0] }>(`/opentofu/infrastructure-summary?environment_id=${encodeURIComponent(environmentId)}`),
-    enabled: open && hasCap(profile, 'canViewInfrastructure'),
-    staleTime: 30_000,
-  });
-  const allInfrastructureItems = hasCap(profile, 'canViewInfrastructure') ? infrastructureSearchItems(asArray(infrastructureQuery.data?.clusters), hasCap(profile, 'canViewServers') ? asArray<ServerListItem>(servers) : []) : [];
+  const allInfrastructureItems: ReturnType<typeof infrastructureSearchItems> = [];
   const searchReferencesFailed =
-    serversQuery.isError || playbooksQuery.isError || ipamQuery.isError || infrastructureQuery.isError;
+    serversQuery.isError || playbooksQuery.isError || ipamQuery.isError;
 
   const safeServers = hasCap(profile, 'canViewServers') ? commandSearch(asArray<ServerListItem>(servers),search,expanded.hosts ? Infinity : 5,item=>item.name,item=>[item.ip_address || '']) : [];
   const safePlaybooks = hasCap(profile, 'canViewPlaybooks') ? commandSearch(asArray<PlaybookListItem>(playbooks),search,expanded.playbooks ? Infinity : 5,item=>item.filename || item.name || item.id) : [];
@@ -166,7 +160,6 @@ export function CommandPalette() {
                         if (serversQuery.isError) void serversQuery.refetch();
                         if (playbooksQuery.isError) void playbooksQuery.refetch();
                         if (ipamQuery.isError) void ipamQuery.refetch();
-                        if (infrastructureQuery.isError) void infrastructureQuery.refetch();
                       }}
                     >
                       Try again
@@ -174,11 +167,11 @@ export function CommandPalette() {
                   </div>
                 )}
                 <Command.Empty className="py-8 text-center text-sm text-muted-foreground">
-                  {serversQuery.isFetching || playbooksQuery.isFetching || ipamQuery.isFetching || infrastructureQuery.isFetching ? 'Searching resources…' : t('cmd.empty')}
+                  {serversQuery.isFetching || playbooksQuery.isFetching || ipamQuery.isFetching ? 'Searching resources…' : t('cmd.empty')}
                 </Command.Empty>
 
                 <Command.Group heading={t('cmd.navigate')} className="text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
-                  <PaletteItem icon={<LayoutDashboard className="h-4 w-4" />} label="Infrastructure" shortcut="g d" onSelect={() => go('/')} />
+                  <PaletteItem icon={<LayoutDashboard className="h-4 w-4" />} label="Hosts" shortcut="g d" onSelect={() => go('/')} />
                   {networksAvailable && <PaletteItem icon={<Network className="h-4 w-4" />} label="Networks" shortcut="g n" onSelect={() => go('/networks')} />}
                   {canViewOperations && <PaletteItem icon={<ClipboardList className="h-4 w-4" />} label="Jobs" shortcut="g o" onSelect={() => go('/operations')} />}
                   {hasCap(profile, 'canViewPlaybooks') && <PaletteItem icon={<FileCode2 className="h-4 w-4" />} label={t('nav.playbooks')} shortcut="g p" onSelect={() => go('/playbooks')} />}
