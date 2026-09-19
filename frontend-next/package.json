@@ -4,7 +4,7 @@
   "engines": {
     "node": ">=24 <25"
   },
-  "version": "3.0.8-rc.37",
+  "version": "3.0.8-rc.38",
   "type": "module",
   "description": "Shipyard Frontend (next) — React + TS + shadcn/ui",
   "scripts": {
