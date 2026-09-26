@@ -23,6 +23,28 @@ export interface UpdateHost {
   reboot_required: boolean;
   system: Catalog;
   docker?: Catalog | null;
+  /** Apps tracked by custom update checks. */
+  custom?: CustomApp[] | null;
+}
+export interface CustomApp {
+  id: string;
+  name: string;
+  current_version: string | null;
+  version: string | null;
+  has_update: boolean;
+  checked_at: string | null;
+  stale: boolean;
+  failed: boolean;
+}
+export function pendingApps(host: UpdateHost) {
+  return (host.custom || []).filter(app => app.has_update);
+}
+export function appsStatus(apps: CustomApp[]): { label: string; tone: StatusTone; needsCheck: boolean } {
+  if (apps.some(app => app.failed)) return { label: 'Check failed', tone: 'danger', needsCheck: true };
+  if (apps.some(app => !app.checked_at)) return { label: 'Not checked', tone: 'muted', needsCheck: true };
+  if (apps.some(app => app.stale)) return { label: 'Check again', tone: 'muted', needsCheck: true };
+  const count = apps.filter(app => app.has_update).length;
+  return { label: count ? `${count} available` : 'Up to date', tone: count ? 'warning' : 'success', needsCheck: false };
 }
 export function pendingUpdates(catalog: Catalog, kind: 'system' | 'docker') {
   return catalog.updates.filter(item => kind === 'system' ? !item.phased : item.status === 'update_available');
@@ -31,7 +53,7 @@ export function catalogStatus(catalog: Catalog, kind: 'system' | 'docker'): { la
   if (catalog.failure) return { label: 'Check failed', tone: 'danger', needsCheck: true };
   if (!catalog.checked_at) return { label: 'Not checked', tone: 'muted', needsCheck: true };
   if (catalog.stale) return { label: 'Check again', tone: 'muted', needsCheck: true };
-  if (kind === 'docker' && catalog.updates.some(item => !['update_available', 'up_to_date', 'updated'].includes(item.status || ''))) {
+  if (kind === 'docker' && catalog.updates.some(item => !['update_available', 'up_to_date', 'updated', 'ignored'].includes(item.status || ''))) {
     return { label: 'Check required', tone: 'muted', needsCheck: true };
   }
   const count = pendingUpdates(catalog, kind).length;
@@ -40,7 +62,7 @@ export function catalogStatus(catalog: Catalog, kind: 'system' | 'docker'): { la
 
 export interface PackageRow {
   key: string;
-  kind: 'system' | 'docker';
+  kind: 'system' | 'docker' | 'app';
   name: string;
   versions: string[];
   hosts: { id: string; name: string; detail: string }[];
@@ -66,6 +88,7 @@ export function packageIndex(hosts: UpdateHost[], includeDocker: boolean): Packa
         if (image) add('docker', image, host, item.container_name || '');
       }
     }
+    for (const app of pendingApps(host)) add('app', app.name, host, `${app.current_version || 'installed'} → ${app.version || 'newer'}`, app.version || undefined);
   }
   return [...rows.values()].sort((a, b) => b.hosts.length - a.hosts.length || a.name.localeCompare(b.name));
 }
@@ -73,6 +96,7 @@ export function packageIndex(hosts: UpdateHost[], includeDocker: boolean): Packa
 /** A host needs action when updates wait or its latest check cannot be trusted. */
 export function needsAction(host: UpdateHost, includeDocker: boolean) {
   const catalogs = [host.system, ...(includeDocker && host.docker ? [host.docker] : [])];
+  if (host.custom?.length && (appsStatus(host.custom).needsCheck || pendingApps(host).length > 0)) return true;
   return host.reboot_required || catalogs.some((catalog, index) => {
     const status = catalogStatus(catalog, index === 0 ? 'system' : 'docker');
     return status.needsCheck || pendingUpdates(catalog, index === 0 ? 'system' : 'docker').length > 0;

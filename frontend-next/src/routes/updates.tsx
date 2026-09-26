@@ -2,7 +2,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
-import { ChevronRight, Download, Power, RefreshCw, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Power, RefreshCw, X } from 'lucide-react';
 import { api, apiFetch } from '@/lib/api';
 import { useUi } from '@/lib/store';
 import { hasCap, useProfile } from '@/lib/queries';
@@ -16,7 +16,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { QueryErrorState } from '@/components/ui/query-error-state';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { catalogStatus, needsAction, packageIndex, pendingUpdates, type Catalog, type UpdateHost } from '@/features/updates/model';
+import { appsStatus, catalogStatus, needsAction, packageIndex, pendingApps, pendingUpdates, type Catalog, type CustomApp, type UpdateHost } from '@/features/updates/model';
 
 const RUNNING = ['running', 'pending', 'queued'];
 
@@ -40,6 +40,21 @@ function CatalogCell({ host, catalog, kind }: { host: UpdateHost; catalog: Catal
       <Link to="/servers/$id" params={{ id: host.id }} hash={kind === 'system' ? 'tab=updates' : 'tab=docker'} className="mt-2 inline-block text-xs text-primary hover:underline">Open {title.toLowerCase()} updates</Link>
     </details> : badge}
     {catalog.failure && <p role="status" className="mt-1 break-words text-xs text-destructive">{catalog.failure.reason}</p>}
+  </section>;
+}
+
+function AppsCell({ host, apps }: { host: UpdateHost; apps: CustomApp[] }) {
+  const status = appsStatus(apps);
+  const badge = <StatusBadge tone={status.tone}>{status.label}</StatusBadge>;
+  return <section aria-label={`App updates for ${host.name}`} className="min-w-0">
+    <details className="group">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1 marker:hidden">{badge}<ChevronRight className="h-3.5 w-3.5 text-muted-foreground transition-transform group-open:rotate-90" aria-hidden="true" /></summary>
+      <ul className="mt-2 max-h-56 space-y-1.5 overflow-y-auto text-xs">{apps.map(app => <li key={app.id} className="break-words">
+        <span className="font-medium">{app.name}</span>{' '}
+        <span className="break-all text-muted-foreground">{app.failed ? 'check failed' : app.has_update ? `${app.current_version || 'installed'} → ${app.version || 'available'}` : app.current_version || 'not checked'}</span>
+      </li>)}</ul>
+      <Link to="/servers/$id" params={{ id: host.id }} hash="tab=updates" className="mt-2 inline-block text-xs text-primary hover:underline">Open app updates</Link>
+    </details>
   </section>;
 }
 
@@ -69,6 +84,8 @@ export function UpdatesPage() {
   const canRun = hasCap(profile, 'canRunUpdates');
   const canReboot = hasCap(profile, 'canRebootServers');
   const canCheckImages = hasCap(profile, 'canPullDocker');
+  const canViewApps = hasCap(profile, 'canViewCustomUpdates');
+  const canCheckApps = hasCap(profile, 'canRunCustomUpdates');
   const tab = search.tab || 'hosts';
   const [text, setText] = useState('');
   const [filter, setFilter] = useState('action');
@@ -93,8 +110,8 @@ export function UpdatesPage() {
   }, [history.data]);
   const hosts = useMemo(() => query.data || [], [query.data]);
   const packages = useMemo(() => packageIndex(hosts, canViewDocker), [hosts, canViewDocker]);
-  const count = (host: UpdateHost) => pendingUpdates(host.system, 'system').length + (canViewDocker && host.docker ? pendingUpdates(host.docker, 'docker').length : 0);
-  const needsCheck = (host: UpdateHost) => catalogStatus(host.system, 'system').needsCheck || Boolean(canViewDocker && host.docker && catalogStatus(host.docker, 'docker').needsCheck);
+  const count = (host: UpdateHost) => pendingUpdates(host.system, 'system').length + (canViewDocker && host.docker ? pendingUpdates(host.docker, 'docker').length : 0) + pendingApps(host).length;
+  const needsCheck = (host: UpdateHost) => catalogStatus(host.system, 'system').needsCheck || Boolean(canViewDocker && host.docker && catalogStatus(host.docker, 'docker').needsCheck) || Boolean(host.custom?.length && appsStatus(host.custom).needsCheck);
   const matching = hosts.filter(host => (!search.host || host.id === search.host) && `${host.name} ${host.ip_address || ''}`.toLowerCase().includes(text.toLowerCase()));
   const visible = matching.filter(host => filter === 'all' || search.host || (filter === 'action' ? needsAction(host, canViewDocker) : filter === 'available' ? count(host) > 0 : filter === 'reboot' ? host.reboot_required : needsCheck(host)))
     .sort((a, b) => count(b) - count(a) || a.name.localeCompare(b.name));
@@ -112,6 +129,7 @@ export function UpdatesPage() {
     await inBatches(targets, 3, async host => {
       try {
         await apiFetch(`/servers/${encodeURIComponent(host.id)}/updates?force=1&include_meta=1`, { environmentId });
+        if (canCheckApps) for (const app of host.custom || []) await apiFetch(`/servers/${encodeURIComponent(host.id)}/custom-updates/${encodeURIComponent(app.id)}/check`, { method: 'POST', environmentId });
         if (canViewDocker && canCheckImages && host.docker) await apiFetch(`/servers/${encodeURIComponent(host.id)}/docker/image-updates`, { environmentId });
       } catch { failed++; }
       setBusy(`Checking ${++done} of ${targets.length}…`);
@@ -140,7 +158,8 @@ export function UpdatesPage() {
     await refresh();
   };
 
-  const columns = canViewDocker ? 'md:grid-cols-[1.5rem_minmax(12rem,1.4fr)_minmax(8rem,1fr)_minmax(8rem,1fr)_8rem_2rem]' : 'md:grid-cols-[1.5rem_minmax(12rem,1.4fr)_minmax(8rem,1fr)_8rem_2rem]';
+  const catalogColumns = 1 + (canViewDocker ? 1 : 0) + (canViewApps ? 1 : 0);
+  const columns = ['md:grid-cols-[1.5rem_minmax(12rem,1.4fr)_minmax(8rem,1fr)_8rem_2rem]', 'md:grid-cols-[1.5rem_minmax(12rem,1.4fr)_minmax(8rem,1fr)_minmax(8rem,1fr)_8rem_2rem]', 'md:grid-cols-[1.5rem_minmax(12rem,1.4fr)_minmax(8rem,1fr)_minmax(8rem,1fr)_minmax(8rem,1fr)_8rem_2rem]'][catalogColumns - 1];
   const cellLabel = 'text-[11px] font-medium uppercase tracking-wide text-muted-foreground md:hidden';
   const filteredHost = search.host ? hosts.find(host => host.id === search.host) : null;
 
@@ -148,12 +167,13 @@ export function UpdatesPage() {
     <PageHeader title="Updates" description="Check, install and reboot across hosts." />
     {query.isError ? <QueryErrorState error={query.error} title="Updates could not be loaded" onRetry={() => void query.refetch()} /> : query.isPending ? <p role="status" className="text-sm text-muted-foreground">Loading updates…</p> : <>
       {/* Each figure is also the shortcut to the hosts behind it. */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{([
+      <div className={cn("-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 md:mx-0 md:grid md:grid-cols-3 md:gap-3 md:overflow-visible md:px-0 md:pb-0", catalogColumns === 3 ? "lg:grid-cols-5" : "lg:grid-cols-4")}>{([
         ['System updates', hosts.reduce((sum, host) => sum + pendingUpdates(host.system, 'system').length, 0), 'available'],
         ...(canViewDocker ? [['Docker updates', hosts.reduce((sum, host) => sum + (host.docker ? pendingUpdates(host.docker, 'docker').length : 0), 0), 'available']] : []),
+        ...(canViewApps ? [['App updates', hosts.reduce((sum, host) => sum + pendingApps(host).length, 0), 'available']] : []),
         ['Outdated checks', hosts.filter(needsCheck).length, 'check'], ['Reboot required', hosts.filter(host => host.reboot_required).length, 'reboot'],
-      ] as [string, number, string][]).map(([label, value, target]) => <button key={label} type="button" onClick={() => { setFilter(target); if (tab !== 'hosts' || search.host) void navigate({ to: '/updates', search: {} }); }} aria-label={`${label}: ${value}. Show these hosts`} className={cn('rounded-panel border bg-card p-4 text-left transition-colors hover:border-border-strong hover:bg-accent/40', filter === target && tab === 'hosts' && 'border-primary/50')}>
-        <p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
+      ] as [string, number, string][]).map(([label, value, target]) => <button key={label} type="button" onClick={() => { setFilter(target); if (tab !== 'hosts' || search.host) void navigate({ to: '/updates', search: {} }); }} aria-label={`${label}: ${value}. Show these hosts`} className={cn('min-w-[8.5rem] shrink-0 rounded-panel border bg-card px-3 py-2.5 text-left transition-colors md:min-w-0 md:p-4 hover:border-border-strong hover:bg-accent/40', filter === target && tab === 'hosts' && 'border-primary/50')}>
+        <p className="text-xs text-muted-foreground">{label}</p><p className="mt-0.5 text-xl font-semibold tabular-nums md:mt-1 md:text-2xl">{value}</p>
       </button>)}</div>
 
       <Tabs value={tab} onValueChange={setTab}>
@@ -185,18 +205,19 @@ export function UpdatesPage() {
         {!visible.length && !hiddenCurrent ? <EmptyState compact className="rounded-panel border bg-card" title={hosts.length ? 'No hosts match this filter.' : 'No hosts in this environment.'} /> : <div className="overflow-hidden rounded-panel border bg-card" role="table" aria-label="Updates by host">
           {visible.length > 0 && <div role="row" className={`hidden items-center gap-4 border-b bg-muted/40 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground md:grid ${columns}`}>
             <span role="columnheader"><input type="checkbox" aria-label="Select all shown hosts" checked={allVisibleSelected} onChange={() => setSelected(current => { const next = new Set(current); for (const host of visible) { if (allVisibleSelected) next.delete(host.id); else next.add(host.id); } return next; })} /></span>
-            <span role="columnheader">Host</span><span role="columnheader">System</span>{canViewDocker && <span role="columnheader">Docker</span>}<span role="columnheader">Last check</span><span role="columnheader"><span className="sr-only">Open</span></span>
+            <span role="columnheader">Host</span><span role="columnheader">System</span>{canViewDocker && <span role="columnheader">Docker</span>}{canViewApps && <span role="columnheader">Apps</span>}<span role="columnheader">Last check</span><span role="columnheader"><span className="sr-only">Open</span></span>
           </div>}
           {visible.map(host => { const checked = lastCheck(host, canViewDocker); return <div key={host.id} role="row" className={cn(`grid grid-cols-[1.5rem_1fr_1fr] items-start gap-x-4 gap-y-2 border-b px-4 py-3 last:border-b-0 hover:bg-muted/30 md:items-center ${columns}`, selected.has(host.id) && 'bg-primary/[0.05]')}>
             <div role="cell" className="row-span-3 pt-0.5 md:row-span-1 md:pt-0"><input type="checkbox" aria-label={`Select ${host.name}`} checked={selected.has(host.id)} onChange={() => toggle(host.id)} /></div>
             <div role="cell" className="col-span-2 min-w-0 md:col-span-1"><div className="flex min-w-0 flex-wrap items-center gap-2"><Link to="/servers/$id" params={{ id: host.id }} className="truncate font-medium hover:underline">{host.name}</Link>{host.status !== 'online' && <StatusBadge tone={host.status === 'offline' ? 'danger' : 'muted'}>{host.status === 'offline' ? 'Offline' : 'Check connection'}</StatusBadge>}{runningByHost.has(host.name) ? <StatusBadge tone="info" dot pulse>{runningByHost.get(host.name) === 'reboot' ? 'Rebooting…' : 'Updating…'}</StatusBadge> : host.reboot_required && <StatusBadge tone="warning">Reboot required</StatusBadge>}</div><p className="truncate font-mono text-xs text-muted-foreground">{host.ip_address}</p></div>
             <div role="cell" className="min-w-0"><p className={cellLabel}>System</p><CatalogCell host={host} catalog={host.system} kind="system" /></div>
             {canViewDocker && <div role="cell" className="min-w-0"><p className={cellLabel}>Docker</p>{host.docker ? <CatalogCell host={host} catalog={host.docker} kind="docker" /> : <span className="text-sm text-muted-foreground">—</span>}</div>}
+            {canViewApps && <div role="cell" className="min-w-0"><p className={cellLabel}>Apps</p>{host.custom?.length ? <AppsCell host={host} apps={host.custom} /> : <span className="text-sm text-muted-foreground">—</span>}</div>}
             <div role="cell" className="text-sm text-muted-foreground"><p className={cellLabel}>Last check</p>{checked ? <Timestamp value={checked} /> : 'Never'}</div>
             <div role="cell" className="hidden md:block"><Link to="/servers/$id" params={{ id: host.id }} hash="tab=updates" aria-label={`Open ${host.name}`} className="flex h-8 w-8 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"><ChevronRight className="h-4 w-4" /></Link></div>
           </div>; })}
           {hiddenCurrent > 0 && <button type="button" onClick={() => setFilter('all')} className="flex w-full items-center justify-between gap-2 border-t px-4 py-3 text-left text-sm text-muted-foreground first:border-t-0 hover:bg-muted/30">
-            <span><StatusBadge tone="success">Up to date</StatusBadge> <span className="ml-1">{hiddenCurrent} {hiddenCurrent === 1 ? 'host is' : 'hosts are'} current</span></span><span className="text-primary">Show</span>
+            <span><StatusBadge tone="success">Up to date</StatusBadge> <span className="ml-1">{hiddenCurrent} {hiddenCurrent === 1 ? 'host is' : 'hosts are'} current</span></span><span className="inline-flex items-center gap-1 text-primary">Show hosts<ChevronDown className="size-4" /></span>
           </button>}
         </div>}
       </>}
@@ -227,15 +248,15 @@ function PackagesView({ rows }: { rows: ReturnType<typeof packageIndex> }) {
   const [text, setText] = useState('');
   const visible = rows.filter(row => `${row.name} ${row.hosts.map(host => host.name).join(' ')}`.toLowerCase().includes(text.toLowerCase()));
   return <div className="space-y-3">
-    <Input aria-label="Search packages" placeholder="Search packages, images or hosts…" value={text} onChange={event => setText(event.target.value)} className="sm:max-w-sm" />
+    <Input aria-label="Search packages" placeholder="Search packages, images, apps or hosts…" value={text} onChange={event => setText(event.target.value)} className="sm:max-w-sm" />
     {!rows.length ? <EmptyState compact className="rounded-panel border bg-card" title="No pending updates" description="Based on the latest saved checks." /> : !visible.length ? <EmptyState compact className="rounded-panel border bg-card" title="No packages match this search." /> : <div className="overflow-x-auto rounded-panel border bg-card">
       <table className="w-full text-left text-sm" aria-label="Pending updates by package">
         <thead className="border-b bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground"><tr><th className="px-4 py-2 font-semibold">Package</th><th className="px-4 py-2 font-semibold">Type</th><th className="px-4 py-2 font-semibold">Hosts</th><th className="px-4 py-2 font-semibold">New version</th></tr></thead>
         <tbody>{visible.map(row => <tr key={row.key} className="border-b align-top last:border-0">
           <td className="px-4 py-2.5 font-mono text-xs font-medium">{row.name}</td>
-          <td className="px-4 py-2.5 text-muted-foreground">{row.kind === 'system' ? 'System' : 'Docker'}</td>
+          <td className="px-4 py-2.5 text-muted-foreground">{row.kind === 'system' ? 'System' : row.kind === 'docker' ? 'Docker' : 'App'}</td>
           <td className="px-4 py-2.5"><details><summary className="cursor-pointer">{row.hosts.length} {row.hosts.length === 1 ? 'host' : 'hosts'}</summary>
-            <ul className="mt-1.5 space-y-1 text-xs">{row.hosts.map(host => <li key={`${host.id}:${host.detail}`}><Link to="/servers/$id" params={{ id: host.id }} hash={row.kind === 'system' ? 'tab=updates' : 'tab=docker'} className="font-medium hover:underline">{host.name}</Link>{host.detail && <span className="ml-1.5 font-mono text-muted-foreground">{host.detail}</span>}</li>)}</ul>
+            <ul className="mt-1.5 space-y-1 text-xs">{row.hosts.map(host => <li key={`${host.id}:${host.detail}`}><Link to="/servers/$id" params={{ id: host.id }} hash={row.kind === 'docker' ? 'tab=docker' : 'tab=updates'} className="font-medium hover:underline">{host.name}</Link>{host.detail && <span className="ml-1.5 font-mono text-muted-foreground">{host.detail}</span>}</li>)}</ul>
           </details></td>
           <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{row.versions.join(', ') || '—'}</td>
         </tr>)}</tbody>

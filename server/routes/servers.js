@@ -20,6 +20,7 @@ const { serverError } = require('../utils/http-error');
 const { validateInventoryHostName } = require('../utils/validate');
 const { isValidStorageMountPath, parseConfiguredStorageMounts } = require('../utils/storage-mounts');
 const { buildServerAttention } = require('../utils/server-attention');
+const { hostGuest } = require('../features/opentofu/host-guest');
 
 // Deserialize JSON fields for API responses
 function parseServer(s) {
@@ -174,20 +175,7 @@ function accessibleGroupsForEnvironment(permissions, environmentId) {
 
 // VM identity belongs to an already authorized host; no live inventory lookup.
 function hostVmId(serverId) {
-  const exists = name => db.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name);
-  if (exists('proxmox_inventory_servers')) {
-    const imported = db.db.prepare('SELECT vm_id FROM proxmox_inventory_servers WHERE server_id=?').get(serverId);
-    if (imported) return imported.vm_id;
-  }
-  if (exists('tofu_managed_servers') && exists('tofu_proxmox_vms')) {
-    const managed = db.db.prepare(`SELECT vm.config, vm.vm_numeric_id FROM tofu_managed_servers mapping
-      JOIN tofu_proxmox_vms vm ON vm.workspace_id=mapping.workspace_id
-        AND mapping.resource_key='resource:proxmox_virtual_environment_vm.' || vm.name
-      WHERE mapping.server_id=? LIMIT 1`).get(serverId);
-    if (managed?.vm_numeric_id) return managed.vm_numeric_id;
-    try { return JSON.parse(managed?.config || '{}').vm_id || null; } catch { return null; }
-  }
-  return null;
+  return hostGuest(serverId)?.vm_id ?? null;
 }
 
 // GET /api/servers - List all servers
@@ -676,6 +664,14 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
     return current;
     })();
     res.json(parseServer(server));
+    // Mount usage is measured by the info collection; measure new or changed
+    // mounts now instead of waiting for the next polling interval.
+    const mountsChanged = JSON.stringify(sMounts) !== JSON.stringify(parseConfiguredStorageMounts(existing.storage_mounts));
+    if (mountsChanged && server.status === 'online') {
+      collectionQueue.run('info', server, () => systemInfo.getSystemInfo(server), {priority:1,baseMs:require('../services/scheduler').getPollingConfig().info.intervalMs})
+        .then(info => { db.serverInfo.upsert(server.id, info); resourceAlerts.evaluateServer(server.id); })
+        .catch(err => log.debug({ err, server: server.name }, 'Storage mount refresh after host update failed'));
+    }
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
     serverError(res, error, 'update server');
@@ -1167,6 +1163,26 @@ router.get('/:id/docker/image-updates/cached', guardServerAccess, guard('canView
   res.json({ results: cached?.results || [], updated_at: cached?.updated_at || null, source: 'Container registry digest comparison over SSH', ...updateCatalogAge(cached?.updated_at, db.settings.get('poll_image_updates_interval_min') || 360) });
 });
 
+// Images excluded from update checks, e.g. locally built images without a registry.
+router.get('/:id/docker/image-check-exclusions', guardServerAccess, guard('canViewDocker'), (req, res) => {
+  res.json(db.dockerImageCheckExclusions.list(req.params.id));
+});
+
+router.put('/:id/docker/image-check-exclusions', guardServerAccess, guard('canEditServers'), (req, res) => {
+  const image = typeof req.body?.image === 'string' ? req.body.image.trim() : '';
+  if (!image || image.length > 512 || /[\u0000-\u001f]/.test(image)) return res.status(400).json({ error: 'A valid image reference is required.' });
+  if (typeof req.body?.excluded !== 'boolean') return res.status(400).json({ error: 'excluded must be true or false.' });
+  const server = req.server;
+  const changed = req.body.excluded
+    ? db.dockerImageCheckExclusions.add(server.id, image, req.user?.username)
+    : db.dockerImageCheckExclusions.remove(server.id, image);
+  if (changed) {
+    db.auditLog.write(req.body.excluded ? 'docker.image_check_excluded' : 'docker.image_check_included', `Image ${JSON.stringify(image)} on ${JSON.stringify(server.name)} ${req.body.excluded ? 'excluded from' : 'included in'} update checks; server_id=${JSON.stringify(server.id)}`, req.ip, true, req.user?.username, server.environment_id || 'default');
+    resourceAlerts.evaluateServer(server.id);
+  }
+  res.json(db.dockerImageCheckExclusions.list(server.id));
+});
+
 // GET /api/servers/:id/docker/image-updates - Check for image updates
 router.get('/:id/docker/image-updates', guardServerAccess, guard('canPullDocker'), async (req, res) => {
   const server = req.server;
@@ -1182,7 +1198,7 @@ router.get('/:id/docker/image-updates', guardServerAccess, guard('canPullDocker'
     }, {priority:2,baseMs:require('../services/scheduler').getPollingConfig().imageUpdates.intervalMs});
     db.dockerImageUpdatesCache.set(server.id, report.results);
     resourceAlerts.evaluateServer(server.id);
-    res.json(report.results);
+    res.json(db.dockerImageCheckExclusions.apply(server.id, report.results));
   } catch (error) {
     db.checkAttempts.failed(server.id, 'images', 'Image check failed. Check host connectivity, container runtime and registry access.');
     if (error.code === 'IMAGE_CHECK_INCOMPLETE') return res.status(502).json({error:error.message});

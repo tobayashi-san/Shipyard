@@ -43,6 +43,8 @@ type ServerDockerTabController = Pick<ServerDetailController,
   | "id"
   | "imageCatalog"
   | "imageUpdates"
+  | "checkedImages"
+  | "imageExclusionMut"
   | "loadLogs"
   | "logsContainer"
   | "logsContent"
@@ -74,6 +76,8 @@ export function ServerDockerTab({ controller }: { controller: ServerDockerTabCon
     server,
     fetchingDocker,
     imageUpdates,
+    checkedImages,
+    imageExclusionMut,
     imageCatalog,
     logsContainer,
     setLogsContainer,
@@ -104,6 +108,18 @@ export function ServerDockerTab({ controller }: { controller: ServerDockerTabCon
         imageUpdates[c.container_name] ||
         imageUpdates[c.image] ||
         imageUpdates[c.image + ":latest"];
+      const checkedImage = checkedImages[c.container_name] || checkedImages[c.image] || checkedImages[c.image + ":latest"];
+      const canExclude = Boolean(checkedImage) && hasCap(profile, "canEditServers");
+      const exclusionAction = canExclude && (upd === "ignored" || upd === "not_checkable" || upd === "unknown") ? (
+        <button
+          type="button"
+          className="mt-0.5 block text-[11px] text-primary hover:underline disabled:opacity-50"
+          disabled={imageExclusionMut.isPending}
+          onClick={() => imageExclusionMut.mutate({ image: checkedImage!, excluded: upd !== "ignored" })}
+        >
+          {upd === "ignored" ? "Check again" : "Exclude from checks"}
+        </button>
+      ) : null;
       return (
         <tr key={c.container_name}>
           <td className="px-3 py-2 pl-6">
@@ -138,13 +154,17 @@ export function ServerDockerTab({ controller }: { controller: ServerDockerTabCon
               </span>
             ) : upd === "updated" ? (
               <StatusBadge tone="success">{t("det.imageUpdated")}</StatusBadge>
+            ) : upd === "ignored" ? (
+              <span className="text-xs text-muted-foreground" title="This image is excluded from update checks on this host.">
+                Excluded from checks{exclusionAction}
+              </span>
             ) : upd === "not_checkable" ? (
               <span className="text-xs text-muted-foreground">
-                {t("det.imageNotCheckable")}
+                {t("det.imageNotCheckable")}{exclusionAction}
               </span>
             ) : upd === "unknown" ? (
               <span className="text-xs text-muted-foreground">
-                {t("det.imageCheckFailed")}
+                {t("det.imageCheckFailed")}{exclusionAction}
               </span>
             ) : (
               <span className="text-xs text-muted-foreground">
@@ -187,18 +207,20 @@ export function ServerDockerTab({ controller }: { controller: ServerDockerTabCon
         {/* ════ DOCKER ════ */}
         {hasCap(profile, "canViewDocker") && !!server.docker_enabled && (
           <TabsContent value="docker" className="space-y-4">
-            {/* One status line instead of separate explanation boxes; details live in tooltips. */}
-            <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground" role="status">
-              {hasCap(profile, "canViewUpdates") && <span>Image check: {catalogFreshness.hasCollectionTime ? <Timestamp value={imageCatalog?.updated_at} /> : "never"}{!catalogFreshness.fresh && <span className="text-warning"> · outdated</span>}</span>}
-              {containers.some(c => c.cpu_percent == null || !c.memory_usage) && <span title="Missing metrics are unknown, not zero. Stopped containers may have no samples.">Metrics: {containers.filter(c => c.cpu_percent != null && !!c.memory_usage).length} of {containers.length} containers</span>}
-              {Object.values(imageUpdates).some(status => ['not_checkable', 'unknown'].includes(status)) && <span title="Local images without a registry digest cannot be compared. For unknown results, check registry access and the image tag, then refresh.">Some images cannot be compared</span>}
-            </p>
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 px-4 py-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Boxes className="h-4 w-4" />
-                  {t("det.docker")}
-                </CardTitle>
+                <div className="min-w-0">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Boxes className="h-4 w-4" />
+                    {t("det.docker")}
+                  </CardTitle>
+                  {/* One status line instead of separate explanation boxes; details live in tooltips. */}
+                  <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs font-normal text-muted-foreground" role="status">
+                    {hasCap(profile, "canViewUpdates") && <span>Image check: {catalogFreshness.hasCollectionTime ? <Timestamp value={imageCatalog?.updated_at} /> : "never"}{!catalogFreshness.fresh && <span className="text-warning"> · outdated</span>}</span>}
+                    {containers.some(c => c.cpu_percent == null || !c.memory_usage) && <span title="Missing metrics are unknown, not zero. Stopped containers may have no samples.">Metrics: {containers.filter(c => c.cpu_percent != null && !!c.memory_usage).length} of {containers.length} containers</span>}
+                    {Object.values(imageUpdates).some(status => ['not_checkable', 'unknown'].includes(status)) && <span title="Local images without a registry digest cannot be compared. For unknown results, check registry access and the image tag, then refresh.">Some images cannot be compared</span>}
+                  </p>
+                </div>
                 <div className="flex items-center gap-2">
                   <Button
                     variant="ghost"

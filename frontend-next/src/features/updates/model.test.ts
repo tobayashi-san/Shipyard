@@ -37,3 +37,25 @@ describe('package view and action filter', () => {
     expect(needsAction(host('docker', fresh, { docker: { ...fresh, updates: [{ status: 'update_available' }] } }), false)).toBe(false);
   });
 });
+
+describe('custom app updates', () => {
+  const app = { id: 'a', name: 'Immich', current_version: '3.1.0', version: '3.2.2', has_update: true, checked_at: '2026-09-26T10:00:00Z', stale: false, failed: false };
+  it('flags hosts with pending or failed app checks and indexes apps as packages', () => {
+    expect(needsAction(host('immich', fresh, { custom: [app] }), false)).toBe(true);
+    expect(needsAction(host('immich', fresh, { custom: [{ ...app, has_update: false, failed: true }] }), false)).toBe(true);
+    expect(needsAction(host('immich', fresh, { custom: [{ ...app, has_update: false }] }), false)).toBe(false);
+    expect(packageIndex([host('immich', fresh, { custom: [app] })], false)).toEqual([
+      { key: 'app:Immich', kind: 'app', name: 'Immich', versions: ['3.2.2'], hosts: [{ id: 'immich', name: 'immich', detail: '3.1.0 → 3.2.2' }] },
+    ]);
+  });
+});
+
+describe('excluded Docker images', () => {
+  it('do not require a check or count as pending', () => {
+    const docker = { checked_at: '2026-09-26T10:00:00Z', stale: false, updates: [
+      { container_name: 'local', image: 'local/app:dev', status: 'ignored' },
+      { container_name: 'web', image: 'nginx:latest', status: 'up_to_date' },
+    ] };
+    expect(catalogStatus(docker, 'docker')).toMatchObject({ label: 'Up to date', needsCheck: false });
+  });
+});

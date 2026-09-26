@@ -2,6 +2,17 @@ const db = require('../../db');
 const { can, filterServers, getPermissions } = require('../../utils/permissions');
 const { updateCatalogAge } = require('../../utils/update-catalog-age');
 
+function customApps(serverId) {
+  const tasks = db.customUpdateTasks.getByServer(serverId);
+  if (!tasks.length) return null;
+  const interval = db.settings.get('poll_custom_updates_interval_min') || 360;
+  return tasks.map(task => ({
+    id: task.id, name: task.name, current_version: task.current_version || null, version: task.last_version || null,
+    has_update: Boolean(task.has_update), checked_at: task.last_checked_at || null,
+    stale: updateCatalogAge(task.last_checked_at, interval).stale, failed: Boolean(task.last_check_error),
+  }));
+}
+
 // Read only cached catalogs. Opening the dashboard must not start SSH work.
 module.exports = function updateDashboard(req, res) {
   const permissions = getPermissions(req.user);
@@ -29,6 +40,8 @@ module.exports = function updateDashboard(req, res) {
         ...updateCatalogAge(docker?.updated_at, db.settings.get('poll_image_updates_interval_min') || 360),
         failure: attempt.get(host.id, 'images') || null,
       } : null } : {}),
+      // Apps tracked by custom update checks; null when the host has none.
+      ...(can(permissions, 'canViewCustomUpdates') ? { custom: customApps(host.id) } : {}),
     };
   }));
 };

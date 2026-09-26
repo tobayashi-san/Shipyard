@@ -109,9 +109,9 @@ const TOFU_PLAN_MAX_AGE_MS = Math.max(60_000, (parseInt(process.env.TOFU_PLAN_MA
 
 
 const { promisify } = require('util');
+const { readSavedProxmoxConnection } = require('./saved-connection');
 const execFileAsync = promisify(require('child_process').execFile);
 const {
-  createProxmoxConnection,
   downloadFile: _downloadFile,
   fetchOpenTofuReleases: _fetchGitHubReleases,
   proxmoxApiUrl,
@@ -1008,12 +1008,6 @@ override.tf.json
     };
   }
 
-  function readSavedProxmoxConnection(row) {
-    const token = cryptoUtil.decrypt(String(row?.api_token || ''));
-    if (!token || String(token).startsWith('enc:')) throw new Error(`Credentials for Proxmox connection "${row?.name || 'unknown'}" cannot be read.`);
-    const caCertificate = row.ca_certificate ? cryptoUtil.decrypt(String(row.ca_certificate)) : '';
-    return createProxmoxConnection(row.endpoint, token, Boolean(row.insecure), caCertificate);
-  }
 
   function collectProxmoxInfrastructureGroups(environmentId) {
     const grouped = new Map();
