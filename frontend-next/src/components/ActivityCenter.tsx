@@ -4,16 +4,16 @@ import { Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   Activity, CheckCircle2, CircleDashed, Clock, FileCode2, Hammer,
-  Layers3, RefreshCw, Trash2, XCircle,
+  Layers3, MinusCircle, RefreshCw, Trash2, XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { api } from '@/lib/api';
+import { api, apiFetch, ApiError } from '@/lib/api';
 import { canAccessOperations, canViewActivity, hasCap, useProfile } from '@/lib/queries';
 import { useUi } from '@/lib/store';
 import { ws } from '@/lib/ws';
 import { cn, formatDateTime } from '@/lib/utils';
 
-type ActivityStatus = 'running' | 'success' | 'failed';
+type ActivityStatus = 'running' | 'success' | 'failed' | 'interrupted';
 
 interface ActivityItem {
   id: string;
@@ -58,6 +58,7 @@ function compactLine(value: unknown) {
 function statusIcon(status: ActivityStatus) {
   if (status === 'success') return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;
   if (status === 'failed') return <XCircle className="h-4 w-4 text-destructive" />;
+  if (status === 'interrupted') return <MinusCircle className="h-4 w-4 text-muted-foreground" />;
   return <CircleDashed className="h-4 w-4 animate-spin text-primary" />;
 }
 
@@ -139,6 +140,15 @@ function eventLine(data: Record<string, unknown>) {
   return '';
 }
 
+/** Status recorded by the server for an execution this browser still shows as running. */
+function recordedStatus(status: unknown): ActivityStatus | null {
+  const value = text(status).toLowerCase();
+  if (['success', 'successful', 'completed'].includes(value)) return 'success';
+  if (['failed', 'error'].includes(value)) return 'failed';
+  if (['interrupted', 'cancelled', 'canceled', 'skipped', 'unknown'].includes(value)) return 'interrupted';
+  return null;
+}
+
 function formatAge(ts: number) {
   const diff = Math.max(0, now() - ts);
   if (diff < 60_000) return `${Math.max(1, Math.round(diff / 1000))}s ago`;
@@ -164,6 +174,8 @@ function EnvironmentActivityCenter({
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<ActivityItem[]>(() => loadActivities(environmentId, viewerKey));
   const panelRef = useRef<HTMLDivElement>(null);
+  const itemsRef = useRef(items);
+  useEffect(() => { itemsRef.current = items; }, [items]);
   const serversQuery = useQuery<Array<{ id: string; name: string }>>({
     queryKey: ['servers', environmentId],
     queryFn: () => api.getServers(environmentId) as unknown as Promise<Array<{ id: string; name: string }>>,
@@ -208,6 +220,34 @@ function EnvironmentActivityCenter({
       });
     });
   }, [serverNames, t]);
+
+  // Live events stop when Fleet restarts (for example after restarting its own
+  // container), so a running entry may never receive its completion. Ask the
+  // server for the recorded status on load and whenever the drawer opens.
+  useEffect(() => {
+    if (!showOperationsLink) return;
+    const pending = itemsRef.current.filter(item => item.status === 'running' && item.executionId);
+    if (!pending.length) return;
+    let cancelled = false;
+    void Promise.all(pending.map(async item => {
+      try {
+        const row = await apiFetch<{ status?: string }>(`/operations/${encodeURIComponent(item.executionId!)}/details`, { environmentId });
+        return [item.id, recordedStatus(row.status)] as const;
+      } catch (error) {
+        // A pruned or deleted execution will never report a result.
+        return [item.id, error instanceof ApiError && error.status === 404 ? 'interrupted' as const : null] as const;
+      }
+    })).then(results => {
+      if (cancelled) return;
+      const resolved = new Map(results.filter(([, status]) => status));
+      if (!resolved.size) return;
+      setItems(prev => prev.map(item => {
+        const status = item.status === 'running' ? resolved.get(item.id) : undefined;
+        return status ? { ...item, status, completedAt: now(), lastLine: status === 'interrupted' ? 'No live completion received; see the recorded execution.' : item.lastLine } : item;
+      }));
+    });
+    return () => { cancelled = true; };
+  }, [open, environmentId, showOperationsLink]);
 
   // Keep the activity drawer useful after a page reload, but never retain an
   // unbounded amount of operational data in the browser or mix environments.
@@ -271,7 +311,8 @@ function EnvironmentActivityCenter({
                     'mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-sm',
                     item.status === 'running' ? 'bg-primary/10 text-primary' :
                       item.status === 'success' ? 'bg-emerald-500/10 text-emerald-500' :
-                        'bg-destructive/10 text-destructive'
+                        item.status === 'interrupted' ? 'bg-muted text-muted-foreground' :
+                          'bg-destructive/10 text-destructive'
                   )}>
                     {kindIcon(item.kind)}
                   </div>
