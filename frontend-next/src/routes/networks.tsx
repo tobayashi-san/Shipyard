@@ -233,7 +233,7 @@ export function NetworksPage() {
         <>
           <Card className="min-w-0 overflow-hidden">
             <CardHeader className="gap-0 border-b bg-muted/15 p-0">
-              <div className="console-toolbar gap-3 border-0">
+              <div className="console-toolbar gap-3">
                 <div>
                   <CardTitle className="flex items-center gap-2 text-base">
                     <Network className="h-4 w-4" />

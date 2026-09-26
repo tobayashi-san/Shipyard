@@ -694,7 +694,7 @@ export function ScheduleDialog({
                 return (
                   <label
                     key={nm}
-                    className={`flex items-center gap-2 text-sm rounded px-1 py-0.5 transition-colors ${allChecked && nm === "localhost" ? "opacity-40" : ""} ${isExcluded ? "bg-destructive/10 text-destructive" : ""}`}
+                    className={`flex items-start gap-2 text-sm rounded px-1 py-0.5 transition-colors ${allChecked && nm === "localhost" ? "opacity-40" : ""} ${isExcluded ? "bg-destructive/10 text-destructive" : ""}`}
                   >
                     <input
                       type="checkbox"
@@ -713,7 +713,7 @@ export function ScheduleDialog({
                 );
               })}
               <label
-                className={`flex items-center gap-2 text-sm rounded px-1 py-0.5 transition-colors ${allChecked && checked.has("localhost") ? "bg-destructive/10 text-destructive" : allChecked ? "opacity-40" : ""}`}
+                className={`flex items-start gap-2 text-sm rounded px-1 py-0.5 transition-colors ${allChecked && checked.has("localhost") ? "bg-destructive/10 text-destructive" : allChecked ? "opacity-40" : ""}`}
               >
                 <input
                   type="checkbox"

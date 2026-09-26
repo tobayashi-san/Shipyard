@@ -439,14 +439,14 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
                 return (
                   <label
                     key={nm}
-                    className={`flex min-h-9 items-center gap-2 rounded px-2 py-1 text-sm transition-colors ${dis ? "opacity-40" : ""} ${isExcluded ? "bg-destructive/10 text-destructive" : "hover:bg-muted/50"}`}
+                    className={`flex min-h-9 items-start gap-2 rounded px-2 py-1 text-sm transition-colors ${dis ? "opacity-40" : ""} ${isExcluded ? "bg-destructive/10 text-destructive" : "hover:bg-muted/50"}`}
                   >
                     <input
                       type="checkbox"
                       disabled={dis}
                       checked={checked.has(nm)}
                       onChange={() => toggleServer(nm)}
-                      className={isExcluded ? "accent-destructive" : ""}
+                      className={`mt-0.5 ${isExcluded ? "accent-destructive" : ""}`}
                     />
                     <span className="min-w-0 flex-1">
                       <span className="flex min-w-0 items-center gap-1.5">
@@ -459,8 +459,8 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
                         )}
                       </span>
                       <span className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
-                        {s.ip_address ? <span className="truncate font-mono">{String(s.ip_address)}</span> : null}
-                        {tags.slice(0, 2).map((tag) => <span key={tag} className="max-w-24 truncate rounded bg-muted px-1">{tag}</span>)}
+                        {s.ip_address ? <span className="shrink-0 font-mono">{String(s.ip_address)}</span> : null}
+                        {tags.slice(0, 2).map((tag) => <span key={tag} className="min-w-0 max-w-24 truncate rounded bg-muted px-1">{tag}</span>)}
                         {tags.length > 2 ? <span>+{tags.length - 2}</span> : null}
                       </span>
                     </span>
@@ -473,13 +473,14 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
                 );
               })}
               <label
-                className={`flex items-center gap-2 text-sm rounded px-1 py-0.5 transition-colors ${allChecked && checked.has("localhost") ? "bg-destructive/10 text-destructive" : allChecked ? "opacity-40" : ""}`}
+                className={`flex min-h-9 items-start gap-2 rounded px-2 py-1 text-sm transition-colors ${allChecked && checked.has("localhost") ? "bg-destructive/10 text-destructive" : allChecked ? "opacity-40" : ""}`}
               >
                 <input
                   type="checkbox"
                   disabled={allChecked}
                   checked={checked.has("localhost")}
                   onChange={() => toggleServer("localhost")}
+                  className="mt-0.5"
                 />
                 <span className="min-w-0 flex-1"><span className="block font-medium">localhost</span><span className="block text-[11px] text-muted-foreground">Runs inside the Fleet runtime, not on a remote host.</span></span>
                 {allChecked && checked.has("localhost") && (

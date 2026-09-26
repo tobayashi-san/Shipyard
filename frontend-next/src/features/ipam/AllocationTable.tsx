@@ -131,7 +131,7 @@ export function AllocationTable({
   return (
     <Card>
       <CardHeader className="gap-0 border-b p-0">
-        <div className="console-toolbar gap-3 border-0">
+        <div className="console-toolbar gap-3">
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
               <Layers3 className="h-4 w-4" />
