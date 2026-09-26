@@ -30,15 +30,16 @@ const sharedDarkStatus = block(
   /:root\.dark\[data-console-theme\]\s*\{([\s\S]*?)\n\s*\}/,
 );
 
-const presets = [...css.matchAll(/:root(\.dark)?\[data-console-theme='([^']+)'\]\s*\{([\s\S]*?)\n\s*\}/g)].map(
-  ([, dark, name, body]) => ({
+// A block may serve several presets through a selector list.
+const presets = [...css.matchAll(/((?::root(?:\.dark)?\[data-console-theme='[^']+'\]\s*,\s*)*:root(?:\.dark)?\[data-console-theme='[^']+'\])\s*\{([\s\S]*?)\n\s*\}/g)].flatMap(
+  ([, selectors, body]) => [...selectors.matchAll(/:root(\.dark)?\[data-console-theme='([^']+)'\]/g)].map(([, dark, name]) => ({
     name,
     tokens: {
       ...(dark ? darkBase : lightBase),
       ...tokensFrom(body),
       ...(dark ? sharedDarkStatus : sharedLightStatus),
     },
-  }),
+  })),
 );
 
 function hslToRgb(value: string): [number, number, number] {

@@ -148,7 +148,8 @@
   }
 
   /* Fleet brand palette, shared with the project website (mint on green-black). */
-  :root[data-console-theme='fleet-light'] {
+  :root[data-console-theme='fleet-light'],
+  :root[data-console-theme='fleet-rounded-light'] {
     --surface-1: 140 18% 98%; --surface-2: 0 0% 100%; --surface-3: 140 16% 96%;
     --background: 140 18% 98%; --foreground: 160 24% 10%;
     --card: 0 0% 100%; --card-foreground: 160 24% 10%;
@@ -269,7 +270,8 @@
     --chart-1: 220 76% 35%; --chart-2: 154 66% 32%; --chart-3: 34 91% 40%; --chart-4: 268 58% 43%; --chart-5: 0 72% 47%;
   }
 
-  :root.dark[data-console-theme='fleet-dark'] {
+  :root.dark[data-console-theme='fleet-dark'],
+  :root.dark[data-console-theme='fleet-rounded-dark'] {
     --surface-1: 163 18% 8%; --surface-2: 160 18% 9%; --surface-3: 156 18% 12%;
     --background: 163 18% 6.5%; --foreground: 100 27% 95%; --card: 156 18% 8.5%; --card-foreground: 100 27% 95%;
     --popover: 156 18% 9.5%; --popover-foreground: 100 27% 95%; --primary: 144 77% 84%; --primary-foreground: 160 35% 9%;
@@ -581,9 +583,10 @@
     --radius-panel: 4px;
   }
 
-  /* Only the neutral shadcn looks opt into the rounded component scale.
-     Existing console palettes retain their compact corners. */
-  :root[data-console-theme^='shadcn-'] {
+  /* Only the shadcn looks and the rounded Fleet variants opt into the rounded
+     component scale. Existing console palettes retain their compact corners. */
+  :root[data-console-theme^='shadcn-'],
+  :root[data-console-theme^='fleet-rounded-'] {
     --radius: 0.625rem;
     --radius-panel: 0.75rem;
     --radius-switch: 9999px;
