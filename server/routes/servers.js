@@ -12,14 +12,12 @@ const log = require('../utils/logger').child('routes:servers');
 const db = require('../db');
 const sshManager = require('../services/ssh-manager');
 const systemInfo = require('../services/system-info');
-const ansibleRunner = require('../services/ansible-runner');
-const { refreshDockerCache } = require('../services/docker-inventory');
 const resourceAlerts = require('../services/resource-alerts');
-const { parseImageUpdateReport } = require('../utils/parse-image-updates');
 const { serverError } = require('../utils/http-error');
 const { validateInventoryHostName } = require('../utils/validate');
 const { isValidStorageMountPath, parseConfiguredStorageMounts } = require('../utils/storage-mounts');
 const { buildServerAttention } = require('../utils/server-attention');
+const { hostGuest } = require('../features/opentofu/host-guest');
 
 // Deserialize JSON fields for API responses
 function parseServer(s) {
@@ -174,20 +172,7 @@ function accessibleGroupsForEnvironment(permissions, environmentId) {
 
 // VM identity belongs to an already authorized host; no live inventory lookup.
 function hostVmId(serverId) {
-  const exists = name => db.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name);
-  if (exists('proxmox_inventory_servers')) {
-    const imported = db.db.prepare('SELECT vm_id FROM proxmox_inventory_servers WHERE server_id=?').get(serverId);
-    if (imported) return imported.vm_id;
-  }
-  if (exists('tofu_managed_servers') && exists('tofu_proxmox_vms')) {
-    const managed = db.db.prepare(`SELECT vm.config, vm.vm_numeric_id FROM tofu_managed_servers mapping
-      JOIN tofu_proxmox_vms vm ON vm.workspace_id=mapping.workspace_id
-        AND mapping.resource_key='resource:proxmox_virtual_environment_vm.' || vm.name
-      WHERE mapping.server_id=? LIMIT 1`).get(serverId);
-    if (managed?.vm_numeric_id) return managed.vm_numeric_id;
-    try { return JSON.parse(managed?.config || '{}').vm_id || null; } catch { return null; }
-  }
-  return null;
+  return hostGuest(serverId)?.vm_id ?? null;
 }
 
 // GET /api/servers - List all servers
@@ -676,6 +661,14 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
     return current;
     })();
     res.json(parseServer(server));
+    // Mount usage is measured by the info collection; measure new or changed
+    // mounts now instead of waiting for the next polling interval.
+    const mountsChanged = JSON.stringify(sMounts) !== JSON.stringify(parseConfiguredStorageMounts(existing.storage_mounts));
+    if (mountsChanged && server.status === 'online') {
+      collectionQueue.run('info', server, () => systemInfo.getSystemInfo(server), {priority:1,baseMs:require('../services/scheduler').getPollingConfig().info.intervalMs})
+        .then(info => { db.serverInfo.upsert(server.id, info); resourceAlerts.evaluateServer(server.id); })
+        .catch(err => log.debug({ err, server: server.name }, 'Storage mount refresh after host update failed'));
+    }
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
     serverError(res, error, 'update server');
@@ -1077,157 +1070,6 @@ router.get('/:id/history', guardServerAccess, guard('canViewServerHistory'), (re
   }
 });
 
-function buildDockerResponse(serverId) {
-  const containers = db.dockerContainers.getByServer(serverId);
-  const composeProjects = db.composeProjects.getByServer(serverId);
-  const activeProjects = new Set(containers.map(c => c.compose_project).filter(Boolean));
-  for (const cp of composeProjects) {
-    if (!activeProjects.has(cp.project_name)) {
-      containers.push({
-        id: `compose-${cp.id}`,
-        server_id: serverId,
-        container_name: '[Stack Offline]',
-        image: '-',
-        state: 'exited',
-        status: 'Down',
-        created_at_container: cp.created_at,
-        compose_project: cp.project_name,
-        compose_working_dir: cp.working_dir,
-      });
-    }
-  }
-  return containers;
-}
-
-// refreshDockerCache moved to ../services/docker-inventory.js
-
-// GET /api/servers/:id/docker - Get docker containers (stale-while-revalidate)
-router.get('/:id/docker', guardServerAccess, guard('canViewDocker'), async (req, res) => {
-  const server = req.server;
-
-  const cached = buildDockerResponse(req.params.id);
-  const force = req.query.force === '1';
-
-  if (cached.length > 0 && !force) {
-    res.json(cached.map(c => ({ ...c, _cached: true })));
-    refreshDockerCache(server).catch(err => { log.debug({ err, server: server.name }, 'Background docker cache refresh failed'); });
-    return;
-  }
-
-  try {
-    const refreshed = await refreshDockerCache(server);
-    if (!refreshed) {
-      if (cached.length > 0) return res.json(cached.map(c => ({ ...c, _cached: true })));
-      return res.status(502).json({ error: 'Docker inventory could not be loaded from this host. Check its SSH connection and Docker permissions.' });
-    }
-    res.json(buildDockerResponse(req.params.id));
-  } catch (error) {
-    if (cached.length > 0) return res.json(cached);
-    serverError(res, error, 'get docker containers');
-  }
-});
-
-// GET /api/servers/:id/docker/:container/logs
-router.get('/:id/docker/:container/logs', guardServerAccess, guard('canViewDocker'), async (req, res) => {
-  const server = req.server;
-
-  const container = req.params.container;
-  if (container.length > 128 || !/^[a-zA-Z0-9_.-]+$/.test(container) || container.startsWith('-')) {
-    return res.status(400).json({ error: 'Invalid container name' });
-  }
-
-  const tailRaw = parseInt(req.query.tail, 10);
-  const tail = Math.max(1, Math.min(Number.isFinite(tailRaw) ? tailRaw : 200, 2000));
-
-  try {
-    // A single-host read should not depend on a locally installed Ansible
-    // binary. Use the same trusted SSH connection as Files and Terminal, then
-    // elevate non-interactively only when the SSH user cannot access Docker.
-    const command = [
-      'runtime="$(command -v docker 2>/dev/null || command -v podman 2>/dev/null)"',
-      'if [ -z "$runtime" ]; then echo "Docker or Podman is not installed" >&2; exit 127; fi',
-      `if [ "$(id -u)" -eq 0 ] || "$runtime" info >/dev/null 2>&1; then "$runtime" logs --tail ${tail} --timestamps -- '${container}' 2>&1`,
-      `elif command -v sudo >/dev/null 2>&1; then sudo -n "$runtime" logs --tail ${tail} --timestamps -- '${container}' 2>&1`,
-      'else echo "Docker access denied and sudo is unavailable" >&2; exit 126; fi',
-    ].join('; ');
-    const result = await sshManager.execCommand(server, command);
-    if (result.code !== 0) {
-      const detail = String(result.stdout || result.stderr || 'Failed to get container logs').trim().slice(-2000);
-      return res.status(502).json({ error: detail || 'Failed to get container logs' });
-    }
-    res.json({ logs: result.stdout || '' });
-  } catch (error) {
-    serverError(res, error, 'get container logs');
-  }
-});
-
-// GET /api/servers/:id/docker/image-updates/cached - Return cached image update results (no SSH)
-router.get('/:id/docker/image-updates/cached', guardServerAccess, guard('canViewDocker'), guard('canViewUpdates'), (req, res) => {
-  const cached = db.dockerImageUpdatesCache.getWithMeta(req.params.id);
-  res.json({ results: cached?.results || [], updated_at: cached?.updated_at || null, source: 'Container registry digest comparison over SSH', ...updateCatalogAge(cached?.updated_at, db.settings.get('poll_image_updates_interval_min') || 360) });
-});
-
-// GET /api/servers/:id/docker/image-updates - Check for image updates
-router.get('/:id/docker/image-updates', guardServerAccess, guard('canPullDocker'), async (req, res) => {
-  const server = req.server;
-  try {
-    const report = await collectionQueue.run('imageUpdates', server, async () => {
-      const result = await ansibleRunner.runPlaybook(
-        'check-image-updates.yml', server.name, {}, null,
-        { environmentId: server.environment_id || 'default' },
-      );
-      const report = parseImageUpdateReport(result.stdout);
-      if (!result.success || !report.complete) throw Object.assign(new Error('Image update check did not complete. Existing results were kept.'), {code:'IMAGE_CHECK_INCOMPLETE'});
-      return report;
-    }, {priority:2,baseMs:require('../services/scheduler').getPollingConfig().imageUpdates.intervalMs});
-    db.dockerImageUpdatesCache.set(server.id, report.results);
-    resourceAlerts.evaluateServer(server.id);
-    res.json(report.results);
-  } catch (error) {
-    db.checkAttempts.failed(server.id, 'images', 'Image check failed. Check host connectivity, container runtime and registry access.');
-    if (error.code === 'IMAGE_CHECK_INCOMPLETE') return res.status(502).json({error:error.message});
-    serverError(res, error, 'get docker image updates');
-  }
-});
-
-
-// GET /api/servers/:id/docker/compose - Read docker-compose.yml
-router.get('/:id/docker/compose', guardServerAccess, guard('canManageDockerCompose'), async (req, res) => {
-  try {
-    const { path } = req.query;
-
-    if (typeof path !== 'string' || path.length === 0) {
-      return res.status(400).json({ error: 'path query parameter is required' });
-    }
-    if (!/^[a-zA-Z0-9/_.-]+$/.test(path) || path.includes('..')) {
-      return res.status(400).json({ error: 'Invalid path format' });
-    }
-
-    const server = req.server;
-
-    const safePath = path.replace(/'/g, "'\\''");
-    const result = await ansibleRunner.runAdHoc(
-      server.name,
-      'command',
-      `cat '${safePath}/docker-compose.yml'`,
-      () => {}, // silence output
-      { become: true, environmentId: server.environment_id || 'default' }
-    );
-
-    if (result.success) {
-      // Strip ansible "host | CHANGED | rc=0 >>" preamble
-      let content = result.stdout;
-      const match = content.match(/rc=\d+\s*>>\n([\s\S]*)/);
-      if (match) {
-        content = match[1];
-      }
-      res.json({ content });
-    } else {
-      res.status(500).json({ error: 'Failed to read docker-compose.yml. It might not exist in this directory.' });
-    }
-  } catch (error) {
-    serverError(res, error, 'get docker compose');
-  }
-});
+router.use(require('./server-docker'));
 
 module.exports = router;

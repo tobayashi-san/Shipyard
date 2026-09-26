@@ -38,7 +38,11 @@ services:
       - TRUST_PROXY=${TRUST_PROXY:-0}
       - FLEET_MFA_POLICY=${FLEET_MFA_POLICY:-optional}
       - FLEET_TERMINAL_IDLE_MINUTES=${FLEET_TERMINAL_IDLE_MINUTES:-30}
+      # Set to 0 to stop checking GitHub for newer stable releases.
+      - FLEET_UPDATE_CHECK=${FLEET_UPDATE_CHECK:-1}
       - FLEET_TERMINAL_MAX_MINUTES=${FLEET_TERMINAL_MAX_MINUTES:-480}
+      # Days before the full log of finished runs is cut down to its last 16 KB.
+      - FLEET_HISTORY_OUTPUT_DAYS=${FLEET_HISTORY_OUTPUT_DAYS:-90}
       - FLEET_PLUGIN_TRUST_POLICY=${FLEET_PLUGIN_TRUST_POLICY:-warn}
       - FLEET_TRUSTED_PLUGIN_SHA256=${FLEET_TRUSTED_PLUGIN_SHA256:-}
       - FLEET_RENEW_CERT=${FLEET_RENEW_CERT:-0}

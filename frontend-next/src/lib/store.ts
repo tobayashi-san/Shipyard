@@ -4,6 +4,7 @@ import { ws } from './ws';
 type Theme = 'light' | 'dark' | 'system';
 export type ThemePreset =
   | 'fleet-light' | 'fleet-dark'
+  | 'fleet-rounded-light' | 'fleet-rounded-dark'
   | 'enterprise-light' | 'enterprise-dark'
   | 'shadcn-light' | 'shadcn-dark'
   | 'cloud-light' | 'paper-light' | 'slate-light'
@@ -32,6 +33,8 @@ export interface ThemePresetDefinition {
 export const THEME_PRESETS: ThemePresetDefinition[] = [
   { id: 'fleet-light', name: 'Fleet Light', style: 'Default', description: 'Fleet green on a calm light canvas', mode: 'light', recommended: true, counterpart: 'fleet-dark', preview: { canvas: '#f7faf8', surface: '#ffffff', card: '#ffffff', accent: '#17704f' } },
   { id: 'fleet-dark', name: 'Fleet Dark', style: 'Default', description: 'The Fleet website look: deep green-black with mint', mode: 'dark', recommended: true, counterpart: 'fleet-light', preview: { canvas: '#101715', surface: '#101715', card: '#17211d', accent: '#b5f5cf' } },
+  { id: 'fleet-rounded-light', name: 'Fleet Rounded Light', style: 'Default', description: 'Fleet green with the rounded shadcn/ui components', mode: 'light', recommended: true, counterpart: 'fleet-rounded-dark', preview: { canvas: '#f7faf8', surface: '#ffffff', card: '#ffffff', accent: '#17704f' } },
+  { id: 'fleet-rounded-dark', name: 'Fleet Rounded Dark', style: 'Default', description: 'Fleet mint on green-black with the rounded shadcn/ui components', mode: 'dark', recommended: true, counterpart: 'fleet-rounded-light', preview: { canvas: '#101715', surface: '#101715', card: '#17211d', accent: '#b5f5cf' } },
   { id: 'enterprise-light', name: 'Enterprise Light', style: 'Enterprise', description: 'Neutral grays with a restrained cobalt accent for corporate operations', mode: 'light', recommended: true, counterpart: 'enterprise-dark', preview: { canvas: '#f3f4f7', surface: '#ffffff', card: '#ffffff', accent: '#0f55b0' } },
   { id: 'enterprise-dark', name: 'Enterprise Dark', style: 'Enterprise', description: 'Graphite surfaces with a clear cobalt accent for long NOC sessions', mode: 'dark', recommended: true, counterpart: 'enterprise-light', preview: { canvas: '#0f1115', surface: '#0f1115', card: '#14171c', accent: '#5aa1ff' } },
   { id: 'shadcn-light', name: 'shadcn Light', style: 'Default', description: 'Neutral shadcn/ui light look, without colored accents', mode: 'light', recommended: true, counterpart: 'shadcn-dark', preview: { canvas: '#ffffff', surface: '#ffffff', card: '#ffffff', accent: '#171717' } },

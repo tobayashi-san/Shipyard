@@ -58,7 +58,7 @@ test('infrastructure home, host layout, themes and recovery are understandable',
     await expect(page.getByRole('switch',{name:'Monitoring alerts'})).toHaveCount(0);
     await capture(page,'monitoring-status');
     await page.goto('/settings/backup');
-    await expect(page.getByText('Fleet application data. Infrastructure backups are managed externally.')).toBeVisible();
+    await expect(page.getByText('Fleet application data; infrastructure backups are managed externally.',{exact:false})).toBeVisible();
     await expect(page.getByRole('heading',{name:'Encrypted database backup'})).toBeVisible();
     await capture(page,'backup-recovery');
     await page.goto(`/servers/${host.id}#tab=notes`);
@@ -96,7 +96,8 @@ test('search ranks literal names, limits groups and highlights their matches',as
  await page.route('**/api/servers',route=>route.fulfill({json:hosts}));
  await page.route('**/api/opentofu/infrastructure-summary?*',route=>route.fulfill({json:{clusters:[{id:'review-platform',connections:[{name:'Production'}],nodes:[],vms:[{vm_id:101,name:'hr01-iot-ha',node_name:'pve'}]}]}}));
  await page.reload();
- await page.keyboard.press('Control+k');
+ // The shortcut listener mounts with the shell; retry until the palette opens.
+ await expect(async()=>{await page.keyboard.press('Control+k');await expect(page.getByRole('combobox')).toBeVisible({timeout:1000});}).toPass({timeout:10000});
  await page.getByRole('combobox').fill('media');
  await expect(page.getByRole('option',{name:/hr01-iot-ha/})).toHaveCount(0);
  await expect(page.getByRole('option',{name:/media/})).toHaveCount(5);

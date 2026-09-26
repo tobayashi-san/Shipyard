@@ -142,3 +142,25 @@ test('custom catalog exposes source and distinguishes missing, fresh and stale c
  db.db.prepare("UPDATE custom_update_tasks SET last_checked_at='2000-01-01 00:00:00' WHERE id=?").run(task.id);
  assert.equal((await read()).stale,true);
 });
+
+test('snapshot before update requires a linked Proxmox guest', async () => {
+  const target = await request(app).get(`/api/servers/${serverId}/custom-updates/snapshot-target`).set('Authorization', `Bearer ${token}`);
+  assert.equal(target.status, 200);
+  assert.deepEqual(target.body, { available: false });
+  const res = await request(app).post(`/api/servers/${serverId}/custom-updates`).set('Authorization', `Bearer ${token}`)
+    .send({ name: 'Snapshot app', type: 'github', github_repo: 'owner/repo', check_command: 'cat ~/.app', update_command: 'update', snapshot_before_run: true });
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /not linked/);
+  const created = await request(app).post(`/api/servers/${serverId}/custom-updates`).set('Authorization', `Bearer ${token}`)
+    .send({ name: 'Snapshot app', type: 'github', github_repo: 'owner/repo', check_command: 'cat ~/.app', update_command: 'update', snapshot_before_run: false });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.snapshot_before_run, 0);
+});
+
+test('automatic snapshot names fit Proxmox limits', () => {
+  const { autoSnapshotName } = require('../features/opentofu/guest-snapshots');
+  const name = autoSnapshotName('Immich Server (Community Script)', new Date('2026-09-26T14:05:00Z'));
+  assert.equal(name, 'fleet-pre-immich-server-co-202609261405');
+  assert.match(name, /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/);
+  assert.equal(autoSnapshotName('!!!', new Date('2026-09-26T14:05:00Z')), 'fleet-pre-update-202609261405');
+});

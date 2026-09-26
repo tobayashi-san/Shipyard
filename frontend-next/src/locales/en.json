@@ -825,7 +825,7 @@
     "new": "New schedule",
     "empty": "No schedules yet",
     "playbook": "Playbook",
-    "selectPlaybook": "— Select playbook —",
+    "selectPlaybook": "Select playbook…",
     "target": "Target",
     "cron": "Cron expression",
     "enabled": "Schedule enabled",
@@ -1178,7 +1178,7 @@
   "qr": {
     "title": "Quick run",
     "subtitle": "Run a playbook once immediately",
-    "selectPlaybook": "— Select playbook —",
+    "selectPlaybook": "Select playbook…",
     "targets": "Target hosts",
     "extraVars": "Extra variables (JSON)",
     "run": "Run",

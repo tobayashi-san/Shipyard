@@ -1,6 +1,18 @@
+// Logs recorded before the server stripped terminal codes still carry colours,
+// cursor moves and screen clears; remove them the same way for display.
+const TERMINAL_SEQUENCE = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])/g;
+const CONTROL = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;
+
+export function stripTerminalCodes(output: string): string {
+  return output
+    .replace(TERMINAL_SEQUENCE, '')
+    .split('\n').map(line => line.includes('\r') ? line.split('\r').filter(Boolean).pop() || '' : line).join('\n')
+    .replace(CONTROL, '');
+}
+
 /** Preserve multiline host messages and task headings when filtering default Ansible output. */
 export function filterExecutionLog(output: string, query: string, host: string): string {
-  const lines = output.replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/);
+  const lines = stripTerminalCodes(output).split(/\r?\n/);
   const blocks: Array<{host: string | null; heading: string; lines: string[]}> = [];
   let heading = '';
   let current: typeof blocks[number] | undefined;

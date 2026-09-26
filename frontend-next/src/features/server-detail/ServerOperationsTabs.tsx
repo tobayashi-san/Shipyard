@@ -1,3 +1,4 @@
+import { DateTextInput } from '@/components/ui/date-input';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -131,11 +132,11 @@ export function ServerOperationsTabs({ controller }: { controller: ServerOperati
         <TabsContent value="history" className="space-y-4">
           <div className="flex flex-wrap items-end gap-3 rounded-md border bg-card p-3">
             <label className="min-w-48 flex-1 text-xs">Search action, actor or log<Input value={historyFilters.query} onChange={event=>setHistoryFilters({...historyFilters,query:event.target.value})} /></label>
-            <label className="text-xs">Action type<select className="block h-9 rounded-md border bg-background px-2" value={historyFilters.action || ""} onChange={event=>setHistoryFilters({...historyFilters,action:event.target.value})}><option value="">All action types</option>{historyFilters.action && !historyActions.includes(historyFilters.action) && <option value={historyFilters.action}>{actionLabel(t,historyFilters.action)}</option>}{historyActions.map(action=><option key={action} value={action}>{actionLabel(t,action)}</option>)}</select></label>
-            <label className="text-xs">Status<select className="block h-9 rounded-md border bg-background px-2" value={historyFilters.status} onChange={event=>setHistoryFilters({...historyFilters,status:event.target.value})}><option value="">All statuses</option>{['success','failed','running','pending','queued','cancelling','cancelled','skipped'].map(status=><option key={status} value={status}>{statusLabel(t,status)}</option>)}</select></label>
-            <label className="text-xs">From · Europe/Zurich<Input type="date" value={historyFilters.from} onChange={event=>setHistoryFilters({...historyFilters,from:event.target.value})} /></label>
-            <label className="text-xs">Through · Europe/Zurich<Input type="date" value={historyFilters.to} onChange={event=>setHistoryFilters({...historyFilters,to:event.target.value})} /></label>
-            <Button size="sm" variant="outline" onClick={()=>setHistoryFilters({query:'',status:'',from:'',to:''})}>Clear filters</Button>
+            <label className="text-xs">Action type<select className="block" value={historyFilters.action || ""} onChange={event=>setHistoryFilters({...historyFilters,action:event.target.value})}><option value="">All action types</option>{historyFilters.action && !historyActions.includes(historyFilters.action) && <option value={historyFilters.action}>{actionLabel(t,historyFilters.action)}</option>}{historyActions.map(action=><option key={action} value={action}>{actionLabel(t,action)}</option>)}</select></label>
+            <label className="text-xs">Status<select className="block" value={historyFilters.status} onChange={event=>setHistoryFilters({...historyFilters,status:event.target.value})}><option value="">All statuses</option>{['success','failed','running','pending','queued','cancelling','cancelled','skipped'].map(status=><option key={status} value={status}>{statusLabel(t,status)}</option>)}</select></label>
+            <label className="w-32 text-xs">From<DateTextInput value={historyFilters.from} onChange={from=>setHistoryFilters({...historyFilters,from})} /></label>
+            <label className="w-32 text-xs">Through<DateTextInput value={historyFilters.to} onChange={to=>setHistoryFilters({...historyFilters,to})} /></label>
+            <Button size="sm" variant="ghost" onClick={()=>setHistoryFilters({query:'',status:'',from:'',to:''})}>Clear filters</Button>
             <p className="w-full text-xs text-muted-foreground">{historyFailed ? "Run counts are unavailable until history loads." : historyLoading ? "Loading run counts…" : `${historyMatchCount} of ${historyCount} runs match.`} Filters include older manual and scheduled runs.</p>
             {historyFilters.from && historyFilters.to && historyFilters.from > historyFilters.to && <p role="alert" className="text-xs text-destructive">The end date must be on or after the start date.</p>}
           </div>

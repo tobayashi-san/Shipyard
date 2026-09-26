@@ -1,6 +1,7 @@
 import { useNavigate } from '@tanstack/react-router';
 import { validateVmForm, VM_STEPS } from './vm-form-validation';
 import { VmIpamSelection, type Selection } from './VmIpamSelection';
+import { resolveIpamNetwork } from './ipam-network';
 import { useEffect, useMemo, useState, useRef, useId, Children, createContext, useContext, cloneElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, Plus, RefreshCw, Server, X } from "lucide-react";
@@ -479,11 +480,13 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
   };
   const applyIpamNetwork = (selection: Pick<Selection, 'bridge' | 'connectionId' | 'vlan'>) => {
     const targetConnection = connectionId || String(initialVm?.connection_id || '');
-    const matching = bridgeItems.filter(item => item.name === selection.bridge && item.available_on_node !== false);
-    const mapped = selection.connectionId === targetConnection && Boolean(targetConnection) && matching.length === 1;
-    setMappingMessage(mapped ? 'Bridge selected from the IPAM network mapping.' : 'This IPAM network has no unique, available mapping for this platform and node. Select a bridge or VNet explicitly.');
-    setSelectedZone('');
-    setForm(current => ({...current, bridge: mapped ? selection.bridge : '', vlan_id: mapped && matching[0].source === 'sdn' ? '' : selection.vlan}));
+    const resolved = resolveIpamNetwork(selection, bridgeItems, targetConnection);
+    setMappingMessage(resolved.message);
+    // Only preselect a zone the filter can show; a hidden filter could not be cleared.
+    const zone = bridgeItems.find(item => item.name === resolved.bridge && item.source === 'sdn')?.zone;
+    const zones = Array.isArray(catalog?.sdn_zones) ? catalog.sdn_zones : [];
+    setSelectedZone(zone && zones.some(item => item.name === zone) ? zone : '');
+    setForm(current => ({...current, bridge: resolved.bridge, vlan_id: resolved.vlan}));
   };
   const selectBridge = (value: string) => {
     const item = bridgeItems.find((bridge) => bridge.name === value);
@@ -722,7 +725,7 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
           </div>
           <div className="min-w-0 space-y-5">
           <fieldset hidden={step !== 2} disabled={step !== 2}>
-            {step === 2 && environmentId && <VmIpamSelection key={environmentId} environmentId={environmentId} onNetwork={applyIpamNetwork} onUse={selection => { applyIpamNetwork(selection); setForm(current => ({...current, ipv4_mode: 'static', ipv4_address: selection.address, ipv4_prefix: selection.prefix, ipv4_gateway: selection.gateway})); }} />}
+            {step === 2 && environmentId && <VmIpamSelection key={environmentId} environmentId={environmentId} onNetwork={applyIpamNetwork} onUse={selection => { applyIpamNetwork(selection); setForm(current => ({...current, ipv4_mode: 'static', ipv4_address: selection.address, ipv4_prefix: selection.prefix, ipv4_gateway: selection.gateway, ...(selection.dns ? {dns_servers: selection.dns} : {})})); }} />}
           <section className="space-y-3 border-t pt-5">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-semibold">Network & VM access</h3>

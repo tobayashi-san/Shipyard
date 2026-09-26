@@ -11,6 +11,8 @@ const { createComposeTempFile, buildComposeWriteOperations } = require('../utils
 const { getPermissions, filterServers, can, guardServerAccess } = require('../utils/permissions');
 const { serverError } = require('../utils/http-error');
 const log = require('../utils/logger');
+const guestSnapshots = require('../features/opentofu/guest-snapshots');
+const { createTerminalTextFilter } = require('../utils/terminal-text');
 
 function createServerActionsRouter({ broadcast } = {}) {
   const router = express.Router();
@@ -281,6 +283,22 @@ function createServerActionsRouter({ broadcast } = {}) {
     res.json({ historyId, status: 'started' });
 
     emit({ type: 'update_output', serverId: server.id, historyId, stream: 'stdout', data: `Running: ${task.name}\n` });
+    let snapshotLog = '';
+    if (task.snapshot_before_run) {
+      const say = data => { snapshotLog += data; emit({ type: 'update_output', serverId: server.id, historyId, stream: 'stdout', data }); };
+      say('Creating a Proxmox snapshot before the update...\n');
+      try {
+        const snapshot = await guestSnapshots.createPreRunSnapshot(server, task.name, { reason: `Taken by Fleet before custom update "${task.name}"`, ip: req.ip, actor: req.user?.username });
+        say(`Snapshot ${snapshot.name} created on ${snapshot.guest.guest_type === 'lxc' ? 'CT' : 'VM'} ${snapshot.guest.vm_id} (${snapshot.guest.node_name}).\n`);
+      } catch (error) {
+        const message = `Snapshot failed, the update was not started: ${error.message}`;
+        snapshotLog += `${message}\n`;
+        db.updateHistory.updateStatus(historyId, 'failed', snapshotLog);
+        db.auditLog.write('custom_update.run', `server=${server.name} task=${task.name} snapshot=failed`, req.ip, false, req.user?.username);
+        emit({ type: 'update_error', serverId: server.id, historyId, error: message });
+        return;
+      }
+    }
     try {
       let cmd = task.update_command;
       if (/^https?:\/\//.test(cmd)) {
@@ -292,12 +310,30 @@ function createServerActionsRouter({ broadcast } = {}) {
         cmd = `curl -fsSL -- "${cmd}" | bash`;
       }
       let fullOutput = '';
-      const code = await sshManager.execStream(server, cmd, chunk => {
-        fullOutput += chunk;
-        emit({ type: 'update_output', serverId: server.id, historyId, stream: 'stdout', data: chunk });
-      });
+      const terminalText = createTerminalTextFilter();
+      const append = text => {
+        if (!text) return;
+        fullOutput += text;
+        emit({ type: 'update_output', serverId: server.id, historyId, stream: 'stdout', data: text });
+      };
+      const code = await sshManager.execStream(server, cmd, chunk => append(terminalText.write(chunk)));
+      append(terminalText.flush());
       const success = code === 0;
-      db.updateHistory.updateStatus(historyId, success ? 'success' : 'failed', fullOutput);
+      if (task.snapshot_before_run) {
+        try {
+          const removed = await guestSnapshots.pruneAutoSnapshots(server, { ip: req.ip, actor: req.user?.username });
+          if (removed.length) {
+            const note = `\nRemoved older automatic snapshots: ${removed.join(', ')}\n`;
+            fullOutput += note;
+            emit({ type: 'update_output', serverId: server.id, historyId, stream: 'stdout', data: note });
+          }
+        } catch (error) {
+          const note = `\nOlder automatic snapshots could not be removed: ${error.message}\n`;
+          fullOutput += note;
+          emit({ type: 'update_output', serverId: server.id, historyId, stream: 'stdout', data: note });
+        }
+      }
+      db.updateHistory.updateStatus(historyId, success ? 'success' : 'failed', snapshotLog + fullOutput);
       db.auditLog.write('custom_update.run', `server=${server.name} task=${task.name}`, req.ip, success, req.user?.username);
       emit({ type: 'update_complete', serverId: server.id, historyId, success, status: success ? 'success' : 'failed' });
     } catch (error) {

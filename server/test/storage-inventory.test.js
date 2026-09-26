@@ -31,3 +31,23 @@ test('upgrading removes capacity histories and preserves current host facts', ()
     assert.equal(database.prepare('SELECT ip_address FROM servers WHERE id=?').get('host').ip_address,'192.0.2.1');
   } finally { database.close(); }
 });
+
+test('mount metrics match the configured path even when df reports the parent mount point', () => {
+  const { collectStorageMountMetrics, MOUNT_MARKER } = require('../utils/storage-mounts');
+  const output = [
+    `${MOUNT_MARKER}/mnt/nas/backup`,
+    'Filesystem 1G-blocks Used Available Use% Mounted on',
+    '//nas/share 900G 450G 450G 50% /mnt/nas',
+    `${MOUNT_MARKER}/srv/missing`,
+    `${MOUNT_MARKER}/mnt/de`,
+    'Dateisystem 1G-Blöcke Benutzt Verfügbar Verw% Eingehängt auf',
+    'nas:/movies 2000G 500G 1500G 25% /mnt/de',
+  ].join('\n');
+  const metrics = collectStorageMountMetrics([{ name: 'Backup', path: '/mnt/nas/backup' }, { name: 'Missing', path: '/srv/missing' }, { name: 'German', path: '/mnt/de' }], output);
+  assert.equal(metrics[0].mounted, true);
+  assert.equal(metrics[0].total_gb, 900);
+  assert.equal(metrics[0].filesystem, '//nas/share');
+  assert.equal(metrics[1].mounted, false);
+  assert.equal(metrics[2].filesystem, 'nas:/movies');
+  assert.equal(metrics[2].total_gb, 2000);
+});

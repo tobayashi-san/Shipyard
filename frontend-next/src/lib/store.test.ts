@@ -23,9 +23,9 @@ const communityThemeIds = [
 
 describe('console theme presets', () => {
   it('provides one unique, complete preview contract for every selectable theme', () => {
-    expect(THEME_PRESETS).toHaveLength(39);
-    expect(THEME_PRESETS.filter(theme => theme.mode === 'light')).toHaveLength(14);
-    expect(THEME_PRESETS.filter(theme => theme.mode === 'dark')).toHaveLength(25);
+    expect(THEME_PRESETS).toHaveLength(41);
+    expect(THEME_PRESETS.filter(theme => theme.mode === 'light')).toHaveLength(15);
+    expect(THEME_PRESETS.filter(theme => theme.mode === 'dark')).toHaveLength(26);
     expect(new Set(THEME_PRESETS.map(theme => theme.id)).size).toBe(THEME_PRESETS.length);
 
     for (const theme of THEME_PRESETS) {
@@ -61,6 +61,8 @@ describe('console theme presets', () => {
     expect(resolveThemePreset('system', 'papercolor-dark')).toBe('papercolor-dark');
     expect(resolveThemePreset('light', 'tokyo-night-dark')).toBe('fleet-light');
     expect(resolveThemePreset('dark', 'fleet-light')).toBe('fleet-dark');
+    expect(resolveThemePreset('dark', 'fleet-rounded-light')).toBe('fleet-rounded-dark');
+    expect(resolveThemePreset('light', 'fleet-rounded-dark')).toBe('fleet-rounded-light');
     expect(resolveThemePreset('dark', 'enterprise-light')).toBe('enterprise-dark');
     expect(resolveThemePreset('light', 'enterprise-dark')).toBe('enterprise-light');
   });

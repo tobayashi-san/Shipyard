@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { EmptyState } from '@/components/ui/empty-state';
 import { Timestamp } from "@/components/ui/timestamp";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -77,6 +78,7 @@ export interface StorageMount {
   total_gb?: number;
   usage_pct?: number;
   mounted?: boolean;
+  pending?: boolean;
 }
 
 export interface ZfsPool {
@@ -120,6 +122,7 @@ export interface CustomTask {
   update_command?: string;
   trigger_output?: string;
   latest_command?: string;
+  snapshot_before_run?: boolean | number;
   current_version?: string;
   last_version?: string;
   has_update?: boolean;
@@ -338,21 +341,33 @@ export type StorageInventoryRow = {
   health?: string;
   detail?: string;
   mounted?: boolean;
+  pending?: boolean;
 };
 
 export function HostStorageInventory({
   info,
   warningAt,
+  onEditMounts,
+  configuredMounts,
 }: {
   info?: ServerInfo;
   warningAt: number;
+  onEditMounts?: () => void;
+  configuredMounts?: { name: string; path: string }[];
 }) {
+  // The host settings are the source of truth: a mount added there shows at
+  // once (awaiting its first measurement), a removed one disappears at once.
+  const metrics = info?.storage_mount_metrics ?? [];
+  const mountMetrics = configuredMounts
+    ? configuredMounts.map(mount => metrics.find(metric => metric.path === mount.path) || { name: mount.name, path: mount.path, pending: true as const })
+    : metrics;
   const rows: StorageInventoryRow[] = [
-    ...(info?.storage_mount_metrics ?? []).map((mount, index) => ({
+    ...mountMetrics.map((mount, index) => ({
       id: `mount-${index}-${mount.path}`,
       name: mount.name || mount.path,
       kind: "Mount" as const,
-      location: mount.filesystem || mount.path,
+      // Path first: it is what an operator looks for on the host.
+      location: [mount.path, mount.filesystem].filter((value, i, all) => value && all.indexOf(value) === i).join(" · "),
       used: mount.used_gb,
       total: mount.total_gb,
       pct:
@@ -360,7 +375,8 @@ export function HostStorageInventory({
         (mount.total_gb
           ? Math.round(((mount.used_gb || 0) / mount.total_gb) * 100)
           : null),
-      mounted: mount.mounted,
+      mounted: "pending" in mount ? undefined : mount.mounted,
+      pending: "pending" in mount,
     })),
     ...(info?.zfs_pools ?? []).map((pool, index) => ({
       id: `zfs-${index}-${pool.name}`,
@@ -377,9 +393,9 @@ export function HostStorageInventory({
   ];
   if (!rows.length)
     return (
-      <div className="px-4 py-4 text-sm text-muted-foreground">
-        No additional mounts or ZFS pools reported by the host. Overall usage is
-        shown in the overview.
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 text-sm text-muted-foreground">
+        <p>No storage mounts registered and no ZFS pools reported. Network shares found on the host are suggested when you add mounts.</p>
+        {onEditMounts && <Button variant="outline" size="sm" onClick={onEditMounts}>Add storage mounts</Button>}
       </div>
     );
   const usageLabel = (row: StorageInventoryRow) =>
@@ -389,7 +405,9 @@ export function HostStorageInventory({
   const stateLabel = (row: StorageInventoryRow) =>
     row.kind === "ZFS-Pool"
       ? row.health || "Status not reported"
-      : row.mounted === true
+      : row.pending
+        ? "Waiting for measurement"
+        : row.mounted === true
         ? "Mounted"
         : row.mounted === false
           ? "Not mounted"

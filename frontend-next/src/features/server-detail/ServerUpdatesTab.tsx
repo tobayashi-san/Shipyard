@@ -8,10 +8,12 @@ import {
   OverflowSep,
 } from "@/components/ui/overflow-menu";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { TabsContent } from "@/components/ui/tabs";
 import { hasCap } from "@/lib/queries";
 import { formatDateTime } from '@/lib/utils';
 import {
+  AlertTriangle,
   ArrowUp,
   Pencil,
   Play,
@@ -68,6 +70,8 @@ export function ServerUpdatesTab({ controller }: { controller: ServerUpdatesTabC
     updatesList,
     phasedList,
   } = controller;
+  // Package managers and community update scripts need headroom; many refuse to start above 80 %.
+  const diskPercent = info?.disk_total_gb ? Math.round(((info.disk_used_gb || 0) / info.disk_total_gb) * 100) : null;
 
   return (
     <>
@@ -80,6 +84,12 @@ export function ServerUpdatesTab({ controller }: { controller: ServerUpdatesTabC
           hasCap(profile, "canEditCustomUpdates") ||
           hasCap(profile, "canDeleteCustomUpdates")) && (
           <TabsContent value="updates" className="space-y-4">
+            {diskPercent !== null && diskPercent >= 80 && (
+              <Alert variant="warning">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>The root disk is {diskPercent}% full ({info?.disk_total_gb && Math.round(info.disk_total_gb - (info.disk_used_gb || 0))} GB free). Updates can fail or refuse to start; free up space or enlarge the disk first.</AlertDescription>
+              </Alert>
+            )}
             {hasCap(profile, "canViewUpdates") && (
               <Card>
                 <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 px-4 py-3">
@@ -303,7 +313,7 @@ export function ServerUpdatesTab({ controller }: { controller: ServerUpdatesTabC
                                   </span>
                                 )}
                                 <p className="mt-1 text-xs text-muted-foreground">{task.last_checked_at ? `Last successful check: ${formatDateTime(task.last_checked_at)}` : 'Not checked yet'}</p>
-                                <p className="text-xs text-muted-foreground">{task.source}{!catalogFreshness({ updated_at: task.last_checked_at, stale: task.stale }).fresh && task.has_update ? ' · Stale result; verify before updating' : ''}</p>
+                                <p className="text-xs text-muted-foreground">{task.source}{task.snapshot_before_run ? ' · Snapshot before update' : ''}{!catalogFreshness({ updated_at: task.last_checked_at, stale: task.stale }).fresh && task.has_update ? ' · Stale result; verify before updating' : ''}</p>
                               </td>
                               <td className="px-4 py-2 text-right">
                                 <div className="flex justify-end">

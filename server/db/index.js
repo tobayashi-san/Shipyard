@@ -133,8 +133,8 @@ const serverQueries = {
 const infoQueries = {
   get: db.prepare('SELECT * FROM server_info WHERE server_id = ?'),
   upsert: db.prepare(`
-    INSERT INTO server_info (server_id, os, kernel, cpu, cpu_cores, ram_total_mb, ram_used_mb, disk_total_gb, disk_used_gb, storage_mount_metrics, uptime_seconds, load_avg, reboot_required, cpu_usage_pct, zfs_pools, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    INSERT INTO server_info (server_id, os, kernel, cpu, cpu_cores, ram_total_mb, ram_used_mb, disk_total_gb, disk_used_gb, storage_mount_metrics, uptime_seconds, load_avg, reboot_required, cpu_usage_pct, zfs_pools, detected_mounts, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(server_id) DO UPDATE SET
       os = excluded.os, kernel = excluded.kernel, cpu = excluded.cpu, cpu_cores = excluded.cpu_cores,
       ram_total_mb = excluded.ram_total_mb, ram_used_mb = excluded.ram_used_mb,
@@ -144,6 +144,8 @@ const infoQueries = {
       reboot_required = excluded.reboot_required,
       cpu_usage_pct = excluded.cpu_usage_pct,
       zfs_pools = excluded.zfs_pools,
+      -- Collectors that do not report mounts keep the last detection.
+      detected_mounts = COALESCE(excluded.detected_mounts, server_info.detected_mounts),
       updated_at = datetime('now')
   `),
 
@@ -307,6 +309,7 @@ module.exports = {
         ...row,
         storage_mount_metrics: parseJsonArray(row.storage_mount_metrics),
         zfs_pools: parseJsonArray(row.zfs_pools),
+        detected_mounts: parseJsonArray(row.detected_mounts),
       };
     },
     upsert: (serverId, info) => {
@@ -326,7 +329,8 @@ module.exports = {
         info.load_avg,
         info.reboot_required ? 1 : 0,
         info.cpu_usage_pct ?? null,
-          JSON.stringify(info.zfs_pools || [])
+          JSON.stringify(info.zfs_pools || []),
+          Array.isArray(info.detected_mounts) ? JSON.stringify(info.detected_mounts) : null
         );
 
       });
@@ -570,20 +574,38 @@ module.exports = {
     },
   },
 
+  backupTargets: {
+    getAll: () => db.prepare('SELECT * FROM backup_targets ORDER BY name COLLATE NOCASE').all(),
+    getById: (id) => db.prepare('SELECT * FROM backup_targets WHERE id = ?').get(id),
+    create: (row) => {
+      const id = uuidv4();
+      db.prepare(`INSERT INTO backup_targets (id, name, type, settings, remote_path, cron_expression, keep_count, passphrase, enabled)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, row.name, row.type, row.settings, row.remote_path, row.cron_expression, row.keep_count, row.passphrase, row.enabled);
+      return db.prepare('SELECT * FROM backup_targets WHERE id = ?').get(id);
+    },
+    update: (id, row) => {
+      db.prepare(`UPDATE backup_targets SET name = ?, settings = ?, remote_path = ?, cron_expression = ?, keep_count = ?, passphrase = ?, enabled = ?, updated_at = datetime('now') WHERE id = ?`)
+        .run(row.name, row.settings, row.remote_path, row.cron_expression, row.keep_count, row.passphrase, row.enabled, id);
+      return db.prepare('SELECT * FROM backup_targets WHERE id = ?').get(id);
+    },
+    delete: (id) => db.prepare('DELETE FROM backup_targets WHERE id = ?').run(id),
+    setResult: (id, status, error, file) => db.prepare(`UPDATE backup_targets SET last_status = ?, last_error = ?, last_run_at = datetime('now'),
+      last_file = COALESCE(?, last_file) WHERE id = ?`).run(status, error, file, id),
+  },
   customUpdateTasks: {
     getByServer: (serverId) => db.prepare('SELECT * FROM custom_update_tasks WHERE server_id = ? ORDER BY created_at').all(serverId),
     getById: (id) => db.prepare('SELECT * FROM custom_update_tasks WHERE id = ?').get(id),
     create: (serverId, fields) => {
       const id = uuidv4();
-      db.prepare(`INSERT INTO custom_update_tasks (id, server_id, name, type, check_command, github_repo, update_command, trigger_output, latest_command) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(id, serverId, fields.name, fields.type, fields.check_command || null, fields.github_repo || null, fields.update_command || '', fields.trigger_output || null, fields.latest_command || null);
+      db.prepare(`INSERT INTO custom_update_tasks (id, server_id, name, type, check_command, github_repo, update_command, trigger_output, latest_command, snapshot_before_run) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(id, serverId, fields.name, fields.type, fields.check_command || null, fields.github_repo || null, fields.update_command || '', fields.trigger_output || null, fields.latest_command || null, fields.snapshot_before_run ? 1 : 0);
       return db.prepare('SELECT * FROM custom_update_tasks WHERE id = ?').get(id);
     },
     update: (id, fields) => db.transaction(() => {
       const previous = db.prepare('SELECT * FROM custom_update_tasks WHERE id = ?').get(id);
       const changed = previous && CUSTOM_CHECK_FIELDS.some(column => (previous[column] || null) !== (fields[column] || null));
-      db.prepare(`UPDATE custom_update_tasks SET name = ?, type = ?, check_command = ?, github_repo = ?, update_command = ?, trigger_output = ?, latest_command = ? WHERE id = ?`)
-        .run(fields.name, fields.type, fields.check_command || null, fields.github_repo || null, fields.update_command || '', fields.trigger_output || null, fields.latest_command || null, id);
+      db.prepare(`UPDATE custom_update_tasks SET name = ?, type = ?, check_command = ?, github_repo = ?, update_command = ?, trigger_output = ?, latest_command = ?, snapshot_before_run = ? WHERE id = ?`)
+        .run(fields.name, fields.type, fields.check_command || null, fields.github_repo || null, fields.update_command || '', fields.trigger_output || null, fields.latest_command || null, fields.snapshot_before_run ? 1 : 0, id);
       if (changed) db.prepare('UPDATE custom_update_tasks SET current_version = NULL, last_version = NULL, has_update = 0, last_checked_at = NULL, last_attempted_at = NULL, last_check_error = NULL WHERE id = ?').run(id);
       return db.prepare('SELECT * FROM custom_update_tasks WHERE id = ?').get(id);
     })(),
@@ -899,16 +921,29 @@ module.exports = {
     failed: (serverId, kind, reason) => db.prepare(`INSERT INTO host_check_attempts(server_id,kind,status,reason) VALUES (?,?,'failed',?) ON CONFLICT(server_id,kind) DO UPDATE SET status='failed',reason=excluded.reason,attempted_at=datetime('now')`).run(serverId,kind,reason),
   },
 
+  dockerImageCheckExclusions: {
+    list: (serverId) => db.prepare('SELECT image, created_at, created_by FROM docker_image_check_exclusions WHERE server_id = ? ORDER BY image').all(serverId),
+    add: (serverId, image, user) => db.prepare('INSERT OR IGNORE INTO docker_image_check_exclusions (server_id, image, created_by) VALUES (?, ?, ?)').run(serverId, image, user || null).changes > 0,
+    remove: (serverId, image) => db.prepare('DELETE FROM docker_image_check_exclusions WHERE server_id = ? AND image = ?').run(serverId, image).changes > 0,
+    // Excluded images keep their collected result but read as "ignored" so no
+    // consumer counts them as pending or as needing a check.
+    apply: (serverId, results) => {
+      const excluded = new Set(db.prepare('SELECT image FROM docker_image_check_exclusions WHERE server_id = ?').all(serverId).map(row => row.image));
+      if (!excluded.size || !Array.isArray(results)) return results;
+      return results.map(item => item && excluded.has(item.image) ? { ...item, status: 'ignored', checked_status: item.status } : item);
+    },
+  },
+
   dockerImageUpdatesCache: {
     get: (serverId) => {
       const row = db.prepare('SELECT * FROM docker_image_updates_cache WHERE server_id = ?').get(serverId);
       if (!row) return null;
-      try { return JSON.parse(row.results_json); } catch { return []; }
+      try { return module.exports.dockerImageCheckExclusions.apply(serverId, JSON.parse(row.results_json)); } catch { return []; }
     },
     getWithMeta: (serverId) => {
       const row = db.prepare('SELECT * FROM docker_image_updates_cache WHERE server_id = ?').get(serverId);
       if (!row) return null;
-      try { return { results: JSON.parse(row.results_json), updated_at: row.updated_at }; } catch { return null; }
+      try { return { results: module.exports.dockerImageCheckExclusions.apply(serverId, JSON.parse(row.results_json)), updated_at: row.updated_at }; } catch { return null; }
     },
     set: (serverId, results) => {
       db.prepare(`

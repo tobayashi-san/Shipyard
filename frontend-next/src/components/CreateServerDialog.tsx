@@ -40,6 +40,10 @@ interface MountEntry {
   name: string;
   path: string;
 }
+interface DetectedMount extends MountEntry {
+  source?: string;
+  fstype?: string;
+}
 
 interface CreateServerDialogProps {
   editServer?: AnyObj | null;
@@ -217,6 +221,11 @@ export function CreateServerDialog({
   const removeMount = (i: number) =>
     setMounts((prev) => prev.filter((_, j) => j !== i));
   const addMount = () => setMounts((prev) => [...prev, { name: "", path: "" }]);
+  // Network shares found on the host that are not monitored yet.
+  const editId = editServer?.id as string | undefined;
+  const hostInfo = useQuery({ queryKey: ["server", editId, "info"], queryFn: () => api.getServerInfo(editId as string), enabled: open && Boolean(editId) });
+  const detectedMounts = asArray<DetectedMount>(hostInfo.data?.detected_mounts).filter(item => item?.path && !mounts.some(mount => mount.path === item.path));
+  const addDetectedMounts = (items: DetectedMount[]) => setMounts(prev => [...prev.filter(mount => mount.path), ...items.map(item => ({ name: item.name, path: item.path }))]);
 
   const mutation = useMutation({
     mutationFn: async (): Promise<AnyObj> => {
@@ -271,6 +280,11 @@ export function CreateServerDialog({
     onSuccess: (savedServer) => {
       void qc.invalidateQueries({ queryKey: ["servers"] });
       void qc.invalidateQueries({ queryKey: ["dashboard"] });
+      if (editServer) {
+        void qc.invalidateQueries({ queryKey: ["server", editServer.id] });
+        // Changed mounts are measured in the background right after saving.
+        window.setTimeout(() => void qc.invalidateQueries({ queryKey: ["server", editServer.id, "info"] }), 8000);
+      }
       setOpen(false);
       onSuccess?.(savedServer);
     },
@@ -330,7 +344,7 @@ export function CreateServerDialog({
         </DialogTrigger>
       )}
 
-      <DialogContent className="flex max-h-[90vh] flex-col gap-0 p-0 sm:max-w-2xl">
+      <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
         {/* ── Header ──────────────────────────────────── */}
         <DialogHeader className="border-b px-4 py-4 sm:px-6">
           <DialogTitle>
@@ -365,7 +379,7 @@ export function CreateServerDialog({
             }
             mutation.mutate();
           }}
-          className="flex-1 overflow-y-auto px-4 pb-4 pt-5 sm:px-6"
+          className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-5 sm:px-6"
         >
           {/* ── Basic Information ───────────────────────── */}
           <SectionHeading
@@ -666,6 +680,23 @@ export function CreateServerDialog({
                   </Button>
                 </div>
               ))}
+            </div>
+          )}
+
+          {detectedMounts.length > 0 && (
+            <div className="mb-2 rounded-md border border-dashed p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-medium">Detected on this host</p>
+                {detectedMounts.length > 1 && <button type="button" onClick={() => addDetectedMounts(detectedMounts)} className="text-xs text-primary hover:underline">Add all</button>}
+              </div>
+              <ul className="mt-2 space-y-1.5">
+                {detectedMounts.map(item => (
+                  <li key={item.path} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="min-w-0"><span className="font-mono text-xs">{item.path}</span><span className="block truncate text-xs text-muted-foreground">{item.source}{item.fstype ? ` · ${item.fstype}` : ''}</span></span>
+                    <Button type="button" variant="outline" size="sm" onClick={() => addDetectedMounts([item])}><Plus className="h-3 w-3" />Add</Button>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 

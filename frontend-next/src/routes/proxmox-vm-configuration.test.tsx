@@ -1,6 +1,6 @@
 import {renderToStaticMarkup} from 'react-dom/server';
 import {expect,it} from 'vitest';
-import {VmConfigurationOverview} from './proxmox-vm-detail';
+import {VmConfigurationOverview} from '@/features/infrastructure/VmConfigurationOverview';
 const render=(props:Parameters<typeof VmConfigurationOverview>[0])=>renderToStaticMarkup(<VmConfigurationOverview {...props}/>);
 const base={loading:false,unavailable:false,onRetry:()=>{}};
 it('shows LXC facts and preserves zero limits without VM-only defaults',()=>{

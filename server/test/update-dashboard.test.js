@@ -10,6 +10,7 @@ const db = require('../db');
 const express = require('express');
 const request = require('supertest');
 const app = express();
+app.use(express.json());
 app.use((req, res, next) => { req.environmentId = req.headers['x-environment'] || 'default'; req.user = { role: req.headers['x-role'] || 'admin', username: 'tester' }; next(); });
 app.use('/servers', require('../routes/servers'));
 after(() => { db.db.close(); fs.rmSync(root, { recursive: true, force: true }); });
@@ -81,4 +82,24 @@ test('update history lists host updates, reboots and bulk runs within the caller
   const scoped = await request(app).get('/servers/update-history').set('x-role', reader.id);
   assert.deepEqual(scoped.body.map(item => item.name), ['System update']);
   assert.deepEqual((await request(app).get('/servers/update-history').set('x-environment', 'stage')).body, []);
+});
+
+test('excluded images stay collected but read as ignored and can be included again', async () => {
+  db.dockerImageUpdatesCache.set(first.id, [
+    { container_name: 'local', image: 'local/app:dev', status: 'not_checkable' },
+    { container_name: 'web', image: 'nginx:latest', status: 'up_to_date' },
+  ]);
+  assert.equal((await request(app).put(`/servers/${first.id}/docker/image-check-exclusions`).send({ image: 'local/app:dev' })).status, 400);
+  const excluded = await request(app).put(`/servers/${first.id}/docker/image-check-exclusions`).send({ image: 'local/app:dev', excluded: true });
+  assert.equal(excluded.status, 200);
+  assert.deepEqual(excluded.body.map(row => row.image), ['local/app:dev']);
+  const cached = await request(app).get(`/servers/${first.id}/docker/image-updates/cached`);
+  assert.deepEqual(cached.body.results.map(item => item.status), ['ignored', 'up_to_date']);
+  assert.equal(cached.body.results[0].checked_status, 'not_checkable');
+  const dashboard = (await request(app).get('/servers/update-dashboard')).body.find(item => item.id === first.id);
+  assert.equal(dashboard.docker.updates[0].status, 'ignored');
+  const viewer = db.roles.create('Docker viewer', { canViewServers: true, canViewDocker: true, canViewUpdates: true, servers: 'all' });
+  assert.equal((await request(app).put(`/servers/${first.id}/docker/image-check-exclusions`).set('x-role', viewer.id).send({ image: 'local/app:dev', excluded: false })).status, 403);
+  await request(app).put(`/servers/${first.id}/docker/image-check-exclusions`).send({ image: 'local/app:dev', excluded: false });
+  assert.equal((await request(app).get(`/servers/${first.id}/docker/image-updates/cached`)).body.results[0].status, 'not_checkable');
 });

@@ -236,7 +236,8 @@ test('VM ID conflicts and automatic IPAM network selection', async ({page}) => {
   await dialog.getByRole('combobox',{name:'Proxmox node',exact:true}).selectOption('pve02');
   await page.getByRole('navigation',{name:'VM setup steps'}).getByRole('button').nth(2).click();
   await expect(dialog.getByText('The selected bridge or VNet is unavailable on this node. Select another network.')).toBeVisible();
+  // A prefix without a platform mapping still names its bridge; a unique match on the node is used.
   await dialog.getByLabel('IPAM prefix').selectOption('unmapped');
-  await expect(bridge).toHaveValue('');
-  await expect(dialog.getByText(/no unique, available mapping/)).toBeVisible();
+  await expect(bridge).toHaveValue('vmbr0');
+  await expect(dialog.getByText('Bridge selected from the IPAM network mapping.')).toBeVisible();
 });

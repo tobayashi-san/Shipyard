@@ -1,3 +1,4 @@
+import { OverflowItem, OverflowMenu } from '@/components/ui/overflow-menu';
 import { EmptyState } from '@/components/ui/empty-state';
 import { CreateServerDialog } from '@/components/CreateServerDialog';
 import { VmId } from "@/components/VmId";
@@ -16,7 +17,7 @@ import { Timestamp } from '@/components/ui/timestamp';
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ArrowDown, ArrowUp, ArrowUpCircle, Plus, RotateCw } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpCircle, FolderTree, Plus, RotateCw } from 'lucide-react';
 import { lazy, Suspense, useState } from 'react';
 import type { ServerGroup, ServerRow } from './server-list-utils';
 function connectionLabel(host: ServerRow) {
@@ -49,7 +50,7 @@ function Resources({ host }: { host: ServerRow }) {
 }
 /** Small pointer to the Updates workspace; the inventory itself does not manage patches. */
 function UpdateHint({ host }: { host: ServerRow }) {
-  const pending = (host.updates_count || 0) + (host.image_updates_count || 0);
+  const pending = (host.updates_count || 0) + (host.image_updates_count || 0) + (host.custom_updates_count || 0);
   if (!pending && !host.reboot_required) return null;
   const label = [pending ? `${pending} ${pending === 1 ? 'update' : 'updates'} available` : '', host.reboot_required ? 'reboot required' : ''].filter(Boolean).join(', ');
   return <Link to="/updates" search={{ host: host.id }} title={label} aria-label={`${host.name}: ${label}`} className="inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--warning)/0.35)] bg-[hsl(var(--warning)/0.1)] px-1.5 py-0.5 text-[11px] font-semibold text-[hsl(var(--warning))] hover:bg-[hsl(var(--warning)/0.18)]">
@@ -78,10 +79,10 @@ function sortValue(host: ServerRow, key: SortKey): string | number {
 function GroupTags({ host, groupName, hidden }: { host: ServerRow; groupName?: string; hidden: Set<string> }) {
   const tags = (host.tags || []).filter(tag => !hidden.has(tag));
   if (!groupName && !tags.length) return <span className="text-muted-foreground">—</span>;
-  return <div className="flex flex-wrap items-center gap-1">
+  return <div className="flex items-center gap-1 whitespace-nowrap">
     {groupName && <span className="font-medium">{groupName}</span>}
-    {tags.slice(0, 3).map(tag => <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{tag}</span>)}
-    {tags.length > 3 && <span className="text-[11px] text-muted-foreground" title={tags.slice(3).join(', ')}>+{tags.length - 3}</span>}
+    {tags.slice(0, 2).map(tag => <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{tag}</span>)}
+    {tags.length > 2 && <span className="text-[11px] text-muted-foreground" title={tags.slice(2).join(', ')}>+{tags.length - 2}</span>}
   </div>;
 }
 
@@ -105,9 +106,10 @@ export function HostsPage() {
   const allHosts = hosts.data || [];
   const commonTags = new Set(allHosts.length > 1 ? (allHosts[0].tags || []).filter(tag => allHosts.every(host => host.tags?.includes(tag))) : []);
   const showGroups = allHosts.some(host => host.group_id || host.tags?.some(tag => !commonTags.has(tag)));
-  const columns: { label: string; key?: SortKey }[] = [
-    { label: 'Name', key: 'name' }, { label: 'Address' }, { label: 'Connection', key: 'connection' }, { label: 'Resources', key: 'resources' },
-    ...(showGroups ? [{ label: 'Group / Tags' }] : []), { label: 'OS', key: 'os' }, { label: 'Uptime', key: 'uptime' },
+  // Group / Tags only fits beside the other columns on wide screens.
+  const columns: { label: string; key?: SortKey; wide?: boolean }[] = [
+    { label: 'Name', key: 'name' }, { label: 'Connection', key: 'connection' }, { label: 'Resources', key: 'resources' },
+    ...(showGroups ? [{ label: 'Group / Tags', wide: true }] : []), { label: 'OS', key: 'os' }, { label: 'Uptime', key: 'uptime' },
   ];
   const sorted = [...rows].sort((a, b) => {
     const left = sortValue(a, sort.key), right = sortValue(b, sort.key);
@@ -116,13 +118,12 @@ export function HostsPage() {
   });
   if (management) return <div className="space-y-4"><Button variant="outline" onClick={() => setManagement(false)}>Back to hosts</Button><Suspense fallback={<p role="status">Loading host tools…</p>}><HostManagement /></Suspense></div>;
   return <div className="space-y-4">
-    <PageHeader title="Hosts" actions={hasCap(profile, 'canEditServers') && <Button onClick={() => setAddOpen(true)}><Plus className="h-4 w-4" />Add host</Button>} />
+    <PageHeader title="Hosts" actions={hasCap(profile, 'canEditServers') && <><Button onClick={() => setAddOpen(true)}><Plus className="h-4 w-4" />Add host</Button><OverflowMenu title="More host actions"><OverflowItem icon={FolderTree} onClick={() => setManagement(true)}>Manage groups…</OverflowItem></OverflowMenu></>} />
     <div className="flex flex-wrap gap-2">
       <Input className="max-w-sm" aria-label="Search hosts" placeholder="Search name, IP, tag or OS" value={search} onChange={event => setSearch(event.target.value)} />
-      <select className="rounded-md border bg-background px-3 text-sm" aria-label="Filter by group" value={group} onChange={event => setGroup(event.target.value)}>
+      {(groups.data?.length || group) ? <select className="w-auto" aria-label="Filter by group" value={group} onChange={event => setGroup(event.target.value)}>
         <option value="">All groups</option>{(groups.data || []).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-      </select>
-      {hasCap(profile, 'canEditServers') && <Button variant="outline" onClick={() => setManagement(true)}>Groups and bulk actions</Button>}
+      </select> : null}
     </div>
     {groups.isError && <QueryErrorState compact title="Groups could not be loaded" error={groups.error} onRetry={() => void groups.refetch()} />}
     {hosts.isError ? <QueryErrorState error={hosts.error} onRetry={() => void hosts.refetch()} /> : hosts.isPending ? <p role="status">Loading hosts…</p> : <>
@@ -130,7 +131,7 @@ export function HostsPage() {
         {sorted.map(host => <li key={host.id} className="space-y-2 px-4 py-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2"><Link className="truncate font-medium hover:underline" to="/servers/$id" params={{ id: host.id }}>{host.name}</Link><UpdateHint host={host} /></div>
+              <div className="flex min-w-0 items-center gap-2"><Link className="truncate font-medium hover:underline" title={host.name} to="/servers/$id" params={{ id: host.id }}>{host.name}</Link><UpdateHint host={host} /></div>
               <p className="truncate font-mono text-xs text-muted-foreground">{host.ip_address || host.hostname || 'Not configured'}{shortOs(host.resources?.os) ? ` · ${shortOs(host.resources?.os)}` : ''}</p>
             </div>
             <Connection host={host} />
@@ -140,17 +141,16 @@ export function HostsPage() {
         {!rows.length && <li><EmptyState compact title={search || group ? 'No hosts match these filters.' : 'Add a host to get started.'} /></li>}
       </ul>
       <div className="hidden overflow-x-auto rounded-md border md:block">
-      <table className="w-full text-left text-sm"><thead className="border-b bg-muted/40"><tr>{columns.map(column => <th className="px-4 py-3 font-medium" key={column.label} aria-sort={column.key && sort.key === column.key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
+      <table className="w-full text-left text-sm"><thead className="border-b bg-muted/40"><tr>{columns.map(column => <th className={cn('px-3 py-3 font-medium', column.wide && 'hidden 2xl:table-cell')} key={column.label} aria-sort={column.key && sort.key === column.key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
           {column.key ? <button type="button" className="inline-flex items-center gap-1 [font-size:inherit] [font-weight:inherit] [letter-spacing:inherit] [text-transform:inherit] hover:text-foreground" onClick={() => setSort(current => ({ key: column.key!, dir: current.key === column.key && current.dir === 'asc' ? 'desc' : column.key === 'resources' || column.key === 'uptime' ? (current.key === column.key ? 'asc' : 'desc') : 'asc' }))}>{column.label}{sort.key === column.key && (sort.dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}</button> : column.label}
         </th>)}</tr></thead>
         <tbody>{sorted.map(host => <tr key={host.id} className="border-b last:border-0 hover:bg-muted/30">
-          <td className="px-4 py-3"><div className="flex items-center gap-2 whitespace-nowrap"><Link className="font-medium hover:underline" to="/servers/$id" params={{ id: host.id }}>{host.name}</Link><VmId value={host.proxmox_vm_id} /><UpdateHint host={host} /></div>{host.deployment && <Link className="block text-xs text-muted-foreground hover:underline" to="/deployments/$id" params={{id:host.deployment.id}}>Deployment</Link>}</td>
-          <td className="px-4 py-3 font-mono text-xs">{host.ip_address || host.hostname || 'Not configured'}</td>
-          <td className="px-4 py-3"><Connection host={host} />{host.status !== 'online' && host.last_seen && <p className="mt-1 text-xs text-muted-foreground">Last seen <Timestamp value={host.last_seen} /></p>}</td>
-          <td className="px-4 py-3"><Resources host={host} /></td>
-          {showGroups && <td className="px-4 py-3"><GroupTags host={host} hidden={commonTags} groupName={host.group_name || groups.data?.find(item => item.id === host.group_id)?.name} /></td>}
-          <td className="px-4 py-3 text-muted-foreground" title={host.resources?.os || undefined}>{shortOs(host.resources?.os) || '—'}</td>
-          <td className="px-4 py-3 tabular-nums text-muted-foreground">{shortUptime(host.resources?.uptime_seconds) || '—'}</td>
+          <td className="px-3 py-3"><div className="flex items-center gap-2 whitespace-nowrap"><Link className="font-medium hover:underline" to="/servers/$id" params={{ id: host.id }}>{host.name}</Link><VmId value={host.proxmox_vm_id} /><UpdateHint host={host} /></div><p className="font-mono text-xs text-muted-foreground">{host.ip_address || host.hostname || 'Not configured'}{host.deployment && <> · <Link className="font-sans hover:underline" to="/deployments/$id" params={{id:host.deployment.id}}>Deployment</Link></>}</p></td>
+          <td className="px-3 py-3"><Connection host={host} />{host.status !== 'online' && host.last_seen && <p className="mt-1 text-xs text-muted-foreground">Last seen <Timestamp value={host.last_seen} /></p>}</td>
+          <td className="px-3 py-3"><Resources host={host} /></td>
+          {showGroups && <td className="hidden px-3 py-3 2xl:table-cell"><GroupTags host={host} hidden={commonTags} groupName={host.group_name || groups.data?.find(item => item.id === host.group_id)?.name} /></td>}
+          <td className="whitespace-nowrap px-3 py-3 text-muted-foreground" title={host.resources?.os || undefined}>{shortOs(host.resources?.os) || '—'}</td>
+          <td className="whitespace-nowrap px-3 py-3 tabular-nums text-muted-foreground">{shortUptime(host.resources?.uptime_seconds) || '—'}</td>
         </tr>)}{!rows.length && <tr><td colSpan={columns.length}><EmptyState compact title={search || group ? 'No hosts match these filters.' : 'Add a host to get started.'} /></td></tr>}</tbody>
       </table>
     </div></>}

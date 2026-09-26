@@ -175,7 +175,7 @@ export function LoginPage() {
               <form onSubmit={onSubmit} className="space-y-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="username">{t('login.username')}</Label>
-                  <Input id="username" autoFocus autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="admin" className="h-10" />
+                  <Input id="username" autoFocus autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} className="h-10" />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="password">{isSetup ? t('login.newPassword') : t('login.password')}</Label>

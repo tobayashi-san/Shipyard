@@ -149,6 +149,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
           <HelpCircle className="h-4 w-4 shrink-0" />
           {!collapsed && <span>{t("nav.help")}</span>}
         </a>
+        <VersionFooter collapsed={collapsed} />
       </div>
 
       {!collapsed && <button type="button" role="separator" aria-orientation="vertical" aria-valuemin={224} aria-valuemax={384} aria-valuenow={sidebarWidth} onKeyDown={(event) => {
@@ -157,4 +158,30 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
       }} onPointerDown={startResize} className="absolute inset-y-0 -right-2 hidden w-4 cursor-col-resize items-center justify-center text-transparent hover:text-muted-foreground focus-visible:text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring lg:flex" aria-label={t("nav.resizeSidebar")} title={t("nav.resizeSidebar")}><GripVertical className="h-4 w-4" /></button>}
     </aside>
   );
+}
+
+interface ReleaseStatus { current: string; latest: string | null; url?: string | null; update_available: boolean }
+
+/** Running version, plus a quiet pointer when a newer stable release is published. */
+function VersionFooter({ collapsed }: { collapsed: boolean }) {
+  const release = useQuery({
+    queryKey: ['system', 'release'],
+    queryFn: () => apiFetch<ReleaseStatus>('/system/release'),
+    staleTime: 60 * 60 * 1000,
+    refetchInterval: 6 * 60 * 60 * 1000,
+    retry: false,
+  });
+  const update = release.data?.update_available ? release.data : null;
+  const label = update ? `Fleet ${update.latest} is available (running ${__FLEET_VERSION__})` : `Fleet ${__FLEET_VERSION__}`;
+  if (collapsed) {
+    return update
+      ? <a href={update.url || 'https://github.com/tobayashi-san/Fleet/releases'} target="_blank" rel="noreferrer" title={label} aria-label={label} className="flex justify-center py-1"><span className="h-2 w-2 rounded-full bg-primary" /></a>
+      : null;
+  }
+  return <div className="flex min-h-7 items-center justify-between gap-2 px-2.5 text-xs text-muted-foreground">
+    <span title={label}>v{__FLEET_VERSION__}</span>
+    {update && <a href={update.url || 'https://github.com/tobayashi-san/Fleet/releases'} target="_blank" rel="noreferrer" title={label} className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 font-medium text-primary hover:bg-primary/20">
+      <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />v{update.latest} available
+    </a>}
+  </div>;
 }

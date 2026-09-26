@@ -4,14 +4,14 @@ const { randomUUID } = require('crypto');
 const { writeObjectAudit } = require('./object-audit');
 const db = require('../../db');
 const log = require('../../utils/logger').child('features:opentofu:ipam-sync');
-const cryptoUtil = require('../../utils/crypto');
 const {
   extractProxmoxGuestNetworkRecords,
   extractProxmoxLxcNetworkRecords,
   ipv4Number,
   subnetContainsIpv4,
 } = require('./proxmox-blueprints');
-const { createProxmoxConnection, requestProxmoxApi } = require('./proxmox-client');
+const { requestProxmoxApi } = require('./proxmox-client');
+const { readSavedProxmoxConnection } = require('./saved-connection');
 
 const activeSyncs = new Set();
 
@@ -43,11 +43,6 @@ async function getGuestNetworkRecords(connection, guest) {
   return extractProxmoxGuestNetworkRecords(payload);
 }
 
-function readConnection(source) {
-  const token = cryptoUtil.decrypt(String(source.api_token || ''));
-  if (!token || String(token).startsWith('enc:')) throw new Error(`Credentials for Proxmox connection "${source.name}" cannot be read.`);
-  return createProxmoxConnection(source.endpoint, token, Boolean(source.insecure));
-}
 
 function prefixLength(cidr) {
   return Number.parseInt(String(cidr || '').split('/')[1], 10) || 0;
@@ -103,7 +98,7 @@ async function syncProxmoxIpam(connectionId, { subnetId = null, actor = 'schedul
   if (subnetId && !subnets.length) { const error = new Error('IPAM prefix not found.'); error.status = 404; throw error; }
   activeSyncs.add(connectionId);
   try {
-    const connection = readConnection(source);
+    const connection = readSavedProxmoxConnection(source);
     const resources = await requestProxmoxApi(connection, '/cluster/resources?type=vm');
     if (!Array.isArray(resources) || resources.some(resource => !resource || !['qemu', 'lxc'].includes(resource.type) || !resource.node || !Number.isInteger(Number(resource.vmid)) || Number(resource.vmid) <= 0)) {
       throw new Error('Invalid Proxmox guest inventory; existing IPAM addresses were retained.');

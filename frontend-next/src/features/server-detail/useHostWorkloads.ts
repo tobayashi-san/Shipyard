@@ -30,12 +30,15 @@ export function useHostWorkloads({ id, server, profile, startActionRun, setActio
   const [imageCatalogRevision, setImageCatalogRevision] = useState(0);
   const [imageCatalog, setImageCatalog] = useState<{ updated_at?: string | null; source?: string; stale?: boolean } | null>(null);
   const [imageUpdates, setImageUpdates] = useState<Record<string, string>>({});
+  // Container name → image reference as reported by the check; exclusions are keyed by it.
+  const [checkedImages, setCheckedImages] = useState<Record<string, string>>({});
   useEffect(() => {
     let cancelled = false;
     // The host query resolves after the first render on a browser reload. By
     // depending on the resolved host ID (not only the URL ID), the persisted
     // image-update cache is loaded once the host is actually available.
     setImageUpdates({});
+    setCheckedImages({});
     setImageCatalog(null);
     if (!server?.id || !hasCap(profile, "canViewDocker") || !hasCap(profile, "canViewUpdates"))
       return () => {
@@ -55,11 +58,14 @@ export function useHostWorkloads({ id, server, profile, startActionRun, setActio
           }[];
         };
         const m: Record<string, string> = {};
+        const images: Record<string, string> = {};
         (res?.results || []).forEach((result) => {
           m[result.image] = result.status;
-          if (result.container_name) m[result.container_name] = result.status;
+          images[result.image] = result.image;
+          if (result.container_name) { m[result.container_name] = result.status; images[result.container_name] = result.image; }
         });
         setImageUpdates(m);
+        setCheckedImages(images);
         setImageCatalog(res);
       })
       .catch(() => {
@@ -296,6 +302,17 @@ export function useHostWorkloads({ id, server, profile, startActionRun, setActio
     return { map, standalone };
   }, [containers]);
 
+  const imageExclusionMut = useMutation({
+    mutationFn: ({ image, excluded }: { image: string; excluded: boolean }) => api.setImageCheckExclusion(id, image, excluded),
+    onSuccess: (_result, { image, excluded }) => {
+      setImageCatalogRevision(value => value + 1);
+      void qc.invalidateQueries({ queryKey: ["server", id] });
+      void qc.invalidateQueries({ queryKey: ["update-dashboard"] });
+      showToast(excluded ? `${image} is excluded from update checks` : `${image} is checked for updates again`, { kind: "success" });
+    },
+    onError: (e: Error) => showToast(e.message || "Update check setting could not be saved", { kind: "error" }),
+  });
+
   const resetImageCheck = checkImageMut.reset;
   useEffect(() => { resetImageCheck(); }, [id, resetImageCheck]);
 
@@ -304,6 +321,8 @@ export function useHostWorkloads({ id, server, profile, startActionRun, setActio
     fetchingDocker,
     imageUpdates,
     setImageUpdates,
+    checkedImages,
+    imageExclusionMut,
     imageCatalog,
     restartContainerMut,
     logsContainer,

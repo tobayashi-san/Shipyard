@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TabsContent } from "@/components/ui/tabs";
 import { ApiError } from "@/lib/api";
+import { hasCap, useProfile } from "@/lib/queries";
 import { managementLabel } from '@/lib/resource-model';
 import { Link } from "@tanstack/react-router";
 import {
@@ -48,6 +49,7 @@ type ServerOverviewTabsController = Pick<ServerDetailController,
   | "ramPct"
   | "refetchInfo"
   | "server"
+  | "setEditOpen"
   | "t"
 >;
 
@@ -72,7 +74,9 @@ export function ServerOverviewTabs({ controller }: { controller: ServerOverviewT
     diskPct,
     cpuPct,
     healthThresholds,
+    setEditOpen,
   } = controller;
+  const { data: profile } = useProfile();
 
   if (!server) return null;
   const managementSummary = !canViewManagementRelationships ? "Management relationships unavailable for this role"
@@ -123,7 +127,7 @@ export function ServerOverviewTabs({ controller }: { controller: ServerOverviewT
                     </h2>
                   </div>
                 </div>
-                <dl className="console-object-info-grid xl:grid-cols-3">
+                <dl className="console-object-info-grid xl:grid-cols-2">
                   <SummaryField label={t("det.os")} value={info?.os || "—"} />
                   <SummaryField label={t("det.cpu")} value={info?.cpu || "—"} />
                   <SummaryField
@@ -135,8 +139,8 @@ export function ServerOverviewTabs({ controller }: { controller: ServerOverviewT
                     }
                     mono
                   />
+                  {Boolean(server.owner) && <SummaryField label="Owner" value={String(server.owner)} />}
                   <SummaryField label="Tags" value={Array.isArray(server.tags) && server.tags.length ? server.tags.join(", ") : "—"} />
-                  <SummaryField label="Owner" value={server.owner ? String(server.owner) : "—"} />
                 </dl>
               </div>
               <div className="console-object-capacity border-t xl:border-l xl:border-t-0">
@@ -210,16 +214,14 @@ export function ServerOverviewTabs({ controller }: { controller: ServerOverviewT
             </Card>
           )}
 
-          <RecentHostTasks history={histItems} hour12={hour12} />
+          {/* The summary above is the live hardware view. These panes hold
+              static system and access facts, so capacity does not appear twice. */}
           <div className="grid items-start gap-4 lg:grid-cols-2">
-            {/* The summary above is the live hardware view.  Keep this pane
-                deliberately to static operating-system and access facts so
-                CPU, uptime and capacity do not appear twice on one object page. */}
             <Card>
               <CardHeader className="border-b px-4 py-3">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Settings2 className="h-4 w-4" />
-                  System & access
+                  System
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
@@ -271,11 +273,16 @@ export function ServerOverviewTabs({ controller }: { controller: ServerOverviewT
                     </div>
                   ))}
                 </dl>
-                <div className="border-t">
-                  <div className="console-section-title">
-                    <Network className="h-4 w-4" />
-                    {t("det.network")}
-                  </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="border-b px-4 py-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Network className="h-4 w-4" />
+                  Network & access
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
                   <dl className="console-properties">
                     <div className="console-property">
                       <dt>{t("det.ipAddress")}</dt>
@@ -332,17 +339,12 @@ export function ServerOverviewTabs({ controller }: { controller: ServerOverviewT
                       </dd>
                     </div>
                   </dl>
-                </div>
               </CardContent>
             </Card>
-
-
           </div>
 
-          {/* VMware-style detail pane: capacity is intentionally shown once
-              in the overview. This full-width section only exposes individual
-              storage objects that an operator can inspect; it must not leave
-              an empty second grid column beneath the access/configuration cards. */}
+          {/* Individual storage objects: configured mounts, detected network
+              shares and ZFS pools. Overall disk usage stays in the summary. */}
           <Card>
             <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
               <CardTitle className="flex items-center gap-2 text-sm">
@@ -391,10 +393,15 @@ export function ServerOverviewTabs({ controller }: { controller: ServerOverviewT
                 <HostStorageInventory
                   info={info}
                   warningAt={healthThresholds.storage}
+                  onEditMounts={hasCap(profile, "canEditServers") ? () => setEditOpen(true) : undefined}
+                  configuredMounts={Array.isArray(server.storage_mounts) ? server.storage_mounts : undefined}
                 />
               )}
             </CardContent>
           </Card>
+
+          {/* History is reference material; it closes the page. */}
+          <RecentHostTasks history={histItems} hour12={hour12} />
         </TabsContent>
 
     </>

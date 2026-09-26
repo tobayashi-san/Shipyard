@@ -1,7 +1,7 @@
 const sshManager = require('./ssh-manager');
 const { PACKAGE_SERVICE_QUERY, parsePackageServiceOwnership } = require('../utils/package-service-impact');
 const { parseAptUpgradePlan } = require('../utils/package-upgrade-plan');
-const { collectStorageMountMetrics, parseConfiguredStorageMounts } = require('../utils/storage-mounts');
+const { DETECT_NETWORK_MOUNTS_CMD, MOUNT_MARKER, collectStorageMountMetrics, parseConfiguredStorageMounts, parseDetectedMounts } = require('../utils/storage-mounts');
 const { parseZfsData } = require('../utils/zfs');
 
 function shellQuote(value) {
@@ -15,8 +15,10 @@ class SystemInfoService {
   async getSystemInfo(server) {
     try {
       const configuredMounts = parseConfiguredStorageMounts(server?.storage_mounts);
+      // Only mounts the operator registered are measured; detected shares are
+      // offered in the host form. A hung NFS server must not stall the collection.
       const storageMountCmd = configuredMounts.length > 0
-        ? `for target in ${configuredMounts.map(mount => shellQuote(mount.path)).join(' ')}; do df -BG "$target" 2>/dev/null; done`
+        ? `for target in ${configuredMounts.map(mount => shellQuote(mount.path)).join(' ')}; do echo "${MOUNT_MARKER}$target"; LC_ALL=C timeout 5 df -BG "$target" 2>/dev/null; done`
         : 'echo';
 
       // All info in a single SSH call – one channel, one round-trip
@@ -40,6 +42,7 @@ class SystemInfoService {
         "if command -v zfs >/dev/null 2>&1; then zfs list -Hp -o name,used,avail,refer,mountpoint,type 2>/dev/null; else echo __NO_ZFS__; fi",
         // Docker/Podman presence detection
         "if command -v docker >/dev/null 2>&1 || command -v podman >/dev/null 2>&1; then echo 1; else echo 0; fi",
+        `${DETECT_NETWORK_MOUNTS_CMD} || echo __NO_FINDMNT__`,
       ].join('; echo "---SEP---"; ');
 
       const result = await sshManager.execCommand(server, script);
@@ -62,8 +65,10 @@ class SystemInfoService {
         zpool_status: parts[13] || '',
         zfs_list:     parts[14] || '',
         docker_detected: (parts[15] || '').trim() === '1',
+        network_mounts: parts[16],
       };
 
+      const detectedMounts = results.network_mounts === undefined || results.network_mounts.includes('__NO_FINDMNT__') ? undefined : parseDetectedMounts(results.network_mounts);
       const [ramTotal, ramUsed] = (results.ram || '0 0').split(' ').map(Number);
       const [diskTotal, diskUsed] = (results.disk || '0 0').split(' ').map(Number);
 
@@ -84,6 +89,8 @@ class SystemInfoService {
         cpu_usage_pct: Math.min(100, Math.max(0, parseInt(results.cpu_usage, 10) || 0)),
         zfs_pools: parseZfsData(results.zpool_list, results.zpool_status, results.zfs_list),
         docker_detected: results.docker_detected,
+        // Undefined keeps the previous detection when findmnt is unavailable.
+        detected_mounts: detectedMounts,
       };
     } catch (error) {
       throw Object.assign(new Error(`Failed to gather system info: ${error.message}`), {code:error.code});

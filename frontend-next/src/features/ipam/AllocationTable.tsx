@@ -131,7 +131,7 @@ export function AllocationTable({
   return (
     <Card>
       <CardHeader className="gap-0 border-b p-0">
-        <div className="console-toolbar gap-3 border-0">
+        <div className="console-toolbar gap-3">
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
               <Layers3 className="h-4 w-4" />
@@ -141,7 +141,7 @@ export function AllocationTable({
               {tr("inventoryOrder")}
             </p>
           </div>
-          <div className="flex w-full min-w-0 flex-1 flex-wrap items-center gap-2 lg:max-w-3xl lg:justify-end">
+          <div className="flex w-full min-w-0 flex-1 flex-wrap items-center gap-2 lg:justify-end">
             <div className="flex flex-wrap gap-1" aria-label={tr("quickFilters")}>
               {[
                 ["active", tr("active")],
@@ -153,7 +153,8 @@ export function AllocationTable({
                   key={value}
                   type="button"
                   size="sm"
-                  variant={statusFilter === value ? "secondary" : "outline"}
+                  variant={statusFilter === value ? "default" : "outline"}
+                  aria-pressed={statusFilter === value}
                   onClick={() => onStatusFilter(statusFilter === value ? "all" : value)}
                 >
                   {label}
@@ -163,7 +164,7 @@ export function AllocationTable({
             <Input
               value={search}
               onChange={(event) => onSearch(event.target.value)}
-              className="h-9 min-w-[280px] flex-1 lg:min-w-[380px]"
+              className="min-w-[220px] flex-1"
               placeholder={tr("searchAllocations")}
               aria-label={tr("addressSearchLabel")}
             />
@@ -396,9 +397,9 @@ export function AllocationTable({
                           <SourceBadges row={row} />
                         </td>
                         <td className="px-3">
-                          <span className="font-mono text-xs">
-                            {isAddress ? row.mac_address || "—" : "—"}
-                          </span>
+                          {isAddress && row.mac_address
+                            ? <span className="font-mono text-xs">{row.mac_address}</span>
+                            : <span className="text-muted-foreground">—</span>}
                         </td>
                         <td className="max-w-[240px] px-3">
                           <span

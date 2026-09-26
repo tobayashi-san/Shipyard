@@ -196,7 +196,7 @@ test('host details keep the fixed navigation and desktop activity opens inline',
     await page.getByRole('link', { name: 'Open execution: Desktop activity details', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/operations/executions/${'desktop-activity'}(?:\\?.*)?$`));
     await expect(page.getByRole('heading', { name: 'Execution details', exact: true })).toBeVisible();
-    await expect(page.getByText('Execution environment:', { exact: false })).toBeVisible();
+    await expect(page.getByText('Execution environment:', { exact: false })).toHaveCount(0);
   } finally {
     await page.evaluate(async (id) => {
       const token = localStorage.getItem('fleet_token');
@@ -254,9 +254,9 @@ test('console themes apply their coordinated light and dark modes immediately', 
   await page.goto('/profile');
 
   const themeChoices = page.locator('button[aria-label$=" mode"]');
-  await expect(themeChoices).toHaveCount(10);
+  await expect(themeChoices).toHaveCount(12);
   await page.getByRole('button', { name: 'More themes' }).click();
-  await expect(themeChoices).toHaveCount(39);
+  await expect(themeChoices).toHaveCount(41);
 
   const requestedThemes = [
     ['Tokyo Night', 'tokyo-night-dark', 'dark'],
@@ -690,7 +690,8 @@ test('a Fleet host can be assigned to a folder through the resource list', async
   // reload so the resource list deliberately re-fetches its folder inventory
   // before exercising the real move control.
   await page.reload();
-  await page.getByRole('button',{name:'Groups and bulk actions',exact:true}).click();
+  await page.getByRole('button',{name:'More host actions',exact:true}).click();
+  await page.getByRole('menuitem',{name:'Manage groups…'}).click();
 
   await page.getByRole('button', { name: /host hinzufügen|server hinzufügen|add (?:managed )?(?:host|server)/i }).click();
   const form = page.getByRole('dialog');
@@ -724,7 +725,8 @@ test('a Fleet host can be assigned to a folder through the resource list', async
     if (!response.ok) throw new Error(`Second host setup failed (${response.status})`);
   });
   await page.reload();
-  await page.getByRole('button',{name:'Groups and bulk actions',exact:true}).click();
+  await page.getByRole('button',{name:'More host actions',exact:true}).click();
+  await page.getByRole('menuitem',{name:'Manage groups…'}).click();
   // Reload preserves the last chosen view; return to the compact inventory
   // before exercising bulk selection.
   await page.getByTitle('Resource options').click();
@@ -767,7 +769,8 @@ test('infrastructure opens host groups and moves a host without drag and drop', 
   });
   await page.goto('/infrastructure');
   await expect(page.locator('main').getByRole('link', { name: 'e2e-tree-host', exact: true })).toBeVisible();
-  await page.getByRole('button',{name:'Groups and bulk actions',exact:true}).click();
+  await page.getByRole('button',{name:'More host actions',exact:true}).click();
+  await page.getByRole('menuitem',{name:'Manage groups…'}).click();
   await expect(page).toHaveURL(/\/servers$/);
   const row = page.getByRole('row', { name: /e2e-tree-host/ });
   await row.getByTitle('Move to folder').click();

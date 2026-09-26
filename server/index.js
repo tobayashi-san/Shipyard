@@ -52,10 +52,11 @@ function start({ server, allowedOrigins, isHttps, setBroadcast }) {
       log.warn('JWT_SECRET env var is not set. A random secret is used on each restart, which will log out all users.');
     }
 
-    try { db.auditLog.pruneOlderThan(90); } catch {}
+    require('./services/history-retention').startHistoryRetention();
 
 
     scheduler.init(broadcast);
+    require('./services/backup-targets').reload();
     scheduler.startPolling();
 
   });

@@ -45,6 +45,28 @@ function parseConfiguredStorageMounts(value) {
   return mounts;
 }
 
+const NETWORK_FS_TYPES = ['nfs', 'nfs4', 'cifs', 'smb3', 'fuse.sshfs', 'glusterfs', 'ceph', 'fuse.ceph', '9p', 'virtiofs', 'fuse.rclone', 'fuse.mergerfs'];
+const DETECT_NETWORK_MOUNTS_CMD = `findmnt -rn -t ${NETWORK_FS_TYPES.join(',')} -o TARGET,SOURCE,FSTYPE 2>/dev/null`;
+
+// findmnt escapes spaces and special characters as \xNN in raw output.
+function unescapeFindmnt(value) {
+  return String(value || '').replace(/\\x([0-9a-fA-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
+/** Network shares mounted on the host, as candidates for storage monitoring. */
+function parseDetectedMounts(output) {
+  const mounts = [];
+  const seen = new Set();
+  for (const line of normalizeText(output).split('\n')) {
+    const [target, source, fstype] = line.trim().split(/\s+/).map(unescapeFindmnt);
+    if (!target || !source || !isValidStorageMountPath(target) || seen.has(target)) continue;
+    seen.add(target);
+    const share = source.replace(/\/+$/, '').split(/[/:]/).filter(Boolean).pop() || target;
+    mounts.push({ name: `${share} (${String(fstype || '').replace(/^fuse\./, '').toUpperCase()})`.slice(0, 100), path: target, source: source.slice(0, 255), fstype: String(fstype || '').slice(0, 32) });
+  }
+  return mounts.slice(0, 50);
+}
+
 function parseSizeTokenToGb(value) {
   const raw = String(value || '').trim().toUpperCase();
   if (!raw) return null;
@@ -88,11 +110,31 @@ function parseDfRows(text) {
   }).filter(Boolean);
 }
 
+// df reports the mount point, not the path it was asked about, so a registered
+// subdirectory never matched. Each df call is therefore preceded by a marker
+// line naming the configured path it measures.
+const MOUNT_MARKER = '__FLEET_MOUNT__';
+
+function dfRowsByTarget(dfOutput) {
+  const byTarget = new Map();
+  let target = null;
+  let block = [];
+  const flush = () => { if (target !== null) { // The data row follows the (possibly localised) header; take the last one.
+      const row = parseDfRows(block.join('\n')).filter(item => item.total_gb !== null).pop(); if (row) byTarget.set(target, row); } };
+  for (const line of normalizeText(dfOutput).split('\n')) {
+    if (line.startsWith(MOUNT_MARKER)) { flush(); target = line.slice(MOUNT_MARKER.length).trim(); block = []; }
+    else block.push(line);
+  }
+  flush();
+  return byTarget;
+}
+
 function collectStorageMountMetrics(configuredMounts, dfOutput) {
   const mounts = parseConfiguredStorageMounts(configuredMounts);
   if (mounts.length === 0) return [];
 
-  const rowsByPath = new Map(parseDfRows(dfOutput).map(row => [row.path, row]));
+  const marked = normalizeText(dfOutput).includes(MOUNT_MARKER);
+  const rowsByPath = marked ? dfRowsByTarget(dfOutput) : new Map(parseDfRows(dfOutput).map(row => [row.path, row]));
   return mounts.map((mount) => {
     const row = rowsByPath.get(mount.path);
     return {
@@ -109,9 +151,12 @@ function collectStorageMountMetrics(configuredMounts, dfOutput) {
 }
 
 module.exports = {
+  MOUNT_MARKER,
   collectStorageMountMetrics,
   isValidStorageMountPath,
   normalizeText,
   parseConfiguredStorageMounts,
   parseDfRows,
+  DETECT_NETWORK_MOUNTS_CMD,
+  parseDetectedMounts,
 };

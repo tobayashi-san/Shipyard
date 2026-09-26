@@ -53,9 +53,9 @@ export function SettingsSection({ title, description, icon, headerRight, childre
     <section className={cn('rounded-panel border border-border-strong/80 bg-card text-card-foreground ', className)}>
       {(title || description || headerRight) && (
         <header className="flex flex-wrap items-start gap-3 border-b border-border/60 px-4 py-3.5 sm:flex-nowrap">
-          {icon && <div className="mt-0.5 text-muted-foreground">{icon}</div>}
+          {icon && <div className="flex h-7 items-center text-muted-foreground">{icon}</div>}
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
+            <div className="flex min-h-7 items-center gap-1.5">
               {title && <h3 className="text-sm font-semibold">{title}</h3>}
               {typeof description === 'string' && <SettingHelp label={typeof title === 'string' ? title : 'section'}>{description}</SettingHelp>}
             </div>

@@ -237,12 +237,12 @@ export function ServerDetailPage() {
             <StatusBadge tone="muted">{t("common.unknown")}</StatusBadge>
           )
         }
-        description={[server.ip_address, server.hostname !== server.ip_address ? server.hostname : null].filter(Boolean).join(" · ") || "Host address not reported"}
+        description={[server.ip_address, server.hostname !== server.ip_address && server.hostname !== server.name ? server.hostname : null].filter(Boolean).join(" · ") || "Host address not reported"}
         actions={
           <>
             {server.deployment && <Button asChild variant="outline"><Link to="/deployments/$id" params={{id:server.deployment.id}}>Open deployment</Link></Button>}
             {/* The primary action follows what is pending; editing lives in the overflow menu. */}
-            {availableTabs.includes("terminal") && serverTabs.value !== "terminal" && server.status === "online" && <Button variant="outline" onClick={() => serverTabs.onValueChange("terminal")}><Terminal />Terminal</Button>}
+            {availableTabs.includes("terminal") && serverTabs.value !== "terminal" && server.status === "online" && <Button variant="outline" aria-label="Terminal" onClick={() => serverTabs.onValueChange("terminal")}><Terminal /><span className="hidden sm:inline">Terminal</span></Button>}
             {hasCap(profile, "canRunUpdates") && updatesList.length > 0 && server.status === "online" && serverTabs.value !== "updates" && <Button onClick={() => setConfirmRunUpdate(true)}><ArrowUp />Install updates ({updatesList.length})</Button>}
             {server.status !== "online" &&
               hasCap(profile, "canEditServers") && (
@@ -395,9 +395,7 @@ export function ServerDetailPage() {
         onValueChange={serverTabs.onValueChange}
         className="space-y-4"
       >
-        <div className="flex items-end justify-between gap-2 border-b">
-          <div className="min-w-0 overflow-x-auto">
-          <TabsList aria-label="Host sections" className="console-tabs min-w-max border-b-0">
+          <TabsList aria-label="Host sections">
             <TabsTrigger value="overview">{t("det.tabOverview")}</TabsTrigger>
             {availableTabs.includes("updates") && <TabsTrigger value="updates">Updates</TabsTrigger>}
             {availableTabs.includes("docker") && <TabsTrigger value="docker">Workloads</TabsTrigger>}
@@ -407,9 +405,6 @@ export function ServerDetailPage() {
             {availableTabs.includes("history") && <TabsTrigger value="history">Jobs</TabsTrigger>}
             {availableTabs.includes("notes") && <TabsTrigger value="notes">Notes</TabsTrigger>}
           </TabsList>
-          </div>
-
-        </div>
 
         <TabsContent value="snapshots">{controller.deploymentContextLoading ? <p role="status">Loading snapshot connection…</p> : controller.deploymentContextFailed ? <div role="alert"><p>Snapshot connection could not be loaded.</p><Button variant="outline" onClick={() => void controller.refetchDeploymentContext()}>Try again</Button></div> : <HostSnapshots mapping={linkedVm} />}</TabsContent>
         <ServerOverviewTabs controller={controller} />

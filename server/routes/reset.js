@@ -33,6 +33,7 @@ function deleteServerTables(environmentId = null) {
     db.db.prepare('DELETE FROM compose_projects').run();
     db.db.prepare('DELETE FROM server_updates_cache').run();
     db.db.prepare('DELETE FROM docker_image_updates_cache').run();
+    db.db.prepare('DELETE FROM docker_image_check_exclusions').run();
     db.db.prepare('DELETE FROM custom_update_tasks').run();
     db.db.prepare('DELETE FROM servers').run();
     db.db.prepare('DELETE FROM server_groups').run();
@@ -41,7 +42,7 @@ function deleteServerTables(environmentId = null) {
   const serverIds = db.db.prepare('SELECT id FROM servers WHERE environment_id = ?').all(environmentId).map(row => row.id);
   if (serverIds.length) {
     const placeholders = serverIds.map(() => '?').join(',');
-    for (const table of ['server_info', 'docker_containers', 'compose_projects', 'server_updates_cache', 'docker_image_updates_cache', 'custom_update_tasks']) {
+    for (const table of ['server_info', 'docker_containers', 'compose_projects', 'server_updates_cache', 'docker_image_updates_cache', 'docker_image_check_exclusions', 'custom_update_tasks']) {
       db.db.prepare(`DELETE FROM ${table} WHERE server_id IN (${placeholders})`).run(...serverIds);
     }
   }

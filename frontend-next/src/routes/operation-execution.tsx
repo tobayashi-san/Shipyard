@@ -1,7 +1,8 @@
 import { CopyButton } from '@/features/server-detail/components/summary-cards';
 import { hostResultSummary, workflowFacts } from '@/features/operations/model';
-import { filterExecutionLog } from '@/lib/execution-log';
+import { filterExecutionLog, stripTerminalCodes } from '@/lib/execution-log';
 import { useState } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Timestamp } from '@/components/ui/timestamp';
 import { Link, useParams, useSearch } from '@tanstack/react-router';
@@ -46,19 +47,16 @@ export function OperationExecutionPage() {
   });
   const row = details.isError ? undefined : details.data;
   const hostResults = row?.host_results || [];
-  const logLines = (row?.output || '').split(/\r?\n/);
+  const logLines = stripTerminalCodes(row?.output || '').split(/\r?\n/);
   const filteredLog = filterExecutionLog(row?.output || '', logSearch, logHost);
   const visibleLog = filteredLog ? filteredLog.split('\n') : [];
   return <div className="space-y-4">
-    <Link to="/operations" className="text-sm text-primary hover:underline">{environmentId === selectedEnvironmentId ? 'Back to jobs' : 'Back to current environment jobs'}</Link>
-    <PageHeader title={row?.name || 'Execution details'} description={row ? `${row.source} · ${hostResults.length ? `${hostResults.length} ${hostResults.length === 1 ? 'host' : 'hosts'}` : row.target}` : 'Inspect the selected execution and its recorded output.'} />
-    <div className={environmentId !== selectedEnvironmentId ? "flex flex-wrap items-center gap-3 rounded-md border bg-card p-3 text-sm" : "flex flex-wrap items-center gap-3 text-sm text-muted-foreground"} role="status">
+    <PageHeader back={<Button variant="ghost" size="icon" asChild><Link to="/operations" aria-label={environmentId === selectedEnvironmentId ? 'Back to jobs' : 'Back to current environment jobs'}><ArrowLeft /></Link></Button>} breadcrumbs={<><Link to="/operations" className="hover:text-foreground hover:underline">Jobs</Link><span>/</span><span className="text-foreground">Execution</span></>} title={row?.name || 'Execution details'} description={row ? `${row.source} · ${hostResults.length ? `${hostResults.length} ${hostResults.length === 1 ? 'host' : 'hosts'}` : row.target}` : 'Inspect the selected execution and its recorded output.'} />
+    {environmentId !== selectedEnvironmentId && <div className="flex flex-wrap items-center gap-3 rounded-md border bg-card p-3 text-sm" role="status">
       <span>Execution environment: <strong>{environmentName}</strong></span>
-      {environmentId !== selectedEnvironmentId && <>
-        <span className="text-muted-foreground">This link uses a different environment from the console selection.</span>
-        {environment && <Button size="sm" variant="outline" onClick={() => setEnvironmentId(environmentId)}>Use this environment in the console</Button>}
-      </>}
-    </div>
+      <span className="text-muted-foreground">This link uses a different environment from the console selection.</span>
+      {environment && <Button size="sm" variant="outline" onClick={() => setEnvironmentId(environmentId)}>Use this environment in the console</Button>}
+    </div>}
     {details.isPending && <p role="status">Loading execution details…</p>}
     {details.isError && <QueryErrorState error={details.error} title="Execution details unavailable" onRetry={() => void details.refetch()} />}
     {row && !details.isError && <>
@@ -72,7 +70,7 @@ export function OperationExecutionPage() {
           <div><dt className="text-muted-foreground">Started</dt><dd>{row.started_at ? <Timestamp value={row.started_at} /> : 'Not recorded'}</dd></div>
           <div><dt className="text-muted-foreground">Completed</dt><dd>{row.completed_at ? <Timestamp value={row.completed_at} /> : (['running', 'queued', 'pending', 'cancelling'].includes(row.status) ? 'Pending completion' : 'Not recorded')}</dd></div>
           <div><dt className="text-muted-foreground">Duration</dt><dd>{row.duration_seconds === null ? (['running', 'queued', 'pending', 'cancelling'].includes(row.status) ? 'Pending completion' : 'Not recorded') : `${row.duration_seconds}s`}</dd></div>
-          <div><dt className="text-muted-foreground">Execution ID</dt><dd className="flex items-center gap-1 font-mono text-xs" title={row.execution_id}>{row.execution_id.slice(0, 8)}…<CopyButton value={row.execution_id} label="Execution ID" /></dd></div>
+          <div><dt className="text-muted-foreground">Execution ID</dt><dd className="flex items-center gap-1 font-mono text-xs" title={row.execution_id}><span className="break-all">{row.execution_id}</span><CopyButton value={row.execution_id} label="Execution ID" /></dd></div>
         </dl>
 
       </section>

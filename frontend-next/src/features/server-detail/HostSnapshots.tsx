@@ -27,8 +27,8 @@ export function HostSnapshots({ mapping }: { mapping?: ManagedDeployment }) {
   const guestName = vm?.name || '';
   const refresh = () => { void snapshots.refetch(); };
   return <div className="space-y-4">
-    {canEdit && <Button onClick={() => setCreateOpen(true)}>Create snapshot</Button>}
-    {snapshots.isError ? <QueryErrorState error={snapshots.error} onRetry={refresh} /> : snapshots.isPending ? <p role="status">Loading snapshots…</p> : <div className="divide-y rounded-md border">
+    {snapshots.isError ? <QueryErrorState error={snapshots.error} onRetry={refresh} /> : snapshots.isPending ? <p role="status">Loading snapshots…</p> : <div className="divide-y rounded-md border bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"><div><h2 className="text-sm font-semibold">Snapshots</h2><p className="text-xs text-muted-foreground">Proxmox snapshots of {guestName || 'the linked guest'}.</p></div>{canEdit && <Button variant="outline" size="sm" onClick={() => setCreateOpen(true)}>Create snapshot</Button>}</div>
       {(snapshots.data?.snapshots || []).filter(snapshot => snapshot.name !== 'current').map(snapshot => <div key={snapshot.name} className="flex flex-wrap items-center justify-between gap-3 p-4"><div><p className="font-medium">{snapshot.name}</p><p className="text-xs text-muted-foreground">{snapshot.snaptime ? formatDateTime(snapshot.snaptime * 1000) : 'Time unavailable'}{snapshot.description && ` · ${snapshot.description}`}</p></div>{canEdit && <div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => setRestore(snapshot)} disabled={!guestName || !hasCap(profile, 'canRebootServers')}>Restore</Button><Button variant="ghost" size="sm" onClick={() => setRemove(snapshot)}>Delete</Button></div>}</div>)}
       {!snapshots.data?.snapshots?.some(snapshot => snapshot.name !== 'current') && <p className="p-6 text-sm text-muted-foreground">No snapshots yet.</p>}
     </div>}

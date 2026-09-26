@@ -226,7 +226,7 @@ export function OperationList({
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="truncate font-medium">{row.name}</div>
+                  <div className="line-clamp-2 break-words font-medium">{row.name}</div>
                   <div className="mt-0.5 truncate text-xs text-muted-foreground">
                     {operationSourceLabel(row.source)} · {row.initiator}
                   </div>
@@ -256,7 +256,7 @@ export function OperationList({
             <tr>
               <th className="w-32">Time</th>
               <th>Task</th>
-              <th className="w-40">Target</th>
+              <th className="w-52">Target</th>
               <th className="w-32">Status</th>
             </tr>
           </thead>
@@ -272,21 +272,21 @@ export function OperationList({
                   <Timestamp value={row.time} />
                 </td>
                 <td className="min-w-0">
-                  <div className="flex min-w-0 items-start gap-1.5">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-1.5">
                     <button type="button" className="block min-w-0 text-left font-medium leading-snug hover:underline" aria-label={`Show task details: ${row.name}`} onClick={event => { event.stopPropagation(); onSelect(row.id); }}><span className="line-clamp-2 break-words">{row.name}</span></button>
-                    <Link to="/operations/executions/$id" params={{ id: row.id }} search={{ environment: environmentId }} onClick={event => event.stopPropagation()} className="mt-0.5 shrink-0 rounded-sm text-muted-foreground hover:text-primary" title={row.executions?.length ? "Open latest execution" : "Open execution"} aria-label={`${row.executions?.length ? "Open latest execution" : "Open execution"}: ${row.name}`}><ExternalLink className="h-3.5 w-3.5" /></Link>
-                  </div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">
-                    {operationSourceLabel(row.source)} · {row.initiator}
+                    <Link to="/operations/executions/$id" params={{ id: row.id }} search={{ environment: environmentId }} onClick={event => event.stopPropagation()} className="shrink-0 rounded-sm text-muted-foreground hover:text-primary" title={row.executions?.length ? "Open latest execution" : "Open execution"} aria-label={`${row.executions?.length ? "Open latest execution" : "Open execution"}: ${row.name}`}><ExternalLink className="h-3.5 w-3.5" /></Link>
+                    <span className="text-xs text-muted-foreground">
+                      {operationSourceLabel(row.source)} · {row.initiator}
+                    </span>
                   </div>
                   <GroupedExecutionLinks row={row} />
                 </td>
-                <td className="max-w-[12rem] break-words">
+                <td className="max-w-[13rem] break-words">
                   <OperationTarget row={row} />
                 </td>
                 <td className="whitespace-nowrap" title={operationDisplayLabel(row)}>
                   <StatusBadge tone={operationDisplayTone(row)} dot>
-                    {row.acknowledged ? "Acknowledged" : operationDisplayLabel(row)}
+                    {operationDisplayLabel(row)}
                   </StatusBadge>
                 </td>
               </tr>

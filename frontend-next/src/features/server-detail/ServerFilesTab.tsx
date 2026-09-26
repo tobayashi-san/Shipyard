@@ -198,7 +198,7 @@ export function ServerFilesTab({ serverId, profile }: { serverId: string; profil
               <label className="flex items-center gap-2 text-sm"><Switch aria-label="Show hidden files" checked={showHidden} onCheckedChange={setShowHidden} /> Show hidden files</label>
               {(search || !showHidden) && <Button variant="ghost" size="sm" onClick={() => {setSearch('');setShowHidden(true);}}>Clear filters</Button>}
             </div>
-            {listing.data && <p className="text-xs text-muted-foreground">{entries.length} of {allEntries.length} entries shown · {hiddenCount} hidden {hiddenCount === 1 ? 'entry' : 'entries'}. Search applies to this directory only.</p>}
+            {listing.data && <p className="text-xs text-muted-foreground">{entries.length} of {allEntries.length} entries shown{hiddenCount ? ` · ${hiddenCount} ${hiddenCount === 1 ? 'is a dotfile' : 'are dotfiles'}${showHidden ? '' : ' (hidden)'}` : ''}. Search applies to this directory only.</p>}
             <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">Understanding file modes</summary><p className="mt-1">The three octal digits describe owner, group and other users: read = 4, write = 2, execute = 1. For directories, execute permits traversal. For example, 640 means owner read/write, group read, others no access. Decoded permissions are available in each mode’s tooltip and screen-reader label.</p></details>
           </CardContent>
         </Card>
