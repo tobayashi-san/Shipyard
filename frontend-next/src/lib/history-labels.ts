@@ -56,6 +56,7 @@ export function statusLabel(t: TFunction, status: string | null | undefined): st
     case 'cancelled':
     case 'canceled': return 'Cancelled';
     case 'unknown': return 'Unknown';
+    case 'interrupted': return 'Interrupted';
     case 'pending': return t('hist.pending');
     default:        return status;
   }

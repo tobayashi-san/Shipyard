@@ -55,6 +55,12 @@ function start({ server, allowedOrigins, isHttps, setBroadcast }) {
     require('./services/history-retention').startHistoryRetention();
 
 
+    try {
+      const interrupted = db.updateHistory.interruptActive();
+      if (interrupted > 0) log.warn({ count: interrupted }, 'Marked host jobs left open by the previous process as interrupted');
+    } catch (err) {
+      log.error({ err }, 'Failed to close host jobs left open by the previous process');
+    }
     scheduler.init(broadcast);
     require('./services/backup-targets').reload();
     scheduler.startPolling();

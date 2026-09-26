@@ -36,6 +36,7 @@ function entryStatus(status: string, acknowledged = false): { label: string; ton
   if (status === 'reboot') return { label: 'Reboot', tone: 'warning', icon: RotateCw };
   if (['offline', 'error'].includes(status)) return { label: 'Unreachable', tone: 'danger', icon: CircleX };
   if (['scheduled', 'queued', 'pending'].includes(status)) return { label: status === 'scheduled' ? 'Scheduled' : status === 'queued' ? 'Queued' : 'Pending', tone: 'info', icon: Clock3 };
+  if (status === 'interrupted') return { label: 'Interrupted', tone: 'muted', icon: CircleHelp };
   if (['running', 'cancelling'].includes(status)) return { label: status === 'running' ? 'Running' : 'Cancelling', tone: 'neutral', icon: LoaderCircle };
   return { label: 'Check', tone: 'muted', icon: CircleHelp };
 }
