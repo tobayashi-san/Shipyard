@@ -30,7 +30,7 @@ test('start is compact, links to objects and jobs, and never requests live infra
   await expect(attention.getByRole('listitem')).toHaveCount(5);
   await expect(attention.getByRole('link',{name:'Open deployment'})).toHaveAttribute('href','/deployments/vm1');
   await expect(attention.getByText('1 host has updates',{exact:true})).toBeVisible();
-  await expect(attention.getByText('4 packages and images waiting',{exact:false})).toBeVisible();
+  await expect(attention.getByText('4 updates waiting',{exact:false})).toBeVisible();
   await expect(attention.getByText('1 host needs a reboot',{exact:true})).toBeVisible();
   const current=page.getByRole('region',{name:'Current & upcoming'});
   await expect(current.getByText('Nightly updates')).toBeVisible();

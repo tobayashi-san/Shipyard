@@ -418,7 +418,7 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
                 </Button>
               )}
             </div>
-            <div className="grid max-h-[26rem] min-h-24 content-start gap-x-2 gap-y-1 overflow-y-auto rounded-md border p-2 sm:grid-cols-[repeat(auto-fill,minmax(15rem,18rem))]">
+            <div className="grid max-h-48 min-h-24 content-start gap-x-2 gap-y-1 overflow-y-auto rounded-md border p-2 sm:max-h-[clamp(7rem,calc(100dvh-42rem),26rem)] sm:grid-cols-[repeat(auto-fill,minmax(15rem,18rem))]">
               <label className="col-span-full flex items-center gap-2 text-sm font-medium">
                 <input
                   type="checkbox"

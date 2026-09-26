@@ -482,8 +482,10 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
     const targetConnection = connectionId || String(initialVm?.connection_id || '');
     const resolved = resolveIpamNetwork(selection, bridgeItems, targetConnection);
     setMappingMessage(resolved.message);
+    // Only preselect a zone the filter can show; a hidden filter could not be cleared.
     const zone = bridgeItems.find(item => item.name === resolved.bridge && item.source === 'sdn')?.zone;
-    setSelectedZone(zone || '');
+    const zones = Array.isArray(catalog?.sdn_zones) ? catalog.sdn_zones : [];
+    setSelectedZone(zone && zones.some(item => item.name === zone) ? zone : '');
     setForm(current => ({...current, bridge: resolved.bridge, vlan_id: resolved.vlan}));
   };
   const selectBridge = (value: string) => {

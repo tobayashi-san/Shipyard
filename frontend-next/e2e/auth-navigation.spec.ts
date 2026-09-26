@@ -254,9 +254,9 @@ test('console themes apply their coordinated light and dark modes immediately', 
   await page.goto('/profile');
 
   const themeChoices = page.locator('button[aria-label$=" mode"]');
-  await expect(themeChoices).toHaveCount(10);
+  await expect(themeChoices).toHaveCount(12);
   await page.getByRole('button', { name: 'More themes' }).click();
-  await expect(themeChoices).toHaveCount(39);
+  await expect(themeChoices).toHaveCount(41);
 
   const requestedThemes = [
     ['Tokyo Night', 'tokyo-night-dark', 'dark'],
