@@ -33,7 +33,7 @@ export function DatabaseBackupCard() {
   return <Card>
     <CardHeader><CardTitle>Encrypted database backup</CardTitle><p className="text-sm text-muted-foreground">Includes database records and stored credentials from all environments. Playbooks, Git workspace, infrastructure state files and remote workload data are not included.</p></CardHeader>
     <CardContent>
-      <p className="mb-4 text-sm">Keep the original FLEET_KEY_SECRET and deployment files separately. The backup passphrase protects this archive; it does not replace the original application encryption key. Restore into a new database with the server recovery CLI; this page does not activate a restore.</p>
+      <p className="mb-4 text-sm text-muted-foreground">The passphrase protects this archive but does not replace the original FLEET_KEY_SECRET. Restore into a new database with the server recovery CLI.</p>
       <form onSubmit={download} className="space-y-3">
         <fieldset disabled={pending} className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1 text-sm">Current account password<Input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required maxLength={1024}/></label>

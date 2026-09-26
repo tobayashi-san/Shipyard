@@ -56,6 +56,7 @@ function start({ server, allowedOrigins, isHttps, setBroadcast }) {
 
 
     scheduler.init(broadcast);
+    require('./services/backup-targets').reload();
     scheduler.startPolling();
 
   });

@@ -60,6 +60,7 @@ function applySchema(db) {
       disk_total_gb REAL,
       disk_used_gb REAL,
       storage_mount_metrics TEXT DEFAULT '[]',
+      detected_mounts TEXT DEFAULT '[]',
       uptime_seconds INTEGER,
       load_avg TEXT,
       reboot_required BOOLEAN DEFAULT 0,
@@ -428,6 +429,18 @@ function applySchema(db) {
       updated_at TEXT DEFAULT (datetime('now'))
     );
   `);
+  // Images an operator excludes from update checks, e.g. locally built images
+  // that no registry can compare. Results stay collected but read as ignored.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS docker_image_check_exclusions (
+      server_id TEXT NOT NULL,
+      image TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by TEXT,
+      PRIMARY KEY (server_id, image),
+      FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+    );
+  `);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS custom_update_tasks (
@@ -440,6 +453,7 @@ function applySchema(db) {
       update_command TEXT DEFAULT '',
       trigger_output TEXT,
       latest_command TEXT,
+      snapshot_before_run INTEGER NOT NULL DEFAULT 0,
       last_version TEXT,
       current_version TEXT,
       has_update INTEGER DEFAULT 0,

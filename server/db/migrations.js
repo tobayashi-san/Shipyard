@@ -2,9 +2,9 @@ const CURRENT_SCHEMA_VERSION = 13;
 
 const REQUIRED_COLUMNS = {
   servers: ['id', 'name', 'hostname', 'ip_address', 'environment_id', 'host_fingerprint', 'docker_enabled', 'owner'],
-  server_info: ['server_id', 'storage_mount_metrics', 'cpu_usage_pct', 'zfs_pools'],
+  server_info: ['server_id', 'storage_mount_metrics', 'cpu_usage_pct', 'zfs_pools', 'detected_mounts'],
   server_groups: ['id', 'environment_id'],
-  custom_update_tasks: ['id', 'trigger_output', 'latest_command', 'last_check_error', 'last_attempted_at'],
+  custom_update_tasks: ['id', 'trigger_output', 'latest_command', 'last_check_error', 'last_attempted_at', 'snapshot_before_run'],
   audit_log: ['id', 'environment_id', 'user'],
   operation_acknowledgements: ['environment_id', 'operation_id', 'acknowledged_at', 'acknowledged_by'],
   update_history: ['id', 'environment_id', 'server_id', 'server_name_snapshot'],
@@ -76,6 +76,9 @@ function applyMigrations(db) {
     );
   } catch {}
   try {
+    db.exec("ALTER TABLE server_info ADD COLUMN detected_mounts TEXT DEFAULT '[]'");
+  } catch {}
+  try {
     db.exec("ALTER TABLE custom_update_tasks ADD COLUMN trigger_output TEXT");
   } catch {}
   try {
@@ -94,6 +97,7 @@ function applyMigrations(db) {
   for (const column of ['last_check_error', 'last_attempted_at']) {
     if (customTaskColumns.size > 0 && !customTaskColumns.has(column)) db.exec(`ALTER TABLE custom_update_tasks ADD COLUMN ${column} TEXT`);
   }
+  if (customTaskColumns.size > 0 && !customTaskColumns.has('snapshot_before_run')) db.exec('ALTER TABLE custom_update_tasks ADD COLUMN snapshot_before_run INTEGER NOT NULL DEFAULT 0');
   // Trust-on-first-use SSH host key fingerprint, sha256 base64 of server-presented host key.
   try {
     db.exec("ALTER TABLE servers ADD COLUMN host_fingerprint TEXT DEFAULT ''");
@@ -496,6 +500,26 @@ function applyMigrations(db) {
   }
   if (variableColumns.size && !variableColumns.has('value_type')) db.exec("ALTER TABLE ansible_vars ADD COLUMN value_type TEXT NOT NULL DEFAULT 'string'");
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_ansible_vars_environment ON ansible_vars(environment_id, key)"); } catch {}
+  // Destinations for scheduled encrypted database backups (settings and passphrase are encrypted).
+  db.exec(`
+      CREATE TABLE IF NOT EXISTS backup_targets (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        settings TEXT NOT NULL,
+        remote_path TEXT NOT NULL DEFAULT '',
+        cron_expression TEXT NOT NULL,
+        keep_count INTEGER NOT NULL DEFAULT 14,
+        passphrase TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        last_run_at TEXT,
+        last_status TEXT,
+        last_error TEXT,
+        last_file TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+  `);
   try {
     db.exec(`
       CREATE TABLE IF NOT EXISTS operation_acknowledgements (

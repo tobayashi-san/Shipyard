@@ -55,3 +55,30 @@ Full filesystem packaging, coordinated activation/rollback, retention, restore U
 ## Recovery verification coverage
 
 Automated tests restore the real Fleet schema into a separate process, retain records across two environments and an admin role, decrypt a stored setting with the original application key, reject an old tracked HTTP/WebSocket session, and complete a fresh password-plus-MFA login. The wrong application key cannot decrypt the setting or complete MFA. These tests use synthetic data and authentication modules only; they do not start schedulers or establish host connections and do not constitute full deployment recovery acceptance.
+
+## Scheduled backups to a destination
+
+Under **Settings → Backup → Scheduled backups** an administrator can add
+destinations that receive the same encrypted, verified database archive on a
+schedule: SMB shares, SFTP servers, S3-compatible buckets (AWS, Backblaze,
+Wasabi, MinIO, Cloudflare R2 and others), Google Drive, WebDAV/Nextcloud, or a
+folder inside the container that is mounted from the Docker host.
+
+- Fleet copies archives with rclone. Remotes are passed to each rclone call as
+  environment variables; no rclone configuration file is written.
+- Credentials and the backup passphrase are stored encrypted with
+  `FLEET_KEY_SECRET` and are never returned by the API. Leave a secret field
+  empty when editing to keep the stored value.
+- Adding a destination, and changing its location, credentials or passphrase,
+  requires the current account password and authenticator code.
+- Archives are named `fleet-database-YYYYMMDD-HHMMSS.backup`. After each upload
+  Fleet deletes the oldest archives with that name pattern beyond the number to
+  keep. Other files in the folder are never touched.
+- A failed run is shown on the destination and sent through the configured
+  notification channels.
+- For Google Drive, run `rclone authorize "drive"` on a computer with a browser
+  and paste the printed token JSON. Fleet uses the `drive.file` scope and only
+  sees files it created.
+
+Store the backup passphrase and `FLEET_KEY_SECRET` outside Fleet. Restore an
+archive with the recovery CLI described above.

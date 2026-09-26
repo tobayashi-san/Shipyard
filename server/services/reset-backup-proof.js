@@ -7,7 +7,7 @@ const {withVerifiedDatabaseBackup} = require('./database-backup');
 const {withVerifiedApplicationBackup} = require('./application-backup');
 
 const actions = new Set(['servers', 'schedules', 'playbooks', 'auth', 'all']);
-const hostChildren = ['server_info', 'docker_containers', 'compose_projects', 'server_updates_cache', 'docker_image_updates_cache', 'custom_update_tasks', 'agent_config', 'agent_metrics', 'server_alert_settings', 'resource_alerts', 'server_note_revisions', 'ipam_reservations'];
+const hostChildren = ['server_info', 'docker_containers', 'compose_projects', 'server_updates_cache', 'docker_image_updates_cache', 'docker_image_check_exclusions', 'custom_update_tasks', 'agent_config', 'agent_metrics', 'server_alert_settings', 'resource_alerts', 'server_note_revisions', 'ipam_reservations'];
 const hash = value => createHash('sha256').update(value).digest('hex');
 
 function playbookState(directory) {

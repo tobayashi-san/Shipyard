@@ -1,8 +1,6 @@
 'use strict';
 const express = require('express');
 const rateLimit = require('express-rate-limit');
-const bcrypt = require('bcryptjs');
-const otplib = require('otplib');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
@@ -11,6 +9,7 @@ const {adminOnly} = require('../middleware/auth');
 const {validSession} = require('../utils/auth-sessions');
 const backupService = require('../services/database-backup');
 const {serverError} = require('../utils/http-error');
+const {confirmCurrentUser} = require('../utils/reauth');
 const router = express.Router();
 let busy = false;
 const limiter = rateLimit({windowMs:15*60*1000,max:5,skip:()=>process.env.NODE_ENV==='test',standardHeaders:true,legacyHeaders:false,message:{error:'Too many backup attempts. Try again in 15 minutes.'}});
@@ -31,19 +30,10 @@ router.put('/records/:kind', adminOnly, (req,res) => {
 });
 router.post('/',adminOnly,limiter,async(req,res)=>{
   const body = req.body || {};
-  if (typeof body.password !== 'string' || !body.password || body.password.length > 1024) return res.status(400).json({error:'Current password is required',field:'password'});
   if (typeof body.passphrase !== 'string' || body.passphrase.length < 12 || Buffer.byteLength(body.passphrase) > 1024) return res.status(400).json({error:'Backup passphrase requires at least 12 characters and at most 1024 UTF-8 bytes',field:'passphrase'});
   if (body.scope !== 'all-environments-database') return res.status(400).json({error:'Confirm the all-environments database scope',field:'scope'});
-  const user = db.users.getByUsername(req.user.username);
-  if (!user || !await bcrypt.compare(body.password,user.password_hash)) return res.status(403).json({error:'Current password is incorrect',field:'password'});
-  if (user.totp_enabled) {
-    const secret = db.users.getTotpSecret(user.id);
-    let validCode = false;
-    if (secret && typeof body.code === 'string' && /^\d{6}$/.test(body.code)) {
-      try { validCode = otplib.verifySync({token:body.code,secret}).valid; } catch { /* invalid/unavailable MFA configuration */ }
-    }
-    if (!validCode) return res.status(403).json({error:'A valid authenticator code is required',field:'code'});
-  }
+  const {user,error} = await confirmCurrentUser(req.user.username,{password:body.password,code:body.code});
+  if (error) return res.status(error.status).json(error.body);
   if (busy) return res.status(409).json({error:'A database backup is already being prepared. Try again shortly.'});
   busy = true;
   let dir;

@@ -14,9 +14,14 @@ RUN cd frontend-next && npm run build
 FROM node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6
 
 # Apply Debian security updates published after the pinned base image.
-RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
-      ansible openssh-client openssl gosu curl unzip git build-essential util-linux \
-    && rm -rf /var/lib/apt/lists/*
+# Packages are fetched over HTTPS so builds also work where outbound HTTP is
+# blocked. The slim image has no CA bundle yet; borrow the builder's for apt.
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /tmp/build-ca.crt
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+    && echo 'Acquire::https::CaInfo "/tmp/build-ca.crt";' > /etc/apt/apt.conf.d/99build-ca \
+    && apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+      ansible openssh-client openssl gosu curl unzip git build-essential util-linux rclone \
+    && rm -rf /var/lib/apt/lists/* /etc/apt/apt.conf.d/99build-ca /tmp/build-ca.crt
 
 # Create a dedicated non-root user for runtime
 RUN groupadd -r -g 1001 fleet && useradd -r -u 1001 -g fleet -d /app fleet
