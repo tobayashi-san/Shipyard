@@ -148,7 +148,7 @@ export function ProfilePage() {
 
   if (profileQuery.isError) {
     return (
-      <div className="mx-auto max-w-3xl">
+      <div className="max-w-3xl">
         <QueryErrorState
           error={profileQuery.error}
           title="Profile could not be loaded"
@@ -163,7 +163,7 @@ export function ProfilePage() {
   const qrSrc = setupData?.qrDataUrl || setupData?.otpauthUrl || '';
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
+    <div className="max-w-3xl space-y-5">
       {/* Page header */}
       <PageHeader
         eyebrow={t('profile.account')}
@@ -180,7 +180,6 @@ export function ProfilePage() {
               <StatusBadge tone="info">{t('profile.adminBadge')}</StatusBadge>
             )}
         </span>}
-        badge={<div className="flex h-8 w-8 items-center justify-center rounded-sm border border-primary/20 bg-primary/10 text-primary"><User className="h-4 w-4" /></div>}
       />
 
       {/* ── Account ──────────────────────────────────────────────────── */}
@@ -193,7 +192,7 @@ export function ProfilePage() {
               className="flex-1 h-8 rounded-sm border border-input bg-background px-2.5 text-[13px] focus:outline-none focus:ring-2 focus:ring-ring"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              placeholder={username}
+              placeholder={`Not set · shows ${username}`}
             />
           </div>
           <div className="flex items-center gap-4">

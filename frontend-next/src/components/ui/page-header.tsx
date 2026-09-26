@@ -35,7 +35,7 @@ export function PageHeader({ title, eyebrow, description, breadcrumbs, actions, 
           )}
         </div>
       </div>
-      {actions && <div className="flex w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:justify-end">{actions}</div>}
+      {actions && <div className="ml-auto flex flex-wrap items-center justify-end gap-2">{actions}</div>}
     </div>
   );
 }

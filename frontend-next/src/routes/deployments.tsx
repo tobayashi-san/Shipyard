@@ -1,3 +1,4 @@
+import { OverflowItem, OverflowMenu } from '@/components/ui/overflow-menu';
 import { VmId } from "@/components/VmId";
 import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -132,7 +133,7 @@ export function DeploymentsPage() {
         <CardContent className="p-0">
           <div className="table-scroll">
             <table data-density="compact" className="w-full min-w-[850px] text-sm">
-              <thead><tr><th className="px-3">Name</th><th className="px-3">Status</th><th className="px-3">Platform</th><th className="px-3">Proxmox</th><th className="px-3">Last run</th>{canEdit && <th className="px-3 text-right">Actions</th>}</tr></thead>
+              <thead><tr><th className="px-3">Name</th><th className="px-3">Status</th><th className="px-3">Platform</th><th className="px-3">Proxmox</th><th className="px-3">Last run</th>{canEdit && <th className="w-12 px-3"><span className="sr-only">Actions</span></th>}</tr></thead>
               <tbody>{vms.map((vm) => {
                 const status = vmStatus(vm);
                 const openVm = () => void navigate({ to: "/deployments/$id", params: { id: vm.id } });
@@ -153,10 +154,10 @@ export function DeploymentsPage() {
                 >
                   <td className="px-3"><span className="font-medium">{vm.name}</span></td>
                   <td className="px-3"><StatusBadge tone={status.tone} dot>{status.label}</StatusBadge></td>
-                  <td className="px-3"><div className="font-medium">{vm.platform?.name || "—"}</div><div className="max-w-[14rem] truncate text-xs text-muted-foreground">{vm.platform?.endpoint?.replace(/^https?:\/\//, "") || "Platform unavailable"}</div></td>
+                  <td className="px-3"><div className="font-medium">{vm.platform?.name || "—"}</div><div className="max-w-[14rem] truncate text-xs text-muted-foreground">{vm.platform?.endpoint?.replace(/^https?:\/\//, "").replace(/\/+$/, "") || "Platform unavailable"}</div></td>
                   <td className="px-3"><span className="font-mono text-xs">{vm.node_name || "—"}</span> <VmId value={vm.vm_id} /></td>
-                  <td className="px-3"><div className="text-xs">{vm.last_run ? `${vm.last_run.action || "Run"} · ${vm.last_run.status || "unknown"}` : "No runs yet"}</div><div className="text-xs text-muted-foreground">{formatDate(vm.last_run?.completed_at || vm.last_run?.started_at)}</div></td>
-                  {canEdit && <td className="px-3 text-right"><Button variant="ghost" size="sm" aria-label={`Delete definition ${vm.name}`} disabled={['running', 'cancelling', 'queued', 'pending'].includes(vm.last_run?.status || '')} onClick={() => { deleteDefinition.reset(); setDeleteTarget({vm, environmentId}); }}><Trash2 />Delete definition</Button></td>}
+                  <td className="px-3">{vm.last_run ? <><div className="text-xs">{`${vm.last_run.action || "Run"} · ${vm.last_run.status || "unknown"}`}</div><div className="text-xs text-muted-foreground">{formatDate(vm.last_run.completed_at || vm.last_run.started_at)}</div></> : <span className="text-xs text-muted-foreground">No runs yet</span>}</td>
+                  {canEdit && <td className="px-3 text-right" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}><OverflowMenu title={`Actions for ${vm.name}`}><OverflowItem icon={Trash2} danger disabled={['running', 'cancelling', 'queued', 'pending'].includes(vm.last_run?.status || '')} onClick={() => { deleteDefinition.reset(); setDeleteTarget({vm, environmentId}); }}>Delete definition</OverflowItem></OverflowMenu></td>}
                 </tr>;
               })}</tbody>
             </table>

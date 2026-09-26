@@ -191,7 +191,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             value={environmentId}
             onChange={(event) => switchEnvironment(event.target.value)}
             disabled={environmentsQuery.isPending || environmentsQuery.isError}
-            className="ml-auto h-8 min-w-0 max-w-[9rem] rounded-md border border-input bg-background px-2 text-xs text-foreground lg:hidden"
+            className="ml-auto h-8 min-w-0 max-w-[11rem] rounded-md border border-input bg-background px-2 text-xs text-foreground lg:hidden"
           >
             {environments.length === 0 && (
               <option value={environmentId}>{activeEnvironmentLabel}</option>

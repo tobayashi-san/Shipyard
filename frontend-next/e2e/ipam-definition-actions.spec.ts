@@ -36,14 +36,15 @@ test('VM definition deletion keeps errors reviewable and removes the selected de
     return route.fulfill({json:{success:true,infrastructure_kept:true}});
   });
   await page.goto('/deployments');
-  await page.getByRole('button', {name:'Delete definition test33'}).click();
+  await page.getByRole('button', {name:'Actions for test33'}).click();
+  await page.getByRole('menuitem', {name:'Delete definition'}).click();
   const dialog = page.getByRole('dialog', {name:'Delete VM definition?'});
   await dialog.getByLabel('Type to confirm').fill('test33');
   await dialog.getByRole('button', {name:'Delete definition',exact:true}).click();
   await expect(dialog.getByText('An operation is still running.')).toBeVisible();
   await dialog.getByRole('button', {name:'Delete definition',exact:true}).click();
   await expect(dialog).toBeHidden();
-  await expect(page.getByRole('button', {name:'Delete definition test33'})).toHaveCount(0);
+  await expect(page.getByRole('button', {name:'Actions for test33'})).toHaveCount(0);
 });
 
 test('IPAM selects synchronized and manual addresses while release targets only manual allocations', async ({page}) => {

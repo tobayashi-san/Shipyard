@@ -5,7 +5,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { QueryErrorState } from '@/components/ui/query-error-state';
 import { useProfile, useSettings } from '@/lib/queries';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { Lock } from 'lucide-react';
+import { ChevronRight, Lock } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -28,7 +28,9 @@ const legacyGroup: Record<string, string> = { system: 'general', appearance: 'ge
 function SettingsDisclosure({ title, children, open = false }: { title: string; children: React.ReactNode; open?: boolean }) {
   const [expanded, setExpanded] = useState(open);
   const [mounted, setMounted] = useState(open);
-  return <details open={expanded} onToggle={event => { setExpanded(event.currentTarget.open); if (event.currentTarget.open) setMounted(true); }} className="rounded-md border p-4"><summary className="cursor-pointer font-medium">{title}</summary>{mounted && <div className="mt-4">{children}</div>}</details>;
+  // Collapsed it is one bordered row; expanded, the section's own cards carry
+  // the frame so the content is not boxed twice.
+  return <details open={expanded} onToggle={event => { setExpanded(event.currentTarget.open); if (event.currentTarget.open) setMounted(true); }} className={expanded ? "group" : "group rounded-md border bg-card"}><summary className={`flex cursor-pointer list-none items-center gap-2 text-sm font-medium [&::-webkit-details-marker]:hidden ${expanded ? "py-1" : "px-4 py-3"}`}><ChevronRight className="size-4 text-muted-foreground transition-transform group-open:rotate-90" />{title}</summary>{mounted && <div className="mt-2">{children}</div>}</details>;
 }
 
 export function SettingsPage() {

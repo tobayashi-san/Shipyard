@@ -430,11 +430,13 @@ function NetworkDetailContent({ id }: { id: string }) {
             {network.description ? ` · ${network.description}` : ""}
           </span>
         }
+        badge={
+          <StatusBadge tone={statusTone(network.status)} dot>
+            {statusLabel[network.status] || network.status}
+          </StatusBadge>
+        }
         actions={
           <div className="flex w-full min-w-0 flex-wrap items-center justify-start gap-2 sm:w-auto sm:justify-end">
-            <StatusBadge tone={statusTone(network.status)} dot>
-              {statusLabel[network.status] || network.status}
-            </StatusBadge>
             {canEdit && <Button
               size="sm"
               onClick={() => {

@@ -1,6 +1,5 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
 	Dialog,
@@ -253,11 +252,11 @@ export function IpamSourcesContent({
               <DialogDescription>{tr("sourceDescription")}</DialogDescription>
             </DialogHeader>
           )}
-          <div className="min-w-0 space-y-4 p-3 sm:p-5">
-            <div className="rounded-sm border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-              <strong className="text-foreground">{tr("automaticMaintenance")}</strong>{" "}
-              {tr("automaticMaintenanceDescription")}
-            </div>
+          <div className={embedded ? "min-w-0 space-y-4" : "min-w-0 space-y-4 p-3 sm:p-5"}>
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer font-medium text-foreground">{tr("automaticMaintenance").replace(/:$/, "")}</summary>
+              <p className="mt-1">{tr("automaticMaintenanceDescription")}</p>
+            </details>
             {query.isError ? (
               <div className="rounded-md border border-destructive/40 bg-destructive/[0.04] p-4 text-sm">
                 <div className="font-medium text-destructive">
@@ -328,11 +327,13 @@ export function IpamSourcesContent({
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-2">
                                 <h3 className="font-medium">{source.name}</h3>
-                                <Badge variant="outline">
-                                  {source.type === "unifi"
-                                    ? "UniFi"
-                                    : "pfSense"}
-                                </Badge>
+                                {source.name.trim().toLowerCase() !== (source.type === "unifi" ? "unifi" : "pfsense") && (
+                                  <Badge variant="outline">
+                                    {source.type === "unifi"
+                                      ? "UniFi"
+                                      : "pfSense"}
+                                  </Badge>
+                                )}
                                 {!source.enabled && (
                                   <Badge variant="muted">{tr("disabled")}</Badge>
                                 )}
@@ -700,7 +701,7 @@ export function IpamSourcesContent({
   return (
     <>
       {embedded ? (
-        <Card data-ipam-sources className="min-w-0 overflow-hidden">{content}</Card>
+        <div data-ipam-sources className="min-w-0">{content}</div>
       ) : (
         <Dialog open={open} onOpenChange={onOpenChange}>
           <DialogContent className="max-h-[calc(100dvh-2rem)] min-w-0 max-w-3xl overflow-x-hidden overflow-y-auto p-0">

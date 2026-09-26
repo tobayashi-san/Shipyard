@@ -21,6 +21,7 @@ export interface ServerRow {
   updates_count?: number | null;
   updates_stale?: boolean;
   image_updates_count?: number | null;
+  custom_updates_count?: number | null;
   image_updates_stale?: boolean;
   reboot_required?: boolean;
   resources?: { ram_used_mb: number | null; ram_total_mb: number | null; disk_used_gb: number | null; disk_total_gb: number | null; os?: string | null; uptime_seconds?: number | null } | null;

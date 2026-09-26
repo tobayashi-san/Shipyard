@@ -1,3 +1,4 @@
+import { OverflowItem, OverflowMenu } from '@/components/ui/overflow-menu';
 import { EmptyState } from '@/components/ui/empty-state';
 import { CreateServerDialog } from '@/components/CreateServerDialog';
 import { VmId } from "@/components/VmId";
@@ -16,7 +17,7 @@ import { Timestamp } from '@/components/ui/timestamp';
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ArrowDown, ArrowUp, ArrowUpCircle, Plus, RotateCw } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpCircle, FolderTree, Plus, RotateCw } from 'lucide-react';
 import { lazy, Suspense, useState } from 'react';
 import type { ServerGroup, ServerRow } from './server-list-utils';
 function connectionLabel(host: ServerRow) {
@@ -49,7 +50,7 @@ function Resources({ host }: { host: ServerRow }) {
 }
 /** Small pointer to the Updates workspace; the inventory itself does not manage patches. */
 function UpdateHint({ host }: { host: ServerRow }) {
-  const pending = (host.updates_count || 0) + (host.image_updates_count || 0);
+  const pending = (host.updates_count || 0) + (host.image_updates_count || 0) + (host.custom_updates_count || 0);
   if (!pending && !host.reboot_required) return null;
   const label = [pending ? `${pending} ${pending === 1 ? 'update' : 'updates'} available` : '', host.reboot_required ? 'reboot required' : ''].filter(Boolean).join(', ');
   return <Link to="/updates" search={{ host: host.id }} title={label} aria-label={`${host.name}: ${label}`} className="inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--warning)/0.35)] bg-[hsl(var(--warning)/0.1)] px-1.5 py-0.5 text-[11px] font-semibold text-[hsl(var(--warning))] hover:bg-[hsl(var(--warning)/0.18)]">
@@ -78,10 +79,10 @@ function sortValue(host: ServerRow, key: SortKey): string | number {
 function GroupTags({ host, groupName, hidden }: { host: ServerRow; groupName?: string; hidden: Set<string> }) {
   const tags = (host.tags || []).filter(tag => !hidden.has(tag));
   if (!groupName && !tags.length) return <span className="text-muted-foreground">—</span>;
-  return <div className="flex flex-wrap items-center gap-1">
+  return <div className="flex items-center gap-1 whitespace-nowrap">
     {groupName && <span className="font-medium">{groupName}</span>}
-    {tags.slice(0, 3).map(tag => <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{tag}</span>)}
-    {tags.length > 3 && <span className="text-[11px] text-muted-foreground" title={tags.slice(3).join(', ')}>+{tags.length - 3}</span>}
+    {tags.slice(0, 2).map(tag => <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{tag}</span>)}
+    {tags.length > 2 && <span className="text-[11px] text-muted-foreground" title={tags.slice(2).join(', ')}>+{tags.length - 2}</span>}
   </div>;
 }
 
@@ -116,13 +117,12 @@ export function HostsPage() {
   });
   if (management) return <div className="space-y-4"><Button variant="outline" onClick={() => setManagement(false)}>Back to hosts</Button><Suspense fallback={<p role="status">Loading host tools…</p>}><HostManagement /></Suspense></div>;
   return <div className="space-y-4">
-    <PageHeader title="Hosts" actions={hasCap(profile, 'canEditServers') && <Button onClick={() => setAddOpen(true)}><Plus className="h-4 w-4" />Add host</Button>} />
+    <PageHeader title="Hosts" actions={hasCap(profile, 'canEditServers') && <><Button onClick={() => setAddOpen(true)}><Plus className="h-4 w-4" />Add host</Button><OverflowMenu title="More host actions"><OverflowItem icon={FolderTree} onClick={() => setManagement(true)}>Manage groups…</OverflowItem></OverflowMenu></>} />
     <div className="flex flex-wrap gap-2">
       <Input className="max-w-sm" aria-label="Search hosts" placeholder="Search name, IP, tag or OS" value={search} onChange={event => setSearch(event.target.value)} />
-      <select className="rounded-md border bg-background px-3 text-sm" aria-label="Filter by group" value={group} onChange={event => setGroup(event.target.value)}>
+      {(groups.data?.length || group) ? <select className="w-auto" aria-label="Filter by group" value={group} onChange={event => setGroup(event.target.value)}>
         <option value="">All groups</option>{(groups.data || []).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-      </select>
-      {hasCap(profile, 'canEditServers') && <Button variant="outline" onClick={() => setManagement(true)}>Groups and bulk actions</Button>}
+      </select> : null}
     </div>
     {groups.isError && <QueryErrorState compact title="Groups could not be loaded" error={groups.error} onRetry={() => void groups.refetch()} />}
     {hosts.isError ? <QueryErrorState error={hosts.error} onRetry={() => void hosts.refetch()} /> : hosts.isPending ? <p role="status">Loading hosts…</p> : <>

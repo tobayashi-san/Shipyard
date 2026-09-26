@@ -391,7 +391,7 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
                   className="pl-8"
                 />
               </div>
-              <select
+              {(groupList.length > 0 || groupFilter) && <select
                 aria-label="Filter hosts by group"
                 className="flex h-9 rounded-md border border-input bg-background px-2 text-sm"
                 value={groupFilter}
@@ -399,7 +399,7 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
               >
                 <option value="">All groups</option>
                 {groupList.map((group) => <option key={String(group.id)} value={String(group.id)}>{String(group.name)}</option>)}
-              </select>
+              </select>}
               <select
                 aria-label="Filter hosts by tag"
                 className="flex h-9 rounded-md border border-input bg-background px-2 text-sm"
@@ -418,7 +418,7 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
                 </Button>
               )}
             </div>
-            <div className="grid max-h-48 min-h-24 content-start gap-x-2 gap-y-1 overflow-y-auto rounded-md border p-2 sm:max-h-[clamp(7rem,calc(100dvh-42rem),14rem)] sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid max-h-[26rem] min-h-24 content-start gap-x-2 gap-y-1 overflow-y-auto rounded-md border p-2 sm:grid-cols-[repeat(auto-fill,minmax(15rem,18rem))]">
               <label className="col-span-full flex items-center gap-2 text-sm font-medium">
                 <input
                   type="checkbox"
@@ -449,7 +449,15 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
                       className={isExcluded ? "accent-destructive" : ""}
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">{nm}</span>
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate font-medium">{nm}</span>
+                        {s.status !== "online" && (
+                          <span className="flex shrink-0 items-center gap-1 text-xs text-destructive">
+                            <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
+                            {t("common.offline")}
+                          </span>
+                        )}
+                      </span>
                       <span className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
                         {s.ip_address ? <span className="truncate font-mono">{String(s.ip_address)}</span> : null}
                         {tags.slice(0, 2).map((tag) => <span key={tag} className="max-w-24 truncate rounded bg-muted px-1">{tag}</span>)}
@@ -461,10 +469,6 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
                         {t("run.excluded")}
                       </span>
                     )}
-                    <span className={`ml-auto flex shrink-0 items-center gap-1 text-xs ${s.status === "online" ? "text-muted-foreground" : "text-destructive"}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${s.status === "online" ? "bg-emerald-500" : "bg-destructive"}`} />
-                      {s.status === "online" ? t("common.online") : t("common.offline")}
-                    </span>
                   </label>
                 );
               })}
@@ -488,7 +492,7 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
           </div>
           <div className="rounded-md border bg-muted/20 p-3 text-sm">
             <div className="font-medium">Target preview · {selectedTargets.length} host{selectedTargets.length === 1 ? "" : "s"}</div>
-            <p className="mt-1 break-words font-mono text-xs text-muted-foreground">
+            <p className={`mt-1 break-words text-xs text-muted-foreground ${shortTargetPreview.length ? "font-mono" : ""}`}>
               {shortTargetPreview.join(", ") || "Select at least one host."}
               {selectedTargets.length > shortTargetPreview.length ? ` +${selectedTargets.length - shortTargetPreview.length} more` : ""}
             </p>

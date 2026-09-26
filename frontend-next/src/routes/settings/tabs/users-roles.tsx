@@ -121,7 +121,7 @@ function UsersPanel() {
   return (
     <SettingsSection
       icon={<Users className="h-4 w-4" />}
-      title={t('set.userManagement')}
+      title="Users"
       headerRight={
         <div className="flex items-center gap-3">
           {usersQ.isSuccess && <span className="text-xs text-muted-foreground">{users.length} {users.length === 1 ? 'user' : 'users'}</span>}
@@ -131,8 +131,6 @@ function UsersPanel() {
         </div>
       }
     >
-      <MfaPolicyOverview />
-      <InvitationsPanel roles={roles} />
       {usersLoading && (
         <div className="py-2">
           <SkeletonRow cols={3} />
@@ -214,6 +212,8 @@ function UsersPanel() {
           </SettingsRow>
         );
       })}
+      <MfaPolicyOverview />
+      <InvitationsPanel roles={roles} />
 
       {(creating || editing) && (
         <UserFormDialog
