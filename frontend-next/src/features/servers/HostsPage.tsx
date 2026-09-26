@@ -130,7 +130,7 @@ export function HostsPage() {
         {sorted.map(host => <li key={host.id} className="space-y-2 px-4 py-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2"><Link className="truncate font-medium hover:underline" to="/servers/$id" params={{ id: host.id }}>{host.name}</Link><UpdateHint host={host} /></div>
+              <div className="flex min-w-0 items-center gap-2"><Link className="truncate font-medium hover:underline" title={host.name} to="/servers/$id" params={{ id: host.id }}>{host.name}</Link><UpdateHint host={host} /></div>
               <p className="truncate font-mono text-xs text-muted-foreground">{host.ip_address || host.hostname || 'Not configured'}{shortOs(host.resources?.os) ? ` · ${shortOs(host.resources?.os)}` : ''}</p>
             </div>
             <Connection host={host} />

@@ -180,11 +180,6 @@ export function CommandPalette() {
                   {profile?.role === 'admin' && <PaletteItem icon={<Settings className="h-4 w-4" />} label={t('nav.settings')} shortcut="g ," onSelect={() => go('/settings')} />}
                 </Command.Group>
 
-                {hasCap(profile, 'canViewInfrastructure') && <Command.Group heading="Infrastructure inventory" className="mt-2 text-xs text-muted-foreground">
-                  <PaletteItem icon={<Server className="h-4 w-4" />} label="Infrastructure overview" shortcut="g i" onSelect={() => go('/infrastructure')} />
-                  {infrastructureItems.map(item => <PaletteItem key={item.id} icon={<Server className="h-4 w-4" />} label={item.label} sublabel={item.detail} keywords={item.keywords} onSelect={() => go(item.path)} />)}
-                  {more("infrastructure", commandSearch(allInfrastructureItems, search, Infinity, item => item.label, item => item.keywords).length)}
-                </Command.Group>}
                 {safeServers.length > 0 && (
                   <Command.Group heading={t('cmd.servers')} className="mt-2 text-muted-foreground [&_[cmdk-group-heading]]:text-[10.5px] [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
                     {safeServers.map(s => (
@@ -201,6 +196,11 @@ export function CommandPalette() {
                   </Command.Group>
                 )}
 
+                {hasCap(profile, 'canViewInfrastructure') && <Command.Group heading="Infrastructure inventory" className="mt-2 text-xs text-muted-foreground">
+                  <PaletteItem icon={<Server className="h-4 w-4" />} label="Infrastructure overview" shortcut="g i" onSelect={() => go('/infrastructure')} />
+                  {infrastructureItems.map(item => <PaletteItem key={item.id} icon={<Server className="h-4 w-4" />} label={item.label} sublabel={item.detail} keywords={item.keywords} onSelect={() => go(item.path)} />)}
+                  {more("infrastructure", commandSearch(allInfrastructureItems, search, Infinity, item => item.label, item => item.keywords).length)}
+                </Command.Group>}
                 {safePlaybooks.length > 0 && (
                   <Command.Group heading={t('cmd.playbooks')} className="mt-2 text-muted-foreground [&_[cmdk-group-heading]]:text-[10.5px] [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
                     {safePlaybooks.map(p => (
