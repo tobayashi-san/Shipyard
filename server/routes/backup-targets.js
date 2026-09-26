@@ -16,7 +16,7 @@ function changesDestination(input, existing) {
   const settings = targets.publicTarget(existing).settings;
   return Boolean(input.passphrase)
     || Object.values(input.secrets || {}).some(value => typeof value === 'string' && value.trim())
-    || String(input.remote_path || '').replace(/^\/+|\/+$/g, '') !== existing.remote_path
+    || targets.normalizeRemotePath(input.remote_path) !== existing.remote_path
     || Object.entries(input.settings || {}).some(([key, value]) => key in settings && String(value || '').trim() !== String(settings[key] || ''));
 }
 

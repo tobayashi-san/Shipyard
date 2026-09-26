@@ -55,13 +55,22 @@ const text = (value, max = 255) => typeof value === 'string' ? value.trim().slic
  * Validate input and merge it with the stored target. Empty secret fields keep
  * the stored value, so editing never requires re-entering credentials.
  */
+/** Folder as stored: trimmed, without leading or trailing slashes. A loop, not a regex, keeps long input linear. */
+function normalizeRemotePath(value) {
+  const path = text(value, 500);
+  let start = 0, end = path.length;
+  while (start < end && path[start] === '/') start++;
+  while (end > start && path[end - 1] === '/') end--;
+  return path.slice(start, end);
+}
+
 function prepareTarget(input, existing = null) {
   const type = existing ? existing.type : input?.type;
   const spec = TYPES[type];
   if (!spec) return { error: 'Choose a destination type.' };
   const name = text(input.name, 100);
   if (!name) return { error: 'A name is required.' };
-  const remotePath = text(input.remote_path, 500).replace(/^\/+|\/+$/g, '');
+  const remotePath = normalizeRemotePath(input.remote_path);
   if (type === 'local' ? !/^\/?[A-Za-z0-9._/-]+$/.test(`/${remotePath}`) || remotePath.includes('..') : /\.\.|[\0\r\n]/.test(remotePath)) {
     return { error: type === 'local' ? 'Enter an absolute folder path inside the container, e.g. /backups.' : 'The folder must not contain "..".' };
   }
@@ -244,4 +253,4 @@ function unregister(id) {
   tasks.delete(id);
 }
 
-module.exports = { ARCHIVE_RE, S3_PROVIDERS, TYPES, prepareTarget, publicTarget, register, reload, remoteFor, runBackup, stamp, testTarget, unregister };
+module.exports = { ARCHIVE_RE, S3_PROVIDERS, TYPES, normalizeRemotePath, prepareTarget, publicTarget, register, reload, remoteFor, runBackup, stamp, testTarget, unregister };

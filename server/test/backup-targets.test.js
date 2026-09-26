@@ -81,6 +81,15 @@ test('destination input is validated and archive names are recognised', () => {
 });
 
 const hasRclone = require('node:child_process').spawnSync('rclone', ['version']).status === 0;
+test('the destination folder is trimmed of slashes in linear time', () => {
+  assert.equal(targets.normalizeRemotePath(' //fleet/nightly// '), 'fleet/nightly');
+  assert.equal(targets.normalizeRemotePath('///'), '');
+  assert.equal(targets.normalizeRemotePath(undefined), '');
+  const started = process.hrtime.bigint();
+  assert.equal(targets.normalizeRemotePath(`x${'/'.repeat(100000)}`), 'x');
+  assert.ok(process.hrtime.bigint() - started < 100_000_000n);
+});
+
 test('a run uploads a verified archive and keeps only the newest ones', { skip: !hasRclone && 'rclone is not installed' }, async () => {
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-target-test-'));
   fs.writeFileSync(path.join(folder, 'fleet-database-20000101-000000.backup'), 'old');
