@@ -185,6 +185,11 @@ six hours and sends nothing about your installation. Set
 `FLEET_UPDATE_CHECK=0` in `.env` to turn the check off, for
 example on hosts without internet access.
 
+Once a day Fleet removes audit entries older than 90 days and shortens the
+log of update and task runs finished more than 90 days ago to its last 16 KB,
+where the recap and the final error are. The runs themselves stay in the
+history. Set `FLEET_HISTORY_OUTPUT_DAYS` in `.env` to keep full logs longer.
+
 ## Security properties of the supplied Compose stack
 
 - No privileged mode or host Docker socket is mounted.
