@@ -12,6 +12,7 @@ const { sendWebhook, sendEmail } = require('../services/notifier');
 const { adminOnly, requireCap } = require('../middleware/auth');
 const { setSecret } = require('../utils/crypto');
 const { serverError } = require('../utils/http-error');
+const { releaseStatus } = require('../services/release-check');
 const log = require('../utils/logger').child('system');
 const { rotateJwtSecret } = require('../utils/jwt-secret');
 const { getPermissions } = require('../utils/permissions');
@@ -168,6 +169,11 @@ function resolveSshAssignmentTarget(type, id, environmentId) {
 }
 
 // GET /api/system/key - Get current SSH key info
+// GET /api/system/release — running version and whether a newer stable release exists.
+router.get('/release', async (req, res) => {
+  res.json(await releaseStatus());
+});
+
 router.get('/key', adminOnly, (req, res) => {
   try {
     const keyInfo = sshManager.getKeyInfo();
@@ -655,5 +661,6 @@ router.get('/status', (req, res) => {
 });
 
 router.use('/database-backup', require('./database-backup'));
+router.use('/backup-targets', require('./backup-targets'));
 
 module.exports = router;

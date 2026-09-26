@@ -179,6 +179,12 @@ docker image prune -f
 The named data volume is preserved. Do not use `docker compose down -v` unless
 you intentionally want to delete all Fleet data.
 
+The sidebar shows the running version and points out when a newer stable
+release is published. Fleet asks the public GitHub release list at most every
+six hours and sends nothing about your installation. Set
+`FLEET_UPDATE_CHECK=0` in `.env` to turn the check off, for
+example on hosts without internet access.
+
 ## Security properties of the supplied Compose stack
 
 - No privileged mode or host Docker socket is mounted.
