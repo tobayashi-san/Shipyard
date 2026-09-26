@@ -46,3 +46,16 @@ test('retention prunes old audit entries and reads the configured output age', (
   assert.equal(outputRetentionDays({ FLEET_HISTORY_OUTPUT_DAYS: '0' }), 90);
   assert.equal(outputRetentionDays({}), 90);
 });
+
+test('host jobs left open by a previous process are closed as interrupted', () => {
+  const open = db.updateHistory.create(host.id, 'restart_docker_fleet');
+  const done = db.updateHistory.create(host.id, 'system_update');
+  db.updateHistory.updateStatus(done, 'success', 'ok');
+  assert.equal(db.updateHistory.interruptActive(), 1);
+  const row = id => db.db.prepare('SELECT status, output, completed_at FROM update_history WHERE id = ?').get(id);
+  assert.equal(row(open).status, 'interrupted');
+  assert.match(row(open).output, /Fleet restarted/);
+  assert.ok(row(open).completed_at);
+  assert.equal(row(done).status, 'success');
+  assert.equal(db.updateHistory.interruptActive(), 0);
+});

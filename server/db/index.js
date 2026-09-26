@@ -353,6 +353,19 @@ module.exports = {
       return id;
     },
     updateStatus: (id, status, output) => historyQueries.updateStatus.run(status, output, id),
+    // Host jobs are finished by the process that started them. After a restart
+    // (for example when Fleet restarts its own container) nobody will, so they
+    // are closed as interrupted: the command may or may not have completed.
+    interruptActive: () => {
+      const note = 'Fleet restarted before this job reported a result. Check the host to confirm the outcome.';
+      return db.prepare(`
+        UPDATE update_history
+        SET status = 'interrupted',
+            completed_at = COALESCE(completed_at, datetime('now')),
+            output = CASE WHEN output IS NULL OR output = '' THEN ? ELSE output || char(10) || ? END
+        WHERE status IN ('pending', 'running')
+      `).run(note, note).changes;
+    },
   },
   sshKeys: {
     getAll: () => sshKeyQueries.getAll.all(),
