@@ -183,3 +183,15 @@ test('VM state and recovery points refresh when an apply finishes', async ({page
  await expect(page.getByText('Independent state',{exact:true})).toBeVisible();
  await page.getByText('Recovery options',{exact:true}).click();await expect(page.getByRole('combobox',{name:'Recovery point'}).locator('option')).toHaveCount(2);
 });
+
+test('activity entries left running by a Fleet restart take the recorded status',async({page})=>{
+ await signIn(page);
+ await page.route('**/api/operations/host-restarted/details*',route=>route.fulfill({json:{id:'host-restarted',status:'interrupted'}}));
+ // The drawer stores its entries per viewer; seed the key it created on load.
+ await expect.poll(()=>page.evaluate(()=>Object.keys(localStorage).some(key=>key.startsWith('fleet.activity.v2.')))).toBe(true);
+ await page.evaluate(()=>{const key=Object.keys(localStorage).find(item=>item.startsWith('fleet.activity.v2.'))!;localStorage.setItem(key,JSON.stringify([{id:'history:restarted',kind:'update',title:'Server action',subtitle:'Host fleet-01',status:'running',startedAt:Date.now()-3600000,executionId:'host-restarted',lastLine:'Restarting container fleet'}]));});
+ await page.reload();
+ await page.getByRole('button',{name:'Activity'}).first().click();
+ await expect(page.getByText('0 running · 1 completed locally')).toBeVisible();
+ await expect(page.getByText('No live completion received; see the recorded execution.')).toBeVisible();
+});
